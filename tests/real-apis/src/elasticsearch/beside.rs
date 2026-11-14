@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// How Elasticsearch says no: `{"error": {"type": …, "reason": …}, "status": 404}`.
+/// Elasticsearch's error response: `{"error": {"type": …, "reason": …}, "status": 404}`.
 #[derive(Debug, Deserialize)]
 pub struct EsProblem {
     pub error: EsCause,
@@ -35,7 +35,8 @@ pub fn ndjson(lines: &[Value]) -> Result<Body, serde_json::Error> {
     Ok(Body::new(bytes, "application/x-ndjson"))
 }
 
-/// A `404` with `"found": false` is a missing document, an answer; with `"error"`, it is a refusal.
+/// A `404` with `"found": false` is a missing document, a normal response; with `"error"`, it
+/// is an error.
 pub fn document_404<T: DeserializeOwned>(body: Value) -> Result<T, Fail<EsProblem>> {
     if body.get("error").is_some() {
         let problem: EsProblem = serde_json::from_value(body)
@@ -46,8 +47,8 @@ pub fn document_404<T: DeserializeOwned>(body: Value) -> Result<T, Fail<EsProble
 }
 
 /// The next page of a search in a point in time: the newest id of the point in time, and the
-/// sort values of the last hit. An empty page is the end. A page that timed out, or that some
-/// shards did not answer, ends the pages with a Mismatch: going on would skip documents.
+/// sort values of the last hit. An empty page is the end. A page that timed out, or to which some
+/// shards did not respond, ends pagination with a Mismatch: going on would skip documents.
 pub fn pit_after<C, P, A>(pit: P, after: A)
     -> impl Fn(C, &Answer<SearchPage>) -> Result<Option<C>, Fail<EsProblem>> + Send + 'static
 where
@@ -81,7 +82,7 @@ pub enum CatReply {
     Json(Vec<Value>),
 }
 
-/// The arm of `cat_indices`: the text as it came, or the rows when JSON was asked for.
+/// The arm of `cat_indices`: the text as it arrived, or the rows when JSON was requested.
 pub fn cat_reply(text: String, format: &Option<CatFormat>) -> Result<CatReply, Fail<EsProblem>> {
     match format {
         Some(CatFormat::Json) => serde_json::from_str(&text)

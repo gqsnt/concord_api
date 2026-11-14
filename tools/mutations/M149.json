@@ -1,0 +1,9 @@
+{
+  "id": "M149",
+  "area": "reader-limit",
+  "contract": "C5.4, C7.1",
+  "description": "Ignore the reader byte limit when consuming response frames, including decoded compression frames",
+  "file": "concord-core/src/read.rs",
+  "find": "if piece.len() > limit.saturating_sub(length) {",
+  "replace": "if piece.len() > usize::MAX.saturating_sub(length) {"
+}

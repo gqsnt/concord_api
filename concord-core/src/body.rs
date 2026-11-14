@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-/// A chunk stream used by body writers.
+/// A stream of byte chunks, as used by body writers.
 pub type BodyStream = Pin<
     Box<
         dyn futures_core::Stream<
@@ -29,15 +29,15 @@ enum Data {
     ),
 }
 
-/// The bytes of a request body, with the label that goes with them.
+/// The bytes of a request body, with their content type.
 ///
-/// Bytes can be sent again. A stream is sent once.
-/// Make a body from bytes with [`Body::new(bytes, "application/octet-stream")`](Body::new),
+/// Bytes can be sent again; a stream is sent once.
+/// Create a body from bytes with [`Body::new(bytes, "application/octet-stream")`](Body::new),
 /// or from a stream of byte chunks with [`Body::stream(stream)`](Body::stream).
-/// Use [`content_type`](Body::content_type) to label a stream.
+/// Use [`content_type`](Body::content_type) to set the content type of a stream.
 ///
 /// A clone of a one-shot stream shares it: sending through any clone uses up every clone,
-/// and a later send of one of them is a Build error.
+/// and a later send of any of them is a Build error.
 #[derive(Clone)]
 pub struct Body {
     content_type: Option<std::borrow::Cow<'static, str>>,
@@ -45,7 +45,7 @@ pub struct Body {
 }
 
 impl Body {
-    /// These bytes, with a label: what a writer of yours gives.
+    /// Creates a body from bytes and a content type: what your own body writer returns.
     ///
     /// ```
     /// # use concord_core as concord;
@@ -64,7 +64,7 @@ impl Body {
         }
     }
 
-    /// A body that is sent once, as it comes.
+    /// Creates a body from a stream, sent once, chunk by chunk as it arrives.
     pub fn stream<S, E>(stream: S) -> Body
     where
         S: futures_core::Stream<Item = Result<bytes::Bytes, E>> + Send + 'static,
@@ -78,9 +78,9 @@ impl Body {
         }
     }
 
-    /// Join bodies in order. If all parts are in memory, the result holds bytes.
-    /// Otherwise all one-shot parts are claimed together by [`into_stream`](Self::into_stream),
-    /// before any bytes can be read. Set the combined label with [`content_type`](Self::content_type).
+    /// Joins bodies in order. If all parts are in memory, the result holds bytes.
+    /// Otherwise [`into_stream`](Self::into_stream) claims all one-shot parts together,
+    /// before any bytes can be read. Set the combined content type with [`content_type`](Self::content_type).
     pub fn concat(parts: impl IntoIterator<Item = Body>) -> Body {
         let parts: Vec<_> = parts.into_iter().collect();
         if parts.iter().all(|part| part.as_bytes().is_some()) {
@@ -99,7 +99,7 @@ impl Body {
         }
     }
 
-    /// Bytes held in memory, or `None` if any part is a stream.
+    /// Returns the bytes held in memory, or `None` if any part is a stream.
     /// Inspecting a body never claims or polls any of its streams.
     pub fn as_bytes(&self) -> Option<&[u8]> {
         match &self.data {
@@ -120,10 +120,10 @@ impl Body {
         self.content_type.as_deref()
     }
 
-    /// Take the body as a chunk stream. Clones share each one-shot source.
+    /// Takes the body as a stream of chunks. Clones share each one-shot source.
     ///
     /// Returns an error before yielding any byte if a source was already taken,
-    /// or occurs twice in the body. On failure no remaining source is taken.
+    /// or occurs twice in the body. On failure, no remaining source is taken.
     pub fn into_stream(self) -> Result<BodyStream, std::io::Error> {
         fn sources(body: &Body, out: &mut Vec<Arc<Mutex<Option<BodyStream>>>>) {
             match &body.data {
@@ -220,7 +220,7 @@ impl Body {
         self.into_stream()
     }
 
-    /// Says what the bytes are. A `content-type` header set by the client's author wins over it.
+    /// Sets the content type of the bytes. A `content-type` header set by the client's author takes precedence.
     pub fn content_type(mut self, value: impl Into<std::borrow::Cow<'static, str>>) -> Body {
         self.content_type = Some(value.into());
         self
@@ -276,24 +276,24 @@ impl From<bytes::Bytes> for Body {
 }
 
 impl From<&Body> for Body {
-    /// Clone the body, sharing any one-shot sources with the original.
+    /// Clones the body, sharing any one-shot sources with the original.
     fn from(body: &Body) -> Body {
         body.clone()
     }
 }
 
-/// What the expression of a `body` statement may give.
+/// What the expression of a `body` statement may return.
 ///
-/// A [`Body`], a `&Body`, or a `Result` of one of these with any error: an `Err` is a Build
-/// error, nothing is sent, and the error of your writer is the `source()` of that error.
-/// A way to write a body is a function that gives a [`Body`]: `json` and `form` of
-/// `concord` are two, and one of yours is used in the same way.
+/// A [`Body`], a `&Body`, or a `Result` of one of these with any error that converts into
+/// `Box<dyn Error + Send + Sync>`: an `Err` is a Build error, nothing is sent, and the error of your writer becomes the `source()` of that
+/// error. A body writer is a function that returns a [`Body`]: `concord`'s `json` and `form`
+/// are two, and your own writer is used in the same way.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a body",
     note = "a body is what json(x), form(x) or a function of yours gives: a concord::Body"
 )]
 pub trait IntoBody: sealed::Sealed {
-    /// The body, or why there is none.
+    /// Returns the body, or the reason there is none.
     fn into_body(self) -> Result<Body, Box<dyn std::error::Error + Send + Sync>>;
 }
 
@@ -479,12 +479,12 @@ mod tests {
 /// A top-level Serde `None` is omitted, including through references. `Some(None)`
 /// is kept: JSON writes `null`, while a form omits that pair. Generated code adapts
 /// every value first, allowing a `Secret` entry without making `Secret` serializable.
-/// Presence is checked when the body is written, in that writer's
+/// Presence is checked when the body is serialized, in that writer's
 /// `is_human_readable` mode, without iterating, measuring or formatting collections.
 /// Each value's `Serialize` is called once to check for a top-level `None`, then
 /// again to write it if retained. Its outer Serde operation must stay the same
 /// across both calls; changing it through side effects can defeat `None` omission.
-/// The unit (`()`) is not a `None`: the format writes it (`null` in JSON).
+/// The unit (`()`) is not a `None`: the format serializes it (`null` in JSON).
 ///
 /// ```compile_fail
 /// # use concord_core as concord;
@@ -520,7 +520,7 @@ impl fmt::Debug for Entries<'_> {
     }
 }
 impl<'a> Entries<'a> {
-    /// An empty map.
+    /// Creates an empty map.
     pub fn new() -> Self {
         Self::default()
     }
@@ -971,7 +971,7 @@ impl<T: ?Sized> fmt::Debug for Bounded<'_, T> {
     }
 }
 impl<'a, T: serde::Serialize + ?Sized> Bounded<'a, T> {
-    /// Bound each input to at most 128 nested Serde operations.
+    /// Wraps a value, bounding each input to at most 128 nested Serde operations.
     pub fn new(value: &'a T) -> Self {
         Self {
             value,

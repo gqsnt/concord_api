@@ -44,6 +44,9 @@ rustls = ["reqwest/rustls"]
 http2 = ["reqwest/http2"]
 # The proxy settings of the system (macOS, Windows), as `reqwest` reads them by default.
 system-proxy = ["reqwest/system-proxy"]
+gzip = ["reqwest/gzip"]
+deflate = ["reqwest/deflate"]
+socks = ["reqwest/socks"]
 
 [dev-dependencies]
 proptest = { version = "1.12", default-features = false, features = ["std"] }

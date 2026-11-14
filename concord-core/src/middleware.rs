@@ -1,22 +1,24 @@
-//! What every request goes through before the transport really sends it.
+//! Middleware: what every request passes through before the transport actually sends it.
 
 use crate::transport::{Transport, TransportError, TryInfo};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-/// Runs on each try and each page, before the transport really sends the request.
+/// A layer that every request passes through, on each attempt and each page, before the
+/// transport actually sends it.
 ///
-/// Write `middleware Signed::new(key.clone());` on the client to make one in `new`.
+/// Write `middleware Signed::new(key.clone());` on the client to create one in `new`.
 /// Its expression sees the required client inputs as references. Handles and calls share
-/// that middleware. A caller's `with_middleware` runs first, in the order added,
-/// then the description's middlewares run in the order written. Write a signer last. `with_transport` replaces only what really sends, underneath them.
-/// The description's middlewares stay on every call. To treat public endpoints differently,
+/// that middleware. Middleware added with a caller's `with_middleware` runs first, in the
+/// order added; then the description's middleware runs, in the order written. Put a signer
+/// last. `with_transport` replaces only what actually sends the request, underneath them.
+/// The description's middleware stays on every call. To treat public endpoints differently,
 /// inspect the request or [`TryInfo::endpoint`] inside `handle`.
 ///
-/// A signer is ordinary Rust beside the description. The request and the answer are
+/// A signer is ordinary Rust next to the description. The request and the response are
 /// `concord::reqwest::Request` and `concord::reqwest::Response`: a crate that depends only on
-/// `concord` needs no `reqwest` of its own.
+/// `concord` needs no `reqwest` dependency of its own.
 ///
 /// ```
 /// # use concord_core as concord;
@@ -52,8 +54,8 @@ use std::sync::Arc;
 /// ```
 ///
 /// A token can be renewed after a `401`. Take a copy before the first send; a stream body
-/// cannot be copied, so in that case give back the first answer. Put this middleware before
-/// a signer so that the second send is signed again too:
+/// cannot be copied, so in that case return the first response. Put this middleware before
+/// a signer so that the second send is signed too:
 ///
 /// ```
 /// # use concord_core as concord;
@@ -97,20 +99,20 @@ use std::sync::Arc;
 /// # }.now_or_never().unwrap().unwrap();
 /// ```
 ///
-/// `next.send(request, info)` may be called more than once, or not at all. A middleware
-/// that refuses before sending returns [`TransportError::blocked`]; the tries end there.
-/// After an answer has arrived, keep that answer or report another failure if renewal fails.
-/// Concord counts the whole chain as one try; sends within it do not add tries.
-/// The whole-call `timeout` includes middleware time. The clock for silence starts
-/// only at hand-over to the transport, after middleware; `timeout` is checked there
-/// too, so an expired call is never handed over.
-/// `request()` and `into_request()` give the request before any middleware runs.
+/// `next.send(request, info)` may be called more than once, or not at all. A middleware layer
+/// that rejects the request before sending returns [`TransportError::blocked`]; the attempts
+/// end there. After a response has arrived, keep that response, or report another failure if
+/// renewal fails. Concord counts the whole chain as one attempt; sends within it do not add
+/// attempts. The call `timeout` includes the time spent in middleware. The idle timeout starts
+/// only when the request is handed to the transport, after middleware; `timeout` is checked
+/// there too, so an expired call is never handed over.
+/// `request()` and `into_request()` return the request before any middleware runs.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a middleware",
     note = "implement concord::Middleware with handle(request, info, next); next.send(request, info) sends on"
 )]
 pub trait Middleware: Send + Sync + 'static {
-    /// Handle this request, sending through the rest of the chain with `next.send`.
+    /// Handles this request, sending it through the rest of the chain with `next.send`.
     fn handle(
         &self,
         request: reqwest::Request,
@@ -157,11 +159,12 @@ impl<M: Middleware> ErasedMiddleware for M {
     }
 }
 
-/// The remaining middlewares, in order, followed by the transport that really sends.
+/// The remaining middleware, in order, followed by the transport that actually sends the
+/// request.
 ///
-/// It is a shared view: sending does not consume the chain. A middleware can send again
-/// through the same remainder, for example after renewing a token. The silence clock
-/// starts at hand-over to the transport, where `timeout` is checked before sending.
+/// It is a shared view: sending does not consume the chain. A middleware layer can send again
+/// through the same remainder, for example after renewing a token. The idle timeout starts
+/// when the request is handed to the transport, where `timeout` is checked before sending.
 #[derive(Clone, Copy)]
 pub struct Next<'a> {
     pub(crate) middlewares: &'a [Arc<dyn ErasedMiddleware>],
@@ -175,7 +178,8 @@ impl std::fmt::Debug for Next<'_> {
 }
 
 impl<'a> Next<'a> {
-    /// Send directly to this transport, for example to test one middleware over a fake.
+    /// Creates a chain that sends directly to this transport, for example to test one
+    /// middleware layer over a fake.
     pub fn to(transport: &'a impl Transport) -> Next<'a> {
         Next {
             middlewares: &[],
@@ -241,7 +245,7 @@ impl<'a> Next<'a> {
         .map_err(|failure| run.outer_clock(failure))
     }
 
-    /// Send through the remaining middlewares and then the transport.
+    /// Sends through the remaining middleware and then the transport.
     pub fn send(
         self,
         request: reqwest::Request,

@@ -125,8 +125,8 @@ where
     }
 }
 
-/// Metadata of the caller's (`x-amz-meta-*`), for `.edit_request(…)`: the description names
-/// every key, and these keys are the caller's. Checked before the call is built.
+/// The caller's own metadata (`x-amz-meta-*`), for `.edit_request(…)`: the description names
+/// every key, and these keys are chosen by the caller. Checked before the call is built.
 pub fn metadata<K: AsRef<str>, V: AsRef<str>>(
     entries: impl IntoIterator<Item = (K, V)>,
 ) -> Result<impl Fn(&mut reqwest::Request) + Send + Sync + 'static, BoxError> {

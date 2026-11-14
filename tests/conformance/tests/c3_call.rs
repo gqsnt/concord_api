@@ -1,6 +1,6 @@
 //! C3, one call: the request built once, a copy for each try, `blocked`, the way out through
 //! the middlewares, a try as the whole exchange, what is final, the one `Run`, and
-//! `read_response` (docs/reference/contracts.md C3; docs/internals/engine.md, "The path of one call" and "The tries"; docs/reference/rules.md
+//! `read_response` (docs/reference/contracts.md C3; docs/internals/engine.md, "The path of one call" and "The attempts"; docs/reference/rules.md
 //! rules 18 and 20).
 //!
 //! C3.8 (the hidden `__private::exchange`) has no behaviour of its own that a caller can

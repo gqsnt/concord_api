@@ -3,7 +3,7 @@
     pub client Kubernetes(
         /// The API server: `https://10.0.0.1:6443`, or a proxy with a prefix (`https://rancher.example/k8s/clusters/c-1`).
         server: Base,
-        /// A bearer token. Not set: a client certificate, or the middleware of `in_cluster`, says who you are.
+        /// A bearer token. Not set: a client certificate, or the middleware of `in_cluster`, provides the credentials.
         token?: Secret,
     ) {
         base server;
@@ -14,17 +14,17 @@
         part selectors(label_selector?: String, field_selector?: String) {
             query { "labelSelector" = label_selector; "fieldSelector" = field_selector; }
         }
-        /// A list in pages of `limit`, the next one asked with the `continue` token (a Rust keyword).
+        /// A list in pages of `limit` items, the next one requested with the `continue` token (a Rust keyword).
         part listing(limit?: u32, continue_token?: String, resource_version?: String, resource_version_match?: VersionMatch) {
             query {
                 limit; "continue" = continue_token;
                 "resourceVersion" = resource_version; "resourceVersionMatch" = resource_version_match;
             }
-            // not `by_cursor`: it keeps the version, and the server refuses one beside a token (unsure)
+            // not `by_cursor`: it keeps the version, and the server rejects one alongside a token (unsure)
             paginate move |call, page| page.value().next_token()
                 .map(|token| call.continue_token(token).resource_version(None).resource_version_match(None));
         }
-        /// A watch: an answer that does not end, one event on each line. The server ends it after
+        /// A watch: a response that does not end, one event on each line. The server ends it after
         /// `timeout_seconds`, or after 30 to 60 minutes when it is not set (unsure).
         part watching(resource_version?: String, allow_watch_bookmarks?: bool, timeout_seconds?: u32) {
             query {

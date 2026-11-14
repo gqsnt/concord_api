@@ -62,7 +62,7 @@ impl Patch {
     }
 }
 
-/// What a delete answers, with a 2xx in both cases: the object while it stops (a grace period,
+/// What a delete returns, with a 2xx in both cases: the object while it stops (a grace period,
 /// a finalizer), or a `Status` once it is gone. Only `kind` tells them apart.
 #[derive(Debug)]
 pub enum Deleted<T> {
@@ -95,7 +95,7 @@ pub enum WatchEvent<T> {
     Error(Status),
 }
 
-/// `read WatchLines;`: the body as it comes, cut into lines.
+/// `read WatchLines;`: the body as it arrives, split into lines.
 #[derive(Clone, Copy, Debug)]
 pub struct WatchLines;
 

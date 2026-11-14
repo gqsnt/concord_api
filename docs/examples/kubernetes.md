@@ -2,9 +2,9 @@
 
 *[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Stripe](stripe.md) · next: [Slack](slack.md)*
 
-For a Rust developer who calls the API server of a Kubernetes cluster: a client of 18 endpoints to copy from (pods, the scale and status of a deployment, custom resources). It is the example of a watch that never ends, of a log followed as it is written, of patches whose kind is a header, and of a certificate that the connection needs.
+This page is for a Rust developer who calls the API server of a Kubernetes cluster. It gives a client with 18 endpoints that you can copy (pods, the scale and status of a deployment, custom resources), and shows a watch that never ends, a log followed as it is written, patches whose type is given by a header, and a certificate that the connection needs.
 
-Kubernetes, as Concord sees it. The server is the cluster's own (`https://10.0.0.1:6443`, or a proxy with a prefix): `base server;`, an input of type `Base`. Its certificate is signed by the cluster's own authority, so the transport must know it: `connect(server, ca_pem)` builds the client. Who you are: a bearer token, or, inside a pod, a token file that Kubernetes renews (a middleware reads it). A list pages by a `continue` token; a watch is an answer that does not end, one JSON event on each line, read by a reader of the author's. Every key of the query is in camelCase. Kubernetes says no with a `Status` object (`code`, `reason`, `message`, `details`), which is also a line of a watch and the answer of some deletes. The reference of Kubernetes: [kubernetes.io/docs/reference/kubernetes-api](https://kubernetes.io/docs/reference/kubernetes-api/). `(unsure)` marks a detail of Kubernetes that is not checked.
+Here is Kubernetes as Concord sees it. The server is the cluster's own (`https://10.0.0.1:6443`, or a proxy with a prefix): `base server;`, an input of type `Base`. Its certificate is signed by the cluster's own authority, so the transport must trust it: `connect(server, ca_pem)` builds the client. Authentication is a bearer token or, inside a pod, a token file that Kubernetes renews (a middleware layer reads it). Lists are paginated by a `continue` token; a watch is a response that never ends, with one JSON event on each line, read by the author's own reader. Every query key is in camelCase. Kubernetes rejects a request with a `Status` object (`code`, `reason`, `message`, `details`), which also appears as a line of a watch and as the response to some deletes. The Kubernetes reference is [kubernetes.io/docs/reference/kubernetes-api](https://kubernetes.io/docs/reference/kubernetes-api/). `(unsure)` marks a detail about Kubernetes that has not been checked.
 
 ## The description
 
@@ -19,7 +19,7 @@ concord::api! {
     pub client Kubernetes(
         /// The API server: `https://10.0.0.1:6443`, or a proxy with a prefix (`https://rancher.example/k8s/clusters/c-1`).
         server: Base,
-        /// A bearer token. Not set: a client certificate, or the middleware of `in_cluster`, says who you are.
+        /// A bearer token. Not set: a client certificate, or the middleware of `in_cluster`, provides the credentials.
         token?: Secret,
     ) {
         base server;
@@ -30,17 +30,17 @@ concord::api! {
         part selectors(label_selector?: String, field_selector?: String) {
             query { "labelSelector" = label_selector; "fieldSelector" = field_selector; }
         }
-        /// A list in pages of `limit`, the next one asked with the `continue` token (a Rust keyword).
+        /// A list in pages of `limit` items, the next one requested with the `continue` token (a Rust keyword).
         part listing(limit?: u32, continue_token?: String, resource_version?: String, resource_version_match?: VersionMatch) {
             query {
                 limit; "continue" = continue_token;
                 "resourceVersion" = resource_version; "resourceVersionMatch" = resource_version_match;
             }
-            // not `by_cursor`: it keeps the version, and the server refuses one beside a token (unsure)
+            // not `by_cursor`: it keeps the version, and the server rejects one alongside a token (unsure)
             paginate move |call, page| page.value().next_token()
                 .map(|token| call.continue_token(token).resource_version(None).resource_version_match(None));
         }
-        /// A watch: an answer that does not end, one event on each line. The server ends it after
+        /// A watch: a response that does not end, one event on each line. The server ends it after
         /// `timeout_seconds`, or after 30 to 60 minutes when it is not set (unsure).
         part watching(resource_version?: String, allow_watch_bookmarks?: bool, timeout_seconds?: u32) {
             query {
@@ -184,9 +184,9 @@ concord::api! {
 
 ## Beside the description
 
-The data types are plain `serde` types, named here and not printed: `Pod`, `Deployment`, `Scale`, `DynamicObject` (`apiVersion`, `kind`, `metadata`, and the rest as a JSON map), `ObjectMeta`, `ListMeta` (`continue`, `resourceVersion`), `Head` (`metadata` only), `Preconditions` (`uid`, `resourceVersion`), three enums (`Propagation`, `VersionMatch`, `FieldValidation`), and `Status`: `code`, `reason` (`"NotFound"`, `"Conflict"`, `"Expired"`, …), `message`, `details` (with `retryAfterSeconds`).
+The data types are plain `serde` types, named here but not shown: `Pod`, `Deployment`, `Scale`, `DynamicObject` (`apiVersion`, `kind`, `metadata`, and the rest as a JSON map), `ObjectMeta`, `ListMeta` (`continue`, `resourceVersion`), `Head` (`metadata` only), `Preconditions` (`uid`, `resourceVersion`), three enums (`Propagation`, `VersionMatch`, `FieldValidation`), and `Status`: `code`, `reason` (`"NotFound"`, `"Conflict"`, `"Expired"`, …), `message`, `details` (with `retryAfterSeconds`).
 
-The list and its pages, the patch, what a delete answers, the watch, how a client is made, and the retry policy of the API:
+The list and its pages, the patch, the response to a delete, the watch, how a client is built, and the API's retry policy:
 
 ```rust
 use concord::http::HeaderValue;
@@ -253,7 +253,7 @@ impl Patch {
     }
 }
 
-/// What a delete answers, with a 2xx in both cases: the object while it stops (a grace period,
+/// What a delete returns, with a 2xx in both cases: the object while it stops (a grace period,
 /// a finalizer), or a `Status` once it is gone. Only `kind` tells them apart.
 #[derive(Debug)]
 pub enum Deleted<T> {
@@ -286,7 +286,7 @@ pub enum WatchEvent<T> {
     Error(Status),
 }
 
-/// `read WatchLines;`: the body as it comes, cut into lines.
+/// `read WatchLines;`: the body as it arrives, split into lines.
 #[derive(Clone, Copy, Debug)]
 pub struct WatchLines;
 
@@ -453,18 +453,18 @@ pub async fn drain(kube: &Kubernetes) -> kubernetes::Result<()> {
 }
 ```
 
-## What fits badly, and the way out
+## What does not fit well, and the workaround
 
 | Kubernetes wants | What to write |
 |---|---|
-| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord makes its errors from the head of the answer. | The event `WatchEvent::Error(Status)`, beside the others, and `WatchError` for bytes and lines that break. The caller of a watch handles three things: the call's error, `WatchError`, and the `Error` event. |
-| The certificate of the cluster, as much an input as the server. `new` cannot take it: a certificate is set on the transport. | `connect(server, ca_pem)`, with `concord::Http::with(…)`. The doc comment of the client points to it. |
-| Keys in camelCase, and inputs in snake_case: 17 of the 23 entries are the long form, `"labelSelector" = label_selector;`. | The long form, once for each key, in a part. |
+| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others, and `WatchError` for malformed bytes and lines. The caller of a watch handles three cases: the call's error, `WatchError`, and the `Error` event. |
+| The cluster's certificate, as much an input as the server. `new` cannot take it: a certificate is set on the transport. | `connect(server, ca_pem)`, with `concord::Http::with(…)`. The doc comment of the client points to it. |
+| Keys in camelCase, and inputs in snake_case: 17 of the 23 entries use the long form, `"labelSelector" = label_selector;`. | The long form, once for each key, in a part. |
 | A custom resource, typed. A scope has no type parameter. | `DynamicObject`, decoded by the caller with `serde_json::from_value`; or one scope for each type. |
-| The same resources under two parents (the pods of a namespace, the pods of every namespace). | The scope written under each parent; the parts keep each endpoint to one line. |
+| The same resources under two parents (the pods of a namespace, the pods of every namespace). | The scope declared under each parent; the parts keep each endpoint to one line. |
 | `continue`, a Rust keyword. | `continue_token?` and `"continue" = continue_token;`. |
-| A next page with the token and without `resourceVersion`. `by_cursor` keeps every other input. | A pager written in place, in the part: it sets the token and un-sets the two versions. |
-| A delete that answers the object while it stops, or a `Status` once it is gone, both `2xx`. | `Deleted<T>`, with a `Deserialize` that looks at `kind`. |
-| `follow=true`, which turns the log from text into a stream. The type after the arrow is fixed. | Two endpoints on one path: `log` and `follow_log`. |
-| A watch or a followed log, silent as long as the cluster is quiet. | `idle_timeout` on the endpoint or the part: a day for a log; `timeoutSeconds` and a minute for a watch. |
-| Server-side apply, which needs `fieldManager` (unsure: refused without one). | A doc comment on `Patch::Apply`: the caller gives `.field_manager(…)`. |
+| A next page with the token and without `resourceVersion`. `by_cursor` keeps every other input. | A pager written inline, in the part: it sets the token and unsets the two versions. |
+| A delete that returns the object while it is shutting down, or a `Status` once it is gone, both with a `2xx`. | `Deleted<T>`, with a `Deserialize` that looks at `kind`. |
+| `follow=true`, which turns the log from text into a stream. The return type is fixed. | Two endpoints on one path: `log` and `follow_log`. |
+| A watch or a followed log, which stays silent as long as the cluster is quiet. | `idle_timeout` on the endpoint or the part: a day for a log; `timeoutSeconds` and a minute for a watch. |
+| Server-side apply, which needs `fieldManager` (unsure: rejected without one). | A doc comment on `Patch::Apply`: the caller sets `.field_manager(…)`. |

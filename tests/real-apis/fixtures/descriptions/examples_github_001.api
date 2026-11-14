@@ -9,7 +9,7 @@
         }
         read Json;
         problem GithubProblem;
-        /// Keeps the rate-limit headers of every answer: each page, each try.
+        /// Keeps the rate-limit headers of every response: each page, each attempt.
         middleware ObserveQuota(quota.clone());
 
         part page(per_page?: u32, page?: u32) {
@@ -72,14 +72,14 @@
 
         scope repo(owner: String, name: String) {
             path "repos/{owner}/{name}";
-            /// A repository that moved answers `301`, an error with its `Location`: see `get_moved`.
+            /// A repository that moved responds with `301`, an error with its `Location`: see `get_moved`.
             GET get() -> Repository;
-            /// `None`: GitHub is still counting (`202`). Ask again later.
+            /// `None`: GitHub is still counting (`202`). Request it again later.
             GET contributor_stats() -> Option<Vec<ContributorStats>> {
                 path "stats/contributors";
                 status { 202 => None, 204 => Some(Vec::new()) }
             }
-            /// The root folder of the repository. Not paged: at most 1,000 entries.
+            /// The root folder of the repository. Not paginated: at most 1,000 entries.
             GET contents_root(..at_ref) -> Vec<ContentEntry> { path "contents"; }
 
             scope issues {

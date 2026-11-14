@@ -2,9 +2,9 @@
 
 *[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Kubernetes](kubernetes.md) · next: [Telegram](telegram.md)*
 
-For a Rust developer who calls the Slack Web API: a client of 14 methods to copy from. It is the example of an API that answers `200` to everything, of method names with a dot, of one page type for lists with different names, and of an upload in three steps.
+This page is for a Rust developer who calls the Slack Web API. It gives a client with 14 methods that you can copy, and shows an API that responds `200` to everything, method names with a dot, one page type for lists with different names, and an upload in three steps.
 
-Slack, as Concord sees it. One host and prefix, `https://slack.com/api`, and a method name for each path: `chat.postMessage`, `conversations.list`. The scopes keep Slack's families, and add no path: a scope's `path` would put a `/` after `conversations`. Who you are: a token, `authorization: Bearer xoxb-…`. Slack answers `200` to everything, and `"ok": false` with an `"error"` code is a refusal: one arm on the client reads `ok` before the type of the endpoint. A list pages by `response_metadata.next_cursor`, and names its items `channels`, `messages` or `members`. A `429` comes with `Retry-After`, and was not applied. Slack's own reference: [docs.slack.dev/apis/web-api](https://docs.slack.dev/apis/web-api/). `(unsure)` marks a detail of Slack's that is not checked.
+Here is Slack as Concord sees it. There is one host and prefix, `https://slack.com/api`, and a method name for each path: `chat.postMessage`, `conversations.list`. The scopes keep Slack's method families but add no path, because a scope's `path` would put a `/` after `conversations`. Authentication is a token, `authorization: Bearer xoxb-…`. Slack responds `200` to everything, and `"ok": false` with an `"error"` code is an error: one arm on the client reads `ok` before the endpoint's own type is read. Lists are paginated by `response_metadata.next_cursor`, and name their items `channels`, `messages` or `members`. A `429` comes with `Retry-After`, and means that the request was not applied. Slack's own reference is [docs.slack.dev/apis/web-api](https://docs.slack.dev/apis/web-api/). `(unsure)` marks a detail about Slack that has not been checked.
 
 ## The description
 
@@ -87,12 +87,12 @@ concord::api! {
             }
         }
         scope files {
-            /// The first step of an upload: Slack gives the URL where the bytes go.
+            /// The first step of an upload: Slack returns the URL where the bytes go.
             POST get_upload_url_external(filename: String, length: u64, alt_txt?: String) -> UploadTicket {
                 path "files.getUploadURLExternal";
                 body form { filename; length; alt_txt; }
             }
-            /// The last step. Slack answers when the file is processed, which can take minutes.
+            /// The last step. Slack responds when the file is processed, which can take minutes.
             POST complete_upload_external(
                 uploads: Vec<UploadedFile>, channel_id?: String, initial_comment?: String,
             ) -> CompletedFiles {
@@ -109,13 +109,13 @@ concord::api! {
 }
 ```
 
-A read is a `GET`, as Slack documents it; a write sends JSON or a form, as each method takes. No write is marked `idempotent`: `retry()` sends a write again only after a `429`.
+A read is a `GET`, as Slack documents it; a write sends JSON or a form, whichever the method accepts. No write is marked `idempotent`, so `retry()` retries a write only after a `429`.
 
 ## Beside the description
 
-The data types are plain `serde` types, named here and not printed; ids and timestamps stay `String`: `AuthIdentity` (`team_id`, `user_id`), `Conversation` (`id`), `ChannelInfo` (`channel`), `Message` (`ts`), `MessageReceipt` (`channel`, `ts`), `User` (`id`), `UserInfo` (`user`), `UploadTicket` (`upload_url`, `file_id`), `UploadedFile` (`id`, `title`), `CompletedFiles`, and the Block Kit types `Block`, `Attachment`, `Modal`, `OpenedView`.
+The data types are plain `serde` types, named here but not shown; ids and timestamps stay `String`: `AuthIdentity` (`team_id`, `user_id`), `Conversation` (`id`), `ChannelInfo` (`channel`), `Message` (`ts`), `MessageReceipt` (`channel`, `ts`), `User` (`id`), `UserInfo` (`user`), `UploadTicket` (`upload_url`, `file_id`), `UploadedFile` (`id`, `title`), `CompletedFiles`, and the Block Kit types `Block`, `Attachment`, `Modal`, `OpenedView`.
 
-How Slack says no, its pages, its policy, and the bytes of an upload:
+Slack's errors, its pages, its retry policy, and the bytes of an upload:
 
 ```rust
 use concord::bytes::Bytes;
@@ -125,7 +125,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-/// How Slack says no: `{"ok": false, "error": "channel_not_found"}`, with the status `200`.
+/// Slack's error response: `{"ok": false, "error": "channel_not_found"}`, with the status `200`.
 #[derive(Debug, Deserialize)]
 pub struct SlackProblem {
     pub error: String,
@@ -164,7 +164,7 @@ impl<T: Send> concord::page::IntoItems for SlackPage<T> {
     }
 }
 
-/// An answer with nothing in it but `"ok": true`.
+/// A response with nothing in it but `"ok": true`.
 #[derive(Debug, Deserialize)]
 pub struct Acknowledged {}
 
@@ -182,12 +182,12 @@ pub fn slack_response<T: DeserializeOwned>(body: Value) -> Result<T, Fail<SlackP
     }
 }
 
-/// Slack's policy: a `429` was not applied, so even a `POST` may go again after its `Retry-After`.
+/// Slack's policy: a `429` was not applied, so even a `POST` may be retried after `Retry-After`.
 pub fn retry() -> slack::Retry {
     slack::Retry::standard().not_applied_on(429)
 }
 
-/// The middle step of an upload: the bytes go to the URL that Slack gave, on another host.
+/// The middle step of an upload: the bytes go to the URL that Slack returned, on another host.
 /// A plain `reqwest` client sends them, with none of the client's credentials.
 pub async fn upload_bytes(url: &str, bytes: Bytes) -> Result<(), reqwest::Error> {
     let answer = reqwest::Client::new()
@@ -210,7 +210,7 @@ use std::time::Duration;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// A client, and who it is. A refusal comes with the status `200`; `e.problem()` has its code.
+/// A client, and who it is. An error response has the status `200`; `e.problem()` has its code.
 pub async fn connect(token: Secret) -> slack::Result<Slack> {
     let slack = Slack::new(token).with_retry(retry()).with_timeout(Duration::from_secs(90));
     match slack.auth_test().await {
@@ -247,7 +247,7 @@ pub async fn post(slack: &Slack) -> slack::Result<()> {
     Ok(())
 }
 
-/// An upload in three steps: ask for a URL, send the bytes there, then share the file.
+/// An upload in three steps: request a URL, send the bytes there, then share the file.
 pub async fn upload(slack: &Slack, name: &str, bytes: Bytes) -> Result<(), BoxError> {
     let ticket = slack.files().get_upload_url_external(name, bytes.len() as u64).await?;
     upload_bytes(&ticket.upload_url, bytes).await?;
@@ -257,14 +257,14 @@ pub async fn upload(slack: &Slack, name: &str, bytes: Bytes) -> Result<(), BoxEr
 }
 ```
 
-## What fits badly, and the way out
+## What does not fit well, and the workaround
 
 | Slack wants | What to write |
 |---|---|
-| A refusal inside a `200`. `problem` alone reads only the bodies of a status that is not a 2xx. | One arm on the client, `2xx { body } => slack_response(body)?`: it reads `ok`, then gives the success or the client's problem. |
+| An error inside a `200`. `problem` alone reads only the bodies of statuses that are not 2xx. | One arm on the client, `2xx { body } => slack_response(body)?`: it reads `ok`, then returns the success or the client's problem. |
 | A family prefix with no `/` after it: `conversations.` before `list`. `path` adds whole segments. | The whole method name in each endpoint; the scope only groups them. |
-| A whole URL that Slack gives for the bytes of an upload, on another host, with its query. | A plain `reqwest` client sends the bytes there, with none of your keys (`upload_bytes`). Its error is a `reqwest::Error`, not a `slack::Error`. |
+| A complete URL that Slack returns for the bytes of an upload, on another host, with its query. | A plain `reqwest` client sends the bytes there, with none of your keys (`upload_bytes`). Its error is a `reqwest::Error`, not a `slack::Error`. |
 | A list in one value, joined by commas: `types=public_channel,private_channel`. | `"types" = types.as_ref().map(\|v\| v.join(","));`. |
-| An input named like the scope that holds it: `files` under `scope files`. | Another name in the signature, and the key in the entry: `"files" = uploads;`. |
-| An acknowledgement with nothing in it but `"ok": true`. An endpoint with no arrow reads no body, so under the arm that reads `ok` it does not compile. | An arrow to a type with no fields, `-> Acknowledged`: the arm checks `ok`. |
-| A quota per method and per workspace, shared by every call. | A middleware that holds each method after its `429`, as the quota of the [Riot Games](riot.md) page does. |
+| An input with the same name as the scope that contains it: `files` under `scope files`. | Another name in the signature, and the key in the entry: `"files" = uploads;`. |
+| An acknowledgement that contains nothing but `"ok": true`. An endpoint with no return type reads no body, so it does not compile under the arm that reads `ok`. | A return type with no fields, `-> Acknowledged`: the arm checks `ok`. |
+| A quota per method and per workspace, shared by every call. | A middleware layer that holds back each method after its `429`, as the quota on the [Riot Games](riot.md) page does. |

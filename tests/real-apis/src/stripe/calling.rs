@@ -16,7 +16,7 @@ pub async fn customer_for_order() -> Result<Customer, BoxError> {
     Ok(customer)
 }
 
-/// Confirm a payment. A decline is a value; any other refusal is an error.
+/// Confirm a payment. A decline is a value; any other rejection is an error.
 pub async fn confirm(stripe: &Stripe, intent: &PaymentIntentId, card: &str) -> stripe::Result<()> {
     match stripe.payment_intents().confirm(intent, format!("confirm-{intent}"))
         .payment_method(card)
@@ -78,6 +78,6 @@ pub async fn evidence(platform_key: String, pdf: Vec<u8>) -> stripe::Result<Stri
     let shop = Stripe::new(platform_key).account(AccountId::from("acct_123"));
     let file = Upload { name: "receipt.pdf".into(), content_type: "application/pdf".into(), bytes: pdf.into() };
     shop.create_file(FilePurpose::DisputeEvidence, file, "evidence-for-dispute-42")
-        .with_idle_timeout(Duration::from_secs(120))        // a body in memory goes out in one piece
+        .with_idle_timeout(Duration::from_secs(120))        // a body in memory is sent as one chunk
         .await
 }

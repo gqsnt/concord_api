@@ -1,6 +1,6 @@
 //! C4, retry: which requests may go again, which failures are worth it, the waits,
 //! `Retry-After`, the rules `when` and `unless`, `not_applied_on`, `tries`
-//! (docs/reference/contracts.md C4; docs/internals/engine.md, "The decision to try again"; docs/reference/rules.md rule 18).
+//! (docs/reference/contracts.md C4; docs/internals/engine.md, "The decision to retry"; docs/reference/rules.md rule 18).
 //!
 //! The tables 6.1 to 6.4 of docs/reference/cases.md are in `c4_tables.rs`.
 

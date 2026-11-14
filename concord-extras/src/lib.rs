@@ -1,17 +1,17 @@
-//! What Concord ships beside its core.
+//! What Concord ships next to its core.
 //!
 //! JSON, form and optional multipart writers, four readers, six pagers, HTTP Basic, and an adapter for
-//! `tower`. Extensions use the public traits of `concord-core`. Body writers use
-//! [`concord_core::body::Bounded`] and [`concord_core::body::WriteError`] to retain
-//! safe input names and the original format error; your own writers use the same door.
+//! `tower`. These extensions use the public traits of `concord-core`. Body writers use
+//! [`concord_core::body::Bounded`] and [`concord_core::body::WriteError`] to keep
+//! safe input names and the original format error; your own writers use the same extension point.
 //! Readers share [`concord_core::read::details`]; pagers share
 //! [`concord_core::page::fragmentless`]. Both helpers are public extension points.
 //! The Tower adapter also uses a hidden helper of the engine for the URL of an answer;
 //! that helper is outside the extension API.
 //!
-//! People depend on the crate `concord-api`, which re-exports this one.
+//! Applications depend on the crate `concord-api`, which re-exports this one.
 //!
-//! | Module | What it holds | Written with |
+//! | Module | What it holds | Built with |
 //! |---|---|---|
 //! | [`body`] | `json(x)`, `form(x)`, `multipart()` (feature `multipart`) | `concord_core::Body` |
 //! | [`read`] | `Json`, `Text`, `Binary`, `Stream` | `concord_core::Reader` |
@@ -38,7 +38,7 @@
 //! # }
 //! ```
 //!
-//! Buffered parts give deterministic bytes. Streaming parts use a random boundary
+//! Buffered parts produce deterministic bytes. Streaming parts use a random boundary
 //! and are claimed together before sending.
 
 #![forbid(unsafe_code)]
@@ -54,7 +54,7 @@ pub mod tower;
 
 use concord_core::Secret;
 
-/// The value of an `Authorization` header for HTTP Basic:
+/// Returns the value of an `Authorization` header for HTTP Basic:
 /// `headers { "authorization" = basic(user, password); }`.
 ///
 /// It is a [`Secret`], so the header is marked sensitive and is never printed.

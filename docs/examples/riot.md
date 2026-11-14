@@ -1,10 +1,10 @@
 # Riot Games
 
-*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [GitHub](github.md) · next: [an object store like S3](s3.md)*
+*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [GitHub](github.md) · next: [an object store like Amazon S3](s3.md)*
 
-For a Rust developer who calls the Riot Games API (League of Legends, Teamfight Tactics, Riot accounts): a client of 62 endpoints to copy from. It is the example of many hosts chosen by an input, and of a quota that every call shares.
+This page is for a Rust developer who calls the Riot Games API (League of Legends, Teamfight Tactics, Riot accounts). It gives a client with 62 endpoints that you can copy, and shows many hosts chosen by an input, and a quota that every call shares.
 
-Riot, as Concord sees it. A route is a host: a platform (`euw1`, `kr`) holds what lives on one game server, a region (`europe`, `asia`) holds accounts and matches. Two parts, `platform` and `region`, each hold the line `base "https://{route}.api.riotgames.com";`, and each group of Riot's (`league-v4`, `match-v5`, …) is a scope that names one of them: `riot.league(Platform::Euw1)`. Who you are: the key of the developer portal, in the header `x-riot-token`, on every host; for the signed-in player, the token of Riot Sign On takes its place (the part `player`). A match history pages by `start` and `count` (`by_offset_limit`), a ladder by page number (`by_page`). Riot says no with a status and `{"status": {"message": …, "status_code": …}}`, read into `RiotProblem`; "no such player" is a `404`, which the lookups turn into `None`. Every answer says how full the rate limits are, per host and per method: a middleware reads it. Riot's own reference: [developer.riotgames.com/apis](https://developer.riotgames.com/apis). `(unsure)` marks a fact of Riot's that is not checked.
+Here is Riot as Concord sees it. A route is a host: a platform (`euw1`, `kr`) serves what lives on one game server, and a region (`europe`, `asia`) serves accounts and matches. Two parts, `platform` and `region`, each contain the statement `base "https://{route}.api.riotgames.com";`, and each of Riot's API groups (`league-v4`, `match-v5`, …) is a scope that includes one of them: `riot.league(Platform::Euw1)`. Authentication is the developer portal key, sent in the header `x-riot-token` to every host; for a signed-in player, the Riot Sign On token replaces it (the part `player`). A match history is paginated by `start` and `count` (`by_offset_limit`), and a ladder by page number (`by_page`). Riot rejects a request with an error status and `{"status": {"message": …, "status_code": …}}`, read into `RiotProblem`; "no such player" is a `404`, which the lookups turn into `None`. Every response reports how full the rate limits are, per host and per method, and a middleware layer reads it. Riot's own reference is [developer.riotgames.com/apis](https://developer.riotgames.com/apis). `(unsure)` marks a fact about Riot that has not been checked.
 
 ## The description
 
@@ -16,8 +16,8 @@ concord::api! {
     /// League of Legends, Teamfight Tactics and Riot accounts.
     ///
     /// A route is a host. A platform (`euw1`, `kr`) holds what lives on one server; a region
-    /// (`europe`, `asia`) holds accounts and matches. `Platform::region()` gives the one of the other.
-    /// Retry is off until set: `.with_retry(retry())` waits out a `429`, also on a `POST`.
+    /// (`europe`, `asia`) holds accounts and matches. `Platform::region()` maps a platform to its region.
+    /// Retries are off until you turn them on: `.with_retry(retry())` waits out a `429`, also on a `POST`.
     pub client Riot(
         /// The key of the developer portal. A development key lasts a day.
         key: Secret,
@@ -26,7 +26,7 @@ concord::api! {
         read Json;
         problem RiotProblem;
         /// Riot's limits, per host and per method, shared by every call of this client.
-        /// It waits before a request that the last answers say is over a limit, and
+        /// It waits before a request that the last responses say is over a limit, and
         /// holds the host or the method for `Retry-After` after a `429`.
         middleware Quota::new();
 
@@ -42,7 +42,7 @@ concord::api! {
         part player(access_token: Secret) {
             headers { remove "x-riot-token"; "authorization" = "Bearer {access_token}"; }
         }
-        /// A match history, newest first: `.start(…)`, `.count(…)` (1 to 100; Riot gives 20),
+        /// A match history, newest first: `.start(…)`, `.count(…)` (1 to 100; Riot returns 20),
         /// `.start_time(…)`, `.end_time(…)` in Unix seconds. It ends on a page shorter than `count`.
         part history(start?: u32, count?: u32, start_time?: i64, end_time?: i64) {
             query { start; count; "startTime" = start_time; "endTime" = end_time; }
@@ -108,7 +108,7 @@ concord::api! {
                 path "active-shards/by-game/{game}/by-puuid/{puuid}";
                 status { 404 => None }
             }
-            /// The platform a player of `lol` or `tft` plays on. (unsure: path and answer)
+            /// The platform a player of `lol` or `tft` plays on. (unsure: path and response)
             GET active_region(game: Game, puuid: Puuid) -> Option<ActiveRegion> {
                 path "region/by-game/{game}/by-puuid/{puuid}";
                 status { 404 => None }
@@ -217,7 +217,7 @@ concord::api! {
                 path "champion-masteries/by-puuid/{puuid}/by-champion/{champion}";
                 status { 404 => None }
             }
-            /// The best champions. Riot gives 3 when `count` is not set.
+            /// The best champions. Riot returns 3 when `count` is not set.
             GET top(puuid: Puuid, count?: u32) -> Vec<ChampionMastery> {
                 path "champion-masteries/by-puuid/{puuid}/top";
                 query { count; }
@@ -291,7 +291,7 @@ concord::api! {
             GET challenge_percentiles(id: ChallengeId) -> Percentiles {
                 path "challenges/{id}/percentiles";
             }
-            /// The best players at an apex level. Not paged: `limit` is all there is.
+            /// The best players at an apex level. Not paginated: `limit` is all there is.
             GET leaderboard(id: ChallengeId, level: ApexLevel, limit?: u32) -> Vec<ApexPlayer> {
                 path "challenges/{id}/leaderboards/by-level/{level}";
                 query { limit; }
@@ -355,7 +355,7 @@ concord::api! {
             GET entries(tier: Tier, division: Division, ..tft_queue, ..ladder) -> Vec<TftLeagueEntry> {
                 path "entries/{tier}/{division}";
             }
-            /// The top of a rated ladder (Hyper Roll). Not paged.
+            /// The top of a rated ladder (Hyper Roll). Not paginated.
             GET top_rated(queue: RatedQueue) -> Vec<TopRated> { path "rated-ladders/{queue}/top"; }
         }
 
@@ -375,9 +375,9 @@ concord::api! {
 
 ## Beside the description
 
-The data types are plain `serde` types with Riot's names, named here and not printed. Ids, each a `#[serde(transparent)]` newtype: `Puuid`, `MatchId`, `TftMatchId`, `SummonerId`, `LeagueId`, `ClashTeamId`, `TournamentCode` (text); `ChampionId`, `ChallengeId`, `ClashTournamentId`, `TournamentId`, `ProviderId` (numbers). Riot's words, each with `#[serde(other)] Unknown` for a word Riot adds later: `Queue` (`RANKED_SOLO_5x5`, `RANKED_FLEX_SR`), `Tier`, `Division`, `TftQueue`, `RatedQueue`, `ApexLevel`, `MatchType`, `Game`, `TournamentApi` (`tournament` or `tournament-stub`). The answers: `Account`, `Match`, `Timeline`, `LeagueEntry`, `Summoner`, `CurrentGame`, and the others of the description. The bodies: `NewProvider`, `NewTournament`, `CodeSettings`, `CodeUpdate`.
+The data types are plain `serde` types with Riot's names, named here but not shown. Ids, each a `#[serde(transparent)]` newtype: `Puuid`, `MatchId`, `TftMatchId`, `SummonerId`, `LeagueId`, `ClashTeamId`, `TournamentCode` (strings); `ChampionId`, `ChallengeId`, `ClashTournamentId`, `TournamentId`, `ProviderId` (numbers). Riot's enumerated values, each with `#[serde(other)] Unknown` for a value that Riot adds later: `Queue` (`RANKED_SOLO_5x5`, `RANKED_FLEX_SR`), `Tier`, `Division`, `TftQueue`, `RatedQueue`, `ApexLevel`, `MatchType`, `Game`, `TournamentApi` (`tournament` or `tournament-stub`). The responses: `Account`, `Match`, `Timeline`, `LeagueEntry`, `Summoner`, `CurrentGame`, and the others that the description names. The bodies: `NewProvider`, `NewTournament`, `CodeSettings`, `CodeUpdate`.
 
-The routes, how Riot says no, and its retry policy:
+The routes, Riot's error type, and its retry policy:
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -409,7 +409,7 @@ impl Platform {
     }
 }
 
-/// How Riot says no: `{"status": {"message": "Data not found", "status_code": 404}}`.
+/// Riot's error response: `{"status": {"message": "Data not found", "status_code": 404}}`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct RiotProblem {
     pub status: RiotStatus,
@@ -421,13 +421,13 @@ pub struct RiotStatus {
     pub status_code: u16,
 }
 
-/// Riot's policy: a `429` was turned away before any work, so even a `POST` may go again.
+/// Riot's policy: a `429` was turned away before any work, so even a `POST` may be retried.
 pub fn retry() -> riot::Retry {
     riot::Retry::standard().not_applied_on(429)
 }
 ```
 
-The quota, in full: it is the one piece that is not obvious. Riot counts requests per key in two kinds of bucket: the application's, per host, and a method's, per host and endpoint. Every answer says how full each window of its buckets is (`x-app-rate-limit: 20:1,100:120` and `x-app-rate-limit-count: 20:1,31:120`), and a `429` says how long to stay away. `Quota` holds a bucket while it is full, and each request waits for its two buckets before it goes. That wait is not silence: only `with_timeout` bounds it. This block needs `tokio`, with its feature `time`.
+The quota is shown in full, because it is the only part that is not obvious. Riot counts requests per key in two kinds of bucket: the application's, per host, and a method's, per host and endpoint. Every response reports how full each window of its buckets is (`x-app-rate-limit: 20:1,100:120` and `x-app-rate-limit-count: 20:1,31:120`), and a `429` says how long to wait. `Quota` holds a bucket while it is full, and each request waits for its two buckets before it is sent. That wait does not count as silence for the idle timeout, so only the call timeout, `with_timeout`, bounds it. This block needs `tokio`, with its `time` feature.
 
 ```rust
 use concord::reqwest::{self, header::HeaderMap};
@@ -439,7 +439,7 @@ use std::time::Duration;
 use tokio::time::{sleep_until, Instant};
 
 /// Riot's limits: a bucket for the application on each host, and one for each method. A bucket
-/// that the answers show full is held, and a request waits for its two buckets before it goes.
+/// that the responses show full is held, and a request waits for its two buckets before it is sent.
 #[derive(Clone, Default)]
 pub struct Quota(Arc<Mutex<HashMap<String, Instant>>>);
 
@@ -513,7 +513,7 @@ fn seconds(headers: &HeaderMap, name: &str) -> Option<Duration> {
 }
 ```
 
-Two requests that leave together can both pass a bucket that the next answer shows full. The `429` that may follow holds the bucket for its `Retry-After`, and `retry()` sends the request again after it, through the same wait. The live tournament API and its stub share one method bucket here, because they are one endpoint of the description: that is stricter than Riot.
+Two requests sent at the same time can both pass a bucket that the next response shows as full. The `429` that may follow holds the bucket for its `Retry-After`, and `retry()` retries the request after that, through the same wait. Here the live tournament API and its stub share one method bucket, because they are one endpoint of the description, which is stricter than Riot.
 
 ## Calling it
 
@@ -581,7 +581,7 @@ pub async fn me(riot: &Riot, token: Secret) -> riot::Result<()> {
 }
 
 /// A tournament: written against the stub, run against the live API. With `retry()`, a `429`
-/// on these `POST`s waits for its `Retry-After` and goes again.
+/// on these `POST`s waits for its `Retry-After` and is retried.
 pub async fn tournament(riot: &Riot, live: bool, callback: String) -> riot::Result<Vec<TournamentCode>> {
     let tournaments = riot.tournament(if live { TournamentApi::Live } else { TournamentApi::Stub });
     let provider = tournaments.register_provider(NewProvider { region: "EUW".into(), url: callback }).await?;
@@ -590,15 +590,15 @@ pub async fn tournament(riot: &Riot, live: bool, callback: String) -> riot::Resu
 }
 ```
 
-## What fits badly, and the way out
+## What does not fit well, and the workaround
 
 | Riot wants | What to write |
 |---|---|
-| The tournament API and its stub: the same calls under `lol/tournament/v5` and `lol/tournament-stub/v5`. | One scope with the API as an input of its path, `path "lol/{api}/v5";`. The stub has no `update_code` and no `games`, and the client lets you call them there: the stub refuses. |
-| "No such thing" as a `404` on 23 lookups. | `status { 404 => None }` on each lookup. On a scope, the arm would also reach its lists, which are not an `Option`. |
-| `match` and `type`, Rust keywords. | `matches` for the scope; `kind?: MatchType` with `"type" = kind;`. |
-| A `429` on a `POST` of the tournament API: Riot turned it away before doing anything (unsure). | `Retry::standard().not_applied_on(429)`, shipped as `retry()`. Not `idempotent;`: that would also send the `POST` again after a lost connection. |
-| A `Retry-After` longer than 60 seconds (a window of 120 seconds). | Concord does not wait more than 60 seconds: the call fails, and `e.retry_after()` says how long. The quota still holds the bucket for the next call. |
+| The tournament API and its stub: the same calls under `lol/tournament/v5` and `lol/tournament-stub/v5`. | One scope with the API as an input of its path, `path "lol/{api}/v5";`. The stub has no `update_code` and no `games`, but the client lets you call them there, and the stub rejects them. |
+| "No such thing" as a `404` on 23 lookups. | `status { 404 => None }` on each lookup. On a scope, the arm would also apply to its lists, which are not an `Option`. |
+| `match` and `type`, which are Rust keywords. | `matches` for the scope; `kind?: MatchType` with `"type" = kind;`. |
+| A `429` on a `POST` of the tournament API: Riot rejected it before doing anything (unsure). | `Retry::standard().not_applied_on(429)`, provided as `retry()`. Not `idempotent;`: that would also retry the `POST` after a lost connection. |
+| A `Retry-After` longer than 60 seconds (a window of 120 seconds). | Concord does not wait more than 60 seconds: the call fails, and `e.retry_after()` returns how long to wait. The quota still holds the bucket for the next call. |
 | One quota for every client of one key. | One client for each key, cloned where it is needed: a clone shares the middleware. |
-| A history with no `.count(…)`: Riot sends 20. `by_offset_limit` ends on a page shorter than the `count` that the caller set, and knows nothing of Riot's 20. | Give `.count(…)`; without it, the last request is an empty page. |
-| The endpoints keyed by summoner id, which Riot replaced by the PUUID. | Left out, but one: `#[deprecated(note = …)]` on an endpoint warns each caller at compile time. |
+| A history without `.count(…)`: Riot returns 20. `by_offset_limit` stops at a page shorter than the `count` that the caller set, and knows nothing about Riot's 20. | Set `.count(…)`; without it, the last request returns an empty page. |
+| The endpoints keyed by summoner id, which Riot replaced by the PUUID. | Left out, except one: `#[deprecated(note = …)]` on an endpoint warns each caller at compile time. |

@@ -1,17 +1,17 @@
-//! Text that goes on the wire and nowhere else.
+//! Text that is sent on the wire and shown nowhere else.
 
 use std::fmt;
 use std::sync::Arc;
 
-/// A key, a token, a password.
+/// A key, a token or a password.
 ///
-/// It can be placed in a request. Concord's `Display` and `Debug` never print it: not those
-/// of a client, a call or an error, and not a log. One method is the exception:
+/// You can place it in a request. Concord's `Display` and `Debug` never print it: not those
+/// of a client, a call or an error, and not a log line. One method is the exception:
 /// [`Error::details`](crate::Error::details), which you call to see everything an error
 /// holds, prints what the server sent back (its headers, its problem or the start of its
-/// body, and at most 1 KiB of a reader's message), so it shows a secret that the server
-/// echoed. (A secret that a description places in a query or in a path is then part of the
-/// URL. Concord never prints a URL, but a `reqwest::Response` that you take with
+/// body, and at most 1 KiB of a reader's message), so it shows any secret that the server
+/// echoed back. (A secret that a description places in a query or in a path becomes part of the
+/// URL. Concord never prints a URL, but a `reqwest::Response` that you get from
 /// `send_raw()` shows its URL in `{:?}`.)
 /// A clone is the same secret: [`replace`](Secret::replace) on one changes them all.
 ///
@@ -32,15 +32,15 @@ use std::sync::Arc;
 pub struct Secret(Arc<std::sync::RwLock<Arc<str>>>);
 
 impl Secret {
-    /// A secret from its text.
+    /// Creates a secret from its text.
     pub fn new(text: impl Into<String>) -> Secret {
         Secret(Arc::new(std::sync::RwLock::new(Arc::from(text.into()))))
     }
 
-    /// The text as it is now.
+    /// Returns the text as it is now.
     ///
-    /// The value reads as `&str` and keeps that text alive while it is held.
-    /// A later [`replace`](Secret::replace) does not change a text that was already exposed.
+    /// The returned value dereferences to `&str` and keeps that text alive while you hold it.
+    /// A later [`replace`](Secret::replace) does not change text that was already exposed.
     pub fn expose(&self) -> Exposed {
         // A poisoned lock still holds a whole text: a writer only swaps one pointer.
         Exposed(match self.0.read() {
@@ -72,7 +72,7 @@ impl From<&str> for Secret {
 }
 
 impl From<&Secret> for Secret {
-    /// The same secret: a later `replace` reaches both.
+    /// Returns the same secret: a later `replace` changes both.
     fn from(secret: &Secret) -> Secret {
         secret.clone()
     }

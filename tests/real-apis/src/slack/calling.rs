@@ -4,7 +4,7 @@ use std::time::Duration;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// A client, and who it is. A refusal comes with the status `200`; `e.problem()` has its code.
+/// A client, and who it is. An error response has the status `200`; `e.problem()` has its code.
 pub async fn connect(token: Secret) -> slack::Result<Slack> {
     let slack = Slack::new(token).with_retry(retry()).with_timeout(Duration::from_secs(90));
     match slack.auth_test().await {
@@ -41,7 +41,7 @@ pub async fn post(slack: &Slack) -> slack::Result<()> {
     Ok(())
 }
 
-/// An upload in three steps: ask for a URL, send the bytes there, then share the file.
+/// An upload in three steps: request a URL, send the bytes there, then share the file.
 pub async fn upload(slack: &Slack, name: &str, bytes: Bytes) -> Result<(), BoxError> {
     let ticket = slack.files().get_upload_url_external(name, bytes.len() as u64).await?;
     upload_bytes(&ticket.upload_url, bytes).await?;

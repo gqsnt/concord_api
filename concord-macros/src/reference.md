@@ -1,7 +1,7 @@
 Turns one description of an HTTP API into a typed client.
 
-This page is the whole language. Every example on it compiles, and the ones with a
-`main` run against `concord::fake`, a function in place of the network.
+This page describes the whole language. Every example on it compiles, and those with a
+`main` run against `concord::fake`, which replaces the network with a function.
 
 # A first description
 
@@ -54,61 +54,62 @@ async fn main() -> shop::Result<()> {
 }
 ```
 
-The signature of each node is for the caller. The block says where each input goes on
-the wire. `json`, `Json` and `Secret` are ordinary items of `concord`: the macro knows no
-format, no scheme and no pager. What stands after `body`, `read`, `paginate`, `middleware`,
-`idempotent` and `idle_timeout` is Rust, and a reader, writer or pager of yours takes the
-same place. A type in a description is at least as visible as the client: a `pub client`
-takes `pub` types.
+The signature of each node is what the caller sees; the block says how each input is sent
+on the wire. `json`, `Json` and `Secret` are ordinary items of `concord`: the macro does not
+define any data format, authentication scheme or pager. What follows `body`, `read`, `paginate`, `middleware`,
+`idempotent` and `idle_timeout` is Rust, so you can supply your own reader, writer or pager
+there. A type used in a description must be at least as visible as the client: a
+`pub client` needs `pub` types.
 
-# The shape
+# The structure of a description
 
 A description holds one client. The client holds statements, then parts, then scopes and
 endpoints. A scope holds statements, then scopes and endpoints. An endpoint holds
 statements only.
 
-| Node | Written | Gives |
+| Node | Syntax | Generates |
 |---|---|---|
 | Client | `pub client Shop(region: String, key: Secret) { … }` | The type `Shop`, with `Shop::new(region, key)`, and the module `shop`. |
 | Scope | `scope books { … }`, `scope repo(owner: String) { … }` | A method `shop.books()` that returns a handle. Nothing is sent. |
 | Endpoint | `GET get(isbn: String) -> Book { … }`, or `…;` with no block | A method that returns a call. `.await` sends it. |
-| Part | `part page(limit?: u32) { … }`, in the client's block | Nothing by itself. A node that names it (`..page`) has its inputs and statements. |
+| Part | `part page(limit?: u32) { … }`, in the client's block | Nothing on its own. A node that names it (`..page`) gets its inputs and statements. |
 
-The methods are `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, and
-`METHOD "PURGE"` for another one. A name is lower snake case; a client name is upper camel
-case. `///` lines go to the generated pages. A node may also take `#[cfg(…)]`; a scope or
-an endpoint `#[deprecated]` and `#[doc(hidden)]`.
+The methods are `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE` and `OPTIONS`;
+`METHOD "PURGE"` names any other. Names are lower snake case, and a client name is upper
+camel case. `///` lines become the generated documentation. Any node may also carry `#[cfg(…)]`, and a
+scope or an endpoint may carry `#[deprecated]` and `#[doc(hidden)]`.
 
-**A node sets, a child inherits.** `base`, `read` and `idle_timeout` hold one value: the
-nearest one is used. An entry of `query` or `headers`, and an arm of `status`, has a key:
-a key set above is set again only with `override`, and taken away only with `remove`.
-`path` only adds.
+**A node sets a value, and its children inherit it.** `base`, `read` and `idle_timeout` hold
+one value, and the nearest one is used. An entry of `query` or `headers`, and an arm of
+`status`, has a key: a key set above can be set again only with `override`, and removed only
+with `remove`.
+`path` appends segments to the paths above.
 
 # Inputs
 
-| Written | Meaning |
+| Syntax | Meaning |
 |---|---|
 | `isbn: String` | Required: an argument of the method, in the order written. |
-| `year?: u16` | Optional: a method `.year(1979)` on the call (or on the client or the handle, for an input of theirs). Not sent when it was not set. `.year(None)` un-sets it. |
+| `year?: u16` | Optional: a setter `.year(1979)` on the call (or on the client or the handle, for one of their inputs). Not sent when it is not set. `.year(None)` unsets it. |
 | `year: Option<u16>` | Required, and may be `None`. |
 | `tags: Vec<String>` | A list. In a query, the key is sent once for each item. |
 | `fields?: Vec<String>` | An optional list: `.fields(["name", "country"])`. Not sent when not set, nor when empty. |
 | `key: Secret` | Text that is never printed. Its header is marked sensitive. |
-| `..page` | The inputs of the part `page`: on the method, after the node's own. On the wire, its entries come before the node's own ("The order on the wire", below). |
+| `..page` | The inputs of the part `page`: on the method, they come after the node's own. On the wire, its entries come before the node's own ("The order on the wire", below). |
 
-An argument takes the type, a reference to it (it is cloned), text for a `String` or a
-`Secret`, and an array or a slice for a `Vec` (`["sf", "classic"]`). An input owns its
-data, so its type is `Clone` and borrows nothing. There is no written default: a default
-belongs to the provider. `milestone?: Option<u64>` has three states: not set, set to
-nothing (`.milestone(None::<u64>)`), set to a number.
+An argument accepts the type itself, a reference to it (which is cloned), text for a
+`String` or a `Secret`, and an array or a slice for a `Vec` (`["sf", "classic"]`). An input
+owns its data: its type implements `Clone` and borrows nothing. A description declares no
+defaults: a default belongs to the provider. `milestone?: Option<u64>` has three states: not
+set, set to nothing (`.milestone(None::<u64>)`), and set to a number.
 
-**Where an input can be used.** At its own node and below. A bare name is an input of the
-node that writes the statement; an input of a node above is named with its owner:
-`client.key`, `books.shelf`. An optional input cannot fill a hole of `base` or `path`.
-Every input is used somewhere, or the description does not compile.
+**Where an input can be used.** In its own node and in every node below it. A bare name is an input of the
+node where the statement appears; an input of a node above is named with its owner:
+`client.key`, `books.shelf`. An optional input cannot fill a placeholder in `base` or
+`path`. Every input must be used somewhere, or the description does not compile.
 
-A scope's input fills a hole of the scope's own `path`, and the endpoints below name it
-with its owner when they use it again:
+A scope's input fills a placeholder in the scope's own `path`, and the endpoints below qualify
+it with its owner (`shelf.id`) when they use it again:
 
 ```rust
 # use concord::{fake, reply, Json};
@@ -132,11 +133,11 @@ shop.shelf("7").books().await?;   // GET https://api.test/shelves/7/books
 
 A **secret** is placed like any value: `headers { "authorization" = "Bearer {token}"; }`,
 `query { "api_key" = key; }`, `body form { client_secret; }`. It is bound to the `base`
-in reach where it is written. Under another `base` further down, the entry is written
-again (`override`) or removed, or the description does not compile. A caller's
+that applies where it is written. Under another `base` further down, the entry must be
+written again (`override`) or removed, or the description does not compile. A caller's
 `with_base(…)` is not such a `base`: it replaces the whole `base` (scheme, host, port and
-first path), keeps every `path`, and sends every entry, secrets included, to the new server
-as to the old one. It is the caller's own word.
+path prefix), keeps every `path`, and sends every entry, secrets included, to the new server
+just as to the old one. It is the caller's own decision.
 
 ```rust
 # use concord::{fake, reply, Json, Secret};
@@ -157,28 +158,29 @@ shop.books().await?;   // GET http://books.intra:8080/shop/books, with x-api-key
 
 # The twelve statements
 
-| Statement | Says | Client | Part | Scope | Endpoint |
+| Statement | Declares | Client | Part | Scope | Endpoint |
 |---|---|---|---|---|---|
 | `base` | Where the URL starts. | yes | yes | yes | yes |
-| `path` | The piece of path that this node adds. | yes | no | yes | yes |
+| `path` | The path segments that this node adds. | yes | no | yes | yes |
 | `query { }` | Query pairs, for this node and below. | yes | yes | yes | yes |
 | `headers { }` | Headers, for this node and below. | yes | yes | yes | yes |
 | `body` | The request body. | no | yes | no | yes |
-| `read` | How the body of an answer is read. | yes | yes | yes | yes |
+| `read` | How the response body is read. | yes | yes | yes | yes |
 | `status { }` | What a status means here. | yes | yes | yes | yes |
 | `problem` | The type of the API's own error body. | yes | no | no | no |
-| `paginate` | This endpoint has pages. | no | yes | no | yes |
+| `paginate` | This endpoint is paginated. | no | yes | no | yes |
 | `idempotent` | Whether the request may be sent twice. | no | yes | no | yes |
-| `middleware` | What every request goes through. | yes | no | no | no |
-| `idle_timeout` | How long the calls below may be silent. | yes | yes | yes | yes |
+| `middleware` | A value that every request goes through. | yes | no | no | no |
+| `idle_timeout` | How long the server may stay silent during the calls below. | yes | yes | yes | yes |
 
-Each is written at most once in a node, except `middleware`. In the examples below, the
-lines around an endpoint are hidden; each one compiles inside a client with
+Each statement appears at most once in a node, except `middleware`. The examples below hide
+the lines around each endpoint; each one compiles inside a client with
 `base "https://api.test"; read Json;`.
 
-**`base`** is a template: the scheme, the host, maybe a port and a first path. A hole in the
-host is one label. `base url;` takes one input of type `concord::Base` (a server that the
-user hosts).
+**`base`** is a template: the scheme, the host, an optional port and an optional path prefix.
+A placeholder in the host fills one label, or part of one (`"https://api-{region}.example"`).
+`base url;` takes one input of type `concord::Base` (a server whose address the caller
+provides).
 
 ```rust
 # use concord::Json;
@@ -187,8 +189,9 @@ base "https://{region}.shop.example/v2";
 # GET ping() -> String; } }
 ```
 
-**`path`** adds pieces, joined with one `/`. `{x}` is one segment, encoded; `{*x}` may
-hold `/`. The URL ends with `/` when the last piece does.
+**`path`** adds path segments, joined with a single `/`. `{x}` fills one segment, or part of
+one, encoded; `{*x}` fills whole segments and may contain `/`. The URL ends with `/` when the
+last `path` does, or the `base` when no `path` follows.
 
 ```rust
 # use concord::Json;
@@ -210,7 +213,7 @@ GET search(author: String, year?: u16, tag: Vec<String>) -> Vec<String> {
 # } }
 ```
 
-**`body`** is an expression that gives a `concord::Body` (`json(x)`, `form(x)`, or
+**`body`** is an expression that returns a `concord::Body` (`json(x)`, `form(x)`, or
 `Body::new(bytes, "image/png")`), or a body of entries: `body json { title; author; }`.
 In a body of entries, a `None` writes nothing.
 
@@ -227,15 +230,15 @@ PUT cover(isbn: String, png: concord::bytes::Bytes) {
 # } }
 ```
 
-**Multipart.** With the feature `multipart` of `concord`, `multipart()` starts a
-`multipart/form-data` body: `.text(name, value)` and `.file(name, file_name,
-content_type, bytes)` add parts in the order written, and `.finish()` gives
-`Result<Body, MultipartError>`, which `body` takes as it is (an `Err` is a Build error, and
-nothing is sent). On the wire each part is a line `--boundary`, its header lines spelled
-exactly as below, an empty line, then its bytes; a line `--boundary--` ends the body, and
-every line ends with `\r\n`. A quote in a name is written `%22`. A body held in memory takes the boundary
-`concord-00000000000000000000000000000000` (the next number when the parts hold that text);
-a body with a stream part takes a random one.
+**Multipart.** With the `multipart` feature of `concord`, `multipart()` starts a
+`multipart/form-data` body. `.text(name, value)` and `.file(name, file_name,
+content_type, bytes)` add parts in the order written. `.finish()` returns
+`Result<Body, MultipartError>`, which `body` accepts as it is; an `Err` is a Build error, and
+nothing is sent. On the wire, each part is a line `--boundary`, its header lines spelled
+exactly as below, an empty line, then its bytes. A line `--boundary--` ends the body, and
+every line ends with `\r\n`. A quote in a name is encoded as `%22`. A body held in memory uses the boundary
+`concord-00000000000000000000000000000000`, or the next number when the parts contain that
+text; a body with a stream part uses a random boundary.
 
 ```rust
 # use concord::{fake, multipart, reply, Json};
@@ -276,9 +279,9 @@ shop.photo("The mast", "mast.jpg", jpeg).await?;
 # }
 ```
 
-**`read`** names a reader: `Json`, `Text`, `Binary` or `concord::read::Stream`, or one of
-yours. There is no format by default: a client says `read Json;` once, and an endpoint
-that differs says its own.
+**`read`** names a reader: `Json`, `Text`, `Binary` or `concord::read::Stream`, or your
+own. There is no default format: a client declares `read Json;` once, and an endpoint
+that differs declares its own.
 
 ```rust
 # use concord::{Json, Text, ByteStream};
@@ -297,9 +300,10 @@ HEAD exists(isbn: String) -> bool { path "books/{isbn}"; status { 2xx => true, 4
 # } }
 ```
 
-**`problem`** names the type of the API's own error body, on the client: a type that the
-reader reads (`Deserialize`, for `Json`). `e.problem()` gives it, for every refused call.
-It is read by the client's reader, or by the one on its line: `problem S3Problem read Xml;`.
+**`problem`**, on the client, names the type of the API's own error body: a type that the
+reader can read (`Deserialize`, for `Json`). `e.problem()` returns it for every call that
+ends in a Refused error. The client's reader reads it, unless the line names another
+reader: `problem S3Problem read Xml;`.
 
 ```rust
 # use concord::Json;
@@ -309,9 +313,9 @@ problem Problem;
 # GET ping() -> String; } }
 ```
 
-**`paginate`** gives the call `.pages()`. In it, an input names its *place* on the call,
-not its value. The pagers of `concord` are `by_offset`, `by_offset_limit`, `by_page`,
-`by_cursor`, `by_link` and `by_next_url`; a closure of yours fits too.
+**`paginate`** adds `.pages()` to the call. Inside it, an input refers to its *slot* on
+the call, not to its value. `concord` ships the pagers `by_offset`, `by_offset_limit`, `by_page`,
+`by_cursor`, `by_link` and `by_next_url`; your own closure works too.
 
 ```rust
 # use concord::{by_cursor, Json};
@@ -325,14 +329,14 @@ GET list(cursor?: String) -> Page {
 ```
 
 With `paginate by_offset_limit(offset, limit);` the first request carries what the caller
-set, and nothing more: with no `.offset(…)` it has no `offset` pair (it counts as 0), with no
-`.limit(…)` no `limit` pair. Each next request carries `offset` plus the number of items
-that came. The pages end with an empty page, or with a page shorter than the `limit` that
-the caller set; with no `limit` set, only an empty page ends them.
+set and nothing more: without `.offset(…)` it has no `offset` pair (the offset counts as 0),
+and without `.limit(…)` no `limit` pair. Each following request carries `offset` increased by
+the number of items received. The pages end with an empty page, or with a page shorter than the
+`limit` that the caller set; when no `limit` is set, only an empty page ends them.
 
-**`idempotent`** marks an endpoint that may be sent twice. `GET`, `HEAD`, `OPTIONS`,
-`PUT` and `DELETE` are so already; `idempotent false;` takes it away. It is any `bool`
-expression.
+**`idempotent`** marks an endpoint whose request may be sent twice. `GET`, `HEAD`,
+`OPTIONS`, `PUT` and `DELETE` already are; `idempotent false;` removes the mark. Its value
+is any `bool` expression.
 
 ```rust
 # use concord::{json, Json};
@@ -341,9 +345,9 @@ POST order(key: String) -> String { headers { "idempotency-key" = key; } idempot
 # } }
 ```
 
-**`middleware`** stands on the client, as often as needed: a value with
-`concord::Middleware` (a signer, a token that is renewed). It is made once, in `new`,
-from the required inputs of the client.
+**`middleware`** declares a value that implements `concord::Middleware`, such as a signer
+or a token that is renewed. It appears on the client, as often as needed, and each value is
+built once, in `new`, from the client's required inputs.
 
 ```rust
 # use concord::{Json, Middleware, Next, Secret};
@@ -358,8 +362,8 @@ middleware Signed(key.clone());
 # GET ping() -> String; } }
 ```
 
-**`idle_timeout`** sets the clock for silence of the calls below, for a long poll. It is a
-`std::time::Duration` expression.
+**`idle_timeout`** sets the idle timeout of the calls below, for example for a long poll.
+Its value is a `std::time::Duration` expression.
 
 ```rust
 # use concord::Json;
@@ -372,8 +376,9 @@ GET updates(wait?: u64) -> Vec<String> {
 # } }
 ```
 
-**`part`** is a named group of inputs with the statements that place them. It is written in
-the client, after its statements. It holds no `path`, `problem`, `middleware` or child.
+**`part`** is a named group of inputs with the statements that use them. It is declared in
+the client, after the client's statements. It cannot hold `path`, `problem`, `middleware` or
+a child.
 
 ```rust
 # use concord::{by_page, Json};
@@ -391,18 +396,19 @@ GET titles(author: String, ..paged) -> Vec<String> { path "titles"; query { auth
 
 An entry of `query`, `headers` or a body of entries is one of these:
 
-| Written | Meaning |
+| Syntax | Meaning |
 |---|---|
-| `year;` | The key `year`, the input `year` of this node. |
+| `year;` | The key `year`, with the value of this node's input `year`. |
 | `"startTime" = start_time;` | The key as written; the value is an input. |
-| `"v" = "2";`, `"x-version" = "v{version}";` | Fixed text, or a template with holes. |
+| `"v" = "2";`, `"x-version" = "v{version}";` | Fixed text, or a template with placeholders. |
 | `"labels" = labels.join(",");` | Any Rust expression. |
 | `override "k" = …;` | Replace an entry set above (not in a body). |
 | `remove "k";` | Stop sending an entry set above (not in a body). |
 
-The value is written by `serde`: a list repeats its key, and `None` writes nothing. A
-template that reads a `None` is not sent. In `headers`, `user_agent;` is refused: write
-`"user-agent" = user_agent;`. `host` is not a key; the host is the `base`.
+The value is serialized by `serde`: a list repeats its key, and `None` writes nothing. An
+entry is not sent when a placeholder of its template reads a `None`. In `headers`, `user_agent;` is rejected:
+write `"user-agent" = user_agent;`. `host` cannot be a key, because the host comes from the
+`base`.
 
 ```rust
 # use concord::{fake, reply, Json, Secret};
@@ -429,10 +435,11 @@ shop.public().await?;
 # }
 ```
 
-**The order on the wire.** Query pairs and headers go out in the order of the tree: the
-client's, then each scope's from the top down, then the endpoint's; at each node, the
-entries of the parts it names (in the order it names them) come before its own, and inside
-one block, the order written. An `override` keeps the place of the entry it replaces.
+**The order on the wire.** Query pairs and headers are sent in the order of the tree:
+the client's, then each scope's from the top down, then the endpoint's. At each node, the
+entries of the parts it names (in the order it names them) come before its own, and within
+one block, entries keep the order in which they are written. An `override` keeps the
+position of the entry it replaces.
 
 ```rust
 # use concord::{fake, reply, Json};
@@ -475,22 +482,22 @@ shop.books().list("Butler").lang("fr").await?;
 
 # Status arms
 
-A 2xx is the success: its body is read into the type after `->` by the nearest reader.
-Any other status is a Refused error. An arm gives a meaning to a status, and a status that
-an arm takes is not read by that rule (a `HEAD` reads nothing: see below):
+A 2xx is a success: the nearest reader reads its body into the type after `->`.
+Any other status is a Refused error. An arm handles a status itself, and a status that an
+arm matches is not read by this rule (a `HEAD` reads nothing: see below):
 
-| Written | Meaning |
+| Syntax | Meaning |
 |---|---|
 | `404 => None` | An exact status, 100 to 599. Nothing is read. |
-| `4xx { status } => …` | A class, `1xx` to `5xx`. An exact status wins over a class. |
-| `200 { body } => Some(body)` | `body` is read by the reader in reach. Its type is found by Rust. |
+| `4xx { status } => …` | A class, `1xx` to `5xx`. An exact status takes precedence over a class. |
+| `200 { body } => Some(body)` | `body` is read by the nearest reader. Rust infers its type. |
 | `201 { body, headers } => …` | `headers` is a `&concord::Headers`; `status` an `http::StatusCode`. |
-| `200 { body: book } => …` | The same field under another name. A field not named is not there. |
-| `override 404 => …`, `remove 404` | Replace or take away an arm from above. |
+| `200 { body: book } => …` | The same field under another name. A field that is not named is not available. |
+| `override 404 => …`, `remove 404` | Replace or remove an arm set above. |
 
 **After the arrow, `Option<T>` and `Result<T, E>` are read as `T`.** A 2xx that no arm
-takes is read as a `T` and given as `Some` or `Ok`. The arms give the rest:
-`404 => None`, `409 { body } => Err(body)`. So the 200 needs no arm.
+matches is read as a `T` and returned as `Some` or `Ok`. The arms produce the rest:
+`404 => None`, `409 { body } => Err(body)`. So a 200 needs no arm of its own.
 
 ```rust
 # use concord::Json;
@@ -505,15 +512,15 @@ PUT hold(isbn: String) -> Result<Book, Taken> {
 # } }
 ```
 
-**No arrow gives `()`.** The body of a 2xx is not read: `DELETE delete(isbn: String);`
-takes a 204, or any 2xx. Under an arrow, an arm gives a value for an empty answer without
-reading it: `204 => None`. There is no reader for "nothing".
+**An endpoint with no arrow returns `()`.** The body of a 2xx is not read:
+`DELETE delete(isbn: String);` accepts a 204, or any 2xx. With an arrow, an arm produces a
+value for an empty response without reading it: `204 => None`. There is no reader for "nothing".
 
-**A `HEAD` with an arrow reads nothing,** so it needs no reader, and its arms give every
-value. It writes an arm for a 2xx (an exact status, or the class `2xx`), or it does not
-compile. A status that no arm takes is not read either: a 2xx is a Mismatch (`no arm takes
+**A `HEAD` with an arrow reads nothing,** so it needs no reader, and its arms produce every
+value. It must have an arm for a 2xx (an exact status, or the class `2xx`), or it does not
+compile. A status that no arm matches is not read either: a 2xx is a Mismatch (`no arm takes
 this status`), any other status a Refused error. So `status { 200 => true, 404 => false }`
-makes a `204` a Mismatch; `2xx => true` takes every 2xx.
+makes a `204` a Mismatch; `2xx => true` matches every 2xx.
 
 ```rust
 # use concord::{fake, reply, Json};
@@ -537,7 +544,8 @@ assert_eq!(shop.exists("4").await.unwrap_err().kind(), Kind::Refused);    // 500
 
 **A body and a header together.** Bind both in one arm. `headers.require("location")?`
 ends the call with a Mismatch when the header is missing; `?` on the API's problem ends it
-as Refused. Take the class `2xx`, or every other 2xx is read into `Created` itself.
+with a Refused error. Match the whole class `2xx`: with an arm for `201` alone, any other 2xx
+would be read into `Created` itself.
 
 ```rust
 # use concord::{fake, json, reply_with, Json};
@@ -576,42 +584,43 @@ assert_eq!((created.book.title.as_str(), created.location.as_str()), ("Kindred",
 # }
 ```
 
-A function of yours may build the value: it returns `Result<T, concord::Fail<P>>`, where
-`P` is the problem type, and the arm writes `created(body, headers)?`. An arm is not
+Your own function may build the value: it returns `Result<T, concord::Fail<P>>`, where
+`P` is the problem type, and the arm calls `created(body, headers)?`. An arm cannot be
 `async`.
 
-# What an expression sees
+# Names in an expression
 
-Wherever Rust is written (an entry, `body`, an arm, `idempotent`, `idle_timeout`), an input
+Wherever you write Rust (an entry, `body`, an arm, `idempotent`, `idle_timeout`), an input
 is a variable that **borrows** the input: `&T` for `title: T`, and `&Option<T>` for
-`year?: T`. So `body Body::new(png.clone(), …)`, and `wait.unwrap_or(0)` on a `&Option<u64>`.
-`client.key` is a reference too. Two places differ: in `paginate` an input names its place
-on the call; in `middleware` only the required inputs of the client are there. A bare name
-that is not an input is what Rust finds in your module, and an input hides an item of its
-name: write that item with its path (`body concord::form(form);`).
+`year?: T`. This is why the examples write `body Body::new(png.clone(), …)`, and call
+`wait.unwrap_or(0)` on a `&Option<u64>`. `client.key` is a reference too. There are two
+exceptions: in `paginate` an input refers to its slot on the call, and in `middleware` only
+the client's required inputs are available. A bare name
+that is not an input resolves to whatever Rust finds in your module, and an input shadows an
+item with the same name: refer to that item by its path (`body concord::form(form);`).
 
 `?` in an entry or a `body` ends the call with a Build error. In an arm, it ends the call
 with the API's problem, or with a Mismatch on a `concord::Fail`. It does not compile in
 `paginate`, `idempotent`, `idle_timeout` and `middleware`.
 
-# What is not in a description
+# Settings that are not in a description
 
-A description holds facts of the API. Choices of the caller are settings, not statements:
+A description holds facts about the API. The caller's choices are settings, not statements:
 there is no `timeout`, `retry` or `override read` statement.
 
 | What | Where |
 |---|---|
-| A timeout for the whole call | `with_timeout(Duration)` on the client or on a call. No limit until set. |
-| Retries | `with_retry(Retry::standard())` on the client or on a call. Off until set. A call's policy replaces the client's. The author of a client who knows the API's own rule ships it as a function beside the macro (`pub fn retry() -> shop::Retry`), and the caller passes it: `with_retry(retry())`. A worked example: the page of `concord::Retry`. |
-| The clock for silence | `with_idle_timeout(…)`; 30 seconds by default. The description's `idle_timeout` comes between the call's and the client's. |
+| A timeout for the whole call | `with_timeout(Duration)` on the client or on a call. No limit unless set. |
+| Retries | `with_retry(Retry::standard())` on the client or on a call. Off until set. A call's policy replaces the client's. An author who knows the API's own retry rule ships it as a function next to the description (`pub fn retry() -> shop::Retry`), and the caller passes it: `with_retry(retry())`. See the documentation of `concord::Retry` for a worked example. |
+| The idle timeout | `with_idle_timeout(…)`; 30 seconds by default. The description's `idle_timeout` takes precedence over the client's, and the call's over both. |
 | Another server | `with_base(…)` on the client. |
-| What really sends | `with_transport(…)`: `concord::Http`, a `reqwest::Client`, `concord::fake(…)`. |
-| A middleware of the caller | `with_middleware(…)`; it runs before the description's. |
+| What actually sends the request | `with_transport(…)`: `concord::Http`, a `reqwest::Client`, `concord::fake(…)`. |
+| The caller's own middleware | `with_middleware(…)`; it runs before the description's. |
 | The request as built | `request()`, `edit_request(…)` on a call. |
-| The status and headers beside the value | `send_full()` gives a `concord::Answer`. |
+| The status and headers alongside the value | `send_full()` returns a `concord::Answer`. |
 | Another reader for one endpoint | `read` on that endpoint: the nearest one is used. `override` is for keys only. |
 
-Defaults for every call go on the client once:
+Defaults for every call are set once, on the client:
 
 ```rust
 # use concord::{fake, reply, Json, Retry};
@@ -631,28 +640,28 @@ shop.upload("big").with_timeout(Duration::from_secs(60)).await?;   // this call 
 # }
 ```
 
-# What the macro writes
+# What the macro generates
 
 For `pub client Shop`, with a scope `books` and an endpoint `get` in it:
 
 | Item | What it is |
 |---|---|
-| `Shop` | The client: `Send + Sync + Clone + Debug`. Clones share the transport and the middlewares. |
+| `Shop` | The client: `Send + Sync + Clone + Debug`. Clones share the transport and the middleware. |
 | `Shop::new(…)` | Takes the required inputs of the client, in order. |
-| `with_retry`, `with_timeout`, `with_idle_timeout`, `with_base`, `with_transport`, `with_middleware` | The settings of the client. Each returns the client, changed. |
+| `with_retry`, `with_timeout`, `with_idle_timeout`, `with_base`, `with_transport`, `with_middleware` | The client's settings. Each returns the changed client. |
 | `shop.books()` | A method for each child. A setter for each optional input of the client. |
 | `shop::Books` | The handle of the scope. |
 | `shop::books::Get` | The call. `.await` (or `send()`) sends it; `send_full()`, `send_raw()`, `request()`, `into_request()`, `edit_request(…)`, `read_response(…)`, `with_retry`, `with_timeout`, `with_idle_timeout`; `send_if_none_match(etag)` on a `GET` or `HEAD`; with `paginate`, `pages()` and no `.await`. Calls are `Send + Sync + Clone`. |
-| `shop::Error` | `concord::Error<P>`, `P` the `problem` type (`()` without one). Every endpoint fails with it. |
+| `shop::Error` | `concord::Error<P>`, where `P` is the `problem` type (`()` without one). Every endpoint returns this error type. |
 | `shop::Result<T>` | `Result<T, shop::Error>`. |
-| `shop::Retry` | `concord::Retry<P>`, the policy that `with_retry` takes. Only the type: it holds no policy of the author. |
+| `shop::Retry` | `concord::Retry<P>`, the policy type that `with_retry` accepts. It is only the type: it holds none of the author's retry rules. |
 
-A generated client is shown in full on the page of the module `concord::sample`.
+See the module `concord::sample` for a generated client shown in full.
 
-**A conditional `GET`.** `send_if_none_match(etag)` writes `If-None-Match` with the text as
-given: pass the ETag as it arrived, quotes included (`"\"v1\""`, `W/"v1"`). It gives a
-`concord::Answer<Option<T>>`: `None` for a `304` that no arm takes, `Some(value)` for any
-other answer, and the headers in both, so the next ETag.
+**A conditional `GET`.** `send_if_none_match(etag)` sends `If-None-Match` with the text exactly
+as given: pass the ETag as it arrived, quotes included (`"\"v1\""`, `W/"v1"`). It returns a
+`concord::Answer<Option<T>>`: `None` for a `304` that no arm matches, `Some(value)` for any
+other response, and the headers in both cases, so you also get the next ETag.
 
 ```rust
 # use concord::{fake, reply_with, Json};
@@ -672,29 +681,29 @@ assert_eq!(answer.headers().get("etag"), Some("\"v1\""));
 # }
 ```
 
-**Names that begin with `__` are Concord's.** The generated code uses them for its own
-methods, fields and types. In a module that holds `concord::api!`, declare no item whose
-name begins with `__`.
+**Names that begin with `__` are reserved for Concord.** The generated code uses them for its own
+methods, fields and types. In a module that contains `concord::api!`, do not declare any
+item whose name begins with `__`.
 
-**The names an input may not have.** Every name of an input, a scope, an endpoint or a part
+**Names that you may not use.** Every name of an input, a scope, an endpoint or a part
 is lower snake case: a letter `a`–`z` first, then `a`–`z`, `0`–`9` and `_`, with no `__`
-and no `_` at the end. It is no keyword of Rust, strict or reserved (`type`, `ref`, `try`,
-`gen`, `async` among them), and no raw identifier (`r#type`). An input is not named
-`client`, nor like a scope that holds it (the scope itself included), nor like another
-input of its node. Those are the only rules for a required input: it is an argument. An
-optional input is a method of its receiver, as a child is, so neither may take a name of
-that receiver's methods:
+and no trailing `_`. It cannot be a Rust keyword, strict or reserved (`type`, `ref`, `try`,
+`gen`, `async` among them), or a raw identifier (`r#type`). An input cannot be named
+`client`, nor take the name of a scope that encloses it (the scope that declares it included),
+nor the name of another input of its node. Those are the only rules for a required input,
+because it is an argument. An optional input becomes a setter on its receiver, and a child becomes a method on it, so
+neither may take the name of a method that the receiver already has:
 
 | Receiver | Its children and its optional inputs may not be named |
 |---|---|
 | Any | `clone`, and any name that starts with `with_` |
-| The client | `new`, `call`; and a child of the client not `error`, `result` or `retry` (`shop::Error`, `shop::Result`, `shop::Retry`) |
+| The client | `new`, `call`; and a child of the client also not `error`, `result` or `retry` (`shop::Error`, `shop::Result`, `shop::Retry`) |
 | A scope | `call` |
 | An endpoint (optional inputs) | `send`, `send_full`, `send_raw`, `send_if_none_match`, `request`, `into_request`, `edit_request`, `read_response`, `pages`, `at_url`, `into_future` |
 
 An optional input and a child of one node may not share a name. An input of a part is
-checked at each node that names it. Every other name is free, the words of the language
-too:
+checked at each node that names the part. Every other name is allowed, including the keywords of the
+language itself:
 
 ```rust
 # use concord::Json;
@@ -706,8 +715,8 @@ GET search(from?: String, to?: String, query?: String, path?: String, body?: Str
 # } }
 ```
 
-# When a description is wrong
+# When a description does not compile
 
-The macro's own messages say what to write, all of them in one build. A mistake inside
-your Rust (a type that is not `Deserialize`, a reader that does not fit) is `rustc`'s, and
-comes after those are fixed, maybe more than once for one mistake.
+The macro reports all its own messages in one build, and each one says what to write. A
+mistake inside your own Rust (a type that is not `Deserialize`, a reader that does not fit) is
+reported by `rustc` once those are fixed, sometimes more than once for a single mistake.

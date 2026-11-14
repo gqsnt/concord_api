@@ -2,7 +2,7 @@
 
 *[Concord](../../README.md) · [docs](../README.md) · guide · next: [How Concord sees an API](model.md)*
 
-For a Rust developer who has never seen Concord: what you write, and what you get, in ten minutes. Code first, one idea at a time.
+This page is for a Rust developer who has never seen Concord. In ten minutes, it shows how to describe an API, call the generated client and test it: code first, one idea at a time.
 
 ## An API is a tree. Write it as one.
 
@@ -12,7 +12,7 @@ use concord::{json, Json};
 concord::api! {
     pub client Tasks {
         base "https://tasks.example.com/api/tasks";
-        read Json;                                  // this API answers in JSON
+        read Json;                                  // this API responds with JSON
 
         GET list(done?: bool) -> Vec<Task> {
             query { done; }
@@ -29,7 +29,7 @@ concord::api! {
 }
 ```
 
-Read only the lines that start with a method. That is the whole API, as its user sees it. The block under each line is for the wire.
+Read only the lines that start with an HTTP method: together, they are the whole API as its caller sees it. The block below each one describes the request that goes on the wire.
 
 ```rust
 let tasks = Tasks::new();
@@ -39,15 +39,15 @@ let task = tasks.create(NewTask { title: "Write the docs".into() }).await?;
 tasks.delete(task.id).await?;
 ```
 
-`Task` and `NewTask` are your own plain structs. `json` and `Json` are ordinary Rust items, imported like any other: the language has no word for a format, and one of yours takes the same place.
+`Task` and `NewTask` are your own plain structs. `json` and `Json` are ordinary Rust items, imported like any other. The language has no keyword for a data format, so a format you write yourself fits in the same place.
 
 ## What is shared is written once
 
 ```rust
 pub client Riot(key: Secret) {
-    headers { "x-riot-token" = key; }                  // who you are, on every request below
-    read Json;                                         // how this API answers
-    problem RiotProblem;                               // how this API says no
+    headers { "x-riot-token" = key; }                  // the credential, on every request below
+    read Json;                                         // how responses are read
+    problem RiotProblem;                               // the type of this API's errors
 
     scope matches(route: MatchRoute) {
         base "https://{route}.api.riotgames.com";      // every request below
@@ -63,7 +63,7 @@ pub client Riot(key: Secret) {
 }
 ```
 
-An endpoint holds only what it adds. What is true for a whole group lives on the group, and a new endpoint gets it for free. An input of a level above is named with its owner: `client.key`, `{matches.route}`.
+An endpoint contains only what it adds. A statement that holds for a whole group is written once, on the group, and every endpoint you add to the group inherits it without a line of its own. An input from a level above is named with its owner: `client.key`, `{matches.route}`.
 
 ## A call reads like the API
 
@@ -74,7 +74,7 @@ let ids  = riot.matches(Europe).ids(&puuid).count(5).await?;
 let game = riot.matches(Europe).get(&ids[0]).await?;
 ```
 
-One level of the tree is one call. What is required is an argument. What is not required is marked with `?` (`count?: u32`), and is a method with its own name. `.await` sends. An input becomes text as `serde` writes it: `Europe` is `europe` in the host.
+Each level of the tree is one method call. Required inputs are arguments. An optional input is marked with `?` in the description (`count?: u32`) and becomes a setter with the same name. `.await` sends the request. An input is converted to a string the way `serde` serializes it, so `Europe` becomes `europe` in the host.
 
 ## "Maybe" is `Option`. "No such thing" is `None`.
 
@@ -93,11 +93,11 @@ match riot.account(Europe).by_riot_id("Faker", "KR1").await? {
 }
 ```
 
-A status that means something for this endpoint is one line, written like a `match`. Everything else stays as it was: a `200` is still read as an `Account`, and given as `Some`.
+A status that means something specific for this endpoint gets one line, written like a `match` arm. Every other status is handled as before: a `200` is still read as an `Account` and returned as `Some`.
 
-And "several" is `Vec`: with `tags: Vec<String>` and `query { "tag" = tags; }`, the request has `tag=sf&tag=classic`.
+And "several" is a `Vec`: with `tags: Vec<String>` and `query { "tag" = tags; }`, the request carries `tag=sf&tag=classic`.
 
-## A list that comes in pages
+## The author says how the API paginates. The caller decides whether to loop.
 
 ```rust
 GET ids(puuid: Puuid, start?: u32, count?: u32) -> Vec<MatchId> {
@@ -116,9 +116,9 @@ while let Some(id) = ids.try_next().await? {
 let first = riot.matches(Europe).ids(&puuid).count(5).send().await?;      // one page, on purpose
 ```
 
-How an API pages is a fact of the API, so its author writes it, once. The caller only decides whether to loop. Now that `ids` has pages, it is not awaited directly, so that nobody takes one page for the whole list: `.pages()` gives them all, `.send()` gives one. (In `paginate`, an input names its place on the call, and `by_offset_limit`, an ordinary function, moves it. This one ends on a page shorter than `count`, as Riot promises.)
+How an API paginates is a fact about the API, so the author declares it once. Because `ids` is now paginated, its call cannot be awaited directly, so nobody mistakes one page for the whole list: `.pages()` yields every page, and `.send()` fetches one. (In `paginate`, an input names its parameter on the call, not its value, and `by_offset_limit`, an ordinary function, advances that parameter from page to page. This pager stops at a page shorter than `count`, as Riot promises.)
 
-## The same inputs on many endpoints
+## A `part` shares inputs between unrelated endpoints
 
 ```rust
 pub client Stripe(key: Secret) {
@@ -147,9 +147,9 @@ pub client Stripe(key: Secret) {
 let page = stripe.customers().list().email("a@b.example").limit(50).send().await?;
 ```
 
-The tree shares downward. A `part` shares sideways: a named group of inputs, with the lines that place them. `..page` gives an endpoint all of it.
+Some inputs repeat across endpoints that have no common parent, like Stripe's pagination inputs. A `part` is a named group of such inputs, together with the statements that place them in the request, and `..page` in a signature adds the whole part to the endpoint.
 
-## When the API says no
+## An error keeps what the server said
 
 ```rust
 match riot.matches(Europe).get(&id).await {
@@ -164,9 +164,9 @@ match riot.matches(Europe).get(&id).await {
 }
 ```
 
-An error keeps what the server said: the status, the headers, the start of the body, and the API's own error as your type. Printing it (`{e}`) is always safe: it shows names, never a key, a URL or a body.
+An error keeps the status, the headers, the start of the body, and the API's own error, decoded into your type. Printing it (`{e}`) is always safe: it shows names, never a key, a URL or a body.
 
-## Endpoints that are not like the others
+## An endpoint that differs says so in its own block
 
 ```rust
 /// Is it there?
@@ -216,11 +216,11 @@ POST search(text: String, cursor?: String) -> Page {
 }
 ```
 
-An arm names what it uses of the answer: `body`, `headers`, `status`. A success with no `location` ends the call with an error. `create` writes its arm for the class `2xx`: an arm for `201` alone would leave another 2xx to be read as a `Created`. These endpoints stand in a client whose key is a header, `"authorization" = "Bearer {client.key}"`: a secret does not follow a change of `base` by itself, so `upload` writes the header again under its own host ([a secret stays with its base](credentials.md#a-secret-stays-with-its-base)).
+An arm binds the parts of the response it uses: `body`, `headers`, `status`. In `create`, a success without a `location` header ends the call with an error. `create` matches the whole class `2xx`, because with an arm for `201` alone, any other 2xx status would be read as a `Created`. These endpoints belong to a client that sends its key in a header, `"authorization" = "Bearer {client.key}"`. A secret does not follow a change of `base` unless you write it again, so `upload` declares the header again for its own host ([a secret stays with its base](credentials.md#a-secret-stays-with-its-base)).
 
-## Who you are
+## A credential is a value; a signature is middleware
 
-A credential is a value, so it is placed like any other value:
+You place a credential wherever the API expects it, like any other value:
 
 ```rust
 headers { "x-api-key" = key; }                         // a key in a header
@@ -228,13 +228,13 @@ headers { "authorization" = "Bearer {token}"; }        // a bearer token
 query   { "api_key" = key; }                           // a key in the query
 ```
 
-What makes it a credential is its type. A `Secret` can go on the wire, and nowhere else: it never shows in an error, a log or a `{:?}`. An endpoint that uses another credential says so in its own block:
+What makes it a credential is its type. A `Secret` goes on the wire and nowhere else: it never appears in an error, a log or `{:?}` output. An endpoint that uses a different credential declares it in its own block:
 
 ```rust
 headers { remove "x-riot-token"; "authorization" = "Bearer {access_token}"; }
 ```
 
-One kind of credential is not a value but a process: a signature computed from the request as it leaves, a token that your code renews. That is a `middleware`, on the client: every request goes through it.
+Some credentials are not a value but a process: a signature computed from each request as it is sent, or a token that your code renews. That is a middleware layer, declared on the client with `middleware`, and every request passes through it.
 
 ```rust
 pub client Vault(key: Secret) {
@@ -243,26 +243,26 @@ pub client Vault(key: Secret) {
 }
 ```
 
-`Signed` is plain Rust beside the description: a type of the author's with `concord::Middleware`. `Vault::new(key)` signs, and there is no other way to make one.
+`Signed` is the author's own type, written in plain Rust beside the description; it implements `concord::Middleware`. A client made with `Vault::new(key)` signs its requests, and there is no other way to make one.
 
-## Trying again, and time
+## Retries are opt-in. A silent server cannot hold a call forever.
 
 ```rust
 let riot = Riot::new(key)
-    .with_retry(Retry::standard());                     // off until you say so
+    .with_retry(Retry::standard());                     // off until you turn them on
 
 let file = files.download(&id)
     .with_timeout(Duration::from_secs(600))             // this call may take ten minutes
     .await?;
 ```
 
-An option of the API keeps its own name (`.count(5)`). A setting of Concord starts with `with_`. Concord's few verbs on a call (`send`, `pages`, `request`, …) are a closed list: no option can take one of those names, or start with `with_`.
+An API option keeps its own name (`.count(5)`); a Concord setting starts with `with_`. Concord's own methods on a call (`send`, `pages`, `request`, …) form a fixed list: no option may take one of those names or start with `with_`.
 
-`Retry::standard()` makes 3 tries at most, after a failure of the network or a `408`, `429`, `502`, `503` or `504`. With it, a request goes out again only when repeating it changes nothing more: a `GET`, `HEAD`, `OPTIONS`, `PUT` or `DELETE`, an endpoint whose author wrote `idempotent;`, or a status that the policy lists as "not applied" (`not_applied_on(429)`: [retries](retries.md)). A `PUT` that must not go out twice says `idempotent false;`.
+`Retry::standard()` makes at most 3 attempts, and retries after a network failure or a `408`, `429`, `502`, `503` or `504`. Even then, a request is retried only when repeating it has no further effect: a `GET`, `HEAD`, `OPTIONS`, `PUT` or `DELETE`; an endpoint whose author wrote `idempotent;`; or a status that the policy lists as "not applied" (`not_applied_on(429)`; see [retries](retries.md)). A `PUT` that must not be sent twice declares `idempotent false;`.
 
-A server that says nothing for 30 seconds ends the call. A call as a whole has no limit until you give it one ([time](calling.md#time)).
+If the server sends nothing for 30 seconds, the idle timeout ends the call with an error. The call as a whole has no time limit until you set a call timeout ([timeouts](calling.md#timeouts)).
 
-## A test with no network
+## A test needs no network
 
 ```rust
 let riot = Riot::new("test-key").with_transport(concord::fake(|request| {
@@ -273,35 +273,35 @@ let riot = Riot::new("test-key").with_transport(concord::fake(|request| {
 let game = riot.matches(Europe).get(MatchId::from("EUW1_1")).await?;
 ```
 
-Everything runs for real on that answer, the middlewares too. Only the network is replaced. A scripted transport on virtual time and a local server: [testing a client](testing.md).
+Everything else runs for real on that response, middleware included; only the network is replaced. See [testing a client](testing.md) for a scripted transport on virtual time and a local test server.
 
-## When it does not fit
+## When you need more control
 
-Each layer has a way down, and each way down is plain Rust. Each one, with code to copy, is on [when Concord does not say what you need](extending.md).
+When Concord does not fit, you can go down one layer, and every layer below is plain Rust. Each option is shown, with code to copy, in [When Concord does not cover what you need](extending.md).
 
 | You need | You write |
 |---|---|
-| Another way to read an answer, to write a body, to page | A value or a function of yours, named in the description. The shipped ones (`Json`, `json`, `by_cursor`) are written the same way, in a crate of their own. |
-| A signature, a token that is renewed, a rate limit | A middleware: the author's in the description, a caller's with `with_middleware(…)` |
+| Another way to read a response, write a body, or paginate | Your own value or function, named in the description. The shipped items (`Json`, `json`, `by_cursor`) are written the same way, in a crate of their own. |
+| A signature, a token that is renewed, a rate limit | A middleware layer: the author's in the description, or the caller's with `with_middleware(…)` |
 | To change one request by hand | `.edit_request(\|request\| …)` on the call |
-| The raw answer | `.send_raw()` |
-| What really sends: your own HTTP settings (a certificate, a proxy) | `with_transport(concord::Http::with(\|b\| b.add_root_certificate(cert))?)` |
-| To send a request yourself and keep the typed answer | `call.request()?`, then `call.read_response(response).await?` |
-| Something Concord has no word for | It is `reqwest` underneath: `into_request()` gives you the request |
+| The raw response | `.send_raw()` |
+| Your own HTTP settings for the transport (a certificate, a proxy) | `with_transport(concord::Http::with(\|b\| b.add_root_certificate(cert))?)` |
+| To send a request yourself and still get the typed result | `call.request()?`, then `call.read_response(response).await?` |
+| Something Concord has no keyword for | It is `reqwest` underneath: `into_request()` returns the request |
 
 ## The whole thing, in two sentences
 
-**To use a client:** go down a level, set an option, `.await`.
+**To use a client:** call one method for each level, set options, then `.await`.
 
-**To write one:** say where it is (`client`, `scope`, a method), what goes where (`base`, `path`, `query`, `headers`, `body`), and what it means (`read`, `status`, `problem`, `paginate`, `idempotent`, `idle_timeout`). What many endpoints share is a `part`; what every request goes through is a `middleware`.
+**To write one:** declare where each endpoint is (`client`, `scope`, a method), where each value goes (`base`, `path`, `query`, `headers`, `body`), and what the response means and how the call behaves (`read`, `status`, `problem`, `paginate`, `idempotent`, `idle_timeout`). Inputs that many endpoints share go in a `part`; what every request passes through is a `middleware`.
 
 ## Where to go next
 
 - [How Concord sees an API](model.md): the few ideas behind the language.
 - [Describe an API](describing-an-api.md): every statement, with its rules.
-- [Call a client](calling.md): arguments, options, the client's settings, time.
-- [Read answers and errors, send bodies](responses-and-errors.md).
-- [Credentials and middlewares](credentials.md), [retries](retries.md), [pages](pages.md).
+- [Call a client](calling.md): arguments, options, the client's settings, timeouts.
+- [Read responses and errors, send bodies](responses-and-errors.md).
+- [Credentials and middleware](credentials.md), [retries](retries.md), [pages](pages.md).
 - [Testing a client](testing.md).
-- [What Concord promises](promises.md), [when Concord does not say what you need](extending.md), and [troubleshooting](troubleshooting.md).
+- [What Concord promises](promises.md), [When Concord does not cover what you need](extending.md), and [troubleshooting](troubleshooting.md).
 - Why it is this way: [why Concord](../design/why.md).

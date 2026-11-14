@@ -20,7 +20,7 @@ concord::api! {
         read Json;
         problem StripeProblem;
 
-        /// Every list: at most `limit` objects (1 to 100; Stripe gives 10), after or before an object.
+        /// Every list: at most `limit` objects (1 to 100; Stripe returns 10), after or before an object.
         part listed(
             limit?: u32,
             /// The id of an object: the page starts after it.
@@ -40,7 +40,7 @@ concord::api! {
             paginate by_object_id(starting_after, ending_before);
         }
 
-        /// Every search: Stripe's query language, in pages by a token.
+        /// Every search: Stripe's query language, paginated by a token.
         /// Not to check a write: an object is found about a minute after it changed.
         part found(
             /// `email:'ada@example.com'`, `metadata['order']:'7781'`, `status:'succeeded'`.
@@ -55,7 +55,7 @@ concord::api! {
 
         /// What a `GET` or a `DELETE` expands: in the query.
         part expanded(
-            /// Ids in the answer to give as whole objects: `customer`; in a list, `data.customer`.
+            /// Ids in the response to return as whole objects: `customer`; in a list, `data.customer`.
             expand?: Vec<String>,
         ) {
             query { "expand[]" = expand; }
@@ -63,7 +63,7 @@ concord::api! {
 
         /// Every `POST`: a key, and what it expands, in its form body.
         part write(
-            /// The same key gives the same answer for at least 24 hours: send the operation again
+            /// The same key returns the same response for at least 24 hours: send the operation again
             /// after a crash, and it is done once.
             idempotency_key: String,
             expand?: Vec<String>,
@@ -82,7 +82,7 @@ concord::api! {
             ) -> Customer {
                 body stripe_form { email; name; description; payment_method; metadata; }
             }
-            /// `None` when the customer was deleted: Stripe answers `200` with `deleted: true`.
+            /// `None` when the customer was deleted: Stripe responds with `200` and `deleted: true`.
             /// An id that never existed is still a `404`.
             GET retrieve(id: CustomerId, ..expanded) -> Option<Customer> {
                 path "{id}";
@@ -260,7 +260,7 @@ concord::api! {
         }
 
         /// A file, on the files host: dispute evidence, an identity document, a logo.
-        /// The bytes are in memory, so another try sends them again, with the same key.
+        /// The bytes are in memory, so a retry sends them again, with the same key.
         POST create_file(purpose: FilePurpose, file: Upload, idempotency_key: String) -> StripeFile {
             base "https://files.stripe.com";
             path "files";

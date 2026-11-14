@@ -1,6 +1,6 @@
 //! The token parser and diagnostic catalogue for `concord::api!`.
 //!
-//! Descriptions are parsed, named, resolved, checked, and written as Rust.
+//! Descriptions are parsed, named, resolved, checked, and expanded into Rust code.
 
 use proc_macro::TokenStream;
 

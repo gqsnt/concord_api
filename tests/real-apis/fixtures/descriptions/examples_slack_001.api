@@ -72,12 +72,12 @@
             }
         }
         scope files {
-            /// The first step of an upload: Slack gives the URL where the bytes go.
+            /// The first step of an upload: Slack returns the URL where the bytes go.
             POST get_upload_url_external(filename: String, length: u64, alt_txt?: String) -> UploadTicket {
                 path "files.getUploadURLExternal";
                 body form { filename; length; alt_txt; }
             }
-            /// The last step. Slack answers when the file is processed, which can take minutes.
+            /// The last step. Slack responds when the file is processed, which can take minutes.
             POST complete_upload_external(
                 uploads: Vec<UploadedFile>, channel_id?: String, initial_comment?: String,
             ) -> CompletedFiles {

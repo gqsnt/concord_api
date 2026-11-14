@@ -1,4 +1,4 @@
-//! What came back.
+//! A call's value together with the response's status and headers.
 
 use crate::error::Fail;
 use std::time::{Duration, SystemTime};
@@ -71,7 +71,7 @@ impl std::fmt::Debug for KnownOutcome<'_> {
     }
 }
 
-/// The headers of an answer.
+/// The headers of a response.
 #[derive(Clone, Default)]
 pub struct Headers(http::HeaderMap);
 
@@ -84,21 +84,21 @@ impl std::fmt::Debug for Headers {
 }
 
 impl Headers {
-    /// The value of a header, when it is there and is text.
+    /// Returns the value of a header, if it is present and is valid text.
     pub fn get(&self, name: &str) -> Option<&str> {
         self.0.get(name).and_then(|v| v.to_str().ok())
     }
 
-    /// The value of a header that must be there.
+    /// Returns the value of a header that must be present.
     ///
     /// In an arm or in a pager, `headers.require("location")?` ends the call with a
-    /// Mismatch when the header is missing: the answer is not what was promised.
+    /// Mismatch when the header is missing: the response is not what was promised.
     pub fn require<P>(&self, name: &'static str) -> Result<&str, Fail<P>> {
         self.get(name)
             .ok_or_else(|| crate::mismatch(format!("header {name} is missing or is not text")))
     }
 
-    /// `Retry-After`, from seconds or from a date. A date in the past gives zero.
+    /// Returns the delay of `Retry-After`, given in seconds or as a date. A date in the past yields zero.
     pub fn retry_after(&self) -> Option<Duration> {
         self.retry_after_at(SystemTime::now())
     }
@@ -114,7 +114,7 @@ impl Headers {
         }
     }
 
-    /// The headers as the `http` crate holds them.
+    /// Returns the headers as the `http` crate represents them.
     pub fn as_map(&self) -> &http::HeaderMap {
         &self.0
     }
@@ -126,10 +126,10 @@ impl From<http::HeaderMap> for Headers {
     }
 }
 
-/// A value with the status and the headers it came with.
+/// A response's value with its status and headers.
 ///
-/// `send_full()` gives it, and a pager is given one.
-/// Its `Debug` shows the status and header names, with no header or body values.
+/// `send_full()` returns one, and a pager receives one.
+/// Its `Debug` shows the status and the header names, with no header or body values.
 #[derive(Clone)]
 pub struct Answer<T> {
     status: http::StatusCode,
@@ -149,7 +149,7 @@ impl<T> std::fmt::Debug for Answer<T> {
 }
 
 impl<T> Answer<T> {
-    /// For generated code and for tests.
+    /// Creates an `Answer`; for generated code and for tests.
     pub fn new(status: http::StatusCode, headers: Headers, value: T) -> Answer<T> {
         Answer {
             status,
@@ -166,27 +166,27 @@ impl<T> Answer<T> {
         self
     }
 
-    /// The status of the answer.
+    /// Returns the status of the response.
     pub fn status(&self) -> http::StatusCode {
         self.status
     }
 
-    /// The headers of the answer.
+    /// Returns the headers of the response.
     pub fn headers(&self) -> &Headers {
         &self.headers
     }
 
-    /// Borrow the decoded body while retaining this answer's status and headers.
+    /// Borrows the decoded body, while the `Answer` keeps its status and headers.
     pub fn value(&self) -> &T {
         &self.value
     }
 
-    /// The value, taken.
+    /// Returns the value, consuming the `Answer`.
     pub fn into_value(self) -> T {
         self.value
     }
 
-    /// The status, the headers and the value, taken apart.
+    /// Splits the `Answer` into its status, headers and value.
     pub fn into_parts(self) -> (http::StatusCode, Headers, T) {
         (self.status, self.headers, self.value)
     }

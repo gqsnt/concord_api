@@ -115,7 +115,7 @@ where
     }
 }
 
-/// A field that `expand` turns from an id into the object: the type after the arrow does not
+/// A field that `expand` turns from an id into the object: the return type does not
 /// change with `.expand(…)`, so the field holds both shapes.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -133,7 +133,7 @@ pub enum MaybeDeleted<T> {
 }
 
 impl<T> MaybeDeleted<T> {
-    /// For the arm of `customers.retrieve`: its path gives the type of `body`.
+    /// For the arm of `customers.retrieve`: its path determines the type of `body`.
     pub fn live(self) -> Option<T> {
         match self {
             MaybeDeleted::Live(object) => Some(object),
@@ -143,7 +143,7 @@ impl<T> MaybeDeleted<T> {
 }
 
 /// Stripe's policy: its `Stripe-Should-Retry` header decides, and a `409` (one key, two
-/// requests at the same time) is tried again. Every `POST` here has a key, so each may go again.
+/// requests at the same time) is retried. Every `POST` here has a key, so each may be retried.
 pub fn retry() -> stripe::Retry {
     stripe::Retry::standard()
         .unless(|tried| should_retry(tried.headers()) == Some(false))

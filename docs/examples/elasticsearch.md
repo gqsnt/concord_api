@@ -1,10 +1,10 @@
 # Elasticsearch
 
-*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Telegram](telegram.md) · next: [all the examples](README.md)*
+*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Telegram](telegram.md) · next: [Real APIs](README.md)*
 
-For a Rust developer who calls Elasticsearch: a client of 15 endpoints to copy from. It is the example of a `GET` with a body, of a body of many JSON lines, of a search walked page by page in a point in time, and of an answer whose format is an option.
+This page is for a Rust developer who calls Elasticsearch. It gives a client with 15 endpoints that you can copy, and shows a `GET` with a body, a body of many JSON lines, a search walked page by page within a point in time, and a response whose format is an option.
 
-Elasticsearch, as Concord sees it. The server is the deployment's own: `base url;`, an input of type `Base`. Who you are: a whole `authorization` header, a `Secret` (`concord::basic(user, password)`, or `ApiKey …`). The first piece of the path is an index, or several (`logs-*,metrics-*`) kept in one segment, so the tree has two handles: `index(name)` for one index, `indices(targets)` for a search over many. A search is a `GET` with a JSON body. A bulk write is many JSON lines, and its `200` holds a result for each line, failures too. A search over many pages walks a point in time, with the sort values of the last hit. Elasticsearch says no with `{"error": {"type", "reason"}, "status"}`, read into `EsProblem`; a missing document is a `404` that is an answer (`"found": false`). Elastic's own reference: [elastic.co/docs/api/doc/elasticsearch](https://www.elastic.co/docs/api/doc/elasticsearch). `(unsure)` marks a detail of Elastic's that is not checked.
+Here is Elasticsearch as Concord sees it. The server is the deployment's own: `base url;`, an input of type `Base`. Authentication is a complete `authorization` header, a `Secret` (`concord::basic(user, password)`, or `ApiKey …`). The first segment of the path is an index, or several (`logs-*,metrics-*`) kept in one segment, so the tree has two handles: `index(name)` for one index, `indices(targets)` for a search over many. A search is a `GET` with a JSON body. A bulk write is many JSON lines, and its `200` holds a result for each line, including failures. A search over many pages walks a point in time, using the sort values of the last hit. Elasticsearch rejects a request with `{"error": {"type", "reason"}, "status"}`, read into `EsProblem`; a missing document is a `404` that is a normal response (`"found": false`). Elastic's own reference is [elastic.co/docs/api/doc/elasticsearch](https://www.elastic.co/docs/api/doc/elasticsearch). `(unsure)` marks a detail about Elasticsearch that has not been checked.
 
 ## The description
 
@@ -41,7 +41,7 @@ concord::api! {
                 path "_doc";
                 body json(document);
             }
-            /// A missing document is an answer (`found: false`); a missing index is an error.
+            /// A missing document is a normal response (`found: false`); a missing index is an error.
             GET get(id: String, ..output) -> GetReply {
                 path "_doc/{id}";
                 status { 404 { body } => document_404(body)? }
@@ -120,13 +120,13 @@ concord::api! {
 }
 ```
 
-A document, a query and the settings of an index are `serde_json::Value`: each deployment has its own mappings. Four writes say `idempotent false;`, because a second try is not the same as the first: `put` and `delete_document` give the document a new version each time, and an index created or deleted twice gets an error the second time (`400`: it exists; `404`: it is gone), which hides that the first try worked.
+A document, a query and the settings of an index are `serde_json::Value`, because each deployment has its own mappings. Four writes declare `idempotent false;`, because a second attempt is not the same as the first: `put` and `delete_document` give the document a new version each time, and an index created or deleted twice gets an error the second time (`400`: it exists; `404`: it is gone), which hides the fact that the first attempt succeeded.
 
 ## Beside the description
 
-The data types are plain `serde` types, named here and not printed: `GetReply` (`_id`, `found`, `_source`), `WriteReply` (`_id`, `result`), `IndexAck` (`acknowledged`), `CountReply` (`count`), `SearchPage` (`timed_out`, `_shards`, `hits`, `pit_id`), `Hits` and `Hit` (`_id`, `_source`, `sort`), `OpenedPit` (`id`), `ClosedPit`, `BulkReply` (`errors`, `items`: for each line, a map from its action to a `BulkItem` with `status` and `error`), and `Refresh` (`true`, `false`, `wait_for`).
+The data types are plain `serde` types, named here but not shown: `GetReply` (`_id`, `found`, `_source`), `WriteReply` (`_id`, `result`), `IndexAck` (`acknowledged`), `CountReply` (`count`), `SearchPage` (`timed_out`, `_shards`, `hits`, `pit_id`), `Hits` and `Hit` (`_id`, `_source`, `sort`), `OpenedPit` (`id`), `ClosedPit`, `BulkReply` (`errors`, `items`: for each line, a map from its action to a `BulkItem` with `status` and `error`), and `Refresh` (`true`, `false`, `wait_for`).
 
-How Elasticsearch says no, the body of many lines, the missing document, the pager of a point in time, the `_cat` table, and a search sent as a `POST`:
+Elasticsearch's errors, the body of many lines, the missing document, the pager of a point in time, the `_cat` table, and a search sent as a `POST`:
 
 ```rust
 use concord::page::{Call, Slot};
@@ -135,7 +135,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// How Elasticsearch says no: `{"error": {"type": …, "reason": …}, "status": 404}`.
+/// Elasticsearch's error response: `{"error": {"type": …, "reason": …}, "status": 404}`.
 #[derive(Debug, Deserialize)]
 pub struct EsProblem {
     pub error: EsCause,
@@ -166,7 +166,8 @@ pub fn ndjson(lines: &[Value]) -> Result<Body, serde_json::Error> {
     Ok(Body::new(bytes, "application/x-ndjson"))
 }
 
-/// A `404` with `"found": false` is a missing document, an answer; with `"error"`, it is a refusal.
+/// A `404` with `"found": false` is a missing document, a normal response; with `"error"`, it
+/// is an error.
 pub fn document_404<T: DeserializeOwned>(body: Value) -> Result<T, Fail<EsProblem>> {
     if body.get("error").is_some() {
         let problem: EsProblem = serde_json::from_value(body)
@@ -177,8 +178,8 @@ pub fn document_404<T: DeserializeOwned>(body: Value) -> Result<T, Fail<EsProble
 }
 
 /// The next page of a search in a point in time: the newest id of the point in time, and the
-/// sort values of the last hit. An empty page is the end. A page that timed out, or that some
-/// shards did not answer, ends the pages with a Mismatch: going on would skip documents.
+/// sort values of the last hit. An empty page is the end. A page that timed out, or to which some
+/// shards did not respond, ends pagination with a Mismatch: going on would skip documents.
 pub fn pit_after<C, P, A>(pit: P, after: A)
     -> impl Fn(C, &Answer<SearchPage>) -> Result<Option<C>, Fail<EsProblem>> + Send + 'static
 where
@@ -212,7 +213,7 @@ pub enum CatReply {
     Json(Vec<Value>),
 }
 
-/// The arm of `cat_indices`: the text as it came, or the rows when JSON was asked for.
+/// The arm of `cat_indices`: the text as it arrived, or the rows when JSON was requested.
 pub fn cat_reply(text: String, format: &Option<CatFormat>) -> Result<CatReply, Fail<EsProblem>> {
     match format {
         Some(CatFormat::Json) => serde_json::from_str(&text)
@@ -250,7 +251,7 @@ pub async fn add_and_get() -> Result<(), BoxError> {
     Ok(())
 }
 
-/// Many writes at once. The answer is a `200` even when some of them failed: look at each one.
+/// Many writes at once. The response is a `200` even when some of them failed: look at each one.
 pub async fn bulk(es: &Elasticsearch) -> elasticsearch::Result<()> {
     let reply = es.bulk(vec![
         json!({ "index": { "_index": "books", "_id": "42" } }),
@@ -302,15 +303,15 @@ pub async fn search(es: &Elasticsearch) -> elasticsearch::Result<()> {
 }
 ```
 
-## What fits badly, and the way out
+## What does not fit well, and the workaround
 
 | Elasticsearch wants | What to write |
 |---|---|
-| `filter_path`, which takes fields out of the answer. The type after the arrow is fixed, and may then miss a field. | Keep the fields that the type needs; for any other shape, `send_raw()`, which gives the `reqwest::Response` (no arm, no typed refusal). |
-| A search as a `GET` or as a `POST`, the same operation. One endpoint has one method. | The `GET`, and a method of yours that changes it: `.post()`, with `edit_request` (see [when Concord does not say what you need](../guide/extending.md)). |
-| A `404` with two bodies: a missing document (an answer) or a missing index (a refusal). | An arm on the `404` that reads the body and gives one or the other: `document_404`. |
-| A point in time to open, walk and close: a lifetime over several calls. | A function of yours (`walk` above) that closes it after the walk, also after an error; the server lets it expire otherwise. |
-| A body of many JSON lines (NDJSON). | A writer of yours, `ndjson`, named after `body`. |
-| A `200` for a bulk write in which some lines failed. | The answer holds a result for each line: look at each `error`. Nothing is sent again by itself. |
-| `_cat` as text, or as JSON rows with `format=json`. The type after the arrow is fixed. | One type for both (`CatReply`), and an arm that reads the text and parses it when JSON was asked for. |
-| `?pretty`, a key with no value. | `pretty?: bool`: `.pretty(true)` sends `pretty=true`, which Elasticsearch takes. |
+| `filter_path`, which removes fields from the response. The return type is fixed, and a field that it needs may then be missing. | Keep the fields that the type needs; for any other shape, use `send_raw()`, which returns the `reqwest::Response` (no arm, no typed error). |
+| A search as a `GET` or as a `POST`, the same operation. An endpoint has exactly one method. | The `GET`, and your own method that changes it: `.post()`, with `edit_request` (see [When Concord does not cover what you need](../guide/extending.md)). |
+| A `404` with two bodies: a missing document (a normal response) or a missing index (an error). | An arm on the `404` that reads the body and returns one or the other: `document_404`. |
+| A point in time to open, walk and close: a lifetime over several calls. | Your own function (`walk` above) that closes it after the walk, even after an error; otherwise the server lets it expire. |
+| A body of many JSON lines (NDJSON). | Your own writer, `ndjson`, named after `body`. |
+| A `200` for a bulk write in which some lines failed. | The response holds a result for each line: check each `error`. Nothing is retried automatically. |
+| `_cat` as text, or as JSON rows with `format=json`. The return type is fixed. | One type for both (`CatReply`), and an arm that reads the text and parses it when JSON was requested. |
+| `?pretty`, a key with no value. | `pretty?: bool`: `.pretty(true)` sends `pretty=true`, which Elasticsearch accepts. |

@@ -17,7 +17,7 @@ concord::api! {
         GET get_me() -> User { path "getMe"; }
 
         /// One batch of updates. With nothing new, Telegram holds the request for `timeout`
-        /// seconds: a long poll. Asking again with the same offset is the next poll.
+        /// seconds: a long poll. Requesting again with the same offset is the next poll.
         GET get_updates(
             offset?: i64, limit?: u8, timeout?: u32, allowed_updates?: Vec<String>,
         ) -> Vec<Update> {

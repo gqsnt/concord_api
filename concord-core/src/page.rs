@@ -1,12 +1,12 @@
-//! A list that comes in several answers.
+//! Lists that span several responses.
 //!
-//! A pager is a function from the call and its answer to the next call: any
-//! `Fn(C, &Answer<C::Value>) -> Option<C>`, or the same with a `Result` around it. The
-//! client's author chooses one with `paginate`. `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link` and `by_next_url` of
-//! `concord` are six functions that give one, written with [`Call`] and [`Slot`]; one of
-//! yours is written in the same way.
+//! A pager is a function from the call and its response to the next call: any
+//! `Fn(C, &Answer<C::Value>) -> Option<C>`, or the same wrapped in a `Result`. The
+//! client's author chooses one with `paginate`. `concord`'s `by_offset`, `by_offset_limit`,
+//! `by_page`, `by_cursor`, `by_link` and `by_next_url` are six functions that return one,
+//! built with [`Call`] and [`Slot`]; your own pager is built in the same way.
 
-/// Borrow a URL reference without its fragment, before resolving or comparing a next page.
+/// Borrows a URL reference without its fragment, before resolving or comparing a next page.
 /// No URL parsing, decoding or allocation occurs. A percent-encoded `#` remains
 /// part of the path or query; only a literal fragment delimiter ends the reference.
 ///
@@ -46,9 +46,9 @@ use std::task::{Context, Poll};
 pub trait IntoItems: Send {
     /// The type of one item.
     type Item: Send;
-    /// Take the items in provider order.
+    /// Takes the items in the order the provider sent them.
     fn into_items(self) -> Vec<Self::Item>;
-    /// How many items this page holds.
+    /// Returns how many items this page holds.
     fn count(&self) -> usize;
 }
 
@@ -62,7 +62,7 @@ impl<T: Send> IntoItems for Vec<T> {
     }
 }
 
-/// The pages of a call, one call for each. From `.pages()`.
+/// The pages of a call, one call per page. Returned by `.pages()`.
 ///
 /// `T` is the type of a page, `E` the API's own problem type.
 ///
@@ -82,27 +82,28 @@ impl<T: Send> IntoItems for Vec<T> {
 /// ```
 ///
 /// It is also a `Stream` of `Result<T, Error<E>>`, for the tools that take one.
-/// Each request is prepared once when its page is asked for, using current secrets;
-/// that exact preparation is then sent. Pages pin the origin of the first finished
+/// Each request is prepared once, when its page is requested, using the current secrets;
+/// that exact prepared request is then sent. Pages pin the origin of the first finished
 /// request, after `edit_request` and before middleware. Each later finished request
-/// is checked against that origin before request comparison; a change of origin,
-/// including through a replaced host secret, ends the pages with a Build error.
-/// `at_url` is checked separately while building each request, before `edit_request`,
-/// against the origin the call builds from its base (or `with_base`).
-/// A shared one-shot stream body gives a Build error on the second page; a body the
-/// description makes anew for each send gives each page its own stream.
+/// is checked against that origin before requests are compared; a change of origin,
+/// including one caused by a replaced host secret, ends the pages with a Build error.
+/// `at_url` is checked separately while each request is built, before `edit_request`,
+/// against the origin that the call builds from its base (or `with_base`).
+/// A shared one-shot stream body causes a Build error on the second page; a body that the
+/// description creates anew for each send gives each page its own stream.
 ///
-/// A repeated request gives a Mismatch: the same method, URL, body bytes and headers,
-/// leaving out the fragment and every piece that a secret wrote: host/path pieces,
-/// query pairs and header values. Sensitive header values are omitted too, including
-/// those marked by `edit_request`. Body bytes are compared as they are, so a replaced
-/// body secret looks like a move once. A streamed body is never the same request:
-/// it has no bytes to compare. After an `edit_request` that changes the URL,
+/// A repeated request is a Mismatch: the same method, URL, body bytes and headers,
+/// leaving out the fragment and every part that a secret filled in: parts of the host or
+/// path, query pairs and header values. Sensitive header values are left out too, including
+/// those marked by `edit_request`. Body bytes are compared as they are, so when a secret in
+/// the body is replaced, the next request differs in its bytes and one repeat goes
+/// undetected. A request with a streamed body never counts as a
+/// repeat: it has no bytes to compare. After an `edit_request` that changes the URL,
 /// its secret marks are no longer known and the URL is compared as it is, without
 /// its fragment. A changed continuation header advances the page; a replaced key
-/// with known marks does not.
-/// When a next URL already contains a secret query key, every pair of that key
-/// is removed before the current secret is written.
+/// whose marks are known does not.
+/// When a next URL already contains a secret query key, every pair with that key
+/// is removed before the current secret is added.
 #[must_use = "pages are asked for with `try_next`"]
 pub struct Pages<T, E = ()> {
     // The pager and exchange need only be Send. Mutex preserves Pages' Sync
@@ -130,13 +131,14 @@ impl<T, E> Pages<T, E> {
 }
 
 impl<T: Send, E: Send> Pages<T, E> {
-    /// Every item of every page, in order: `call.pages().items()`.
+    /// Returns every item of every page, in order: `call.pages().items()`.
     /// Each page is consumed through [`IntoItems::into_items`].
     ///
     /// A page that is an `Option` or a `Result` cannot silently lose its outcome.
     /// The diagnostic says "is not a list of items" and asks for
-    /// `concord::page::IntoItems` to be implemented for the page type:
-    /// (Rustdoc's `compile_fail` checks rejection, but cannot match diagnostic text.)
+    /// `concord::page::IntoItems` to be implemented for the page type.
+    /// (Rustdoc's `compile_fail` checks that the code is rejected, but cannot match the
+    /// diagnostic text.)
     ///
     /// ```compile_fail
     /// # use concord_core as concord;
@@ -174,18 +176,19 @@ impl<T: Send, E: Send> Pages<T, E> {
 }
 
 impl<T: Send, E: Send> Pages<T, E> {
-    /// The next page, or `None` after the last one. Nothing is sent before the first call.
+    /// Returns the next page, or `None` after the last one. Nothing is sent before the first
+    /// call.
     ///
     /// Cancel safe: a `try_next()` that is dropped loses nothing and sends nothing twice;
-    /// the exchange in flight lives in this value, and the next `try_next()` goes on with it.
-    /// After an error the pages are over: the next `try_next()` gives `Ok(None)`, and the
-    /// stream ends the same way. Trying again is the job of the retry policy of the call; to
-    /// go on later, call the endpoint again from the last page that you hold.
+    /// the exchange in flight lives in this value, and the next `try_next()` continues it.
+    /// After an error the pages are over: the next `try_next()` returns `Ok(None)`, and the
+    /// stream ends the same way. Retrying is the job of the call's retry policy; to
+    /// continue later, call the endpoint again from the last page that you hold.
     ///
     /// # Errors
     ///
-    /// The error of the call for that page, or a Mismatch when the pager asks for
-    /// the request that was just sent.
+    /// The error of the call for that page, or a Mismatch when the pager returns the
+    /// request that was just sent.
     ///
     /// `Fail::from(problem)` in a pager becomes a Refused error with that problem;
     /// `concord::mismatch(…)` becomes a Mismatch. Both are returned by the `try_next()`
@@ -217,7 +220,8 @@ impl<T: Send, E: Send> futures_core::Stream for Pages<T, E> {
     }
 }
 
-/// The items of every page, in order. From `.pages().items()`, for a page type with [`IntoItems`].
+/// The items of every page, in order. Returned by `.pages().items()`, for a page type that
+/// implements [`IntoItems`].
 ///
 /// `I` is the type of an item, `E` the API's own problem type.
 #[must_use = "items are asked for with `try_next`"]
@@ -247,8 +251,8 @@ impl<T: IntoItems, E: Send> PageSource<T::Item, E> for Flatten<T, E> {
 }
 
 impl<I: Send, E: Send> Items<I, E> {
-    /// The next item, or `None` after the last one. Cancel safe, like [`Pages::try_next`],
-    /// and over after an error in the same way.
+    /// Returns the next item, or `None` after the last one. Cancel safe, like
+    /// [`Pages::try_next`], and finished after an error in the same way.
     ///
     /// # Errors
     ///
@@ -278,34 +282,34 @@ impl<I: Send, E: Send> futures_core::Stream for Items<I, E> {
 
 /// What a pager may do with a call, besides the methods the client's author provides.
 ///
-/// Every generated call has it. It is not meant to be written by hand.
+/// Every generated call implements it. It is not meant to be implemented by hand.
 pub trait Call: Clone + Send + Sync + 'static {
-    /// The type that sending the call gives: one page.
+    /// The type that sending the call returns: one page.
     type Value: Send + 'static;
     /// The API's own problem type.
     type Problem: Send + Sync + 'static;
 
-    /// The same call, sent to this URL in place of its usual URL.
+    /// Returns the same call, sent to this URL instead of its usual URL.
     ///
-    /// `at_url` gives a path and a query, never an origin.
+    /// `at_url` sets a path and a query, never an origin.
     /// A URL at another origin than the one that the call builds from its base
     /// (or `with_base`) is a Build error, in pages and outside them. This check runs
     /// on its own when the request is built, before `edit_request`.
-    /// When your pager returns this call, Pages records the URL of the answer
-    /// your pager saw. A relative URL is resolved against that answer's URL;
+    /// When your pager returns this call, Pages records the URL of the response
+    /// your pager saw. A relative URL is resolved against that response's URL;
     /// for your own `call.at_url("../next")`, it resolves against the URL the call builds.
     /// Resolution happens before the origin check and before your `edit_request` edits.
     ///
-    /// The author's headers are still written. Original query pairs are not added
+    /// The author's headers are still sent. Original query pairs are not added
     /// again, except those holding a `Secret`. A fragment is dropped before comparison.
     fn at_url(self, url: &str) -> Self;
 }
 
-/// The place of one input on a call.
+/// The slot of one input on a call.
 ///
-/// In a `paginate` statement, an input of the endpoint names its place, not its value:
-/// `paginate by_offset_limit(start, count);` hands two places to `by_offset_limit`, which reads them on the
-/// call that was answered and sets one on the next call.
+/// In a `paginate` statement, an input of the endpoint names its slot, not its value:
+/// `paginate by_offset_limit(start, count);` hands two slots to `by_offset_limit`, which reads them on the
+/// call whose response arrived and sets one on the next call.
 ///
 /// ```
 /// # use concord_core as concord;
@@ -334,15 +338,15 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
     /// The declared value type of the input, without the optional-input wrapper.
     type Value;
 
-    /// The value on this call. `None` when the input is optional and was not given.
+    /// Returns the value on this call: `None` when the input is optional and was not set.
     fn get<'a>(&self, call: &'a C) -> Option<&'a Self::Value>;
 
-    /// The call with this input set.
+    /// Returns the call with this input set.
     fn set(&self, call: C, value: Self::Value) -> C;
 }
 
-/// What a pager may give: `Some(next call)`, `None` at the end, or the same inside a
-/// `Result` whose error is a [`Fail`] (a page that cannot be believed is an error, not the end).
+/// What a pager may return: `Some(next call)`, `None` at the end, or the same inside a
+/// `Result` whose error is a [`Fail`] (a page that cannot be trusted is an error, not the end).
 ///
 /// `Fail::from(problem)` in a pager becomes a Refused error with that problem;
 /// `concord::mismatch(…)` becomes a Mismatch. Both are returned by the `try_next()`
@@ -351,7 +355,7 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
     message = "a pager gives the next call: Some(call), None, or a Result of that"
 )]
 pub trait IntoNext<C: Call>: sealed::Sealed {
-    /// The next call, the end, or the failure.
+    /// Returns the next call, the end, or the failure.
     fn into_next(self) -> Result<Option<C>, Fail<C::Problem>>;
 }
 

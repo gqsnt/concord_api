@@ -1,4 +1,4 @@
-//! What an argument of a generated method may be.
+//! The types that a generated method accepts as an argument.
 
 use crate::secret::Secret;
 

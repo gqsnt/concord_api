@@ -1,7 +1,7 @@
 concord::api! {
 pub client Tasks {
         base "https://tasks.example.com/api/tasks";
-        read Json;                                  // this API answers in JSON
+        read Json;                                  // this API responds with JSON
 
         GET list(done?: bool) -> Vec<Task> {
             query { done; }

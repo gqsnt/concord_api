@@ -1,19 +1,19 @@
-//! RFC 7578 encoding, independent of a transport.
+//! Multipart/form-data encoding (RFC 7578), independent of any transport.
 use concord_core::{body::BodyStream, bytes::Bytes, Body};
 use futures_util::StreamExt;
 use std::{fmt, io};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// Start a multipart/form-data body. Add text and files, then call [`Multipart::finish`].
+/// Starts a multipart/form-data body. Add text and files, then call [`Multipart::finish`].
 ///
 /// In a description: `body multipart().text("caption", caption).file("photo", name,
-/// "image/jpeg", jpeg.clone()).finish();`. Each part goes out as a line `--boundary`, its
+/// "image/jpeg", jpeg.clone()).finish();`. Each part is sent as a line `--boundary`, its
 /// header lines (`Content-Disposition: form-data; name="caption"`, and for a file
 /// `Content-Disposition: form-data; name="photo"; filename="mast.jpg"` then
-/// `Content-Type: image/jpeg`, spelled so), an empty line, and its bytes; a line
-/// `--boundary--` ends the body, and every line ends with `\r\n`. The page of `api!`
-/// shows the whole body of one request, checked by a test.
+/// `Content-Type: image/jpeg`, spelled exactly so), an empty line, and its bytes; a line
+/// `--boundary--` ends the body, and every line ends with `\r\n`. The documentation of
+/// `api!` shows the whole body of one request, checked by a test.
 pub fn multipart() -> Multipart {
     Multipart::default()
 }
@@ -29,9 +29,9 @@ struct Part {
     body: Body,
 }
 
-/// Why a multipart body could not be built.
+/// The reason a multipart body could not be built.
 ///
-/// Match failures with a fallback so future causes remain compatible.
+/// Match failures with a fallback arm, so that future causes remain compatible.
 ///
 /// ```compile_fail
 /// # mod concord { pub use concord_extras::MultipartError; }
@@ -71,9 +71,9 @@ impl fmt::Debug for Multipart {
     }
 }
 impl Multipart {
-    /// Add a UTF-8 text field, in this position. Control characters in its name
-    /// are reported by `finish()`. Quotes are written `%22`; other text is kept.
-    /// A quote and the literal text `%22` therefore encode alike; names need not be unique.
+    /// Adds a UTF-8 text field at this position. Control characters in its name
+    /// are reported by `finish()`. Quotes are written as `%22`; other text is kept as it is.
+    /// A quote and the literal text `%22` therefore encode the same way; names need not be unique.
     ///
     /// ```compile_fail
     /// #![deny(unused_must_use)]
@@ -93,9 +93,9 @@ impl Multipart {
         self
     }
 
-    /// Add a file, preserving order. Controls in either name and an invalid content
-    /// type are reported by `finish()`. Quotes are written `%22`; other text is kept.
-    /// A quote and the literal text `%22` therefore encode alike; names need not be unique.
+    /// Adds a file, preserving order. Control characters in either name and an invalid content
+    /// type are reported by `finish()`. Quotes are written as `%22`; other text is kept as it is.
+    /// A quote and the literal text `%22` therefore encode the same way; names need not be unique.
     ///
     /// ```compile_fail
     /// #![deny(unused_must_use)]
@@ -129,10 +129,10 @@ impl Multipart {
         }
     }
 
-    /// Produce bytes if every part is in memory, otherwise a one-shot stream.
-    /// Buffered inputs use the first absent boundary from the fixed sequence
+    /// Produces bytes if every part is in memory, otherwise a one-shot stream.
+    /// Buffered inputs use the first boundary that does not occur in them, from the fixed sequence
     /// `concord-00000000000000000000000000000000`, `concord-00000000000000000000000000000001`, ….
-    /// Streaming inputs use 128 random bits. A boundary in a stream is an error,
+    /// Streaming inputs use 128 random bits. A boundary inside a stream is an error,
     /// detected across chunks before the colliding bytes are yielded.
     /// All underlying streams are claimed together when the result is taken.
     ///

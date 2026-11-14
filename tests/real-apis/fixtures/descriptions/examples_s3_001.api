@@ -2,7 +2,7 @@
     pub client ObjectStore(region: String, credentials: Credentials) {
         read Xml;
         problem S3Problem;
-        /// Signs every request: each page, each try.
+        /// Signs every request: each page, each attempt.
         middleware Signed::new(credentials.clone(), region.clone());
 
         part version(version_id?: String) {

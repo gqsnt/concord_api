@@ -1,4 +1,4 @@
-//! How an answer becomes a value.
+//! How a response becomes a value.
 
 use crate::answer::{BodyClock, BodyTimeout, Headers, KnownKind, KnownOutcome};
 use crate::error::{Class, Clock, Error, Kept, Kind, MismatchFailure};
@@ -10,10 +10,11 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
-/// Turns the body of an answer into the value. One statement of the description names one: `read x;`.
+/// Turns the body of a response into the value. One statement of the description names a
+/// reader: `read x;`.
 ///
-/// The core has no format of its own. `Json`, `Text`, `Binary` and `Stream` of `concord` are
-/// four readers written with this trait, and one of yours is used in the same way.
+/// The core has no format of its own. `concord`'s `Json`, `Text`, `Binary` and `Stream` are
+/// four readers built with this trait, and your own reader is used in the same way.
 ///
 /// ```
 /// # use concord_core as concord;
@@ -62,7 +63,7 @@ impl<T, R: Reader<T>> Reader<T> for &R {
     }
 }
 
-/// An answer whose body is not read yet.
+/// A response whose body has not been read yet.
 pub struct Incoming {
     stream: ByteStream,
 }
@@ -80,7 +81,7 @@ impl From<reqwest::Response> for Incoming {
 }
 
 impl Incoming {
-    /// An answer to read, from a response, with no clocks and zero tries.
+    /// Creates a response to read from a `reqwest::Response`, with no timeouts and zero attempts.
     ///
     /// ```
     /// # use concord_core as concord;
@@ -153,23 +154,23 @@ impl Incoming {
         evidence
     }
 
-    /// The status of the answer.
+    /// Returns the status of the response.
     pub fn status(&self) -> http::StatusCode {
         self.stream.status()
     }
 
-    /// The headers of the answer.
+    /// Returns the headers of the response.
     pub fn headers(&self) -> &Headers {
         self.stream.headers()
     }
 
-    /// The `Content-Type` of the answer.
+    /// Returns the `Content-Type` of the response.
     pub fn content_type(&self) -> Option<&str> {
         self.headers().get("content-type")
     }
 
-    /// The whole body, up to a limit. An announced excess fails before any read.
-    /// A piece that would exceed the limit is dropped in its entirety.
+    /// Returns the whole body, up to a limit. An announced size over the limit fails before
+    /// anything is read. A chunk that would exceed the limit is dropped entirely.
     /// A single nonempty frame is returned without copying. Multiple frames are
     /// joined with fallible reservations. An announced size can guide capacity
     /// only up to twice the received bytes, with a 64 KiB floor, and within the
@@ -179,7 +180,7 @@ impl Incoming {
     ///
     /// # Errors
     ///
-    /// A body that is too large, or that breaks. Pass the [`ReadError`] on with `?`.
+    /// A body that is too large, or that breaks off. Pass the [`ReadError`] on with `?`.
     pub async fn bytes(self, limit: usize) -> Result<Bytes, ReadError> {
         self.bytes_with_reservation(limit, reserve_join).await
     }
@@ -253,7 +254,7 @@ impl Incoming {
         }
     }
 
-    /// The body as it comes, without reading a byte.
+    /// Hands over the body as a stream, without reading a byte.
     pub fn stream(self) -> ByteStream {
         self.stream
     }
@@ -284,10 +285,10 @@ fn allocation_error(stream: &ByteStream, error: std::collections::TryReserveErro
     failure
 }
 
-/// Bound decoder details to 1 KiB, including a UTF-8 safe ` … [cut]` marker.
-/// This is the same policy used by [`ReadError::with_details`]. Applying it again
-/// preserves the text and marker, and the returned allocation does not retain an
-/// arbitrarily large source buffer. Details may contain response values; they
+/// Bounds decoder details to 1 KiB, including a UTF-8-safe ` … [cut]` marker.
+/// This is the same policy that [`ReadError::with_details`] uses. Applying it again
+/// preserves the text and the marker, and the returned allocation does not keep an
+/// arbitrarily large source buffer alive. Details may contain response values; they
 /// belong in optional diagnostics, never in an error's ordinary message or source.
 ///
 /// ```
@@ -322,11 +323,11 @@ pub fn details(message: String) -> String {
     kept
 }
 
-/// A schema location, without keys or variant names taken from the answer.
+/// A schema location, without keys or variant names taken from the response.
 ///
-/// Field names must come from the program. At most 32 pieces are retained;
-/// appending further pieces leaves the place unchanged. The root prints as empty
-/// text. `Debug` prints exactly the same text as `Display`.
+/// Field names must come from the program. At most 32 components are kept;
+/// appending more components leaves the location unchanged. The root prints as an empty
+/// string. `Debug` prints exactly the same text as `Display`.
 #[derive(Clone, Default)]
 pub struct Place {
     pieces: Vec<PlacePiece>,
@@ -341,7 +342,7 @@ enum PlacePiece {
 }
 
 impl Place {
-    /// The root of the value.
+    /// Returns the location of the root value.
     pub fn root() -> Self {
         Self::default()
     }
@@ -353,22 +354,22 @@ impl Place {
         self
     }
 
-    /// A field whose name comes from the program's schema.
+    /// Appends a field whose name comes from the program's schema.
     pub fn field(self, name: &'static str) -> Self {
         self.push(PlacePiece::Field(name))
     }
 
-    /// An element of a sequence.
+    /// Appends an element of a sequence.
     pub fn index(self, index: usize) -> Self {
         self.push(PlacePiece::Index(index))
     }
 
-    /// A map key; its value is deliberately not accepted or retained.
+    /// Appends a map key; its value is deliberately neither accepted nor kept.
     pub fn key(self) -> Self {
         self.push(PlacePiece::Key)
     }
 
-    /// An enum variant; its value is deliberately not accepted or retained.
+    /// Appends an enum variant; its value is deliberately neither accepted nor kept.
     pub fn variant(self) -> Self {
         self.push(PlacePiece::Variant)
     }
@@ -399,7 +400,7 @@ impl std::fmt::Debug for Place {
     }
 }
 
-/// Why a reader could not give the value.
+/// The reason a reader could not produce the value.
 pub struct ReadError {
     body: bytes::Bytes,
     details: Option<String>,
@@ -467,8 +468,9 @@ impl std::error::Error for ReadError {
 }
 
 impl ReadError {
-    /// The whole body arrived and is not the type. Concord constructs the cause
-    /// from the place and failure kind; a reader cannot supply a decoder cause.
+    /// Creates an error for a body that arrived in full but is not of the type. Concord
+    /// constructs the cause from the location and failure kind; a reader cannot supply a
+    /// decoder cause.
     ///
     /// ```compile_fail
     /// # use concord_core as concord;
@@ -498,14 +500,14 @@ impl ReadError {
         }
     }
 
-    /// A decoder message for [`Self::details`], kept up to 1 KiB with a cut marker.
+    /// Adds a decoder message for [`Self::details`], kept to at most 1 KiB with a truncation marker.
     /// It may contain response values; it never becomes the error's source.
     pub fn with_details(mut self, details: impl Into<String>) -> ReadError {
         self.details = Some(self::details(details.into()));
         self
     }
 
-    /// The structured location at which decoding failed, where the decoder gives it.
+    /// Sets the structured location at which decoding failed, when the decoder provides it.
     /// Free text belongs in [`Self::with_details`].
     ///
     /// ```compile_fail
@@ -519,18 +521,20 @@ impl ReadError {
         self
     }
 
-    /// The decoder's free text, available only by asking for it explicitly.
+    /// Returns the decoder's free text, available only when you ask for it explicitly.
     pub fn details(&self) -> Option<&str> {
         self.details.as_deref()
     }
 
-    /// Decoding failed, and the response's content type was not this reader's either.
+    /// Marks that decoding failed and that the response's content type was not this reader's
+    /// either.
     pub fn label_was_not_expected(mut self) -> ReadError {
         self.source.unexpected_label = true;
         self
     }
 
-    /// The `Content-Type` of the answer is not the one this reader holds the server to.
+    /// Creates an error for a response whose `Content-Type` is not the one this reader
+    /// requires from the server.
     pub fn wrong_content_type() -> ReadError {
         let mut error = Self::not_the_type(Bytes::new());
         error.kind = ReadKind::ContentType;
@@ -621,8 +625,8 @@ impl ReadError {
 }
 
 impl From<Error> for ReadError {
-    /// From the error of a [`ByteStream`] that broke: it stays a failure of the transport.
-    /// Any other forwarded error is a Mismatch without the reader's source.
+    /// Converts the error of a [`ByteStream`] that broke off: it stays a transport failure.
+    /// Any other forwarded error becomes a Mismatch without the reader's source.
     fn from(error: Error) -> ReadError {
         let mut failure = Self::not_the_type(Bytes::new());
         if error.is_from_byte_stream() {
@@ -633,7 +637,7 @@ impl From<Error> for ReadError {
     }
 }
 
-/// A failure while reading a handed-over body, with the answer's known head.
+/// A failure while reading a body that was handed over, with the response's known head.
 ///
 /// Its kind is always [`Kind::Transport`]. `Display`, `Debug` and `source()`
 /// follow the same value-free rules as [`Error`]. Use `?` to convert it into
@@ -641,42 +645,42 @@ impl From<Error> for ReadError {
 pub struct StreamError(Error);
 
 impl StreamError {
-    /// The failure kind: always Transport.
+    /// Returns the failure kind: always Transport.
     pub fn kind(&self) -> Kind {
         self.0.kind()
     }
 
-    /// The endpoint whose body was handed over.
+    /// Returns the endpoint whose body was handed over.
     pub fn endpoint(&self) -> &'static str {
         self.0.endpoint()
     }
 
-    /// The known status of the answer.
+    /// Returns the known status of the response.
     pub fn status(&self) -> Option<http::StatusCode> {
         self.0.status()
     }
 
-    /// Whether the answer had this status.
+    /// Returns whether the response had this status.
     pub fn is_status(&self, code: u16) -> bool {
         self.0.is_status(code)
     }
 
-    /// The known headers of the answer.
+    /// Returns the known headers of the response.
     pub fn headers(&self) -> Option<&Headers> {
         self.0.headers()
     }
 
-    /// The transport failure class.
+    /// Returns the kind of network failure.
     pub fn class(&self) -> Option<Class> {
         self.0.class()
     }
 
-    /// Whether a clock expired.
+    /// Returns whether a timeout expired.
     pub fn is_timeout(&self) -> bool {
         self.0.is_timeout()
     }
 
-    /// How many attempts entered the middleware chain.
+    /// Returns how many attempts entered the middleware chain.
     pub fn tries(&self) -> u32 {
         self.0.tries()
     }
@@ -774,12 +778,12 @@ pub(crate) async fn finish_refusal(
 
 type ResponseBody = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>;
 
-/// A body handed over, to read as it comes.
+/// A body that is handed over to you, to read as it arrives.
 ///
-/// It is what an endpoint gives with `read concord::read::Stream;` and `-> ByteStream`:
-/// the call ends at the head, and the body is yours. The call's clocks go on while you read
-/// it: the `timeout` of the call (`with_timeout`) runs until the end of the stream, and the
-/// clock for silence (30 seconds by default) runs while a `try_next()` waits.
+/// An endpoint returns it with `read concord::read::Stream;` and `-> ByteStream`:
+/// the call ends at the head, and the body is yours. The call's timeouts keep running while
+/// you read it: the call timeout (`with_timeout`) runs until the end of the stream, and the
+/// idle timeout (30 seconds by default) runs while a `try_next()` waits.
 ///
 /// ```
 /// # use concord_core as concord;
@@ -865,7 +869,7 @@ impl BodyFailure {
 }
 
 impl ByteStream {
-    /// The next piece, or `None` at the end. After an error the stream is over.
+    /// Returns the next chunk, or `None` at the end. After an error the stream is over.
     ///
     /// Cancel safe: dropping this future loses no byte and stops its idle timer.
     pub fn try_next(
@@ -888,12 +892,12 @@ impl ByteStream {
         Wait(self)
     }
 
-    /// The status of the answer that this body belongs to.
+    /// Returns the status of the response that this body belongs to.
     pub fn status(&self) -> http::StatusCode {
         self.status
     }
 
-    /// The headers of the answer that this body belongs to.
+    /// Returns the headers of the response that this body belongs to.
     pub fn headers(&self) -> &Headers {
         &self.headers
     }
@@ -1019,10 +1023,10 @@ impl ByteStream {
     }
 }
 
-/// The silence clock runs from a poll that finds no piece until the next piece,
-/// including time between polls. Dropping a `next()` future cannot be observed by
-/// this implementation. Use [`ByteStream::try_next`] to count only time spent
-/// waiting inside each call; dropping that future resets its silence clock.
+/// The idle timeout runs from a poll that finds no chunk until the next chunk,
+/// including the time between polls. This implementation cannot observe that a `next()`
+/// future was dropped. Use [`ByteStream::try_next`] to count only the time spent
+/// waiting inside each call; dropping that future resets its idle timeout.
 impl Stream for ByteStream {
     type Item = Result<Bytes, StreamError>;
 

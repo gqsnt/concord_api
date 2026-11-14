@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::time::{sleep_until, Instant};
 
 /// Riot's limits: a bucket for the application on each host, and one for each method. A bucket
-/// that the answers show full is held, and a request waits for its two buckets before it goes.
+/// that the responses show full is held, and a request waits for its two buckets before it is sent.
 #[derive(Clone, Default)]
 pub struct Quota(Arc<Mutex<HashMap<String, Instant>>>);
 

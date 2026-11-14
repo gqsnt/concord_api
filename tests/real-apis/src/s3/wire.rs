@@ -39,7 +39,7 @@ pub fn create_bucket_body(value: &Option<CreateBucketConfiguration>) -> Result<B
 }
 
 /// `middleware Signed::new(credentials.clone(), region.clone());`: AWS Signature Version 4, on
-/// every try. The list of buckets is signed for `us-east-1`; everything else for the region.
+/// every attempt. The list of buckets is signed for `us-east-1`; everything else for the region.
 /// A delete of many keys also needs a `content-md5` of its body: the description cannot make a
 /// header from the bytes of a body, so the signer adds it, before it signs.
 pub struct Signed {

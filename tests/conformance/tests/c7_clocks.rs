@@ -1,7 +1,7 @@
 //! C7, Concord's own client and the clocks: `concord::Http` (no redirect, no cookies, no
 //! decompression), the default transport, a client of the user's, the two clocks row by
 //! row (tables 7.1 to 7.3 of docs/reference/cases.md), and a drop (docs/reference/contracts.md C7;
-//! docs/internals/engine.md, "The two clocks", "A drop" and "Concord's own HTTP client"; docs/reference/rules.md rules 19 and 22).
+//! docs/internals/engine.md, "The two timeouts", "A drop" and "Concord's own HTTP client"; docs/reference/rules.md rules 19 and 22).
 //!
 //! The tests of the clocks run with Tokio's clock paused, over a `Script`; the tests of
 //! `concord::Http` run on a local `Server`, in real time.

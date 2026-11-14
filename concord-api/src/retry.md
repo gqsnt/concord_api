@@ -1,6 +1,6 @@
-**A worked example.** An API says: "a `5xx` on a `GET` may be tried again, at most 4 more
-times, after 1, 2, 4 and 8 seconds". The author writes that rule once, as a function beside
-the description, and a test plays it on virtual time with `concord_testkit::Script`:
+**A worked example.** An API says: "a `5xx` on a `GET` may be retried at most 4 more times,
+after 1, 2, 4 and 8 seconds". The author writes that rule once, as a function next to the
+description, and a test runs it on virtual time with `concord_testkit::Script`:
 
 ```rust
 use concord::Json;
@@ -52,23 +52,23 @@ assert_eq!((error.tries(), error.is_status(503)), (1, true));
 
 What this shows:
 
-- **`Retry::none()` and then `when`.** `none()` has one try and no table. `.tries(5)`
-  allows five, and then only the rules decide: a rule of `when` that gives `Some(wait)`
-  makes another try, and when every rule gives `None` (a `404` here) there is none. Built
-  from `Retry::standard().tries(5)` instead, a `None` would leave the decision to the
-  standard table (`408`, `429`, `502`, `503`, `504`, a failed connection, a timeout, a body
-  that broke), with its random waits.
-- **Is the wait exact?** A wait from `when` is a floor. The try waits the longest of that
-  wait, the `Retry-After` of the answer, and a random part up to 1 s before try 2, 2 s
-  before try 3, then 4, 8, … at most 60 s, after `none()` too. A rule that asks at least that
-  much, as this one does, is waited exactly; a rule that asks 1 s each time waits between
-  1 and 2 s before try 3. A wait over 60 s, or one that would end after the call's
-  `timeout`, means no other try.
+- **`Retry::none()` and then `when`.** `none()` allows one attempt and has no standard table.
+  `.tries(5)` allows five, and from then on only the rules decide: a `when` rule that returns
+  `Some(wait)` makes another attempt, and when every rule returns `None` (a `404` here) there
+  is none. If the policy were built from `Retry::standard().tries(5)` instead, a `None` would
+  leave the decision to the standard table (`408`, `429`, `502`, `503`, `504`, a failed connection, a timeout, a body
+  that broke off while it was read), with its random waits.
+- **Is the wait exact?** A wait from `when` is a minimum. The attempt waits for the longest
+  of that wait, the response's `Retry-After`, and a random delay of up to 1 s before attempt 2,
+  2 s before attempt 3, then 4, 8, … at most 60 s, also after `none()`. A rule that asks for at
+  least that much, as this one does, gets exactly its wait; a rule that asks for 1 s each time
+  waits between 1 and 2 s before attempt 3. A wait over 60 s, or one that would end after the
+  call's `timeout`, means no further attempt.
 - **The method decides first.** A rule sees the failure, not the method: a `POST` without
-  `idempotent;`, or any endpoint with `idempotent false;`, is not sent again whatever a rule
+  `idempotent;`, or any endpoint with `idempotent false;`, is never retried, whatever a rule
   says.
 - **Where the policy lives.** A description holds no policy, and `stations::Retry` is only
-  the type. The author ships the policy beside the macro, as `retry()` here; the client
+  the type. The author ships the policy next to the description, as `retry()` here, and the client
   uses it only when a caller passes it: `Stations::new().with_retry(retry())`. A caller who
-  wants more keeps it by adding to it: `with_retry(retry().when(mine))`.
+  wants more keeps it and adds to it: `with_retry(retry().when(mine))`.
 

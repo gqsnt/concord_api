@@ -1,10 +1,10 @@
 # Call a client
 
-*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [Describe an API](describing-an-api.md) · next: [Read answers and errors, send bodies](responses-and-errors.md)*
+*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [Describe an API](describing-an-api.md) · next: [Read responses and errors, send bodies](responses-and-errors.md)*
 
-For the user of a generated client: how to call it and build it, what comes back, and how long it waits.
+This page is for the caller of a generated client. It shows how to build the client and call it, what a call returns, and how long a call waits.
 
-## A first look
+## What calling a client looks like
 
 ```rust
 let riot = Riot::new(key);
@@ -12,8 +12,8 @@ let riot = Riot::new(key);
 // one level = one call; required values are the arguments
 let account = riot.account(Europe).by_riot_id("Faker", "KR1").await?;        // an Option<Account>
 
-// values that are not required: one method each, named like the value
-// (`ids` has pages, so it is not awaited directly: `.send()` gives one page)
+// optional values: one setter each, named like the value
+// (`ids` is paginated, so it is not awaited directly: `.send()` fetches one page)
 let ids = riot
     .matches(Asia)
     .ids(&puuid)
@@ -28,7 +28,7 @@ for id in ids {
     let game = asia.get(id).await?;
 }
 
-// an endpoint with pages: all of them
+// a paginated endpoint: all of its pages
 let mut ids = asia.ids(&puuid).count(100).pages().items();
 while let Some(id) = ids.try_next().await? {
     println!("{id}");
@@ -37,19 +37,19 @@ while let Some(id) = ids.try_next().await? {
 
 What a scope's method returns (`riot.matches(Asia)`) is a **handle**: a value that holds the inputs of the scope, and whose methods are the endpoints and scopes below it.
 
-## The rules of use
+## The rules for using a client
 
 | # | Rule |
 |---|---|
 | U1 | One level of the tree is one method call. |
-| U2 | Required values are the arguments of that call, in the order of the declaration. |
-| U3 | A value that is not required (marked `?` in the description) has one method, with exactly the name of the value. No prefix. |
-| U4 | An argument is the declared type, or a reference to it (`&puuid`; it is cloned inside). Text (`"Faker"`) is also accepted where a `String` or a `Secret` is declared, and an array or a slice where a `Vec` is declared. Nothing else is: for `puuid: Puuid`, `ids("p-1")` does not compile ([arguments](#arguments)). |
-| U5 | The method of an optional input takes what an argument of its type takes, or an `Option` of it. `None` un-sets it: `.count(5).count(None)` sends nothing. |
-| U6 | `.await` sends: one request, or a few when retry is set. `send()` is the same thing as a method. A call to an endpoint with pages is not awaited directly: `.send()` gives one page, on purpose, and `.pages()` gives them all ([what comes back](#what-comes-back)). |
-| U7 | A handle and a call own their data. Hold them, clone them, move a call to another task. |
-| U8 | Nothing is ever reset. A call is built, sent, and gone. |
-| U9 | A required value has no method to change it later. For another route, make another handle. The one thing that changes in place is a `Secret`: `key.replace(…)` ([a credential is a value](credentials.md#a-credential-is-a-value)). |
+| U2 | Required values are the arguments of that call, in the order they are declared. |
+| U3 | An optional value (marked `?` in the description) has one setter, with exactly the name of the value and no prefix. |
+| U4 | An argument is a value of the declared type, or a reference to one (`&puuid`; it is cloned internally). Text (`"Faker"`) is also accepted where a `String` or a `Secret` is declared, and an array or a slice where a `Vec` is declared. Nothing else is accepted: for `puuid: Puuid`, `ids("p-1")` does not compile ([arguments](#arguments)). |
+| U5 | The setter of an optional input accepts whatever an argument of its type accepts, or an `Option` of it. `None` unsets it: `.count(5).count(None)` sends nothing. |
+| U6 | `.await` sends the call: one request, or a few when retries are enabled. `send()` does the same thing, as a method. A call to a paginated endpoint is not awaited directly: `.send()` fetches one page, on purpose, and `.pages()` yields them all ([what a call returns](#what-a-call-returns)). |
+| U7 | A handle and a call own their data. You can keep them, clone them, and move a call to another task. |
+| U8 | A call is never reset: it is built, sent, and then consumed. |
+| U9 | A required value has no method to change it later: for another route, make another handle. The only value that changes in place is a `Secret`: `key.replace(…)` ([a credential is a value](credentials.md#a-credential-is-a-value)). |
 
 ## The client
 
@@ -57,28 +57,28 @@ What a scope's method returns (`riot.matches(Asia)`) is a **handle**: a value th
 let riot = Riot::new(key);                 // the usual case: Concord's own HTTP client, with safe settings
 ```
 
-`new` takes the required inputs of the client. An optional input of the client is a setter on the client, as it is on a call: GitHub's `token?: Secret` is `Github::new("my-tool/1.0").token(token)`.
+`new` takes the required inputs of the client. An optional input of the client becomes a setter on the client, as it does on a call: GitHub's `token?: Secret` is `Github::new("my-tool/1.0").token(token)`.
 
-**A `Secret` from text.** Where a `Secret` is declared, text is accepted, as a `&str` or a `String`: `Riot::new("RGAPI-…")`, `Riot::new(std::env::var("RIOT_KEY")?)`. `Secret::new(text)` makes one that you hold (U9).
+**A `Secret` from text.** Where a `Secret` is declared, text is accepted, as a `&str` or a `String`: `Riot::new("RGAPI-…")`, `Riot::new(std::env::var("RIOT_KEY")?)`. `Secret::new(text)` creates one that you keep yourself (U9).
 
-Six more methods are on every client. Each returns the client, changed. They all start with `with_`, and so does every setting of Concord on a call: **an option of the API keeps its own name, a setting of Concord starts with `with_`.**
+Every client has six more methods. Each returns the client with the change applied. They all start with `with_`, as does every Concord setting on a call: **an API option keeps its own name; a Concord setting starts with `with_`.**
 
 | Method | For |
 |---|---|
-| `with_retry(retry)` | Trying again. Off until this is called. A policy is `riot::Retry::standard()` (or `riot::Retry::none()`, which has no rule of its own), with `.tries(n)`, `.when(f)` and `.unless(f)`: `riot::Retry` is `concord::Retry<RiotProblem>`, so a rule reads the API's own error, typed. `.not_applied_on(429)` lists a status after which a refused request may be repeated whatever its method: a `429` on a `POST`. It never panics: a number outside 100 to 999 is kept and matches no answer. An author may ship the policy of the API (`slack::retry()`), and the caller names it. On a call, a policy replaces the whole policy of the client for that call ([retries](retries.md)). |
-| `with_timeout(duration)` | The longest time for a whole call. No limit until this is called ([time](#time)). |
-| `with_idle_timeout(duration)` | How long the server may say nothing. 30 seconds until this is called ([time](#time)). |
-| `with_base("http://localhost:8080")` | Every request goes there, whatever the `base` lines say: a local test server, a gateway, another deployment. It may have a path prefix (`"https://example.com/gitlab"`). Every entry follows it, a secret too: it is the caller's own word. |
-| `with_middleware(m)` | One more thing that every request goes through, before the middlewares of the description: a log, a limit of your own ([a middleware](extending.md#a-middleware)). |
-| `with_transport(t)` | What really sends the requests, under the middlewares: `concord::Http` with settings of yours, a `reqwest::Client` of yours, a fake for a test, another HTTP library ([testing a client](testing.md), [a transport](extending.md#a-transport)). |
+| `with_retry(retry)` | Retries. Off until this is called. A policy starts from `riot::Retry::standard()` (or `riot::Retry::none()`, which has no rule of its own) and is adjusted with `.tries(n)`, `.when(f)` and `.unless(f)`. `riot::Retry` is `concord::Retry<RiotProblem>`, so a rule can read the API's own error as a `RiotProblem`. `.not_applied_on(429)` lists a status after which a rejected request may be retried whatever its method, such as a `429` on a `POST`. It never panics: a number outside 100 to 999 is stored but matches no response. An author may ship the API's own policy as a function (`slack::retry()`), and the caller passes its result here. On a call, a policy replaces the client's whole policy for that call ([retries](retries.md)). |
+| `with_timeout(duration)` | The maximum duration of a whole call. No limit until this is called ([timeouts](#timeouts)). |
+| `with_idle_timeout(duration)` | How long a call may wait with no data moving. 30 seconds until this is called ([timeouts](#timeouts)). |
+| `with_base("http://localhost:8080")` | Every request goes there, whatever the `base` statements say: a local test server, a gateway, another deployment. It may include a path prefix (`"https://example.com/gitlab"`). Every entry follows it, secrets included, because the caller chose it explicitly. |
+| `with_middleware(m)` | One more middleware layer that every request passes through, before the description's middleware: logging, a limit of your own ([a middleware](extending.md#a-middleware)). |
+| `with_transport(t)` | The transport that sends the requests, beneath the middleware: `concord::Http` with your own settings, your own `reqwest::Client`, a fake for tests, or another HTTP library ([testing a client](testing.md), [a transport](extending.md#a-transport)). |
 
-**The names that Concord keeps.** A child or an optional input becomes a method, so it may not have the name of a method that its receiver already has. These are exact names. On a call, they are Concord's own verbs (`send`, `send_raw`, `request`, `pages`, …) and `at_url`, which pagers use. On a client or a handle: `call` (kept for later) and `clone`; on a client also `new`. One prefix is kept, `with_`, and no other: Telegram's `send_message` is a name like any other. And Concord adds no name to a call, a handle or a client in a minor version, unless it starts with `with_`. A required input is an argument, and is free. A scope or an endpoint may not give a type named `Error`, `Result` or `Retry` in the module of its client. The whole table is [contracts](../reference/contracts.md) C1.6. And names that begin with `__` are Concord's: in a module that holds `concord::api!`, declare no item (a `const`, a `static`, a function, a type) whose name begins with `__`.
+**The names that Concord reserves.** A child or an optional input becomes a method, so it may not take the name of a method that its receiver already has. These names are matched exactly. On a call, they are Concord's own methods (`send`, `send_raw`, `request`, `pages`, …) and `at_url`, which pagers use. On a client or a handle: `call` (reserved for future use) and `clone`; on a client, also `new`. One prefix is reserved, `with_`, and no other: Telegram's `send_message` is a name like any other. Concord adds no new name to a call, a handle or a client in a minor version, unless it starts with `with_`. A required input is an argument, so its name is free. A scope or an endpoint may not generate a type named `Error`, `Result` or `Retry` in the module of its client. See [contracts](../reference/contracts.md) C1.6 for the full table. Finally, names that begin with `__` are reserved for Concord: in a module that contains `concord::api!`, declare no item (a `const`, a `static`, a function, a type) whose name begins with `__`.
 
-**Concord's own HTTP client is `concord::Http`:** `reqwest`, in a type of Concord's own. It waits at most 30 seconds for a connection, follows no redirect and adds no `Referer`. It keeps no cookies by default: a build of `reqwest` that has cookies may turn them on in `Http::with`. It reads the proxy settings of the environment. The exact settings: [Concord's own HTTP client](../reference/crates.md#concords-own-http-client).
+**Concord's own HTTP client is `concord::Http`**, a Concord type that wraps `reqwest`. It waits at most 30 seconds for a connection, follows no redirects and adds no `Referer` header. It keeps no cookies and does not decompress by default ([below](#compression-proxies-and-tls)); a build of `reqwest` with cookie support can turn cookies on in `Http::with`. It reads the proxy settings from the environment. See [Concord's own HTTP client](../reference/crates.md#concords-own-http-client) for the exact settings.
 
-A `3xx` is then an answer ([when a status means something](responses-and-errors.md#when-a-status-means-something); the other side of this choice: [scope and limits](../design/scope.md)).
+Because `concord::Http` follows no redirects, a `3xx` is a final response, handled like any other status ([when a status means something](responses-and-errors.md#when-a-status-means-something); see [scope and limits](../design/scope.md) for the cost of this choice).
 
-**A setting of yours.** A certificate is a fact of the connection, so it is set on the HTTP client, with `reqwest`'s own builder:
+**Your own settings.** A certificate belongs to the connection, so it is set on the HTTP client, with `reqwest`'s own builder:
 
 ```rust
 let http = concord::Http::with(|builder| builder.add_root_certificate(private_authority))?;
@@ -87,49 +87,74 @@ let billing = Billing::new().with_transport(http.clone());
 let other   = Other::new(token).with_transport(http);          // two clients share one engine
 ```
 
-Concord's defaults go before your closure, and "no redirect" after it: nothing in the closure can make this client follow one.
+Concord applies its defaults before your closure, and "no redirects" after it, so nothing in the closure can make this client follow a redirect.
 
-**A `reqwest::Client` that you bring** is used as it is. What it does on its own is yours: its redirects, its cookies. Promise [G3](promises.md#three-promises) is stated for a client that follows no redirect. [The clocks](#time) are Concord's own, and hold for any client.
+**A `reqwest::Client` that you bring** is used as it is, and you are responsible for what it does on its own, such as following redirects or keeping cookies. Promise [G3](promises.md#three-promises) is stated for a client that follows no redirects. [The timeouts](#timeouts) are Concord's own, and apply with any client.
+
+### Compression, proxies and TLS
+
+By default, `concord::Http` does not decompress: it sends no `Accept-Encoding`, and a reader receives the body exactly as the server sent it. To decode gzip responses, turn on the `gzip` feature of `concord-api`, then turn decoding on for the client that needs it:
+
+```toml
+[dependencies]
+concord-api = { git = "https://github.com/gqsnt/concord_api", features = ["gzip"] }
+```
+
+```rust
+let http = concord::Http::with(|builder| builder.gzip(true))?;
+let tasks = Tasks::new().with_transport(http);
+```
+
+The `deflate` feature works the same way, with `builder.deflate(true)`. A feature alone changes nothing: it only makes the decoder available. Concord turns every decoder off before your closure runs, so only a client whose closure turns one on sends `Accept-Encoding` and decodes that format. With decompression on, a reader's limit counts the decoded bytes, not the compressed bytes on the wire. So a gzip response that expands past the default limit of `Json`, `Text` and `Binary`, 10 MiB, is a Mismatch, even when its body on the wire is small. `read Stream;` still has no limit.
+
+The other features of `concord-api` that concern `concord::Http`:
+
+- `socks` (off by default) lets `Http::with` use a SOCKS proxy that you configure with `reqwest::Proxy` (also reachable as `concord::reqwest::Proxy`). The feature sets no proxy by itself; `concord::Http` still reads the proxy settings of the environment, as described above.
+- `rustls` (on by default) is the TLS stack of `concord::Http`. For another stack, turn the default features off (then list again the defaults you still need, such as `json`, `form`, `http2` and `system-proxy`) and pass `with_transport` a `reqwest::Client` built with that stack.
+- `http2` (on by default) lets `concord::Http` use HTTP/2.
+- `system-proxy` (on by default) reads the proxy settings of the system on macOS and Windows, as `reqwest` does.
+
+`brotli`, `zstd`, cookies and `native-tls` are features of `reqwest` that `concord-api` does not forward yet. Until it does, add `reqwest` to your own `Cargo.toml` with the feature you need, at the same version, 0.13, so that Cargo builds a single `reqwest` with the feature on. Then turn the feature on in `Http::with`, or bring your own `reqwest::Client` with `with_transport`. See [the crates](../reference/crates.md#the-features-of-concord-api) for every feature.
 
 ## Looking without sending
 
-`request()` builds the request and does not send it. It gives the `reqwest::Request` itself: the method, the URL, the headers, the body.
+`request()` builds the request without sending it, and returns the `reqwest::Request` itself: the method, the URL, the headers, the body.
 
 ```rust
 let request = riot.matches(Europe).ids(&puuid).count(5).request()?;          // `puuid` is written as `p-1`
 assert_eq!(request.url().as_str(), "https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/p-1/ids?count=5");
 ```
 
-It is the request as the description builds it, with every value that the description places: a key or a token that is a `Secret` is in it, in a header marked sensitive. What a middleware adds on the way out is not in it: `request()` gives the request before any middleware, and a signature belongs to one try ([a middleware](credentials.md#a-middleware)). To see exactly what goes out, a fake takes the place of the transport and gets it ([a fake transport](testing.md#a-fake-transport)).
+It is the request as the description builds it, with every value that the description places, including a key or a token that is a `Secret`, in a header marked sensitive. It does not include what middleware adds as the request is sent: `request()` returns the request before any middleware runs, and a signature belongs to a single attempt ([a middleware](credentials.md#a-middleware)). To see exactly what is sent, put a fake in place of the transport: it receives the request as sent ([a fake transport](testing.md#a-fake-transport)).
 
-`request()` only looks: the call is whole after it, and can still be sent. (A call whose body is a stream has nothing to show without spending the stream, so `request()` refuses it; a fake transport is the way to look at such a call.) To take the request away, `into_request()` spends the call and gives it. To send it yourself and still get the typed answer: `read_response`, in [send a request yourself](extending.md#send-a-request-yourself-request-and-read_response).
+`request()` only inspects: the call is intact afterwards, and can still be sent. (A call whose body is a stream cannot show its request without consuming the stream, so `request()` returns an error for it; use a fake transport to inspect such a call.) `into_request()` consumes the call and returns the request. To send it yourself and still get the typed result, use `read_response`, described in [send a request yourself](extending.md#send-a-request-yourself-request-and-read_response).
 
-## What comes back
+## What a call returns
 
-A call gives `riot::Result<T>`: `T` is the type after the arrow, and the error is `riot::Error` ([the API's own error](responses-and-errors.md#the-apis-own-error)).
+A call returns `riot::Result<T>`, where `T` is the endpoint's return type and the error is `riot::Error` ([the API's own error](responses-and-errors.md#the-apis-own-error)).
 
 The error has four kinds:
 
 | Kind | Meaning | The caller |
 |---|---|---|
 | Build | The request could not be built. Nothing was sent. | Fixes the input. |
-| Transport | No answer, or an answer that broke before the end of a body that was wanted. `class()` says which: connect, timeout, body, blocked, other. | May try again. |
-| Refused | The API said no: a status that the endpoint gives no meaning to (by default, anything that is not 2xx), or an arm ended with the API's own problem. | Looks at the status, and at `problem()`. |
-| Mismatch | The status is one the endpoint gives a meaning to, and the answer is not what the declaration says: the body is too large, it does not decode, an arm or a pager refused it, or it is a success that no arm takes where the endpoint has no simple rule ([rule 11](../reference/rules.md)). | Reports it. |
+| Transport | No response arrived, or the response broke off before the end of a body that was needed. `class()` says which: connect, timeout, body, blocked, other. | May retry. |
+| Refused | The API rejected the request: a status that the endpoint does not handle (by default, anything that is not 2xx), or an arm that ended with the API's own problem. | Looks at the status, and at `problem()`. |
+| Mismatch | The status is one that the endpoint handles, but the response does not match the declaration: the body is too large, it does not decode, or an arm or a pager rejected it. It is also a Mismatch when a `HEAD` endpoint with a return type receives a 2xx that no arm matches, since there is no body to read ([rule 11](../reference/rules.md)). | Reports it. |
 
-**What an error holds.**
+**What an error contains.**
 
 | | |
 |---|---|
-| `kind()`, `endpoint()`, `tries()` | The kind; the name of the endpoint (`riot.matches.get`); how many tries were made: a try is counted when the request is handed to the middlewares. |
-| `status()`, `is_status(404)`, `headers()` | What the server said, when an answer arrived. A request id for the provider's support is in the headers. |
+| `kind()`, `endpoint()`, `tries()` | The kind; the name of the endpoint (`riot.matches.get`); how many attempts were made. An attempt is counted when the request is handed to the middleware. |
+| `status()`, `is_status(404)`, `headers()` | What the server returned, when a response arrived. A request id for the provider's support is in the headers. |
 | `body()`, `kept()` | The start of the body, at most 64 KiB, and its state ([what an error keeps of a body](responses-and-errors.md#what-an-error-keeps-of-a-body)). |
-| `problem()` | The API's own error, typed ([the API's own error](responses-and-errors.md#the-apis-own-error)). |
+| `problem()` | The API's own error, as your type ([the API's own error](responses-and-errors.md#the-apis-own-error)). |
 | `class()`, `is_timeout()` | For a Transport error. |
-| `source()` | The cause, when there is one. It never holds a value of the answer. For a Transport error: the error of the HTTP library, with its URL taken out. For a body that did not read: a small cause that Concord makes from the place and the kind of failure. For a Build error that came from your own code (a body, a `?` in an entry): that failure. |
-| `retry_after()` | The longer of two waits, when there is one: the `Retry-After` of the answer, and the wait that a rule of `when` asked for the try that did not happen. |
-| `reason()` | A text that the author's code gave (`concord::mismatch("…")`): why a pager stopped, why an arm refused. For a body that did not read, it is `None`. |
-| `details()` | One text to print, with the values: the line that `{e}` prints, the reason, the headers, the API's own error or else the start of the body, the reader's own message (it can quote the body; at most 1 KiB), and the inner error. It is there when the error type has `Debug`. |
+| `source()` | The underlying cause, if there is one. It never contains a value from the response. For a Transport error: the HTTP library's error, with its URL removed. For a body that failed to read: a small cause that Concord builds from the location and the kind of failure. For a Build error that came from your own code (a body, a `?` in an entry): that failure. |
+| `retry_after()` | The longer of two waits, when there is one: the `Retry-After` of the response, and the wait that a `when` rule requested for the attempt that was not made. |
+| `reason()` | A message supplied by the author's code (`concord::mismatch("…")`), such as why a pager stopped or why an arm rejected the response. Only such a message sets it: for a body that failed to read or to decode, it is `None`. |
+| `details()` | A single string to print, values included: the line that `{e}` prints, the reason, the headers, the API's own error or else the start of the body, the reader's own message (which can quote the body; at most 1 KiB), and the inner error. It is available when the error type implements `Debug`. |
 
 ```rust
 match asia.get(id).await {
@@ -146,18 +171,18 @@ match asia.get(id).await {
 }
 ```
 
-**Printing.** `{e}` is one line in Rust's own style: the kind, the status, the name of the endpoint, how many tries, and where it can a name for the cause. It never shows a value: not the body, not a URL, not a secret, not a text that your own code gave ([rule 15](../reference/rules.md); the texts are in [the messages](../reference/messages.md)). `e.details()` is the other choice, made by you at the place where you print. A URL can be in there.
+**Printing.** `{e}` prints one line in Rust's usual style: the kind, the status, the name of the endpoint, the number of attempts, and, where it can, a name for the cause. It never shows a value: not the body, not a URL, not a secret, not a message that your own code supplied ([rule 15](../reference/rules.md); see [the messages](../reference/messages.md) for the exact texts). `e.details()` is the opt-in alternative: call it where you decide to print values. Its output may contain a URL.
 
-**The whole answer.** A call gives the value, which is what most calls want. When the head matters, a second form keeps it:
+**The whole response.** A call returns the value, which is what most callers want. When the status and headers matter, a second form keeps them:
 
 ```rust
 let answer = docs.get(&id).send_full().await?;
 let etag   = answer.headers().get("etag").map(String::from);   // for the `If-Match` of the next call
 let status = answer.status();                           // 200, 201, …
-let doc    = answer.into_value();                       // the same value `.await` gives; `answer.value()` borrows it
+let doc    = answer.into_value();                       // the same value `.await` returns; `answer.value()` borrows it
 ```
 
-**Only if it changed.** On a call whose method is `GET` or `HEAD`, `send_if_none_match(etag)` takes a `&str` and writes `If-None-Match`, in place of any that the description wrote ([rule 20](../reference/rules.md)). It gives an `Answer<Option<T>>`: on a `304` that no arm takes, the value is `None`, and the headers are there (a new `ETag`, `Cache-Control`).
+**Only if it changed.** On a call whose method is `GET` or `HEAD`, `send_if_none_match(etag)` takes a `&str` and sends it as `If-None-Match`, replacing any that the description sets ([rule 20](../reference/rules.md)). It returns an `Answer<Option<T>>`: on a `304` that no arm handles, the value is `None`, and the headers are still there (a new `ETag`, `Cache-Control`).
 
 ```rust
 let answer = docs.get(&id).send_if_none_match(&etag).await?;
@@ -167,70 +192,70 @@ match answer.into_value() {
 }
 ```
 
-**A call with pages.** An endpoint with `paginate` gives a call that is not awaited directly, so that one page is never taken for the whole list. `.send().await?` gives one page, on purpose. `.pages()` gives them all, one for each `try_next()`, and `.pages().items()` gives their items one by one ([pages](pages.md)). `.items()` is there when the type of a page has `concord::page::IntoItems`: a `Vec<T>` has it, and an author writes it for a list type of their own ([a page type of your own](pages.md#a-page-type-of-your-own-intoitems)).
+**A paginated call.** A call to an endpoint with `paginate` is not awaited directly, so that one page is never mistaken for the whole list. `.send().await?` fetches one page, on purpose. `.pages()` yields every page, one per `try_next()`, and `.pages().items()` yields their items one by one ([pages](pages.md)). `.items()` is available when the page type implements `concord::page::IntoItems`: `Vec<T>` does, and an author implements it for their own list type ([a page type of your own](pages.md#a-page-type-of-your-own-intoitems)).
 
-## Time
+## Timeouts
 
-Two clocks, each with one job. This is their one full description; other pages link here.
+Concord has two timeouts, each with one job: the *idle timeout* limits silence (time with no data moving), and the *call timeout* limits the whole call.
 
-| | What it limits | With nothing set | You set it |
+| | What it limits | Default | How to set it |
 |---|---|---|---|
-| `idle_timeout` | Silence. It watches two things: the transport, from the moment it gets the request until the head of the answer; and a body while it is read. Each piece that moves starts it again. | 30 seconds. | `with_idle_timeout(…)`, on the client or on a call. An author sets it in the description, for the calls that need another one (`idle_timeout`). |
-| `timeout` | The whole call: every try, every wait between tries, the reading of the body. No request is handed to the transport after it has ended. | No limit. | `with_timeout(…)`, on the client or on a call. |
+| The idle timeout, `idle_timeout` | Silence. It watches two things: the transport, from the moment it receives the request until the response head arrives; and a body while it is being read. Each chunk sent or received resets it. | 30 seconds. | `with_idle_timeout(…)`, on the client or on a call. An author sets it in the description for the calls that need a different value (`idle_timeout`). |
+| The call timeout, `timeout` | The whole call: every attempt, every wait between attempts, and reading the body. Once it has expired, no further request is handed to the transport. | No limit. | `with_timeout(…)`, on the client or on a call. |
 
 Setting one never changes the other.
 
 ```rust
 // long polling: Telegram holds the request for up to 50 seconds, on purpose.
-// The description says how long this endpoint may be silent, so the caller writes nothing
+// The description says how long this endpoint may stay idle, so the caller writes nothing
 let updates = bot.get_updates().offset(next).timeout(50).await?;
 
 // a download: ten minutes in all, and still a quick stop if it stalls
 let file = files.download(&id).with_timeout(Duration::from_secs(600)).await?;
 ```
 
-In the first call, `.timeout(50)` is Telegram's own parameter. The clock for silence is the first of these that is set: `with_idle_timeout` on the call, the `idle_timeout` of the description, `with_idle_timeout` on the client, 30 seconds.
+In the first call, `.timeout(50)` is Telegram's own parameter. The idle timeout is the first of these that is set: `with_idle_timeout` on the call, the `idle_timeout` of the description, `with_idle_timeout` on the client, and otherwise 30 seconds.
 
-**An endpoint that is silent on purpose says so.** A long poll, or a stream that is quiet for minutes, is a fact of an endpoint, and its callers should not have to know it. `idle_timeout <expression>;` stands on an endpoint, a scope or the client (a part may hold it too), and the nearest one is used. The expression is Rust with the inputs as variables, and gives a `std::time::Duration`: Telegram's `get_updates` is written out in [the block](describing-an-api.md#the-block).
+**An endpoint that is idle on purpose declares it.** A long poll, or a stream that is quiet for minutes, is a fact about the endpoint, and its callers should not have to know about it. `idle_timeout <expression>;` may be placed on an endpoint, a scope or the client (a part may hold it too), and the nearest one applies. The expression is Rust, with the inputs as variables, and evaluates to a `std::time::Duration`; see Telegram's `get_updates` in [the block](describing-an-api.md#the-block).
 
-**The clock for silence watches two things, and nothing else.** The transport, from the moment it gets the request until the head of the answer: each piece of a stream body on its way out starts the clock again. And a body while it is read: each piece starts it again. A middleware's time, before or after the transport, and a reader's own waits are never silence: only `timeout` bounds them. It is Concord's own clock, so it holds for any HTTP client.
+**The idle timeout watches two things, and nothing else.** First, the transport, from the moment it receives the request until the response head arrives: each chunk of a streamed request body that is sent resets the timer. Second, a body while it is being read: each chunk resets it. Time spent in a middleware, before or after the transport, and a reader's own waits never count as silence: only the call timeout, `timeout`, bounds them. The idle timeout is Concord's own, so it applies with any HTTP client.
 
 | | |
 |---|---|
-| When time is up | The call ends with a Transport error. It says which clock ended, and what to write to change it ([the messages](../reference/messages.md); [a timeout](troubleshooting.md#the-call-failed)). |
-| A refusal is not lost to a clock | When a clock ends a try whose status already said no, the result is that Refused error, and `kept()` says that its body was interrupted. |
-| A large upload | A body that is a stream counts as progress: each piece of it that goes out starts the clock again. A body held in memory goes out in one piece: a large one on a slow line needs a longer `idle_timeout` on that call. |
-| A stream that was handed over | `timeout` goes on until its end. The clock for silence runs while a `try_next()` waits, not between two of them. |
-| Your own code | A clock ends a wait; it cannot stop code that does not `.await`. |
-| After `send_raw()` | Concord's part ends at the head: the `reqwest::Response` is yours, and so is the time to read it. Neither clock follows it. |
-| A drop | A call that is dropped stops, and Concord starts no other try. What the HTTP library does with the connection is its own: the request may have reached the server. |
+| When a timeout expires | The call ends with a Transport error. The error says which timeout expired, and how to change it ([the messages](../reference/messages.md); [a timeout](troubleshooting.md#the-call-failed)). |
+| An error response is not lost to a timeout | When a timeout ends an attempt that had already received an error status, the result is that Refused error, and `kept()` says that its body was interrupted. |
+| A large upload | A streamed body counts as progress: each chunk of it that is sent resets the idle timeout. A body held in memory is sent as a single chunk, so a large one on a slow connection needs a longer `idle_timeout` on that call. |
+| A stream handed to the caller | The call timeout, `timeout`, keeps running until the stream ends. The idle timeout runs while a `try_next()` is waiting, not between two calls to it. |
+| Your own code | A timeout ends a wait; it cannot interrupt code that does not `.await`. |
+| After `send_raw()` | Concord's work ends at the response head: the `reqwest::Response` is yours, and so is the time spent reading it. Neither timeout applies to it. |
+| A dropped call | A call that is dropped stops, and Concord starts no further attempt. What the HTTP library does with the connection is up to the library, and the request may already have reached the server. |
 
 ### The steps of one call
 
 | Step | What happens | If it fails |
 |---|---|---|
-| 1 | The expressions of the description run: `idle_timeout`, then `idempotent`, then the request is built from the inputs, by kind (the base, the paths, the query, the headers, the body). Then the caller's `.edit_request(…)` changes it. This happens once for a send, and each page is one send. | Build error. Nothing was sent. |
-| 2 | For each try, a copy goes through the middlewares: the caller's, then the description's in the order written (one writes a token, the last one signs). Then it is handed to the transport, which sends it. | No answer: the try ended. A middleware or a transport that will not send: no more tries, and the result is that blocked error. |
-| 3 | The head arrives. The status picks an arm ([the layers](responses-and-errors.md#the-layers)), the reader reads the body if the arm binds it, and the arm gives the result. | A Refused error (also when an arm on a status that is not a 2xx binds a `body` that does not read), a Mismatch, or the try ended if the body broke. |
-| 4 | Retry looks at how the try ended ([retries](retries.md)). | Another try from step 2, or the result. |
+| 1 | The expressions of the description run: `idle_timeout`, then `idempotent`; then the request is built from the inputs, kind by kind (the base, the paths, the query, the headers, the body). Then the caller's `.edit_request(…)` modifies it. This happens once per send, and each page is one send. | Build error. Nothing was sent. |
+| 2 | For each attempt, a copy passes through the middleware: the caller's layers, then the description's in the order written (for example, one adds a token and the last one signs). Then it is handed to the transport, which sends it. | No response: the attempt has failed. A middleware layer or a transport that refuses to send: no further attempt, and the result is that blocked error. |
+| 3 | The response head arrives. The status selects an arm ([how a response is read](responses-and-errors.md#how-a-response-is-read-status-reader-arm)), the reader reads the body if the arm binds it, and the arm produces the result. | A Refused error (also when an arm for a status that is not a 2xx binds a `body` that fails to read), a Mismatch, or a failed attempt if the body broke off. |
+| 4 | The retry policy looks at how the attempt ended ([retries](retries.md)). | Another attempt from step 2, or the result. |
 
-The other expressions have their own moment: `read` runs for each answer, the expression of `paginate` once, at `.pages()`, and a `middleware` expression once, in `new` ([when an expression runs](../reference/grammar.md#when-an-expression-runs)). Inside a kind, the order is the order of the tree ([rules](../reference/rules.md), rule 10).
+The other expressions run at their own time: `read` for each response, the expression of `paginate` once, at `.pages()`, and a `middleware` expression once, in `new` ([when an expression runs](../reference/grammar.md#when-an-expression-runs)). Within each kind, the order follows the tree ([rules](../reference/rules.md), rule 10).
 
-The reading step alone is `call.read_response(response)`: the arms, the reader and the problem type of the endpoint, on an answer that you got yourself with `call.request()?` ([send a request yourself](extending.md#send-a-request-yourself-request-and-read_response)). It has no retry, no clock and no page, and it takes `&self`: a call can read several answers.
+The reading step alone is `call.read_response(response)`: the endpoint's arms, reader and problem type, applied to a response that you obtained yourself with `call.request()?` ([send a request yourself](extending.md#send-a-request-yourself-request-and-read_response)). It has no retry, no timeout and no pagination, and it takes `&self`, so a call can read several responses.
 
-How the engine holds the two clocks is on [the engine page](../internals/engine.md).
+See [the engine page](../internals/engine.md) for how the engine implements the two timeouts.
 
-## When the usual way is not enough
+## When you need more control
 
-Every layer has a way down, for the case that the layer does not cover: a reader, a writer of bodies or a pager of yours in the description; `edit_request`, `send_raw`, `request()` and `read_response` on a call; a middleware or a transport on the client; and below all of them, plain `reqwest`. Each one, with code to copy, is on [when Concord does not say what you need](extending.md).
+Each layer has an extension point or an escape hatch for the cases it does not cover: your own reader, body writer or pager in the description; `edit_request`, `send_raw`, `request()` and `read_response` on a call; a middleware layer or a transport on the client; and, below all of them, plain `reqwest`. Each one is shown, with code to copy, in [When Concord does not cover what you need](extending.md).
 
-## A test with no network
+## Testing without a network
 
-`with_transport(concord::fake(|request| …))` puts a function in place of the network: it gets the request as it would go out, and gives the answer. Everything else of Concord runs for real.
+`with_transport(concord::fake(|request| …))` replaces the network with a function: it receives the request as it would be sent, and returns the response. Everything else in Concord runs for real.
 
-A fake, a scripted transport on virtual time, a local server, and the lines a test needs in `Cargo.toml`: [testing a client](testing.md).
+See [testing a client](testing.md) for a fake transport, a scripted transport on virtual time, a local server, and the lines a test needs in `Cargo.toml`.
 
-## The surface of a client
+## The public API of a client
 
 ```rust
 // what the docs would list
@@ -257,24 +282,24 @@ impl riot::matches::Ids {
 
     pub fn send(self) -> concord::Sending<Vec<MatchId>, RiotProblem>;   // one page: riot::Result<Vec<MatchId>>. (With no `paginate`, `.await` on the call does this.)
     pub fn send_full(self) -> concord::Sending<concord::Answer<Vec<MatchId>>, RiotProblem>;   // with the status and the headers
-    pub fn pages(self) -> concord::Pages<Vec<MatchId>, RiotProblem>;    // because of `paginate`; `.pages().items()` gives each `MatchId`
+    pub fn pages(self) -> concord::Pages<Vec<MatchId>, RiotProblem>;    // because of `paginate`; `.pages().items()` yields each `MatchId`
     // send_if_none_match(etag): an Answer<Option<Vec<MatchId>>>, because the method is `GET`
     pub fn request(&self) -> riot::Result<reqwest::Request>;         // look
     pub fn into_request(self) -> riot::Result<reqwest::Request>;      // take
-    pub async fn read_response(&self, response: reqwest::Response) -> riot::Result<Vec<MatchId>>;   // an answer that you got yourself
+    pub async fn read_response(&self, response: reqwest::Response) -> riot::Result<Vec<MatchId>>;   // a response that you got yourself
     pub fn send_raw(self) -> concord::Sending<reqwest::Response, RiotProblem>;
     // with_retry, with_timeout, with_idle_timeout, edit_request
 }
 ```
 
-Generated types follow the tree, and a scope may have the name of one of your own types: `riot::Account` is the handle of the scope `account`, and `Account` is still your struct ([rule 24](../reference/rules.md)). All of it has the visibility written on the client. Your own types and imports are seen as they are seen where `api!` stands; how the macro does it is on [the macro page](../internals/macro.md#where-the-generated-items-live-and-how-they-reach-the-authors-types). In a crate that is itself named `riot`, write `use ::riot::*;`.
+Generated types follow the tree, and a scope may share its name with one of your own types: `riot::Account` is the handle of the scope `account`, while `Account` is still your struct ([rule 24](../reference/rules.md)). Everything generated has the visibility written on the client. Your own types and imports resolve as they do where `api!` is invoked; see [the macro page](../internals/macro.md#where-the-generated-items-live-and-how-they-reach-the-authors-types) for how the macro achieves this. In a crate that is itself named `riot`, write `use ::riot::*;`.
 
 ## Arguments
 
 The trait behind U4 and U5:
 
 ```rust
-/// What an argument for an input of type `T` may be. Closed: only Concord implements it.
+/// What an argument for an input of type `T` may be. Sealed: only Concord implements it.
 pub trait Arg<T>: sealed::Sealed<T> { fn into_input(self) -> T; }     // sealed per target type
 
 impl<T>        Arg<T>           for T       { /* the type itself */ }
@@ -290,10 +315,10 @@ impl<T>        Arg<Option<T>>   for T       { /* Some(self) */ }
 
 So `.ids(&puuid)`, `.ids(puuid)`, `.count(5)`, `.count(None)`, `.by_riot_id("Faker", "KR1")` and `.labels(["bug", "ui"])` (for `labels?: Vec<String>`) are all accepted.
 
-**An optional input whose type is an `Option`** has three states ([a signature](describing-an-api.md#a-signature)). For `milestone?: Option<u64>`: `.milestone(5)` and `.milestone(Some(5))` give the number, and `.milestone(None::<u64>)` gives "nothing". A bare `None` does not compile there: Rust cannot tell which of the two is meant. The setter for `name?: Option<String>` takes text too. A setter converts through these two levels and no more: for `n?: Option<Option<u64>>` it takes the exact value.
+**An optional input whose type is an `Option`** has three states ([a signature](describing-an-api.md#a-signature)). For `milestone?: Option<u64>`: `.milestone(5)` and `.milestone(Some(5))` set the number, and `.milestone(None::<u64>)` sets the input to `None`, which is not the same as leaving it unset. A bare `None` does not compile there, because Rust cannot tell which of the two is meant. The setter for `name?: Option<String>` accepts a `&str` too. A setter converts through these two levels and no further: for `n?: Option<Option<u64>>`, it accepts only the exact type.
 
-**The set is closed.** A type from outside cannot add a conversion: for `puuid: Puuid`, `ids("p-1")` does not compile. The caller writes `Puuid::from("p-1")`, or the author declares `puuid: String`. A general "anything that converts" (`impl Into<T>`) does not work for a plain number: for an input declared `u32`, `.count(5)` would not compile.
+**The trait is sealed.** Code outside Concord cannot add a conversion: for `puuid: Puuid`, `ids("p-1")` does not compile. The caller writes `Puuid::from("p-1")`, or the author declares `puuid: String`. A general "anything that converts" bound (`impl Into<T>`) would not work for a plain number: for an input declared `u32`, `.count(5)` would not compile.
 
-## The documentation of an endpoint
+## The generated documentation of an endpoint
 
-Each generated method is documented from the description: your own `///` text, then how the endpoint is called, its request line (the method, the URL with its holes, the keys of the query), the headers it writes, and what each input accepts. Everything is produced from the declaration, so it cannot go stale. It is also the quickest answer to "is my description right?": the request line is there to read, to compare with the provider's documentation. The inputs of a part are shown like the endpoint's own. The page `concord::sample`, in the documentation of the crate, is a small client written by the macro, as rustdoc shows it.
+Each generated method is documented from the description: your own `///` text, then how the endpoint is called, its request line (the method, the URL with its placeholders, the keys of the query), the headers it sets, and what each input accepts. All of it is generated from the declaration, so it cannot go stale. It is also the quickest way to check that a description is right: read the request line and compare it with the provider's documentation. The inputs of a part are shown like the endpoint's own. The crate documentation includes `concord::sample`, a small client generated by the macro, as rustdoc renders it.

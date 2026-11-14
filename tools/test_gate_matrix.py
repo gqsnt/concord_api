@@ -111,8 +111,9 @@ mod unrelated { #[test] fn c2_8_present() {} }
             commands = gate.commands("features")
         self.assertEqual(len(commands), 5)
         self.assertIn(["--features", "new_feature"], [command[-2:] for command in commands])
-        self.assertTrue(all("--no-default-features" in command for command in commands))
-        self.assertEqual(commands[-1][-1], "--all-features")
+        self.assertNotIn("--no-default-features", commands[0])
+        self.assertTrue(all("--no-default-features" in command for command in commands[1:]))
+        self.assertEqual(commands[-1][-2:], ["--features", "json,new_feature"])
 
     def test_check_and_test_stop_after_first_failing_command(self):
         for recipe in ("check", "test"):

@@ -1,6 +1,6 @@
 //! C9, the transport and the middlewares: what really sends, a fake, what a transport gets,
 //! `with_transport`, `TryInfo`, `blocked`, `Middleware` and `Next` (docs/reference/contracts.md C9;
-//! docs/internals/engine.md, "The way out: the middlewares, then the transport"; docs/reference/rules.md rules 21 and 26).
+//! docs/internals/engine.md, "The way out: middleware, then the transport"; docs/reference/rules.md rules 21 and 26).
 
 mod common;
 

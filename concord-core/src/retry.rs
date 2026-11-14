@@ -1,4 +1,4 @@
-//! Whether and how to try again.
+//! Whether and how a failed request is retried.
 
 use crate::__private::Idempotent;
 use crate::answer::Headers;
@@ -12,24 +12,28 @@ mod http_date;
 type When<P> = Arc<dyn Fn(&Tried<'_, P>) -> Option<Duration> + Send + Sync>;
 type Unless<P> = Arc<dyn Fn(&Tried<'_, P>) -> bool + Send + Sync>;
 
-/// A retry policy. Off until a client or a call is given one: `with_retry(Retry::standard())`.
+/// A retry policy. Retrying is off until a client or a call is given a policy:
+/// `with_retry(Retry::standard())`.
 ///
-/// A request goes out again when three things hold: it can be sent again (its body is not a
-/// one-shot stream); it may be repeated (its method, `idempotent` mark, or a listed `not_applied_on` status permits it); and the failure is one that this
-/// policy thinks worth another try. A call’s `with_retry` replaces the whole client policy,
-/// including its tries and rules; extend the author’s policy explicitly to keep it. An unmarked `POST` is not repeated after a failed connection.
+/// A request is retried when three conditions hold: it can be sent again (its body is not a
+/// one-shot stream); it may be repeated (its method, its `idempotent` mark, or a listed
+/// `not_applied_on` status permits it); and this policy considers the failure worth another
+/// attempt. A call’s `with_retry` replaces the whole client policy, including its number of
+/// attempts and its rules; to keep the author’s policy, extend it explicitly. An unmarked `POST`
+/// is not retried after a failed connection.
 ///
 /// **The author's policy.** A description holds no policy, and `<client>::Retry` is only this
-/// type with the client's problem type. The author of a client who knows the API's own rule
-/// ships it as a function beside the macro (`pub fn retry() -> shop::Retry`); the client
-/// uses it only when a caller passes it to `with_retry`.
+/// type with the client's problem type. An author who knows the API's own retry rule ships it
+/// as a function next to the macro (`pub fn retry() -> shop::Retry`); the client uses it only
+/// when a caller passes it to `with_retry`.
 ///
-/// **What a wait is.** Before try `n + 1`, the wait is the longest of: the wait that a rule of
-/// [`when`](Retry::when) gave, the `Retry-After` of the answer, and a random part up to
-/// 2<sup>n-1</sup> seconds (1 s, 2 s, 4 s, … at most 60 s), drawn again for each wait,
+/// **How long a wait is.** Before attempt `n + 1`, the wait is the longest of: the wait that a
+/// [`when`](Retry::when) rule returned, the `Retry-After` of the response, and a random part up
+/// to 2<sup>n-1</sup> seconds (1 s, 2 s, 4 s, … at most 60 s), drawn anew for each wait,
 /// after [`none`](Retry::none) as after [`standard`](Retry::standard). So a rule's wait is
-/// exact when it is at least 2<sup>n-1</sup> seconds and no longer `Retry-After` came. A
-/// wait over 60 seconds, or one that would end after the call's `timeout`, means no other try.
+/// exact when it is at least 2<sup>n-1</sup> seconds and no longer `Retry-After` arrived. A
+/// wait over 60 seconds, or one that would end after the call's `timeout`, means no further
+/// attempt.
 pub struct Retry<P = ()> {
     tries: u32,
     standard: bool,
@@ -59,9 +63,9 @@ impl<P> Clone for Retry<P> {
 }
 
 impl<P> Retry<P> {
-    /// One try, and no table: never try again. A policy built from it tries again only when
-    /// [`tries`](Retry::tries) allows more than one and a rule of [`when`](Retry::when)
-    /// gives a wait: `Retry::none().tries(5).when(…)` is "only what my rule says".
+    /// One attempt and no table: never retry. A policy built from it retries only when
+    /// [`tries`](Retry::tries) allows more than one attempt and a [`when`](Retry::when) rule
+    /// returns a wait: `Retry::none().tries(5).when(…)` means "only what my rule says".
     pub fn none() -> Retry<P> {
         Retry {
             tries: 1,
@@ -72,22 +76,22 @@ impl<P> Retry<P> {
         }
     }
 
-    /// At most 3 tries, using this table:
+    /// At most 3 attempts, using this table:
     ///
-    /// | Failure | Worth another try |
+    /// | Failure | Worth another attempt |
     /// | --- | --- |
     /// | No connection (`Connect`) | Yes |
-    /// | No answer (`Timeout`) | Yes |
-    /// | An answer that broke (`Body`) | Yes |
+    /// | No response (`Timeout`) | Yes |
+    /// | A response that broke off (`Body`) | Yes |
     /// | Status 408, 429, 502, 503, 504 | Yes |
     ///
     /// The wait is random up to 1 second, then 2, then 4, capped at 60 seconds,
-    /// and never less than `Retry-After`. The repeatability and body checks still apply.
+    /// and never shorter than `Retry-After`. The repeatability and body checks still apply.
     ///
-    /// A `Retry-After` over 60 seconds is not waited. Nor is a wait that would end after the
-    /// call's `timeout`: it is not started, and the call gives the last outcome at once (a
-    /// `429` is then the error, with its [`retry_after`](crate::Error::retry_after)), not a
-    /// timeout.
+    /// A `Retry-After` over 60 seconds is not waited for. Neither is a wait that would end after
+    /// the call's `timeout`: it is not started, and the call returns the last outcome at once (a
+    /// `429` is then the error, with its [`retry_after`](crate::Error::retry_after)), rather than
+    /// a timeout.
     pub fn standard() -> Retry<P> {
         Retry {
             tries: 3,
@@ -96,11 +100,11 @@ impl<P> Retry<P> {
         }
     }
 
-    /// Permit repeating a refused request with this status because the API did not apply it.
-    /// A body failure or timeout that retains this status does not open this gate.
-    /// This does not permit repeating it after a lost connection, and all other
+    /// Permits retrying a request that was rejected with this status, because the API did not
+    /// apply it. A body failure or a timeout after a head with this status does not count.
+    /// This does not permit retrying the request after a lost connection, and all other
     /// retry checks and rules still apply, even with `idempotent false`.
-    /// A number outside the status-code range is retained and matches nothing.
+    /// A number outside the status-code range is kept and matches nothing.
     ///
     /// ```compile_fail
     /// #![deny(unused_must_use)]
@@ -114,7 +118,7 @@ impl<P> Retry<P> {
         self
     }
 
-    /// How many tries in all, the first one counted. At least 1.
+    /// Sets the total number of attempts, the first one included. A value of 0 counts as 1.
     ///
     /// ```compile_fail
     /// #![deny(unused_must_use)]
@@ -128,15 +132,15 @@ impl<P> Retry<P> {
         self
     }
 
-    /// A rule of your own that adds a case, asked when another try is possible. `Some(wait)`:
-    /// try again, after at least this long (the longest of it, a `Retry-After` and the random
-    /// part: see [`Retry`]). `None`: ask the next rule; when no rule gives a wait, the
-    /// standard table decides on a policy built from [`standard`](Retry::standard), and on
-    /// one built from [`none`](Retry::none) there is no other try.
-    /// It answers only "is
-    /// this failure worth another try": a request that may not be repeated still is not.
-    /// To stop a try that the policy would make, see [`unless`](Retry::unless).
-    /// Rules add up in insertion order; the first `when` that gives a wait wins.
+    /// Adds a rule of your own that allows a retry, consulted when another attempt is possible.
+    /// `Some(wait)`: retry, after at least this long (the longest of it, a `Retry-After` and the
+    /// random part: see [`Retry`]). `None`: consult the next rule. When no rule returns a wait,
+    /// the standard table decides on a policy built from [`standard`](Retry::standard), and a
+    /// policy built from [`none`](Retry::none) makes no further attempt.
+    /// A rule answers only "is this failure worth another attempt?": a request that may not be
+    /// repeated is still not retried.
+    /// To stop an attempt that the policy would make, see [`unless`](Retry::unless).
+    /// Rules accumulate in insertion order; the first `when` that returns a wait wins.
     ///
     /// ```compile_fail
     /// #![deny(unused_must_use)]
@@ -153,10 +157,10 @@ impl<P> Retry<P> {
         self
     }
 
-    /// A rule of your own that says no, asked first when another try is possible. `true`: no
-    /// other try, whatever the policy and [`when`](Retry::when) say.
-    /// Rules add up: every `unless` is asked before any `when`, in insertion order.
-    /// Any `true` prevents another try.
+    /// Adds a rule of your own that vetoes a retry, consulted first when another attempt is
+    /// possible. `true`: no further attempt, whatever the policy and [`when`](Retry::when) say.
+    /// Rules accumulate: every `unless` is consulted before any `when`, in insertion order.
+    /// Any `true` prevents another attempt.
     ///
     /// ```
     /// # use concord_core as concord;
@@ -182,7 +186,7 @@ impl<P> Retry<P> {
     }
 }
 
-/// A try that failed, as a rule of [`Retry::when`] or [`Retry::unless`] sees it.
+/// A failed attempt, as a [`Retry::when`] or [`Retry::unless`] rule sees it.
 pub struct Tried<'a, P> {
     number: u32,
     status: Option<http::StatusCode>,
@@ -202,27 +206,27 @@ impl<P> std::fmt::Debug for Tried<'_, P> {
 }
 
 impl<'a, P> Tried<'a, P> {
-    /// The number of this try: 1 for the first.
+    /// Returns the number of this attempt: 1 for the first.
     pub fn number(&self) -> u32 {
         self.number
     }
 
-    /// The status, when an answer arrived.
+    /// Returns the status, if a response arrived.
     pub fn status(&self) -> Option<http::StatusCode> {
         self.status
     }
 
-    /// The headers, when an answer arrived.
+    /// Returns the headers, if a response arrived.
     pub fn headers(&self) -> Option<&'a Headers> {
         self.headers
     }
 
-    /// The API's own problem, typed, when the API refused and its body was one.
+    /// Returns the API's own typed problem, if the API rejected the request with a problem body.
     pub fn problem(&self) -> Option<&'a P> {
         self.problem
     }
 
-    /// Which failure of the network, when no answer arrived.
+    /// Returns the kind of network failure, if no response arrived.
     pub fn class(&self) -> Option<Class> {
         self.class
     }

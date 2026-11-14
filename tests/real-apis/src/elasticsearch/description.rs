@@ -30,7 +30,7 @@ concord::api! {
                 path "_doc";
                 body json(document);
             }
-            /// A missing document is an answer (`found: false`); a missing index is an error.
+            /// A missing document is a normal response (`found: false`); a missing index is an error.
             GET get(id: String, ..output) -> GetReply {
                 path "_doc/{id}";
                 status { 404 { body } => document_404(body)? }

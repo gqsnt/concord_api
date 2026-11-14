@@ -44,6 +44,9 @@ multipart = ["concord-extras/multipart"]
 rustls = ["concord-core/rustls"]
 http2 = ["concord-core/http2"]
 system-proxy = ["concord-core/system-proxy"]
+gzip = ["concord-core/gzip"]
+deflate = ["concord-core/deflate"]
+socks = ["concord-core/socks"]
 
 [dev-dependencies]
 # The front-page example and `examples/` run against fake(), without a network socket.

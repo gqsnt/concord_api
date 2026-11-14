@@ -1,40 +1,40 @@
-//! What sends a request.
+//! The transport: what actually sends a request.
 
 use crate::error::Class;
 use std::future::Future;
 use std::sync::Arc;
 
-/// What really sends a request and gives its answer: [`Http`], a `reqwest::Client`,
-/// a fake, or a transport of your own.
+/// What actually sends a request and returns its response: [`Http`], a `reqwest::Client`,
+/// a fake, or your own transport.
 ///
-/// A client has one transport: `with_transport(yours)`; the last one called wins.
-/// Every try and every page goes through the client's middlewares first, in order,
-/// and reaches the transport with a [`TryInfo`] naming the endpoint and the try.
+/// A client has one transport, set with `with_transport(yours)`; the last call wins.
+/// Every attempt and every page goes through the client's middleware first, in order,
+/// and reaches the transport with a [`TryInfo`] that names the endpoint and the attempt.
 /// For a signature, a token that is renewed, or a shared quota, write a
 /// [`Middleware`](crate::Middleware).
 ///
-/// Concord counts each trip through the chain as one try. Any resend that the HTTP
+/// Concord counts each trip through the chain as one attempt. Any resend that the HTTP
 /// library makes internally is below that count and follows the library's settings.
-/// The clock for silence starts at hand-over to the transport, after middleware.
+/// The idle timeout starts when the request is handed to the transport, after middleware.
 /// `timeout` is checked there too: an expired call is never handed over.
 /// All time spent inside a transport counts as transport time. A transport must
 /// preserve what the description’s last middleware signed.
 ///
-/// An answer should carry its own URL (for an `http::Response`, use
+/// A response should carry its own URL (for an `http::Response`, use
 /// `reqwest::ResponseBuilderExt::url`). If it carries reqwest's placeholder URL,
 /// Concord uses the request's URL, including when resolving a relative next URL.
 ///
-/// A `tower` service is a transport too: `concord::tower::Tower`, with the feature `tower`.
+/// A `tower` service is a transport too: `concord::tower::Tower`, with the `tower` feature.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot send a request",
     note = "a reqwest::Client, concord::Http, a fake, or a type with concord::Transport"
 )]
 pub trait Transport: Send + Sync + 'static {
-    /// Send the request.
+    /// Sends the request.
     ///
     /// Not cancel safe, like `reqwest::Client::execute`: if the future is dropped, the
-    /// request may have reached the server. After a drop Concord starts no further try; a
-    /// request that was already handed to the transport may still go out.
+    /// request may have reached the server. After a drop, Concord starts no further attempt,
+    /// but a request that was already handed to the transport may still be sent.
     fn send(
         &self,
         request: reqwest::Request,
@@ -42,9 +42,9 @@ pub trait Transport: Send + Sync + 'static {
     ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send;
 }
 
-/// A `reqwest::Client` of yours really sends, keeping its own settings for redirects,
-/// decompression and internal retries. Concord's middlewares run before it.
-/// An unmarked, non-idempotent call is not repeated by Concord after a failed connection.
+/// Your own `reqwest::Client` sends the request, keeping its own settings for redirects,
+/// decompression and internal retries. Concord's middleware runs before it.
+/// Concord does not retry an unmarked, non-idempotent call after a failed connection.
 impl Transport for reqwest::Client {
     async fn send(
         &self,
@@ -88,7 +88,7 @@ pub(crate) enum RequestFailure {
     Body,
 }
 
-/// A failure with no answer.
+/// A failure with no response.
 pub struct TransportError {
     class: Class,
     request_failure: Option<RequestFailure>,
@@ -112,7 +112,7 @@ impl std::fmt::Debug for TransportError {
 }
 
 impl TransportError {
-    /// A failure of this class.
+    /// Creates a failure of this class.
     pub fn new(class: Class) -> TransportError {
         TransportError {
             class,
@@ -124,29 +124,29 @@ impl TransportError {
         }
     }
 
-    /// A connection failed.
+    /// Creates the error for a failed connection.
     pub fn connect() -> TransportError {
         TransportError::new(Class::Connect)
     }
 
-    /// A timeout of the transport's own.
+    /// Creates the error for a timeout of the transport's own.
     pub fn timeout() -> TransportError {
         TransportError::new(Class::Timeout)
     }
 
-    /// A middleware or transport refuses before sending. The tries end
-    /// here, and this blocked error is the result.
+    /// Creates the error for a middleware layer or transport that rejects the request before
+    /// sending. The attempts end here, and this blocked error is the result.
     ///
-    /// After an answer (for example a `401` before token renewal), return that answer
-    /// or another failure instead.
+    /// After a response has arrived (for example a `401` before token renewal), return that
+    /// response or another failure instead.
     pub fn blocked() -> TransportError {
         TransportError::new(Class::Blocked)
     }
 
-    /// The cause, for the `source()` of the error that the caller gets.
+    /// Sets the cause, for the `source()` of the error that the caller receives.
     ///
-    /// It is shown as it is: give a source that holds no URL and no secret. For a
-    /// `reqwest::Error`, use `TransportError::from(error)` instead: it takes the URL out.
+    /// It is shown as it is: pass a source that holds no URL and no secret. For a
+    /// `reqwest::Error`, use `TransportError::from(error)` instead: it removes the URL.
     pub fn with_source(
         mut self,
         source: impl Into<Box<dyn std::error::Error + Send + Sync>>,
@@ -185,7 +185,7 @@ impl TransportError {
         self.connect_timeout
     }
 
-    /// The class of the failure.
+    /// Returns the class of the failure.
     pub fn class(&self) -> Class {
         self.class
     }
@@ -204,7 +204,7 @@ impl std::error::Error for TransportError {
 }
 
 impl From<reqwest::Error> for TransportError {
-    /// Classify the failure; strip its URL, and discard unsafe status/decode sources.
+    /// Classifies the failure, strips its URL, and discards unsafe status or decode sources.
     fn from(error: reqwest::Error) -> TransportError {
         let mut source = std::error::Error::source(&error);
         let mut connection_kind = None;
@@ -264,7 +264,8 @@ impl From<reqwest::Error> for TransportError {
     }
 }
 
-/// What a middleware or transport is told about the request: which endpoint, and which try.
+/// What a middleware layer or transport is told about the request: which endpoint, and which
+/// attempt.
 #[derive(Clone)]
 pub struct TryInfo {
     endpoint: &'static str,
@@ -283,7 +284,7 @@ impl std::fmt::Debug for TryInfo {
 }
 
 impl TryInfo {
-    /// For generated code and for tests.
+    /// Creates the information; for generated code and for tests.
     pub fn new(endpoint: &'static str, number: u32) -> TryInfo {
         TryInfo {
             endpoint,
@@ -321,18 +322,19 @@ impl TryInfo {
         self.run.as_ref()
     }
 
-    /// The name of the endpoint: `riot.matches.get`.
+    /// Returns the name of the endpoint: `riot.matches.get`.
     pub fn endpoint(&self) -> &'static str {
         self.endpoint
     }
 
-    /// The number of the try: 1 for the first.
+    /// Returns the number of the attempt: 1 for the first.
     pub fn number(&self) -> u32 {
         self.number
     }
 }
 
-/// A transport from a function, for a test: it gets the request that would go out.
+/// A transport built from a function, for tests: the function receives the request that
+/// would be sent.
 ///
 /// ```
 /// # use concord_core as concord;
@@ -352,8 +354,8 @@ impl TryInfo {
 /// # }.now_or_never().unwrap().unwrap();
 /// ```
 ///
-/// An answer should carry its URL; if it has reqwest's placeholder, the engine
-/// takes it to come from the URL of this request.
+/// A response should carry its URL; if it has reqwest's placeholder, the engine
+/// assumes that it came from the URL of this request.
 pub fn fake<F>(answer: F) -> Fake<F>
 where
     F: Fn(&reqwest::Request) -> Result<reqwest::Response, TransportError> + Send + Sync + 'static,
@@ -361,7 +363,7 @@ where
     Fake(answer)
 }
 
-/// What [`fake`] gives.
+/// The transport that [`fake`] returns.
 pub struct Fake<F>(F);
 
 impl<F> std::fmt::Debug for Fake<F> {
@@ -387,25 +389,25 @@ where
 #[derive(Clone, Debug)]
 pub(crate) struct SyntheticReply;
 
-/// An answer made in memory.
+/// A response built in memory.
 ///
 /// Its URL is reqwest's placeholder, `http://no.url.provided.local/`.
 ///
 /// # Panics
 ///
-/// When `status` is not a status code (100 to 999). It is a helper for tests.
+/// Panics when `status` is not a status code (100 to 999). This is a helper for tests.
 pub fn reply(status: u16, body: impl Into<reqwest::Body>) -> reqwest::Response {
     reply_with(status, &[], body)
 }
 
-/// An answer made in memory, with headers.
+/// A response built in memory, with headers.
 ///
 /// Its URL is reqwest's placeholder, `http://no.url.provided.local/`.
 /// Bodies may stream, fail or stay pending; this helper does not read them.
 ///
 /// # Panics
 ///
-/// When `status` is not a status code, or a header is not a valid header. It is a helper for tests.
+/// Panics when `status` is not a status code, or a header is not valid. This is a helper for tests.
 // This test-fixture helper explicitly documents invalid fixtures as programmer errors.
 // PANIC-SAFETY: Known fixture-only exception: invalid fixtures deliberately panic; c9_2 should_panic tests require this behavior.
 #[allow(clippy::expect_used)]
@@ -429,8 +431,12 @@ pub fn reply_with(
 
 /// Concord's HTTP client, and the default transport.
 ///
-/// Follows no redirect. Decompression is off by default; [`Http::with`] may enable it.
-/// Internal retries use `reqwest`'s settings and are below Concord's count of tries.
+/// It follows no redirect. Decompression is off by default; [`Http::with`] may enable it.
+/// The `gzip` and `deflate` Cargo features make those decoders available; neither
+/// enables decoding or sends `Accept-Encoding` by itself. The `socks` feature
+/// permits SOCKS proxies configured through [`Http::with`]. These features are
+/// not defaults. See [`Http::with`] for a compression example.
+/// Internal retries use `reqwest`'s settings and are below Concord's count of attempts.
 #[derive(Clone)]
 pub struct Http {
     client: reqwest::Client,
@@ -452,20 +458,45 @@ impl Http {
         failure
     }
 
-    /// Create an HTTP client with Concord's defaults.
+    /// Creates an HTTP client with Concord's defaults.
     pub fn new() -> Result<Http, reqwest::Error> {
         let mut http = Http::with(|builder| builder)?;
         http.connect_timeout = Some(std::time::Duration::from_secs(30));
         Ok(http)
     }
 
-    /// Concord's HTTP client, with settings of yours: a certificate, a proxy.
+    /// Creates Concord's HTTP client with your own settings: a certificate, a proxy.
     ///
-    /// Before `f`, the defaults, which `f` may change: 30 seconds to connect, no `Referer`,
-    /// no decompression (a body is given as it came). The closure may enable
-    /// decompression; readers then receive, and their limits count, the bytes that
-    /// the transport gives. After `f`, one thing that `f` cannot change:
-    /// no redirect is followed. A `3xx` is an answer.
+    /// Before `f` runs, the defaults are set, and `f` may change them: 30 seconds to connect,
+    /// no `Referer`, no decompression (a body is passed on as it arrived). The closure may
+    /// enable decompression; readers then receive, and their limits count, the bytes that
+    /// the transport returns. After `f`, one setting is applied that `f` cannot change:
+    /// no redirect is followed. A `3xx` is a response.
+    ///
+    /// To make gzip available, add it to your dependency's features:
+    ///
+    /// ```toml
+    /// concord-api = { git = "https://github.com/gqsnt/concord_api", features = ["gzip"] }
+    /// ```
+    ///
+    /// Then enable decoding for this client and pass it to your generated
+    /// client's `with_transport(http)`:
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "gzip")]
+    /// # fn main() -> Result<(), concord_core::reqwest::Error> {
+    /// # use concord_core as concord;
+    /// let http = concord::Http::with(|builder| builder.gzip(true))?;
+    /// # let _ = http;
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "gzip"))]
+    /// # fn main() {}
+    /// ```
+    ///
+    /// A reader's limit counts the decoded bytes, not the compressed size on
+    /// the wire. A gzip response that expands past the default 10 MiB reader
+    /// limit is a Mismatch, even when its compressed body is small.
     pub fn with(
         f: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder,
     ) -> Result<Http, reqwest::Error> {

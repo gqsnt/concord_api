@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 
-/// How Telegram says no: `{"ok": false, "error_code": 429, "description": "…", "parameters": {…}}`.
+/// Telegram's error response: `{"ok": false, "error_code": 429, "description": "…", "parameters": {…}}`.
 #[derive(Debug, Deserialize)]
 pub struct TgProblem {
     pub error_code: i64,
@@ -27,8 +27,8 @@ pub struct InputFile {
     pub bytes: Bytes,
 }
 
-/// The arm of every 2xx: `{"ok": true, "result": …}` gives the result, and `{"ok": false, …}`
-/// gives the client's problem, though the status is `200`.
+/// The arm of every 2xx: `{"ok": true, "result": …}` returns the result, and `{"ok": false, …}`
+/// returns the client's problem, even though the status is `200`.
 pub fn telegram_result<T: DeserializeOwned>(mut body: Value) -> Result<T, Fail<TgProblem>> {
     match body.get("ok").and_then(Value::as_bool) {
         Some(true) => {

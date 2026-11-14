@@ -38,7 +38,7 @@ doc:
 msrv:
     @python3 -B tools/gate.py msrv
 
-# Check each facade feature separately, then all features together.
+# Check Concord feature combinations with forwarded features off and on, and each forwarder.
 [no-exit-message]
 features:
     @python3 -B tools/gate.py features
@@ -78,7 +78,7 @@ bench *args:
 panics:
     @python3 -B tools/panics.py --list --compiler
 
-# Check every facade feature combination and detached crate on stable and Rust 1.96.
+# Check feature combinations and detached crates on stable and Rust 1.96.
 [no-exit-message]
 features-all:
     @python3 -B tools/features.py

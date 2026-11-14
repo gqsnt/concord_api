@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-/// How Slack says no: `{"ok": false, "error": "channel_not_found"}`, with the status `200`.
+/// Slack's error response: `{"ok": false, "error": "channel_not_found"}`, with the status `200`.
 #[derive(Debug, Deserialize)]
 pub struct SlackProblem {
     pub error: String,
@@ -44,7 +44,7 @@ impl<T: Send> concord::page::IntoItems for SlackPage<T> {
     }
 }
 
-/// An answer with nothing in it but `"ok": true`.
+/// A response with nothing in it but `"ok": true`.
 #[derive(Debug, Deserialize)]
 pub struct Acknowledged {}
 
@@ -62,12 +62,12 @@ pub fn slack_response<T: DeserializeOwned>(body: Value) -> Result<T, Fail<SlackP
     }
 }
 
-/// Slack's policy: a `429` was not applied, so even a `POST` may go again after its `Retry-After`.
+/// Slack's policy: a `429` was not applied, so even a `POST` may be retried after `Retry-After`.
 pub fn retry() -> slack::Retry {
     slack::Retry::standard().not_applied_on(429)
 }
 
-/// The middle step of an upload: the bytes go to the URL that Slack gave, on another host.
+/// The middle step of an upload: the bytes go to the URL that Slack returned, on another host.
 /// A plain `reqwest` client sends them, with none of the client's credentials.
 pub async fn upload_bytes(url: &str, bytes: Bytes) -> Result<(), reqwest::Error> {
     let answer = reqwest::Client::new()

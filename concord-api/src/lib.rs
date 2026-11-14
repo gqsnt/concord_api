@@ -7,54 +7,71 @@
 //!
 //! | From | Items |
 //! |---|---|
-//! | `concord-macros` | [`api!`]. It knows the tree, the statements and the inputs, and nothing of what stands on their right side. |
+//! | `concord-macros` | [`api!`]. It knows the tree, the statements and the inputs, but nothing about the expressions on their right-hand side. |
 //! | `concord-core` | The values and traits of a call: [`Secret`], [`Base`], [`Body`], [`Reader`], [`Retry`], [`Error`], [`Pages`], [`Middleware`], [`Transport`], [`Http`]; [`fake`] and [`reply`] for tests. |
-//! | `concord-extras` | What is shipped: [`json`], [`form`], optional multipart; [`struct@Json`], [`struct@Text`], [`struct@Binary`], [`read::Stream`]; [`by_offset`], [`by_offset_limit`], [`by_page`], [`by_cursor`], [`by_link`], [`by_next_url`]; [`basic`]. Readers, writers and pagers use public traits and helpers; the Tower adapter also uses a hidden helper for the URL of an answer. |
+//! | `concord-extras` | The shipped implementations: [`json`], [`form`], optional multipart; [`struct@Json`], [`struct@Text`], [`struct@Binary`], [`read::Stream`]; [`by_offset`], [`by_offset_limit`], [`by_page`], [`by_cursor`], [`by_link`], [`by_next_url`]; [`basic`]. Readers, writers and pagers use public traits and helpers; the Tower adapter also uses a hidden helper for the URL of a response. |
 //!
-//! The reader `Stream` is named by its module, [`read::Stream`]: at the root, its name would
-//! meet the trait `Stream` that most async code imports.
+//! The reader `Stream` is named through its module, [`read::Stream`]: at the root, its name would
+//! clash with the `Stream` trait that most async code imports.
 //!
-//! With feature `multipart`, chain `.text(...)` and `.file(...)` on `multipart()`,
-//! then call `.finish()` for `Result<Body, MultipartError>`, which `body` takes as it is.
-//! The builder and error types are available at the root and in [`body`]. The page of
-//! [`api!`] has an example, with the bytes that go out.
+//! With the `multipart` feature, chain `.text(...)` and `.file(...)` on `multipart()`,
+//! then call `.finish()` to get a `Result<Body, MultipartError>`, which `body` accepts as it is.
+//! The builder and error types are available at the root and in [`body`]. See
+//! [`api!`] for an example, with the bytes that are sent.
+//!
+//! ## Optional HTTP features
+//!
+//! These features are off by default and forward to the same feature of `reqwest`:
+//!
+//! | Feature | Makes available |
+//! |---|---|
+//! | `gzip` | Gzip response decompression with [`Http::with`] and `builder.gzip(true)` |
+//! | `deflate` | Deflate response decompression with [`Http::with`] and `builder.deflate(true)` |
+//! | `socks` | SOCKS proxies configured with `reqwest::Proxy` in [`Http::with`] |
+//!
+//! A Cargo feature only makes a capability available: Concord keeps decompression off until
+//! your client turns it on, and once it is on, a reader's limit counts the decoded bytes. See
+//! [`Http::with`] for the Cargo line and a gzip example.
 //!
 //! ## Where to read
 //!
-//! - The language, with an example for each statement: the page of [`api!`].
-//! - What the macro writes, on a real page: [`sample`] (in the documentation only).
-//! - A whole client of nine behaviours, with no socket: `examples/bookshop`
-//!   (`cargo run --example bookshop`). Each boundary below is seen there.
+//! - The language, with an example for each statement: [`api!`].
+//! - The code that the macro generates, shown on a real page: [`sample`] (in the documentation only).
+//! - A whole client that shows nine behaviours without opening a socket: `examples/bookshop`
+//!   (`cargo run --example bookshop`). Each boundary below appears there.
 //!
 //! ## The boundaries
 //!
-//! What a client does at its edges, each in one sentence.
+//! How a client behaves at its edges, one sentence each.
 //!
-//! - **What is tried again.** Nothing, until `with_retry` gives a policy such as
-//!   [`Retry::standard`]; then a request goes out again only when it may be repeated
-//!   (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`, or an endpoint marked `idempotent;`) and the
-//!   failure is worth it (a failed connection, a timeout, a body that broke, `408`, `429`,
-//!   `502`, `503`, `504`), so a `POST` is not sent again, not even after a lost connection,
-//!   unless it says `idempotent;`.
-//! - **A wait that does not fit.** A wait before another try (the backoff, or a
+//! - **What is retried.** Nothing, until `with_retry` sets a policy such as
+//!   [`Retry::standard`]; then a request is retried only when it may be repeated
+//!   (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`, an endpoint marked `idempotent;`, or a
+//!   request rejected with a status listed in [`Retry::not_applied_on`]) and the failure is
+//!   worth retrying (a failed connection, a timeout, a response body that broke off, `408`,
+//!   `429`, `502`, `503`, `504`), so a `POST` whose endpoint is not marked `idempotent;` is
+//!   retried only after such a listed status, never after a lost connection.
+//! - **A wait longer than the time left.** A wait before another attempt (the backoff, or a
 //!   `Retry-After`) that would end after the call's `timeout` is not started: the call
 //!   returns the last outcome at once, such as the `429` itself with its
-//!   [`Error::retry_after`], not a timeout; a `Retry-After` over 60 seconds is never waited.
-//! - **A stream and the timeout.** The `timeout` of a call (`with_timeout`) bounds the whole
-//!   call, so it still runs while a [`ByteStream`] from `read Stream;` is read, until its end.
-//! - **Two clocks.** Beside `timeout`, which has no limit until you set one, the clock for
-//!   silence ends a call when the server says nothing for 30 seconds (`with_idle_timeout`, or
-//!   `idle_timeout` in the description); a timeout of either kind is
-//!   [`Error::is_timeout`].
+//!   [`Error::retry_after`], rather than a timeout; a `Retry-After` over 60 seconds is never
+//!   waited for.
+//! - **A stream and the timeout.** The call timeout (`with_timeout`) bounds the whole
+//!   call, so it keeps running while you read a [`ByteStream`] from `read Stream;`, until the
+//!   stream ends.
+//! - **Two timeouts.** Besides the call timeout, which has no limit until you set one, the
+//!   idle timeout ends a call when the server sends nothing for 30 seconds (`with_idle_timeout`,
+//!   or `idle_timeout` in the description); [`Error::is_timeout`] is true for a timeout of
+//!   either kind.
 //! - **Sharing.** A client, its handles and its calls are `Send + Sync + Clone` (see
-//!   [`sample::Library`]); clones share the transport and the middlewares, so one client
+//!   [`sample::Library`]); clones share the transport and the middleware, so one client
 //!   serves many tasks.
-//! - **A query.** A value is written by `serde`: a list repeats its key (`tag=a&tag=b`), an
-//!   empty list and a `None` write nothing, and a space is `%20`, never `+` (the
-//!   [`api!`] page, "Entries").
+//! - **A query.** A value is serialized with `serde`: a list repeats its key (`tag=a&tag=b`),
+//!   an empty list and a `None` add nothing, and a space is encoded as `%20`, never `+` (see
+//!   "Entries" in [`api!`]).
 //! - **Secrets.** The `Debug` of a client and of a call, and the `Display` and `Debug` of an
-//!   error, never print a [`Secret`], and its header is marked sensitive; [`Error::details`], which you call to
-//!   see what the server sent, may echo one back.
+//!   error, never print a [`Secret`], and the header that carries one is marked sensitive;
+//!   [`Error::details`], which you call to see what the server sent, may echo one back.
 
 #![forbid(unsafe_code)]
 
@@ -95,24 +112,24 @@ pub use concord_extras::page::{
 pub use concord_extras::read::Json;
 pub use concord_extras::read::{Binary, Text};
 
-/// Text that goes on the wire and nowhere else.
+/// Text that is sent on the wire and shown nowhere else.
 pub mod secret {
     pub use concord_core::secret::*;
 }
 
-/// Where a URL starts, when the user gives it.
+/// The start of a URL, when the caller provides it.
 pub mod base {
     pub use concord_core::base::*;
 }
 
-/// The body of a request, as a value; JSON, form and optional multipart writers.
+/// The body of a request as a value, and the JSON, form and optional multipart writers.
 pub mod body {
     pub use concord_core::body::*;
     #[cfg(any(feature = "json", feature = "form", feature = "multipart"))]
     pub use concord_extras::body::*;
 }
 
-/// How an answer becomes a value: the trait [`Reader`], and four readers.
+/// How a response becomes a value: the [`Reader`] trait and four readers.
 ///
 /// | Reader | After the arrow | What it reads |
 /// |---|---|---|
@@ -121,60 +138,60 @@ pub mod body {
 /// | [`Binary`](struct@Binary) | `bytes::Bytes` | the whole body, at most 10 MiB |
 /// | [`Stream`](read::Stream) | [`ByteStream`] | nothing: the body is handed over as it comes |
 ///
-/// **`Stream` is named by its module:** `read concord::read::Stream;`, or
-/// `use concord::read::Stream;`. There is no `concord::Stream`: at the root it would meet
-/// the trait `Stream` that most async code imports.
+/// **`Stream` is named through its module:** `read concord::read::Stream;`, or
+/// `use concord::read::Stream;`. There is no `concord::Stream`: at the root it would clash
+/// with the `Stream` trait that most async code imports.
 ///
-/// An endpoint with no arrow gives `()` and reads no body, so a `204` (or any 2xx)
+/// An endpoint with no arrow returns `()` and reads no body, so a `204` (or any 2xx)
 /// needs nothing. Under an arrow, `Text` reads an empty body as `""` and `Binary`
-/// as empty bytes; `Json` needs a JSON value. An arm can give the value of an
-/// empty answer without reading it: `status { 204 => None }`.
+/// as empty bytes; `Json` needs a JSON value. An arm can produce the value for an
+/// empty response without reading it: `status { 204 => None }`.
 ///
-/// A reader of yours is a value with [`Reader`]; it takes the same place:
+/// Your own reader is a value that implements [`Reader`]; it goes in the same place:
 /// `read Mine;`.
 pub mod read {
     pub use concord_core::read::*;
     pub use concord_extras::read::*;
 }
 
-/// What came back.
+/// A call's value together with the response's status and headers.
 pub mod answer {
     pub use concord_core::answer::*;
 }
 
-/// The one error of a client.
+/// The single error type of a client.
 pub mod error {
     pub use concord_core::error::*;
 }
 
-/// Whether and how to try again.
+/// Whether and how a failed request is retried.
 pub mod retry {
     pub use concord_core::retry::*;
 }
 
-/// A list that comes in several answers: what a pager is made with, and six pagers.
+/// Lists that span several responses: the building blocks of a pager, and six pagers.
 pub mod page {
     pub use concord_core::page::*;
     pub use concord_extras::page::*;
 }
 
-/// What every request goes through, such as a signer or a token that is renewed.
+/// Middleware that every request passes through, such as a signer or a token refresher.
 pub mod middleware {
     pub use concord_core::middleware::*;
 }
 
-/// What really sends a request. A fake for tests.
+/// What actually sends a request, and a fake transport for tests.
 pub mod transport {
     pub use concord_core::transport::*;
 }
 
-/// What an argument of a generated method may be.
+/// The types that a generated method accepts as an argument.
 pub mod arg {
     #[doc(inline)]
     pub use concord_core::arg::Arg;
 }
 
-/// A `tower` service as a transport.
+/// A `tower` service used as a transport.
 #[cfg(feature = "tower")]
 pub mod tower {
     pub use concord_extras::tower::*;

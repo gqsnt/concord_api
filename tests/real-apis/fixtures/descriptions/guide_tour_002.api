@@ -1,7 +1,7 @@
 pub client Riot(key: Secret) {
-    headers { "x-riot-token" = key; }                  // who you are, on every request below
-    read Json;                                         // how this API answers
-    problem RiotProblem;                               // how this API says no
+    headers { "x-riot-token" = key; }                  // the credential, on every request below
+    read Json;                                         // how responses are read
+    problem RiotProblem;                               // the type of this API's errors
 
     scope matches(route: MatchRoute) {
         base "https://{route}.api.riotgames.com";      // every request below

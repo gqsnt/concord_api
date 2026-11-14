@@ -15,7 +15,7 @@ pub async fn add_and_get() -> Result<(), BoxError> {
     Ok(())
 }
 
-/// Many writes at once. The answer is a `200` even when some of them failed: look at each one.
+/// Many writes at once. The response is a `200` even when some of them failed: look at each one.
 pub async fn bulk(es: &Elasticsearch) -> elasticsearch::Result<()> {
     let reply = es.bulk(vec![
         json!({ "index": { "_index": "books", "_id": "42" } }),

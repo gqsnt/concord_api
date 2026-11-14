@@ -2,9 +2,9 @@
 
 *[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Slack](slack.md) · next: [Elasticsearch](elasticsearch.md)*
 
-For a Rust developer who writes a bot with the Telegram Bot API: a client of 13 methods to copy from. It is the example of a token in the path, of an envelope around every answer, of a long poll, and of a `multipart` upload.
+This page is for a Rust developer who writes a bot with the Telegram Bot API. It gives a client with 13 methods that you can copy, and shows a token in the path, an envelope around every response, a long poll, and a `multipart` upload.
 
-Telegram, as Concord sees it. One host, and the token of the bot inside the path: `base "https://api.telegram.org/bot{token}";`, a `Secret` in a template, never printed. The files of the bot are on the same host under another prefix, `/file/bot{token}/`: one endpoint has its own `base`. Every answer is an envelope, `{"ok": true, "result": …}` or `{"ok": false, "error_code": …, "description": …}`, often under a `200`: one arm on the client opens it. Updates come by a long poll (`getUpdates` waits up to `timeout` seconds when there is nothing new) or by a webhook. A flood answers `429` with `retry_after` in its body. Telegram's own reference: [core.telegram.org/bots/api](https://core.telegram.org/bots/api). `(unsure)` marks a detail of Telegram's that is not checked.
+Here is Telegram as Concord sees it. There is one host, and the bot's token is part of the path: `base "https://api.telegram.org/bot{token}";`. The token is a `Secret` inside a template, so it is never printed. The bot's files are on the same host under another prefix, `/file/bot{token}/`, so one endpoint has its own `base`. Every response is an envelope, `{"ok": true, "result": …}` or `{"ok": false, "error_code": …, "description": …}`, often with a `200` status, and one arm on the client unwraps it. Updates arrive by a long poll (`getUpdates` waits up to `timeout` seconds when there is nothing new) or by a webhook. Flood control responds with a `429` and `retry_after` in its body. Telegram's own reference is [core.telegram.org/bots/api](https://core.telegram.org/bots/api). `(unsure)` marks a detail about Telegram that has not been checked.
 
 ## The description
 
@@ -28,7 +28,7 @@ concord::api! {
         GET get_me() -> User { path "getMe"; }
 
         /// One batch of updates. With nothing new, Telegram holds the request for `timeout`
-        /// seconds: a long poll. Asking again with the same offset is the next poll.
+        /// seconds: a long poll. Requesting again with the same offset is the next poll.
         GET get_updates(
             offset?: i64, limit?: u8, timeout?: u32, allowed_updates?: Vec<String>,
         ) -> Vec<Update> {
@@ -116,13 +116,13 @@ concord::api! {
 }
 ```
 
-A body of entries leaves out every input that was not set, the `Secret` of `set_webhook` too, which is written as its text when it is set. The part `formatted` adds its entries to the body of each node that names it.
+A body of entries leaves out every input that was not set, including the `Secret` of `set_webhook`, which is sent as a plain string when it is set. The part `formatted` adds its entries to the body of every node that includes it.
 
 ## Beside the description
 
-The data types are plain `serde` types, named here and not printed: `User`, `Message` (`message_id`, `document`), `Document` (`file_id`), `Update` (`update_id`), `File` (`file_path`), `ChatFullInfo`, `MessageEntity`, `ReplyMarkup`, `InlineKeyboardMarkup`. `ChatId` is an id or a `@username`, written untagged; `ParseMode` is written as Telegram spells it (`HTML`, `MarkdownV2`). `EditedMessage` is a `Message`, or `true` for a message sent inline.
+The data types are plain `serde` types, named here but not shown: `User`, `Message` (`message_id`, `document`), `Document` (`file_id`), `Update` (`update_id`), `File` (`file_path`), `ChatFullInfo`, `MessageEntity`, `ReplyMarkup`, `InlineKeyboardMarkup`. `ChatId` is an id or a `@username`, serialized untagged; `ParseMode` is serialized as Telegram spells it (`HTML`, `MarkdownV2`). `EditedMessage` is a `Message`, or `true` for a message sent inline.
 
-How Telegram says no, the envelope, the body of an upload, and Telegram's retry policy:
+Telegram's errors, the envelope, the body of an upload, and Telegram's retry policy:
 
 ```rust
 use concord::bytes::Bytes;
@@ -132,7 +132,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 
-/// How Telegram says no: `{"ok": false, "error_code": 429, "description": "…", "parameters": {…}}`.
+/// Telegram's error response: `{"ok": false, "error_code": 429, "description": "…", "parameters": {…}}`.
 #[derive(Debug, Deserialize)]
 pub struct TgProblem {
     pub error_code: i64,
@@ -154,8 +154,8 @@ pub struct InputFile {
     pub bytes: Bytes,
 }
 
-/// The arm of every 2xx: `{"ok": true, "result": …}` gives the result, and `{"ok": false, …}`
-/// gives the client's problem, though the status is `200`.
+/// The arm of every 2xx: `{"ok": true, "result": …}` returns the result, and `{"ok": false, …}`
+/// returns the client's problem, even though the status is `200`.
 pub fn telegram_result<T: DeserializeOwned>(mut body: Value) -> Result<T, Fail<TgProblem>> {
     match body.get("ok").and_then(Value::as_bool) {
         Some(true) => {
@@ -247,13 +247,13 @@ pub async fn use_webhook(bot: &Telegram, url: &str, secret: Secret) -> telegram:
 }
 ```
 
-## What fits badly, and the way out
+## What does not fit well, and the workaround
 
 | Telegram wants | What to write |
 |---|---|
-| A long poll that asks the same request again after an empty answer. Pages end at a request sent twice in a row. | A loop of yours (`poll` above). `get_updates` says `idempotent false;`: a negative offset forgets updates. |
+| A long poll that sends the same request again after an empty response, but pagination stops when the same request would be sent twice in a row. | Your own loop (`poll` above). `get_updates` declares `idempotent false;`, because a negative offset makes Telegram forget updates. |
 | A file by its id or URL in JSON, or by its bytes in `multipart/form-data`: one method, two bodies. | Two endpoints on one path: `send_photo` with a body of entries, `send_document` with `multipart()`. |
-| Exactly one of two groups of inputs (`chat_id` and `message_id`, or `inline_message_id`). | Each input optional, and a doc comment: Telegram refuses the call that has neither. |
-| `getMe` as a `GET` and as a `POST`. One endpoint has one method. | The one method that you use; or two endpoints with two names. |
-| A list in one query value, as JSON: `allowed_updates=["message"]`. A `Vec` sends its key once for each item. | `"allowed_updates" = allowed_updates.as_ref().map(serde_json::to_string).transpose()?;`. |
-| A flood refusal (`429`) whose wait is in the body: `parameters.retry_after`. | A rule of the retry policy reads it: `retry()` above. Whether a `429` always means "not applied" is (unsure). |
+| Exactly one of two groups of inputs (`chat_id` and `message_id`, or `inline_message_id`). | Each input optional, with a doc comment: Telegram rejects a call that has neither. |
+| `getMe` as both a `GET` and a `POST`, but an endpoint has exactly one method. | The method that you use, or two endpoints with two names. |
+| A list in one query value, as JSON: `allowed_updates=["message"]`. A `Vec` repeats its key for each item. | `"allowed_updates" = allowed_updates.as_ref().map(serde_json::to_string).transpose()?;`. |
+| A flood-control error (`429`) whose wait time is in the body: `parameters.retry_after`. | A rule of the retry policy reads it (`retry()` above). Whether a `429` always means "not applied" is (unsure). |

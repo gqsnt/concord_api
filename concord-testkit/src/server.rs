@@ -1,8 +1,8 @@
 //! A real local HTTP/1.1 server that a test scripts.
 //!
 //! The server reads requests itself, byte by byte, so that it can record them exactly as
-//! they arrived (header names in their case, in their order, a repeated name repeated,
-//! each line as sent), and write answers that misbehave on purpose.
+//! they arrived (header names in their original case and order, a repeated name repeated,
+//! each line as sent), and write responses that misbehave on purpose.
 
 use bytes::{Bytes, BytesMut};
 use std::net::SocketAddr;
@@ -30,7 +30,7 @@ static FILL: [u8; FILL_SIZE] = [b'x'; FILL_SIZE];
 /// A real HTTP/1.1 server on `127.0.0.1`, scripted by a test. Dropping it stops it and
 /// closes every connection.
 ///
-/// Each rule (`server.on(method, path)...`) answers one request, in the order the rules
+/// Each rule (`server.on(method, path)...`) responds to one request, in the order the rules
 /// were written. A request that no rule matches gets a `599` and is recorded.
 pub struct Server {
     addr: SocketAddr,
@@ -177,11 +177,11 @@ enum Step {
 }
 
 impl Server {
-    /// Listen on `127.0.0.1:0`.
+    /// Starts listening on `127.0.0.1:0`.
     ///
     /// # Panics
     ///
-    /// When no port can be opened on `127.0.0.1`, or outside a Tokio runtime.
+    /// Panics when no port can be opened on `127.0.0.1`, or outside a Tokio runtime.
     // PANIC-SAFETY: This test helper documents failure to start a local server as a panic.
     #[allow(clippy::panic)]
     pub async fn start() -> Server {
@@ -202,22 +202,22 @@ impl Server {
         }
     }
 
-    /// `http://127.0.0.1:<port>`, without a slash at the end.
+    /// Returns `http://127.0.0.1:<port>`, without a trailing slash.
     pub fn url(&self) -> String {
         format!("http://{}", self.addr)
     }
 
-    /// The address the server listens on.
+    /// Returns the address the server listens on.
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
 
-    /// The next request with this method (exact, case-sensitive) and this path gets what
-    /// follows. The path is compared without the query, unless `path` holds a `?`: then
+    /// Scripts the response to the next request with this method (exact, case-sensitive) and
+    /// this path. The path is compared without the query, unless `path` contains a `?`: then
     /// the path and query are compared exactly as sent.
     ///
-    /// Each rule answers once, when the body of its request has ended. Rules for the same
-    /// route answer in the order they were written: a `503` then a `200` is two rules.
+    /// Each rule responds once, when the body of its request has ended. Rules for the same
+    /// route respond in the order they were written: a `503` then a `200` is two rules.
     pub fn on(&self, method: &str, path: &str) -> On<'_> {
         On {
             shared: &self.shared,
@@ -226,9 +226,9 @@ impl Server {
         }
     }
 
-    /// Every request that arrived, in the order their heads arrived, those that no rule
-    /// matched included. A request is recorded as soon as its head has arrived, with what
-    /// came of its body so far ([`Request::body_state`]).
+    /// Returns every request that arrived, in the order their heads arrived, including those
+    /// that no rule matched. A request is recorded as soon as its head has arrived, with as
+    /// much of its body as has arrived so far ([`Request::body_state`]).
     pub fn requests(&self) -> Vec<Request> {
         self.shared
             .lock()
@@ -238,9 +238,9 @@ impl Server {
             .collect()
     }
 
-    /// Wait until a request arrives, and give it: the first call gives the first request
+    /// Waits until a request arrives, and returns it: the first call returns the first request
     /// that arrived, the next call the second, and so on, whether it arrived before the
-    /// call or not. Its head is complete; its body is as far as it had come
+    /// call or not. Its head is complete; its body is as far as it had arrived
     /// ([`Request::body_state`]): read [`Server::requests`] later for the rest.
     pub async fn next_request(&self) -> Request {
         let mut arrived = self.shared.arrived.subscribe();
@@ -260,13 +260,13 @@ impl Server {
         }
     }
 
-    /// How many rules have not answered yet.
+    /// Returns how many rules have not responded yet.
     pub fn unused(&self) -> usize {
         self.shared.lock().rules.len()
     }
 }
 
-/// A route of a [`Server`] that waits for what to do: [`On::reply`] or [`On::close`].
+/// A route of a [`Server`] that waits to be told what to do: [`On::reply`] or [`On::close`].
 #[must_use = "a rule does nothing until `.reply(status)` or `.close()`"]
 pub struct On<'a> {
     shared: &'a Shared,
@@ -284,12 +284,12 @@ impl std::fmt::Debug for On<'_> {
 }
 
 impl<'a> On<'a> {
-    /// Answer with this status. The rule is added when the [`Reply`] is dropped, at the
+    /// Responds with this status. The rule is added when the [`Reply`] is dropped, at the
     /// end of the statement.
     ///
     /// # Panics
     ///
-    /// When `status` is not between 100 and 999.
+    /// Panics when `status` is not between 100 and 999.
     pub fn reply(self, status: u16) -> Reply<'a> {
         assert!(
             (100..=999).contains(&status),
@@ -306,7 +306,7 @@ impl<'a> On<'a> {
         }
     }
 
-    /// Read the request, record it, and close the connection before any byte of an answer.
+    /// Reads the request, records it, and closes the connection before any byte of a response.
     pub fn close(self) {
         self.shared.lock().rules.push(Rule {
             method: self.method,
@@ -316,14 +316,14 @@ impl<'a> On<'a> {
     }
 }
 
-/// An answer being scripted. It is added to the server when dropped, at the end of the
+/// A response being scripted. It is added to the server when dropped, at the end of the
 /// statement.
 ///
 /// By default the server frames the body with a `content-length` that it computes, and
 /// keeps the connection open. [`Reply::chunked`], [`Reply::declare_length`] and
-/// [`Reply::silence`] change that. For `HEAD`, the head only is written. For `1xx`,
+/// [`Reply::silence`] change that. For `HEAD`, only the head is written. For `1xx`,
 /// `204` and `304`, neither a framing header nor a body is written, whatever the script
-/// says, unless it asks for a malformed answer with [`Reply::malformed_with_body`].
+/// says, unless it asks for a malformed response with [`Reply::malformed_with_body`].
 pub struct Reply<'a> {
     shared: &'a Shared,
     method: String,
@@ -351,13 +351,13 @@ impl Drop for Reply<'_> {
 }
 
 impl Reply<'_> {
-    /// A header, written as given, after those before it. A name may repeat.
+    /// Adds a header, written as given, after the ones before it. A name may repeat.
     ///
     /// # Panics
     ///
-    /// When the name is `content-length` or `transfer-encoding` (the server frames the
+    /// Panics when the name is `content-length` or `transfer-encoding` (the server frames the
     /// body: use [`Reply::declare_length`] or [`Reply::chunked`]), or when the name or the
-    /// value holds a line break.
+    /// value contains a line break.
     pub fn header(mut self, name: &str, value: &str) -> Self {
         assert!(
             !name.eq_ignore_ascii_case("content-length")
@@ -372,7 +372,7 @@ impl Reply<'_> {
         self
     }
 
-    /// Hold the head back for this much of Tokio's time (real time, unless the clock is
+    /// Holds the head back for this long in Tokio's time (real time, unless the clock is
     /// paused), counted from the end of the request's body. Calls of `after` and
     /// [`Reply::after_gate`] are kept in the order they were written.
     pub fn after(mut self, duration: Duration) -> Self {
@@ -380,62 +380,63 @@ impl Reply<'_> {
         self
     }
 
-    /// Hold the head back until the test opens `gate`. For a test that waits on events,
+    /// Holds the head back until the test opens `gate`. For a test that waits on events,
     /// not on time.
     pub fn after_gate(mut self, gate: &Gate) -> Self {
         self.spec.hold.push(Step::Wait(gate.clone()));
         self
     }
 
-    /// A piece of the body. Each piece is written as one write; call again for the next.
+    /// Adds a piece of the body. Each piece is sent in one write; call again for the next.
     pub fn body(mut self, piece: impl Into<Bytes>) -> Self {
         self.spec.steps.push(Step::Bytes(piece.into()));
         self
     }
 
-    /// `size` bytes of `x` in the body, written in pieces of 64 KiB and never held in
-    /// memory at once.
+    /// Adds `size` bytes of `x` to the body, sent in writes of 64 KiB and never held in
+    /// memory all at once.
     pub fn large_body(mut self, size: u64) -> Self {
         self.spec.steps.push(Step::Large(size));
         self
     }
 
-    /// A pause in the body, before what follows, of Tokio's time (real time, unless the
+    /// Adds a pause in the body, before what follows, in Tokio's time (real time, unless the
     /// clock is paused).
     pub fn pause(mut self, duration: Duration) -> Self {
         self.spec.steps.push(Step::Pause(duration));
         self
     }
 
-    /// Wait until the test opens `gate` before what follows in the body. For a test that
+    /// Waits until the test opens `gate` before what follows in the body. For a test that
     /// waits on events, not on time.
     pub fn wait(mut self, gate: &Gate) -> Self {
         self.spec.steps.push(Step::Wait(gate.clone()));
         self
     }
 
-    /// Frame the body with `transfer-encoding: chunked`: each piece is one chunk.
+    /// Frames the body with `transfer-encoding: chunked`: each write (each nonempty `body`
+    /// call, each 64 KiB of `large_body`) is one chunk; an empty `body` call writes none.
     pub fn chunked(mut self) -> Self {
         self.spec.chunked = true;
         self
     }
 
-    /// Write `content-length: length` whatever the body is, write the body as it is, then
-    /// close the connection. With a body shorter than `length`: a body that ends before
-    /// its announced size.
+    /// Writes `content-length: length` whatever the body is, writes the body as it is, then
+    /// closes the connection. With a body shorter than `length`, this is a body that ends
+    /// before its announced size.
     pub fn declare_length(mut self, length: u64) -> Self {
         self.spec.declared = Some(length);
         self
     }
 
-    /// A malformed answer: write the framing header and the body as scripted even where
-    /// HTTP forbids them (a `1xx`, `204` or `304`, or an answer to `HEAD`).
+    /// Makes a malformed response: writes the framing header and the body as scripted even
+    /// where HTTP forbids them (a `1xx`, `204` or `304`, or a response to `HEAD`).
     pub fn malformed_with_body(mut self) -> Self {
         self.spec.malformed = true;
         self
     }
 
-    /// After what was scripted, write nothing more and never close, until the server is
+    /// After what was scripted, writes nothing more and never closes, until the server is
     /// dropped. Without [`Reply::declare_length`], the body is chunked, so that the
     /// client waits for more: `.reply(200).silence()` is a head and then silence.
     pub fn silence(mut self) -> Self {
@@ -466,14 +467,14 @@ impl Default for Gate {
 }
 
 impl Gate {
-    /// A closed gate.
+    /// Creates a closed gate.
     pub fn new() -> Gate {
         Gate {
             open: Arc::new(watch::Sender::new(false)),
         }
     }
 
-    /// Open the gate; it stays open.
+    /// Opens the gate; it stays open.
     pub fn open(&self) {
         self.open.send_replace(true);
     }
@@ -485,14 +486,14 @@ impl Gate {
     }
 }
 
-/// What came of the body of a recorded [`Request`].
+/// The state of the body of a recorded [`Request`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BodyState {
     /// The head arrived; the body has not ended yet.
     Coming,
     /// The body ended as its framing said (or there was none).
     Ended,
-    /// The body broke: the connection ended in the middle, its framing was malformed, or
+    /// The body broke off: the connection ended in the middle, its framing was malformed, or
     /// it was larger than [`MAX_REQUEST_BODY`].
     Broken,
 }
@@ -512,44 +513,44 @@ pub struct Request {
 }
 
 impl Request {
-    /// The method, as sent: `GET`.
+    /// Returns the method, as sent: `GET`.
     pub fn method(&self) -> &str {
         &self.method
     }
 
-    /// The path and query, exactly as sent: `/tasks?page=2`.
+    /// Returns the path and query, exactly as sent: `/tasks?page=2`.
     pub fn target(&self) -> &str {
         &self.target
     }
 
-    /// The path, without the query: `/tasks`.
+    /// Returns the path, without the query: `/tasks`.
     pub fn path(&self) -> &str {
         path_of(&self.target)
     }
 
-    /// The query, without `?`: `page=2`. `None` without a `?`.
+    /// Returns the query, without `?`: `page=2`. `None` without a `?`.
     pub fn query(&self) -> Option<&str> {
         self.target.split_once('?').map(|(_, query)| query)
     }
 
-    /// The version, as sent: `HTTP/1.1`.
+    /// Returns the version, as sent: `HTTP/1.1`.
     pub fn version(&self) -> &str {
         &self.version
     }
 
-    /// Every header, in the order it arrived, its name in the case it was sent, its value
-    /// without the spaces around it. A name sent twice is here twice. For the bytes as
-    /// sent: [`Request::raw_headers`].
+    /// Returns every header, in the order it arrived, with its name in the case it was sent in
+    /// and its value without surrounding spaces. A name sent twice appears twice. For the bytes
+    /// as sent, see [`Request::raw_headers`].
     pub fn headers(&self) -> &[(String, Bytes)] {
         &self.headers
     }
 
-    /// Every header line exactly as sent, in order, without its CRLF: `X-A:  1 `.
+    /// Returns every header line exactly as sent, in order, without its CRLF: `X-A:  1 `.
     pub fn raw_headers(&self) -> &[Bytes] {
         &self.raw_headers
     }
 
-    /// The value of the first header with this name, the name compared without case.
+    /// Returns the value of the first header with this name, compared case-insensitively.
     /// `None` when absent, or when that first value is not UTF-8 (see
     /// [`Request::headers`]).
     pub fn header(&self, name: &str) -> Option<&str> {
@@ -560,7 +561,8 @@ impl Request {
         std::str::from_utf8(value).ok()
     }
 
-    /// Every value of a header that is UTF-8, in order, the name compared without case.
+    /// Returns every value of a header that is UTF-8, in order, with the name compared
+    /// case-insensitively.
     pub fn header_all(&self, name: &str) -> Vec<&str> {
         self.headers
             .iter()
@@ -569,24 +571,24 @@ impl Request {
             .collect()
     }
 
-    /// The trailers of a chunked body, in order, as [`Request::headers`] gives headers.
+    /// Returns the trailers of a chunked body, in order, in the same form as [`Request::headers`].
     /// Empty until the body has ended.
     pub fn trailers(&self) -> &[(String, Bytes)] {
         &self.trailers
     }
 
-    /// Every trailer line exactly as sent, in order, without its CRLF.
+    /// Returns every trailer line exactly as sent, in order, without its CRLF.
     pub fn raw_trailers(&self) -> &[Bytes] {
         &self.raw_trailers
     }
 
-    /// The bytes of the body that arrived, after chunked framing is taken off: all of
-    /// them once the body has ended, what had come so far otherwise.
+    /// Returns the bytes of the body that arrived, with chunked framing removed: all of
+    /// them once the body has ended, and what has arrived so far otherwise.
     pub fn body(&self) -> &[u8] {
         &self.body
     }
 
-    /// Whether the body ended, broke, or is still coming.
+    /// Returns whether the body ended, broke off, or is still arriving.
     pub fn body_state(&self) -> BodyState {
         self.body_state
     }

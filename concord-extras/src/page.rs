@@ -1,7 +1,8 @@
-//! Six pagers. Each is a function that gives a function from the call and its answer to the next call.
+//! Six pagers. Each is a function that returns a function from the call and its response to the
+//! next call.
 //!
-//! In a `paginate` statement, an input of the endpoint names its place on the call
-//! ([`Slot`]). So `paginate by_offset_limit(start, count);` hands two places to
+//! In a `paginate` statement, an input of the endpoint names its slot on the call
+//! ([`Slot`]). So `paginate by_offset_limit(start, count);` hands two slots to
 //! [`by_offset_limit`]. Nothing here is known to the macro.
 
 use concord_core::error::{mismatch, Fail};
@@ -27,7 +28,7 @@ where
     }
 }
 
-/// `paginate by_offset(start);`: the next call starts after the items that came. The pages end
+/// `paginate by_offset(start);`: the next call starts after the items that arrived. The pages end
 /// with an empty page.
 // Keep the public pager signature's explicit call, answer and problem types.
 // PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
@@ -48,12 +49,12 @@ where
 }
 
 /// `paginate by_offset_limit(start, count);`: like [`by_offset`], and the pages also end with a
-/// page that is shorter than the `count` that the caller gave. Write this only for an API
+/// page that is shorter than the `count` that the caller set. Use this only for an API
 /// that promises full pages until the last one.
 ///
 /// The first request carries what the caller set and nothing more: with no `start` it has
-/// no offset pair (it counts as 0), with no `count` no limit pair. Each next request has
-/// `start` plus the number of items that came, and the same `count`. When the caller gave
+/// no offset pair (it counts as 0), and with no `count` no limit pair. Each next request has
+/// `start` plus the number of items that arrived, and the same `count`. When the caller set
 /// no `count`, only an empty page ends the pages, as with [`by_offset`].
 // Keep the public pager signature's explicit call, answer and problem types.
 // PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
@@ -88,9 +89,9 @@ where
     }
 }
 
-/// `paginate by_page(page, 1);`: the next call asks for the following page number.
-/// When no number was supplied, the answered page is `first`. An empty page ends
-/// the sequence; a number that cannot grow is a Mismatch.
+/// `paginate by_page(page, 1);`: the next call requests the following page number.
+/// When no number was supplied, the page just received is `first`. An empty page ends
+/// the sequence; a number that cannot be incremented is a Mismatch.
 // Keep the public pager signature's explicit call, answer and problem types.
 // PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
 #[allow(clippy::type_complexity)]
@@ -124,7 +125,7 @@ where
 }
 
 /// `paginate by_cursor(after, Page::next);`: the input takes what your function finds in the
-/// page. The pages end when it finds nothing. The length of a page is never looked at.
+/// page. The pages end when it finds nothing. The length of a page is never checked.
 pub fn by_cursor<C, S, F>(
     input: S,
     next: F,
@@ -138,7 +139,7 @@ where
 }
 
 /// `paginate by_next_url(Page::next);`: the same call, sent to the URL that your function reads
-/// in the page. The pages end when it finds none.
+/// from the page. The pages end when it finds none.
 pub fn by_next_url<C, F, U>(next: F) -> impl Fn(C, &Answer<C::Value>) -> Option<C> + Send + 'static
 where
     C: Call,
@@ -151,11 +152,11 @@ where
 }
 
 /// `paginate by_link();`: the same call, sent to the URL of `Link: <…>; rel="next"` (RFC 8288).
-/// The pages end when the answer has no such link. A link with `anchor` is ignored.
-/// A field with invalid text or malformed quotes gives a Mismatch.
-/// The target is read as `reqwest` reads a URL (using the `url` crate, like a browser),
-/// so `</a|b>` and bad percent escapes are accepted. This reader checks the field's
-/// brackets, parameters and quotes; every page's origin is checked by the core.
+/// The pages end when the response has no such link. A link with `anchor` is ignored.
+/// A field with invalid text or malformed quotes is a Mismatch.
+/// The target is parsed as `reqwest` parses a URL (using the `url` crate, like a browser),
+/// so `</a|b>` and bad percent escapes are accepted. This pager checks the field's
+/// brackets, parameters and quotes; the core checks every page's origin.
 // Keep the public pager signature's explicit call, answer and problem types.
 // PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
 #[allow(clippy::type_complexity)]

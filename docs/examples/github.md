@@ -1,10 +1,10 @@
 # GitHub
 
-*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [all the examples](README.md) · next: [Riot Games](riot.md)*
+*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Real APIs](README.md) · next: [Riot Games](riot.md)*
 
-For a Rust developer who calls the GitHub REST API: a client of 41 endpoints to copy from. It shows pages in a `Link` header, a second host for uploads, and a middleware that keeps the rate-limit headers of every answer.
+This page is for a Rust developer who calls the GitHub REST API. It gives a client with 41 endpoints that you can copy, and shows pagination through a `Link` header, a second host for uploads, and a middleware layer that keeps the rate-limit headers of every response.
 
-GitHub, as Concord sees it. The host is `api.github.com`; the files of a release go to a second host, `uploads.github.com`. Who you are: a token, optional (`.token(…)` on the client), sent as `authorization: Bearer …`; GitHub also wants a `user-agent` on every request, and the client pins the API version in a header. A list comes in pages, and the next one is in the `Link` header: `paginate by_link();`. GitHub says no with a status and a JSON body (`message`, `documentation_url`), read into `GithubProblem`; a `404` also means "you may not see it". GitHub's own reference: [docs.github.com/en/rest](https://docs.github.com/en/rest).
+Here is GitHub as Concord sees it. The host is `api.github.com`; the files of a release go to a second host, `uploads.github.com`. Authentication is an optional token (`.token(…)` on the client), sent as `authorization: Bearer …`. GitHub also requires a `user-agent` on every request, and the client pins the API version in a header. Lists are paginated, and the link to the next page is in the `Link` header: `paginate by_link();`. GitHub rejects a request with an error status and a JSON body (`message`, `documentation_url`), read into `GithubProblem`; a `404` can also mean "you are not allowed to see it". GitHub's own reference is [docs.github.com/en/rest](https://docs.github.com/en/rest).
 
 ## The description
 
@@ -24,7 +24,7 @@ concord::api! {
         }
         read Json;
         problem GithubProblem;
-        /// Keeps the rate-limit headers of every answer: each page, each try.
+        /// Keeps the rate-limit headers of every response: each page, each attempt.
         middleware ObserveQuota(quota.clone());
 
         part page(per_page?: u32, page?: u32) {
@@ -87,14 +87,14 @@ concord::api! {
 
         scope repo(owner: String, name: String) {
             path "repos/{owner}/{name}";
-            /// A repository that moved answers `301`, an error with its `Location`: see `get_moved`.
+            /// A repository that moved responds with `301`, an error with its `Location`: see `get_moved`.
             GET get() -> Repository;
-            /// `None`: GitHub is still counting (`202`). Ask again later.
+            /// `None`: GitHub is still counting (`202`). Request it again later.
             GET contributor_stats() -> Option<Vec<ContributorStats>> {
                 path "stats/contributors";
                 status { 202 => None, 204 => Some(Vec::new()) }
             }
-            /// The root folder of the repository. Not paged: at most 1,000 entries.
+            /// The root folder of the repository. Not paginated: at most 1,000 entries.
             GET contents_root(..at_ref) -> Vec<ContentEntry> { path "contents"; }
 
             scope issues {
@@ -238,9 +238,9 @@ concord::api! {
 
 ## Beside the description
 
-The data types are plain `serde` types, named here and not printed: `Repository`, `User`, `Issue`, `Comment`, `Pull`, `PullFile`, `MergeResult`, `Release`, `Asset`, `ContributorStats`, `RateLimits`, `ContentEntry`, `Contents` (one entry, or the entries of a folder), `ContentWrite`, and `GithubProblem`. What is sent: `NewRepository`, `NewIssue`, `NewPull`, `MergePull`, `PutContent`, `NewRelease`, each with `#[serde(skip_serializing_if = "Option::is_none")]` on its optional fields. The small enums (`IssueState`, `Visibility`, `RepoSort`, …) are written in lowercase, as GitHub spells them.
+The data types are plain `serde` types, named here but not shown: `Repository`, `User`, `Issue`, `Comment`, `Pull`, `PullFile`, `MergeResult`, `Release`, `Asset`, `ContributorStats`, `RateLimits`, `ContentEntry`, `Contents` (one entry, or the entries of a folder), `ContentWrite`, and `GithubProblem`. The types that are sent: `NewRepository`, `NewIssue`, `NewPull`, `MergePull`, `PutContent`, `NewRelease`, each with `#[serde(skip_serializing_if = "Option::is_none")]` on its optional fields. The small enums (`IssueState`, `Visibility`, `RepoSort`, …) are serialized in lowercase, as GitHub spells them.
 
-The Rust that the description names: the page type of a search, the middleware that keeps the quota, the check of `user.repos`, and a function that follows a repository that moved.
+The description names these Rust items: the page type of a search, the middleware layer that keeps the quota, the check for `user.repos`, and a function that follows a repository that has moved.
 
 ```rust
 use concord::http::{HeaderMap, HeaderName};
@@ -271,7 +271,7 @@ impl<T: Send> concord::page::IntoItems for SearchPage<T> {
 /// The last rate-limit headers of each resource (`core`, `search`, …), shared with the caller.
 pub type QuotaLog = Arc<Mutex<BTreeMap<String, HeaderMap>>>;
 
-/// `middleware ObserveQuota(quota.clone());`: it sees every answer, of every page and every try.
+/// `middleware ObserveQuota(quota.clone());`: it sees every response: each page, each attempt.
 pub struct ObserveQuota(pub QuotaLog);
 
 impl Middleware for ObserveQuota {
@@ -305,9 +305,9 @@ pub fn checked_repo_kind(
     Ok(kind.clone())
 }
 
-/// A repository that was renamed or moved: GitHub answers `301` with its new place. This follows
-/// at most four moves, on the same origin only, and keeps the generated call (its reader, its
-/// middleware, its credentials).
+/// A repository that was renamed or moved: GitHub responds with `301` and its new location.
+/// This follows at most four moves, on the same origin only, and keeps the generated call (its
+/// reader, its middleware, its credentials).
 pub async fn get_moved(github: &Github, owner: &str, name: &str)
     -> Result<Repository, Box<dyn std::error::Error + Send + Sync>>
 {
@@ -334,7 +334,7 @@ pub async fn get_moved(github: &Github, owner: &str, name: &str)
 }
 ```
 
-A search stops at 1,000 results, and `incomplete_results` says that GitHub stopped looking: following every `Link` is then not every match. That is why the search keeps its envelope, `SearchPage<T>`, with `IntoItems` for `.pages().items()`.
+A search stops at 1,000 results, and `incomplete_results` tells you that GitHub stopped looking, so in those cases following every `Link` does not yield every match. That is why the search keeps its envelope, `SearchPage<T>`, and implements `IntoItems` for `.pages().items()`.
 
 ## Calling it
 
@@ -408,15 +408,15 @@ pub async fn search(github: &Github, quota: &QuotaLog) -> github::Result<()> {
 }
 ```
 
-## What fits badly, and the way out
+## What does not fit well, and the workaround
 
 | GitHub wants | What to write |
 |---|---|
-| A repository that was renamed answers `301`, and asks the client to follow it. Concord follows no redirect: the call fails with the `301` and its `Location`. | `get_moved` above, which sends the same call to the new URL. Or a `reqwest::Client` of yours that follows redirects, given to `with_transport` (see [when Concord does not say what you need](../guide/extending.md)). |
-| A list in one query value, joined by commas: `labels=bug,ui`. A `Vec` sends its key once for each item. | `"labels" = labels.as_ref().map(\|v\| v.join(","));` on an optional input: an input that was not set sends nothing. |
-| Filters that cannot go together (`type` with `visibility`). The language says only "required" or "optional". | A function in the entry that returns a `Result`: an `Err` is a Build error, and nothing is sent (`checked_repo_kind`). |
-| A field cleared with `null`, apart from a field left out. | An input `milestone?: Option<u64>` in a body of entries: not set is left out, `.milestone(None::<u64>)` writes `null`, a number writes the number. |
-| One resource in two shapes: JSON, or the raw bytes of a file, or the diff of a pull request. The type after the arrow is fixed. | One endpoint for each shape, with its own `accept` (`override "accept" = …;`) and its own reader. |
-| The upload URL that a release gives, a URI template with a query. It is not a `Base`. | The documented route on the upload host: `base "https://uploads.github.com";` on that endpoint, and the token written again under it. |
-| The root folder of a repository: `contents/` with an empty path. An empty `{*path}` is refused. | A second endpoint, `contents_root`. |
+| A renamed repository responds with `301` and expects the client to follow it. Concord follows no redirects: the call fails with the `301` and its `Location`. | `get_moved` above, which sends the same call to the new URL. Or your own `reqwest::Client` that follows redirects, passed to `with_transport` (see [When Concord does not cover what you need](../guide/extending.md)). |
+| A list in one query value, joined by commas: `labels=bug,ui`. A `Vec` repeats its key for each item. | `"labels" = labels.as_ref().map(\|v\| v.join(","));` on an optional input: an input that was not set sends nothing. |
+| Filters that cannot be combined (`type` with `visibility`). The language can only mark an input as required or optional. | A function in the entry that returns a `Result`: an `Err` is a Build error, and nothing is sent (`checked_repo_kind`). |
+| A field cleared with `null`, as distinct from a field left out. | An input `milestone?: Option<u64>` in a body of entries: an unset input is left out, `.milestone(None::<u64>)` writes `null`, a number writes the number. |
+| One resource in two shapes: JSON, or the raw bytes of a file, or the diff of a pull request. The return type is fixed. | One endpoint for each shape, with its own `accept` (`override "accept" = …;`) and its own reader. |
+| The upload URL that a release returns is a URI template with a query, so it is not a `Base`. | The documented route on the upload host: `base "https://uploads.github.com";` on that endpoint, and the token repeated under it. |
+| The root folder of a repository: `contents/` with an empty path. An empty `{*path}` is rejected. | A second endpoint, `contents_root`. |
 | `type` and `ref`, which are Rust keywords. | Another name in the signature, and the key in the entry: `"type" = kind;`, `"ref" = reference;`. |

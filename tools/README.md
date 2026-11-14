@@ -20,7 +20,7 @@ available, leave the variable unset so every case and mutation runs.
 - `mutations/`: source faults and runner tests; see its README to add a mutation.
 - `sockets.py` and `socket-tests.txt`: shared explicit socket selectors and server-doctest locations.
 - `package.py`: inspect, unpack, and build the five release archives without uploading them.
-- `features.py`: check facade feature combinations and detached crate manifests on stable and Rust 1.96.
+- `features.py`: check Concord feature combinations with reqwest forwarders off/on, each forwarder alone, and detached crates on stable and Rust 1.96.
 - `panics.py`: inventory panic-prone production operations and check their local safety reasons.
 - `docs.py`: check public API documentation and rendered facade pages.
 - `bench.py` and `measure/`: run benchmarks and report timing and allocation comparisons; `just bench --expansion [FILE]` measures macro expansion and writes `target/expansion-measurement.json`.

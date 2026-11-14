@@ -5,9 +5,9 @@
 //! - [`Script`]: a [`Transport`](concord_core::Transport) with virtual time, for what
 //!   depends on time. No socket: it works under `#[tokio::test(start_paused = true)]`.
 //!
-//! The lines a test needs in `Cargo.toml`. `start_paused` is Tokio's `test-util` feature,
-//! and it runs on the current thread only (the flavor of `#[tokio::test]` by default).
-//! A [`Script`] works on a multi-thread runtime too, with real time there: see its page.
+//! A test needs these lines in `Cargo.toml`. `start_paused` needs Tokio's `test-util` feature,
+//! and it works on the current-thread runtime only (the default flavor of `#[tokio::test]`).
+//! A [`Script`] also works on a multi-thread runtime, with real time there: see its documentation.
 //!
 //! ```toml
 //! [dev-dependencies]

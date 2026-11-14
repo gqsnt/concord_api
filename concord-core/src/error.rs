@@ -1,4 +1,4 @@
-//! The one error of a client.
+//! The single error type of a client.
 
 use crate::answer::Headers;
 use crate::read::Place;
@@ -280,12 +280,12 @@ fn connection(source: Option<&(dyn std::error::Error + 'static)>) -> Connection 
     }
 }
 
-/// What a call gives when it does not give its value.
+/// The error that a call returns when it cannot return its value.
 ///
 /// `E` is the API's own problem type, chosen by the client's author.
 /// Printing an error (`{e}`) shows names only: its kind, the status, the endpoint, and a
-/// cause in fixed words. Never a URL, a header value, a body or a secret.
-/// [`details`](Error::details) prints the values, when you ask for them.
+/// cause in fixed wording, but never a URL, a header value, a body or a secret.
+/// [`details`](Error::details) prints the values when you ask for them.
 pub struct Error<E = ()> {
     inner: Box<Inner<E>>,
 }
@@ -307,31 +307,31 @@ struct Inner<E> {
     from_byte_stream: bool,
 }
 
-/// What went wrong, in four cases.
+/// The kind of an error: what went wrong, in four cases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Kind {
     /// The request could not be built.
     Build,
-    /// No answer, or an answer that broke before the end of a body that was wanted.
+    /// No response, or a response that broke off before the end of a body that the call needed.
     Transport,
-    /// The API said no: a status that the endpoint gives no meaning to, or the API's own problem.
+    /// The API rejected the request: a status that the endpoint assigns no meaning to, or the API's own problem.
     Refused,
-    /// The answer is not what the client promised: it does not decode, it is too large, or the client's status handling refused it.
+    /// The response is not what the client promised: it does not decode, it is too large, or the client's status handling rejected it.
     Mismatch,
 }
 
-/// Which failure of the network.
+/// The kind of network failure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Class {
     /// A connection failed on any hop.
     Connect,
-    /// A clock ended: `idle_timeout`, `timeout`, or one that the transport reports.
+    /// A timeout expired: `idle_timeout`, `timeout`, or one that the transport reports.
     Timeout,
-    /// The body broke, or ended before its announced size.
+    /// The body broke off, or ended before its announced size.
     Body,
-    /// A middleware or transport refused before sending.
+    /// A middleware layer or the transport stopped the request before it was sent.
     Blocked,
     /// Anything else.
     Other,
@@ -345,7 +345,7 @@ pub enum Kept {
     Complete,
     /// The first 64 KiB of a longer body.
     Cut,
-    /// What had arrived when the body broke.
+    /// What had arrived when the body broke off.
     Interrupted,
 }
 
@@ -575,53 +575,55 @@ impl<E> Error<E> {
 }
 
 impl<E> Error<E> {
-    /// The kind of the error.
+    /// Returns the kind of the error.
     pub fn kind(&self) -> Kind {
         self.inner.kind
     }
 
-    /// The name of the endpoint: `riot.matches.get`.
+    /// Returns the name of the endpoint: `riot.matches.get`.
     pub fn endpoint(&self) -> &'static str {
         self.inner.endpoint
     }
 
-    /// The status of the answer, when one arrived.
+    /// Returns the status of the response, if one arrived.
     pub fn status(&self) -> Option<http::StatusCode> {
         self.inner.status
     }
 
-    /// The answer had this status: `e.is_status(404)`.
+    /// Returns whether the response had this status: `e.is_status(404)`.
     pub fn is_status(&self, status: u16) -> bool {
         self.status().is_some_and(|s| s == status)
     }
 
-    /// The headers of the answer, when one arrived.
+    /// Returns the headers of the response, if one arrived.
     pub fn headers(&self) -> Option<&Headers> {
         self.inner.headers.as_ref()
     }
 
-    /// The longer of the answer’s `Retry-After` and the wait requested by the first
-    /// `when` rule that gave one for the try that did not happen. Neither rule is asked again.
+    /// Returns the longer of the response’s `Retry-After` and the wait requested by the first
+    /// `when` rule that returned one, for the attempt that was not made. Both waits are recorded
+    /// when the retry decision is made: this method neither reads the header again nor calls
+    /// any rule.
     pub fn retry_after(&self) -> Option<std::time::Duration> {
         self.inner.retry_after
     }
 
-    /// The start of the body, when one was kept: at most 64 KiB, in a buffer of its own.
+    /// Returns the start of the body, if one was kept: at most 64 KiB, in a buffer of its own.
     pub fn body(&self) -> Option<&[u8]> {
         self.inner.body.as_deref()
     }
 
-    /// The state of [`body`](Error::body), when one was kept.
+    /// Returns the state of [`body`](Error::body), if one was kept.
     pub fn kept(&self) -> Option<Kept> {
         self.inner.kept
     }
 
-    /// The API's own problem, typed, when the API refused and its body was one.
+    /// Returns the API's own typed problem, if the API rejected the request with a problem body.
     pub fn problem(&self) -> Option<&E> {
         self.inner.problem.as_ref()
     }
 
-    /// The API's own problem, taken; or the error back, when it holds none.
+    /// Takes the API's own problem out of the error, or returns the error unchanged if it holds none.
     pub fn into_problem(mut self) -> Result<E, Error<E>> {
         match self.inner.problem.take() {
             Some(problem) => Ok(problem),
@@ -629,7 +631,7 @@ impl<E> Error<E> {
         }
     }
 
-    /// The same error, with its problem changed by a function.
+    /// Maps the problem with a function, keeping the rest of the error.
     pub fn map_problem<F>(self, map: impl FnOnce(E) -> F) -> Error<F> {
         self.map_optional_problem(|problem| problem.map(map))
     }
@@ -685,13 +687,13 @@ impl<E> Error<E> {
         self.inner.from_byte_stream
     }
 
-    /// How many attempts entered the middleware chain. A middleware may send more
-    /// than once within one attempt. A response read separately reports zero.
+    /// Returns how many attempts entered the middleware chain. A middleware layer may send
+    /// more than once within one attempt. A response read separately reports zero.
     pub fn tries(&self) -> u32 {
         self.inner.tries
     }
 
-    /// Which failure of the network, for a Transport error.
+    /// Returns the kind of network failure, for a Transport error.
     pub fn class(&self) -> Option<Class> {
         match self.inner.note {
             Note::Transport(class, _) => Some(class),
@@ -702,20 +704,21 @@ impl<E> Error<E> {
         }
     }
 
-    /// A clock ended.
+    /// Returns `true` if a timeout expired (the class is [`Class::Timeout`]).
     pub fn is_timeout(&self) -> bool {
         self.class() == Some(Class::Timeout)
     }
 
-    /// A reason supplied by the author, for example through `mismatch`.
-    /// A failed body read gives `None`; decoder messages are in `details()`.
+    /// Returns a reason supplied by the author, for example through `mismatch`.
+    /// A failed body read returns `None`; decoder messages are in `details()`.
     pub fn reason(&self) -> Option<&str> {
         self.inner.reason.as_deref()
     }
 
-    /// Everything the error holds, values included, as one text to print by your own choice:
-    /// the line of `{e}`, the reason, the headers, the problem or the start of the body,
-    /// and at most 1 KiB of a reader’s decoder message, followed by a cut marker if needed.
+    /// Returns everything the error holds, values included, as one string that you print when
+    /// you choose: the line of `{e}`, the reason, the headers, the problem or the start of the
+    /// body, and at most 1 KiB of a reader’s decoder message, followed by a truncation marker if
+    /// needed.
     pub fn details(&self) -> Details<'_, E>
     where
         E: fmt::Debug,
@@ -750,7 +753,7 @@ impl<E> fmt::Display for Error<E> {
 }
 
 impl<E> fmt::Debug for Error<E> {
-    /// The same names as `Display`, as a struct. No value, so it needs nothing of `E`.
+    /// Shows the same names as `Display`, as a struct. It prints no value, so it requires nothing of `E`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
             .field("kind", &self.inner.kind)
@@ -762,18 +765,18 @@ impl<E> fmt::Debug for Error<E> {
 }
 
 impl<E> std::error::Error for Error<E> {
-    /// For a failure of the network: the error of the HTTP library, with its URL taken out,
-    /// or the source that a transport of yours gave. For a body that could not be
-    /// written: the writer's error. For a reader's Mismatch: a small, value-free cause
-    /// constructed by the core from the structured place and failure kind, never
-    /// supplied by the reader. Decoder messages that may quote the answer belong
+    /// For a network failure: the error of the HTTP library, with its URL removed,
+    /// or the source that your own transport returned. For a body that could not be
+    /// serialized: the writer's error. For a reader's Mismatch: a small, value-free cause
+    /// that the core constructs from the structured location and failure kind, never
+    /// supplied by the reader. Decoder messages that may quote the response belong
     /// in `details()`, bounded to 1 KiB.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.inner.source.as_deref().map(|source| source as _)
     }
 }
 
-/// What [`Error::details`] gives. It prints values.
+/// The value that [`Error::details`] returns. Displaying it prints values.
 pub struct Details<'a, E> {
     error: &'a Error<E>,
 }
@@ -826,16 +829,16 @@ impl<E: fmt::Debug> fmt::Display for Details<'_, E> {
 }
 
 impl<E: Send + Sync + 'static> From<Error<E>> for std::io::Error {
-    /// So that a [`ByteStream`](crate::ByteStream) can feed a reader that wants `io::Error`.
+    /// Lets a [`ByteStream`](crate::ByteStream) feed a reader that expects `io::Error`.
     fn from(error: Error<E>) -> std::io::Error {
         std::io::Error::other(error)
     }
 }
 
-/// How an arm or a pager fails.
+/// The failure of an arm or a pager.
 ///
-/// `?` on a `Result<_, P>` makes one from the API's own problem: the call ends as Refused.
-/// [`mismatch`] makes one that says "this answer is not what was promised".
+/// `?` on a `Result<_, P>` creates one from the API's own problem: the call ends as Refused.
+/// [`mismatch`] creates one that says "this response is not what was promised".
 ///
 /// `Fail::from(problem)` in a pager becomes a Refused error with that problem;
 /// `concord::mismatch(…)` becomes a Mismatch. Both are returned by the `try_next()`
@@ -857,7 +860,8 @@ impl<P> From<P> for Fail<P> {
     }
 }
 
-/// "This answer is not what was promised." The text becomes the `reason()` of the error.
+/// Creates a failure that says "this response is not what was promised". The text becomes the
+/// `reason()` of the error.
 pub fn mismatch<P>(reason: impl Into<std::borrow::Cow<'static, str>>) -> Fail<P> {
     Fail {
         cause: Cause::Mismatch(reason.into()),

@@ -2,15 +2,15 @@
 
 *[Concord](../../README.md) · [docs](../README.md) · guide · previous: [Pages](pages.md) · next: [What Concord promises](promises.md)*
 
-For the author and the user of a client: how to test it with no network. A function in place of the network for a plain answer; a scripted transport on virtual time for a retry or a clock; a local server for the bytes that really go out.
+This page shows how to test a client without a network: a fake transport for a plain response, a scripted transport on virtual time for a retry or a timeout, and a local server for the exact bytes that are sent.
 
-| You test | Use | From |
+| To test | Use | From |
 |---|---|---|
-| What a call sends, and what it makes of an answer | `concord::fake(…)` | `concord-api` itself |
-| A retry, a clock, a body that stalls, on virtual time | `concord_testkit::Script` | `concord-testkit` |
+| What a call sends, and what it makes of a response | `concord::fake(…)` | `concord-api` itself |
+| A retry, a timeout, a body that stalls, on virtual time | `concord_testkit::Script` | `concord-testkit` |
 | The bytes on the wire, with Concord's own HTTP client | `concord_testkit::Server` | `concord-testkit` |
 
-The examples call three clients: `Tasks` ([an API is a tree](tour.md#an-api-is-a-tree-write-it-as-one)) and `Riot` ([what is shared is written once](tour.md#what-is-shared-is-written-once)), both of the tour, and `Files`, a client with a key and a signing middleware whose `readme(repo)` is `GET {repo}/readme` with `read Text;`. All three are in `tests/tour` of the repository. The example of a retry writes its own client, `Stations`.
+The examples use three clients: `Tasks` ([an API is a tree](tour.md#an-api-is-a-tree-write-it-as-one)) and `Riot` ([what is shared is written once](tour.md#what-is-shared-is-written-once)), both from the tour, and `Files`, a client with a key and a signing middleware, whose `readme(repo)` is `GET {repo}/readme` with `read Text;`. All three are in `tests/tour` in the repository. The retry example defines its own client, `Stations`.
 
 ## A fake transport
 
@@ -23,9 +23,9 @@ let riot = Riot::new("test-key").with_transport(concord::fake(|request| {
 let account = riot.account(Europe).by_riot_id("Faker", "KR1").await?;
 ```
 
-The fake takes the place of what really sends. It gets the request as it leaves, after the middlewares: for a signed API, the signed one. It gives a response (`concord::reply(status, body)`, or `concord::reply_with(status, headers, body)`), or a failure with its class. Everything of Concord runs for real on that answer: retry, the status rule, the arms, the reader, the clock. Only the network is replaced. `reply` and `reply_with` panic on a status outside 100 to 999 or on a header that is not valid: they are helpers for tests.
+The fake replaces the transport. It receives the request as it is sent, after the middleware: for a signed API, the signed request. It returns a response (`concord::reply(status, body)`, or `concord::reply_with(status, headers, body)`), or a failure with its class. All of Concord runs for real on that response: retry, the status rule, the arms, the reader, the timeouts. Only the network is replaced. `reply` and `reply_with` panic on a status outside 100 to 999 or on an invalid header, because they are test helpers.
 
-A failure before any head is a fake that gives an error:
+To simulate a failure before any head arrives, make the fake return an error:
 
 ```rust
 use concord::error::{Class, Kind};
@@ -37,7 +37,7 @@ assert_eq!(error.kind(), Kind::Transport);
 assert_eq!(error.class(), Some(Class::Connect));
 ```
 
-Behind `fake` is one trait with one method:
+Behind `fake` is a trait with one method:
 
 ```rust
 pub trait Transport: Send + Sync + 'static {
@@ -45,13 +45,13 @@ pub trait Transport: Send + Sync + 'static {
 }
 ```
 
-`concord::Http` and `reqwest::Client` have it, a function wrapped by `concord::fake` has it, and a type of yours can have it ([a transport](extending.md#a-transport); a server that never answers is one line there). `info` tells the transport the name of the endpoint and the number of the try.
+`concord::Http` and `reqwest::Client` implement it, a function wrapped by `concord::fake` implements it, and your own type can implement it ([a transport](extending.md#a-transport); a server that never responds takes one line there). `info` tells the transport the name of the endpoint and the attempt number.
 
-A reader of yours is tested alone, with no client, on an answer made by `concord::reply` ([reading a success](responses-and-errors.md#reading-a-success)). A client whose description signs each request gives the fake the signed request ([a middleware](credentials.md#a-middleware)).
+Your own reader is tested on its own, without a client, on a response made by `concord::reply` ([reading a success](responses-and-errors.md#reading-a-success)). A client whose description signs each request passes the signed request to the fake ([a middleware](credentials.md#a-middleware)).
 
-## The lines in `Cargo.toml`
+## What to add to `Cargo.toml`
 
-`fake` and `reply` are in `concord-api`. The test kit is a crate of its own, for your tests only: a dev-dependency, never a dependency of your library. Until the crates are on crates.io, it comes from the repository:
+`fake` and `reply` are in `concord-api`. The test kit is a separate crate, for your tests only: a dev-dependency, never a dependency of your library. Until the crates are published on crates.io, it comes from the repository:
 
 ```toml
 [dev-dependencies]
@@ -59,11 +59,11 @@ concord-testkit = { git = "https://github.com/gqsnt/concord_api" }
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
 ```
 
-After the first upload, the first line is `concord-testkit = "5.0.0-rc.1"`. `test-util` is the feature of Tokio that `start_paused` needs.
+Once the crates are published, the first line becomes `concord-testkit = "5.0.0-rc.1"`. `test-util` is the Tokio feature that `start_paused` needs.
 
 ## A script: a transport with virtual time
 
-`Script` plays the tries that a test writes, one for each send, in the order they were written, and records each request it was given. Under `#[tokio::test(start_paused = true)]`, time moves only when the test or the engine sleeps: a wait of an hour takes no time.
+`Script` plays back the attempts that a test scripts, one per send, in the order they were written, and records every request it receives. Under `#[tokio::test(start_paused = true)]`, time advances only when the test or the engine sleeps, so a one-hour wait takes no real time.
 
 ```rust
 use concord_testkit::Script;
@@ -73,7 +73,7 @@ use tokio::time::Instant;
 #[tokio::test(start_paused = true)]
 async fn a_silent_server_ends_the_call_after_30_seconds() {
     let script = Script::new();
-    script.never();                                  // this try never answers
+    script.never();                                  // this attempt never gets a response
     let tasks = Tasks::new().with_transport(script.clone());
 
     let start = Instant::now();
@@ -88,17 +88,17 @@ async fn a_silent_server_ends_the_call_after_30_seconds() {
 
 | | |
 |---|---|
-| `script.answer(status)` | The next try gets an answer with this status. Then, in one statement: `.after(duration)` (the head comes later), `.header(name, value)`, `.body(piece)` (one piece for each call), `.pause(duration)` between pieces, `.stall()` (the body never ends), `.cut()` (the body fails in the middle), `.read_upload()` (the request body is read first). |
-| `script.fail(error)` | The next try fails before any head, with a `TransportError`; `.after(duration)` too. |
-| `script.never()` | The next try never answers. |
-| `script.requests()` | Every request given to the script, in order: `method()`, `url()`, `header(name)`, `body()`, `info().number()` (the try) and `at()` (its instant on virtual time). |
-| `script.unused()` | How many scripted tries were not played. A try that finds nothing scripted gets a `599`, so that a test fails loudly. |
+| `script.answer(status)` | The next attempt gets a response with this status. Then, chained in one statement: `.after(duration)` (the head arrives later), `.header(name, value)`, `.body(piece)` (one chunk per call), `.pause(duration)` between chunks, `.stall()` (the body never ends), `.cut()` (the body fails halfway), `.read_upload()` (the request body is read first). |
+| `script.fail(error)` | The next attempt fails before any head, with a `TransportError`; `.after(duration)` works here too. |
+| `script.never()` | The next attempt never gets a response. |
+| `script.requests()` | Every request the script received, in order: `method()`, `url()`, `header(name)`, `body()`, `info().number()` (the attempt) and `at()` (its instant on virtual time). |
+| `script.unused()` | How many scripted attempts were not played. An attempt that finds nothing scripted gets a `599`, so that the test fails loudly. |
 
-Clones of a script share it: give one to the client, keep one to read. A `Script` also works on a multi-thread runtime (`#[tokio::test(flavor = "multi_thread")]`, tasks that share one client): the tries are played in the order the sends reach it, and its waits are then real time, since only a current-thread runtime can pause the clock.
+Clones of a script share its state: give one to the client, and keep one to inspect. A `Script` also works on a multi-thread runtime (`#[tokio::test(flavor = "multi_thread")]`, tasks that share one client): the attempts are played in the order in which the sends reach it, and its waits are then in real time, since only a current-thread runtime can pause the clock.
 
 ## Retry on virtual time
 
-An API says: "a `5xx` on a `GET` may be tried again, at most 4 more times, after 1, 2, 4 and 8 seconds". The author writes that rule once, as a function beside the description, and a test plays it with the time of each try:
+Suppose an API says: "a `5xx` on a `GET` may be retried at most 4 more times, after 1, 2, 4 and 8 seconds". The author writes that rule once, as a function beside the description, and a test checks it, including the time of each attempt:
 
 ```rust
 use concord::Json;
@@ -141,17 +141,17 @@ async fn the_policy_waits_1_2_4_8_seconds() -> stations::Result<()> {
     assert_eq!(tries, [1, 2, 3, 4, 5]);
 
     script.answer(503);
-    let error = api.exists().await.unwrap_err();   // `idempotent false;`: not tried again
+    let error = api.exists().await.unwrap_err();   // `idempotent false;`: not retried
     assert_eq!((error.tries(), error.is_status(503)), (1, true));
     Ok(())
 }
 ```
 
-`Retry::none()` has one try and no table; `.tries(5)` allows five, and then only the rules decide. A wait from `when` is a floor: the try waits the longest of that wait, the `Retry-After` of the answer, and a random part (up to 1 s before try 2, then 2, 4, 8 s…, at most 60 s). This rule asks at least that much, so the waits are exact. The method decides first: `exists` says `idempotent false;`, so it is not sent again whatever the rule says ([retries](retries.md)).
+`Retry::none()` allows one attempt and has no table; `.tries(5)` allows five, and then only the rules decide. A wait from `when` is a minimum: the attempt waits for the longest of that wait, the `Retry-After` of the response, and a random part (up to 1 s before attempt 2, then 2, 4, 8 s…, at most 60 s). This rule requests at least that much, so the waits are exact. The method is checked first: `exists` declares `idempotent false;`, so it is not retried, whatever the rule says ([retries](retries.md)).
 
 ## A local server
 
-`Server` is a real HTTP/1.1 server on `127.0.0.1` that a test scripts. It records every request exactly as it arrived: header names in their case and in their order, a repeated name repeated. Use it with Concord's own HTTP client, to test what really goes out:
+`Server` is a real HTTP/1.1 server on `127.0.0.1`, scripted by the test. It records every request exactly as it arrived: header names with their case and in their order, and a repeated name as many times as it was sent. Use it with Concord's own HTTP client to test exactly what is sent:
 
 ```rust
 use concord_testkit::Server;
@@ -177,14 +177,14 @@ async fn http_does_not_decompress() {
 }
 ```
 
-`with_base(server.url())` sends every request of the client to the server. `no_proxy()` keeps a proxy of the environment out of a local test: `concord::Http` reads the proxy settings of the environment ([the client](calling.md#the-client)). `server.requests()` gives what arrived: `method()`, `target()`, `path()`, `query()`, `header(name)`, `header_all(name)`, `body()`. `server.on(method, path)` scripts the answer to the next request with that method and path; rules for one route answer in the order they were written (a `503`, then a `200`). `.close()` instead reads the request and closes the connection before any byte of an answer.
+`with_base(server.url())` sends every request of the client to the server. `no_proxy()` keeps any proxy configured in the environment out of a local test, because `concord::Http` reads the environment's proxy settings ([the client](calling.md#the-client)). `server.requests()` returns what arrived: `method()`, `target()`, `path()`, `query()`, `header(name)`, `header_all(name)`, `body()`. `server.on(method, path)` scripts the response to the next request with that method and path; several rules for one route respond in the order they were written (a `503`, then a `200`). `.close()`, used instead of a reply, reads the request and closes the connection before sending any byte of a response.
 
-## Where each piece comes from
+## Where each tool comes from
 
-| Piece | |
+| Tool | |
 |---|---|
 | `concord::fake`, `concord::reply`, `concord::reply_with` | `concord-api`, in every build. |
-| `Script`, `Server` | `concord-testkit`, a dev-dependency. Its documentation is on docs.rs after the first upload; until then, `cargo doc -p concord-testkit --open`. |
-| `start_paused = true` | Tokio, with its feature `test-util`; a current-thread runtime (the flavor of `#[tokio::test]` by default). |
+| `Script`, `Server` | `concord-testkit`, a dev-dependency. Its documentation will be on docs.rs once it is published; until then, run `cargo doc -p concord-testkit --open`. |
+| `start_paused = true` | Tokio, with its `test-util` feature, on a current-thread runtime (the default flavor of `#[tokio::test]`). |
 
 No test of Concord calls a real API: every test runs against a fake, a script or a local server.

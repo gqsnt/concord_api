@@ -1,7 +1,7 @@
 //! C5, the answer: the arm before the body, the simple rule, an arm that binds `body`, a
 //! reader and its limit, what an error keeps, a known failure that stays, `send_full`, a
 //! stream, the readers, a conditional send (docs/reference/contracts.md C5; docs/reference/rules.md rules 11 to
-//! 15; docs/internals/engine.md, "One try").
+//! 15; docs/internals/engine.md, "One attempt").
 //!
 //! Table 5 of docs/reference/cases.md is in `c5_table5.rs`.
 

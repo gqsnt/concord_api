@@ -1,7 +1,7 @@
-//! A transport of Concord with virtual time.
+//! A Concord transport with virtual time.
 //!
 //! No socket: under `#[tokio::test(start_paused = true)]`, time moves only when the test
-//! or the engine sleeps, and every wait of the script is a sleep of Tokio's clock.
+//! or the engine sleeps, and every wait in the script is a sleep on Tokio's clock.
 
 use bytes::Bytes;
 use concord_core::error::Class;
@@ -18,16 +18,16 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::time::{Instant, Sleep};
 
-/// A [`Transport`] that plays scripted tries, one per call of `send`, in the order they
-/// were written, and records each request it was given.
+/// A [`Transport`] that plays scripted attempts, one per call of `send`, in the order they
+/// were scripted, and records each request it receives.
 ///
-/// Clones share the script and the record: give one to the client, keep one to read.
-/// A try that finds nothing scripted gets a `599`, so that a test fails loudly.
+/// Clones share the script and the record: give one to the client, and keep one to read.
+/// An attempt that finds nothing scripted gets a `599`, so that the test fails loudly.
 ///
 /// It is `Send + Sync`, and works on a multi-thread runtime
-/// (`#[tokio::test(flavor = "multi_thread")]`, tasks that share one client): the tries are
-/// played in the order the sends reach it, which tasks running at once do not fix, and its
-/// waits are real time there, since only a current-thread runtime can pause the clock.
+/// (`#[tokio::test(flavor = "multi_thread")]`, tasks that share one client): the attempts are
+/// played in the order in which the sends reach it, which concurrent tasks do not fix, and its
+/// waits use real time there, since only a current-thread runtime can pause the clock.
 #[derive(Clone, Default)]
 pub struct Script {
     shared: Arc<Mutex<State>>,
@@ -88,7 +88,7 @@ enum End {
 }
 
 impl Script {
-    /// An empty script.
+    /// Creates an empty script.
     pub fn new() -> Script {
         Script::default()
     }
@@ -104,12 +104,12 @@ impl Script {
         self.lock().steps.push_back(Step { read, outcome });
     }
 
-    /// The next try gets an answer with this status. It is added when the [`Answer`] is
-    /// dropped, at the end of the statement.
+    /// Scripts a response with this status for the next attempt. It is added when the
+    /// [`Answer`] is dropped, at the end of the statement.
     ///
     /// # Panics
     ///
-    /// When `status` is not between 100 and 999.
+    /// Panics when `status` is not between 100 and 999.
     pub fn answer(&self, status: u16) -> Answer<'_> {
         assert!(
             StatusCode::from_u16(status).is_ok(),
@@ -125,7 +125,8 @@ impl Script {
         }
     }
 
-    /// The next try fails with `error`. It is added when the [`Failure`] is dropped.
+    /// Scripts a failure with `error` for the next attempt. It is added when the [`Failure`]
+    /// is dropped.
     pub fn fail(&self, error: TransportError) -> Failure<'_> {
         Failure {
             script: self,
@@ -135,9 +136,9 @@ impl Script {
         }
     }
 
-    /// The next try never answers. It keeps the request, its upload unread, until the
-    /// try is dropped; [`Never::read_upload`] reads it. It is added when the [`Never`] is
-    /// dropped, at the end of the statement.
+    /// Scripts an attempt that never gets a response. It keeps the request, with its upload
+    /// unread, until the attempt is dropped; [`Never::read_upload`] reads it. It is added when
+    /// the [`Never`] is dropped, at the end of the statement.
     pub fn never(&self) -> Never<'_> {
         Never {
             script: self,
@@ -145,12 +146,13 @@ impl Script {
         }
     }
 
-    /// Every request given to the script, in order, with its try and its virtual instant.
+    /// Returns every request given to the script, in order, with its attempt and its virtual
+    /// instant.
     pub fn requests(&self) -> Vec<Request> {
         self.lock().requests.clone()
     }
 
-    /// How many scripted tries have not been played.
+    /// Returns how many scripted attempts have not been played.
     pub fn unused(&self) -> usize {
         self.lock().steps.len()
     }
@@ -313,7 +315,7 @@ fn respond(
     reqwest::Response::from(response)
 }
 
-/// An answer being scripted. It is added to the script when dropped, at the end of the
+/// A response being scripted. It is added to the script when dropped, at the end of the
 /// statement.
 pub struct Answer<'a> {
     script: &'a Script,
@@ -337,34 +339,34 @@ impl Drop for Answer<'_> {
 }
 
 impl Answer<'_> {
-    /// The head comes after this much virtual time from the hand-over, or from the end
+    /// Delays the head by this much virtual time from the hand-over, or from the end
     /// of the upload when it is read ([`Answer::read_upload`]).
     pub fn after(mut self, duration: Duration) -> Self {
         self.spec.after = duration;
         self
     }
 
-    /// Before the head, read the whole body of the request, as fast as it comes. What was
-    /// read is recorded ([`Request::upload`]); when the body fails, the try fails with a
+    /// Reads the whole body of the request before the head, as fast as it arrives. What was
+    /// read is recorded ([`Request::upload`]); when the body fails, the attempt fails with a
     /// [`TransportError`] of class `Other`, whose source is the body's error.
     pub fn read_upload(mut self) -> Self {
         self.read = Some(Duration::ZERO);
         self
     }
 
-    /// As [`Answer::read_upload`], with a pause of `pause` of virtual time after each
-    /// piece, before the next is pulled.
+    /// Like [`Answer::read_upload`], with a pause of `pause` of virtual time after each
+    /// chunk, before the next is pulled.
     pub fn read_upload_paced(mut self, pause: Duration) -> Self {
         self.read = Some(pause);
         self
     }
 
-    /// A header, added after those before it. A name may repeat. A `content-length` is
+    /// Adds a header after the ones before it. A name may repeat. A `content-length` is
     /// a declared length ([`Answer::declare_length`]).
     ///
     /// # Panics
     ///
-    /// When the name or the value is not valid in a header, or when a `content-length`
+    /// Panics when the name or the value is not valid in a header, or when a `content-length`
     /// is not a number.
     // PANIC-SAFETY: This test helper documents invalid fixture headers as programmer errors.
     #[allow(clippy::panic)]
@@ -389,8 +391,8 @@ impl Answer<'_> {
         self
     }
 
-    /// The answer says `content-length: length`, as on the wire: the body gives at most
-    /// `length` bytes, and when its pieces end before, reading it fails at that early end
+    /// Makes the response declare `content-length: length`, as on the wire: the body yields at
+    /// most `length` bytes, and when its chunks end earlier, reading it fails at that early end
     /// (with the error [`Cut`]).
     pub fn declare_length(mut self, length: u64) -> Self {
         self.spec
@@ -400,25 +402,25 @@ impl Answer<'_> {
         self
     }
 
-    /// A piece of the body. Each piece is one frame; call again for the next.
+    /// Adds a chunk of the body. Each chunk is one frame; call again for the next.
     pub fn body(mut self, piece: impl Into<Bytes>) -> Self {
         self.spec.pieces.push_back(Piece::Bytes(piece.into()));
         self
     }
 
-    /// A pause of virtual time in the body, before what follows.
+    /// Adds a pause of virtual time in the body, before what follows.
     pub fn pause(mut self, duration: Duration) -> Self {
         self.spec.pieces.push_back(Piece::Pause(duration));
         self
     }
 
-    /// After the pieces, the body never ends and never gives another byte.
+    /// Makes the body stall after the chunks: it never ends and never yields another byte.
     pub fn stall(mut self) -> Self {
         self.spec.end = End::Stall;
         self
     }
 
-    /// After the pieces, the body fails, as when a connection is lost in the middle.
+    /// Makes the body fail after the chunks, as when a connection is lost in the middle.
     pub fn cut(mut self) -> Self {
         self.spec.end = End::Cut;
         self
@@ -458,28 +460,28 @@ impl Drop for Failure<'_> {
 }
 
 impl Failure<'_> {
-    /// The failure comes after this much virtual time from the hand-over, or from the
+    /// Delays the failure by this much virtual time from the hand-over, or from the
     /// end of the upload when it is read ([`Failure::read_upload`]).
     pub fn after(mut self, duration: Duration) -> Self {
         self.after = duration;
         self
     }
 
-    /// Before failing, read the whole body of the request, as [`Answer::read_upload`].
+    /// Reads the whole body of the request before failing, like [`Answer::read_upload`].
     pub fn read_upload(mut self) -> Self {
         self.read = Some(Duration::ZERO);
         self
     }
 
-    /// Before failing, read the body of the request, as [`Answer::read_upload_paced`].
+    /// Reads the body of the request before failing, like [`Answer::read_upload_paced`].
     pub fn read_upload_paced(mut self, pause: Duration) -> Self {
         self.read = Some(pause);
         self
     }
 }
 
-/// A try that never answers, being scripted ([`Script::never`]). It is added to the
-/// script when dropped, at the end of the statement.
+/// An attempt that never gets a response, being scripted ([`Script::never`]). It is added to
+/// the script when dropped, at the end of the statement.
 pub struct Never<'a> {
     script: &'a Script,
     read: Option<Duration>,
@@ -498,20 +500,20 @@ impl Drop for Never<'_> {
 }
 
 impl Never<'_> {
-    /// Read the whole body of the request, as [`Answer::read_upload`], then never answer.
+    /// Reads the whole body of the request, like [`Answer::read_upload`], then never responds.
     pub fn read_upload(mut self) -> Self {
         self.read = Some(Duration::ZERO);
         self
     }
 
-    /// Read the body of the request, as [`Answer::read_upload_paced`], then never answer.
+    /// Reads the body of the request, like [`Answer::read_upload_paced`], then never responds.
     pub fn read_upload_paced(mut self, pause: Duration) -> Self {
         self.read = Some(pause);
         self
     }
 }
 
-/// A request as a [`Script`] was given it.
+/// A request as a [`Script`] received it.
 #[derive(Clone, Debug)]
 pub struct Request {
     method: Method,
@@ -524,43 +526,43 @@ pub struct Request {
 }
 
 impl Request {
-    /// Borrow the HTTP method recorded when the request reached the transport.
+    /// Borrows the HTTP method recorded when the request reached the transport.
     pub fn method(&self) -> &Method {
         &self.method
     }
 
-    /// The whole URL.
+    /// Returns the whole URL.
     pub fn url(&self) -> &str {
         &self.url
     }
 
-    /// Borrow all recorded header values, including repeated fields and sensitivity flags.
+    /// Borrows all recorded header values, including repeated fields and sensitivity flags.
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
     }
 
-    /// The first value of a header. `None` when absent or not UTF-8.
+    /// Returns the first value of a header: `None` when it is absent or not UTF-8.
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers.get(name)?.to_str().ok()
     }
 
-    /// The body, when it is bytes in memory. `None` without a body or for a stream: see
-    /// [`Request::upload`] for what was read of a stream.
+    /// Returns the body, when it is bytes in memory: `None` without a body or for a stream.
+    /// See [`Request::upload`] for what was read of a stream.
     pub fn body(&self) -> Option<&[u8]> {
         self.body.as_deref()
     }
 
-    /// What the script read of the body ([`Answer::read_upload`]).
+    /// Returns what the script read of the body ([`Answer::read_upload`]).
     pub fn upload(&self) -> &Upload {
         &self.upload
     }
 
-    /// The endpoint and the number of the try.
+    /// Returns the endpoint and the number of the attempt.
     pub fn info(&self) -> &TryInfo {
         &self.info
     }
 
-    /// The virtual instant at which the request was handed over.
+    /// Returns the virtual instant at which the request was handed over.
     pub fn at(&self) -> Instant {
         self.at
     }
@@ -575,29 +577,29 @@ pub struct Upload {
 }
 
 impl Upload {
-    /// The bytes read, in order.
+    /// Returns the bytes read, in order.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
 
-    /// How many pieces of data were read.
+    /// Returns how many chunks of data were read.
     pub fn pieces(&self) -> usize {
         self.pieces
     }
 
-    /// Whether the body was read, and how it ended.
+    /// Returns whether the body was read, and how it ended.
     pub fn state(&self) -> &UploadState {
         &self.state
     }
 }
 
-/// How the reading of an upload stands.
+/// The state of reading an upload.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum UploadState {
     /// The script was not told to read it.
     #[default]
     Unread,
-    /// Being read: the body has not ended, or the try was dropped while it was read.
+    /// Being read: the body has not ended, or the attempt was dropped while it was being read.
     Reading,
     /// Read to its end (a request without a body ends at once).
     Ended,

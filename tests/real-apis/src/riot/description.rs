@@ -5,8 +5,8 @@ concord::api! {
     /// League of Legends, Teamfight Tactics and Riot accounts.
     ///
     /// A route is a host. A platform (`euw1`, `kr`) holds what lives on one server; a region
-    /// (`europe`, `asia`) holds accounts and matches. `Platform::region()` gives the one of the other.
-    /// Retry is off until set: `.with_retry(retry())` waits out a `429`, also on a `POST`.
+    /// (`europe`, `asia`) holds accounts and matches. `Platform::region()` maps a platform to its region.
+    /// Retries are off until you turn them on: `.with_retry(retry())` waits out a `429`, also on a `POST`.
     pub client Riot(
         /// The key of the developer portal. A development key lasts a day.
         key: Secret,
@@ -15,7 +15,7 @@ concord::api! {
         read Json;
         problem RiotProblem;
         /// Riot's limits, per host and per method, shared by every call of this client.
-        /// It waits before a request that the last answers say is over a limit, and
+        /// It waits before a request that the last responses say is over a limit, and
         /// holds the host or the method for `Retry-After` after a `429`.
         middleware Quota::new();
 
@@ -31,7 +31,7 @@ concord::api! {
         part player(access_token: Secret) {
             headers { remove "x-riot-token"; "authorization" = "Bearer {access_token}"; }
         }
-        /// A match history, newest first: `.start(…)`, `.count(…)` (1 to 100; Riot gives 20),
+        /// A match history, newest first: `.start(…)`, `.count(…)` (1 to 100; Riot returns 20),
         /// `.start_time(…)`, `.end_time(…)` in Unix seconds. It ends on a page shorter than `count`.
         part history(start?: u32, count?: u32, start_time?: i64, end_time?: i64) {
             query { start; count; "startTime" = start_time; "endTime" = end_time; }
@@ -97,7 +97,7 @@ concord::api! {
                 path "active-shards/by-game/{game}/by-puuid/{puuid}";
                 status { 404 => None }
             }
-            /// The platform a player of `lol` or `tft` plays on. (unsure: path and answer)
+            /// The platform a player of `lol` or `tft` plays on. (unsure: path and response)
             GET active_region(game: Game, puuid: Puuid) -> Option<ActiveRegion> {
                 path "region/by-game/{game}/by-puuid/{puuid}";
                 status { 404 => None }
@@ -206,7 +206,7 @@ concord::api! {
                 path "champion-masteries/by-puuid/{puuid}/by-champion/{champion}";
                 status { 404 => None }
             }
-            /// The best champions. Riot gives 3 when `count` is not set.
+            /// The best champions. Riot returns 3 when `count` is not set.
             GET top(puuid: Puuid, count?: u32) -> Vec<ChampionMastery> {
                 path "champion-masteries/by-puuid/{puuid}/top";
                 query { count; }
@@ -280,7 +280,7 @@ concord::api! {
             GET challenge_percentiles(id: ChallengeId) -> Percentiles {
                 path "challenges/{id}/percentiles";
             }
-            /// The best players at an apex level. Not paged: `limit` is all there is.
+            /// The best players at an apex level. Not paginated: `limit` is all there is.
             GET leaderboard(id: ChallengeId, level: ApexLevel, limit?: u32) -> Vec<ApexPlayer> {
                 path "challenges/{id}/leaderboards/by-level/{level}";
                 query { limit; }
@@ -344,7 +344,7 @@ concord::api! {
             GET entries(tier: Tier, division: Division, ..tft_queue, ..ladder) -> Vec<TftLeagueEntry> {
                 path "entries/{tier}/{division}";
             }
-            /// The top of a rated ladder (Hyper Roll). Not paged.
+            /// The top of a rated ladder (Hyper Roll). Not paginated.
             GET top_rated(queue: RatedQueue) -> Vec<TopRated> { path "rated-ladders/{queue}/top"; }
         }
 

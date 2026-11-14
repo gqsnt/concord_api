@@ -1,26 +1,26 @@
-//! A `tower` service as a transport. Needs the feature `tower`.
+//! A `tower` service used as a transport. Requires the `tower` feature.
 
 use concord_core::error::Class;
 use concord_core::reqwest;
 use concord_core::transport::{Transport, TransportError, TryInfo};
 
-/// Makes a transport of a `tower` service, so that its layers (a rate limit, a limit of
+/// Turns a `tower` service into a transport, so that its layers (a rate limit, a limit on
 /// concurrent requests) sit under a Concord client.
 ///
-/// `poll_ready` and `&mut self` stay in here. There is one service: Concord holds it while
-/// it gets ready and is called, one request at a time, and waits for the answer outside. So
-/// a layer that keeps state and cannot be cloned (a rate limit) works as it is.
-/// `reqwest::Client` is a `tower` service already, so it can be the bottom of the stack.
+/// `poll_ready` and `&mut self` stay inside this adapter. There is one service: Concord holds it
+/// while it gets ready and is called, one request at a time, and awaits the response outside
+/// the lock. So a layer that keeps state and cannot be cloned (a rate limit) works as it is.
+/// `reqwest::Client` is already a `tower` service, so it can be the bottom of the stack.
 ///
-/// An error of a layer that Concord does not know is of the class Other: behind a timeout
-/// layer, `is_timeout()` is false. Say what it is in the stack:
+/// An error from a layer that Concord does not know has the class Other: behind a timeout
+/// layer, `is_timeout()` is false. Map the error in the stack:
 /// `.map_err(|_| TransportError::timeout())`.
 ///
 /// A stack built with `tower::ServiceBuilder` and its `limit` feature can wrap
-/// `reqwest::Client`. Pass the finished stack to [`Tower::new`], then give the
+/// `reqwest::Client`. Pass the finished stack to [`Tower::new`], then pass the
 /// adapter to the generated client's `with_transport` method.
 ///
-/// A small service can also return an in-memory answer:
+/// A small service can also return a response built in memory:
 ///
 /// ```
 /// # mod concord { pub use concord_core::{reply, reqwest, transport}; pub use concord_extras::tower; }
@@ -52,7 +52,7 @@ pub struct Tower<S> {
 }
 
 impl<S> Tower<S> {
-    /// A transport from this service.
+    /// Creates a transport from this service.
     pub fn new(service: S) -> Tower<S> {
         Tower {
             service: futures_util::lock::Mutex::new(service),
@@ -67,9 +67,9 @@ impl<S> std::fmt::Debug for Tower<S> {
 }
 
 /// How an error of the stack becomes a class: a [`TransportError`] stays as it is; a
-/// `reqwest::Error` is read as `From<reqwest::Error>` reads it (so a failed connection at the
-/// bottom is still Connect); anything else is Other. A layer of `tower-http` takes an
-/// `http::Request`, not a `reqwest::Request`: it does not fit under this adapter.
+/// `reqwest::Error` is classified as `From<reqwest::Error>` classifies it (so a failed
+/// connection at the bottom is still Connect); anything else is Other. A layer of `tower-http`
+/// takes an `http::Request`, not a `reqwest::Request`, so it does not fit under this adapter.
 impl<S> Transport for Tower<S>
 where
     S: tower_service::Service<reqwest::Request, Response = reqwest::Response> + Send + 'static,

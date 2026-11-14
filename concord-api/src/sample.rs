@@ -1,5 +1,5 @@
-//! What [`api!`](crate::api) writes, for one small description. This module is in the
-//! documentation only: it does not exist in the crate that you depend on.
+//! What [`api!`](crate::api) generates for one small description. This module exists in the
+//! documentation only: it is not part of the crate that you depend on.
 //!
 //! The description:
 //!
@@ -39,19 +39,19 @@
 //! }
 //! ```
 //!
-//! What it gives, on the pages below:
+//! What it generates, shown on the pages below:
 //!
 //! | Item | What it is |
 //! |---|---|
 //! | [`Library`] | The client: `Library::new(key)`, its settings (`with_timeout`, `with_retry`, …), and `books()`. |
-//! | [`library::Books`] | The handle of the scope `books`: one method for each endpoint. |
-//! | [`library::books::Title`] | A call: `.await` sends it. `send_full()`, `request()`, and the settings of one call. |
-//! | [`library::books::Titles`] | A paged call: `.pages()`, `.pages().items()`, and `send()` for one page. No `.await`. |
-//! | [`library::books::Delete`] | A call with no arrow: `.await` gives `()`. |
+//! | [`library::Books`] | The handle of the scope `books`: one method per endpoint. |
+//! | [`library::books::Title`] | A call: `.await` sends it. It also has `send_full()`, `request()`, and the settings of one call. |
+//! | [`library::books::Titles`] | A paginated call: `.pages()`, `.pages().items()`, and `send()` for one page. It has no `.await`. |
+//! | [`library::books::Delete`] | A call with no arrow: `.await` returns `()`. |
 //! | [`library::Error`], [`library::Result`], [`library::Retry`] | The aliases: `concord::Error<String>`, a `Result` of it, and `concord::Retry<String>`. |
 //!
-//! The aliases show a hidden trait, `<() as __Types>::__Problem`: it is the `problem`
-//! type, here `String`. Names that begin with `__` are Concord's.
+//! The aliases show a hidden trait, `<() as __Types>::__Problem`, which stands for the `problem`
+//! type, here `String`. Names that begin with `__` belong to Concord.
 
 use crate::{by_page, Json, Secret, Text};
 

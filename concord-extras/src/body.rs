@@ -3,7 +3,7 @@
 #[cfg(any(feature = "json", feature = "form"))]
 use concord_core::Body;
 
-/// The value written as JSON, labelled `application/json`: `body json(task);`.
+/// Serializes the value as JSON, with the content type `application/json`: `body json(task);`.
 ///
 /// A secret can be placed through a body entry's adapter, but cannot be serialized
 /// inside an arbitrary struct:
@@ -19,10 +19,10 @@ use concord_core::Body;
 ///
 /// # Errors
 ///
-/// When `serde` cannot write the value. The call then fails with a Build error.
-/// [`concord_core::body::WriteError`] retains the format's error as its source.
-/// Values nested more than 128 levels
-/// are rejected. An entry's depth failure retains its input name in the Build error.
+/// Returns an error when `serde` cannot serialize the value; the call then fails with a Build
+/// error. [`concord_core::body::WriteError`] keeps the format's error as its source.
+/// Values nested more than 128 levels deep
+/// are rejected. An entry's depth failure keeps its input name in the Build error.
 #[cfg(feature = "json")]
 pub fn json<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::WriteError> {
     let value = concord_core::body::Bounded::new(&value);
@@ -30,16 +30,17 @@ pub fn json<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::W
     Ok(Body::new(bytes, "application/json"))
 }
 
-/// The value written as a form, labelled `application/x-www-form-urlencoded`: `body form(login);`.
+/// Serializes the value as a form, with the content type `application/x-www-form-urlencoded`:
+/// `body form(login);`.
 ///
-/// A form is flat: pairs of text. An inner `None` omits the pair too: forms have no
+/// A form is flat: pairs of strings. An inner `None` omits the pair too, because forms have no
 /// `null`. A list or a struct as an entry value is an error.
-/// A nested form is the convention of one API, and a function of yours.
+/// A nested form is the convention of a particular API, and calls for your own writer.
 ///
 /// # Errors
 ///
-/// When the value is not a flat set of pairs, or nests more than 128 levels.
-/// [`concord_core::body::WriteError`] retains the original form error as its source
+/// Returns an error when the value is not a flat set of pairs, or nests more than 128 levels.
+/// [`concord_core::body::WriteError`] keeps the original form error as its source
 /// and gives an entry's depth failure its input name in the Build error.
 #[cfg(feature = "form")]
 pub fn form<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::WriteError> {

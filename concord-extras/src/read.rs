@@ -1,4 +1,4 @@
-//! Four readers. Each is a value with `concord_core::Reader`.
+//! Four readers, each a value that implements `concord_core::Reader`.
 
 use concord_core::read::{Incoming, ReadError, Reader};
 use concord_core::{ByteStream, MIB};
@@ -11,12 +11,12 @@ mod json_decode;
 // PANIC-SAFETY: The default 10 MiB limit fits usize on supported 32/64-bit targets.
 const LIMIT: usize = 10 * MIB;
 
-/// Reads JSON into any type that `serde` can read: `read Json;`. At most 10 MiB.
+/// Reads JSON into any type that `serde` can deserialize: `read Json;`. At most 10 MiB.
 ///
 /// Skips a UTF-8 byte-order mark. Decode failures identify fields and indexes
-/// where Serde gives them; buffered deserialization through flattened fields or
+/// where Serde provides them; buffered deserialization through flattened fields or
 /// tagged enums may lose fields, indexes, or line and column information.
-/// keys taken from the data are reported as `[key]`. A failed decode also says
+/// Keys taken from the data are reported as `[key]`. A failed decode also reports
 /// when the response's content type was not JSON.
 #[cfg(feature = "json")]
 #[derive(Clone, Copy, Default)]
@@ -32,7 +32,7 @@ impl std::fmt::Debug for Json {
     }
 }
 
-/// `Json`, as a value to name: `read Json.limit(50 * concord::MIB);`.
+/// The `Json` reader as a value, for a description to name: `read Json.limit(50 * concord::MIB);`.
 #[cfg(feature = "json")]
 // PANIC-SAFETY: The reader value intentionally shares its type name in the DSL; no panic lint is relaxed.
 #[allow(non_upper_case_globals)]
@@ -43,13 +43,13 @@ pub const Json: Json = Json {
 
 #[cfg(feature = "json")]
 impl Json {
-    /// Another limit than 10 MiB.
+    /// Sets a limit other than 10 MiB.
     pub fn limit(mut self, bytes: usize) -> Json {
         self.limit = Some(bytes);
         self
     }
 
-    /// Refuses an answer whose label is not JSON, before reading it.
+    /// Rejects a response whose content type is not JSON, before reading it.
     pub fn strict(mut self) -> Json {
         self.strict = true;
         self
@@ -93,13 +93,13 @@ impl std::fmt::Debug for Text {
     }
 }
 
-/// `Text`, as a value to name: `read Text.limit(concord::MIB);`.
+/// The `Text` reader as a value, for a description to name: `read Text.limit(concord::MIB);`.
 // PANIC-SAFETY: The reader value intentionally shares its type name in the DSL; no panic lint is relaxed.
 #[allow(non_upper_case_globals)]
 pub const Text: Text = Text { limit: None };
 
 impl Text {
-    /// Another limit than 10 MiB.
+    /// Sets a limit other than 10 MiB.
     pub fn limit(mut self, bytes: usize) -> Text {
         self.limit = Some(bytes);
         self
@@ -128,13 +128,13 @@ impl std::fmt::Debug for Binary {
     }
 }
 
-/// `Binary`, as a value to name: `read Binary.limit(100 * concord::MIB);`.
+/// The `Binary` reader as a value, for a description to name: `read Binary.limit(100 * concord::MIB);`.
 // PANIC-SAFETY: The reader value intentionally shares its type name in the DSL; no panic lint is relaxed.
 #[allow(non_upper_case_globals)]
 pub const Binary: Binary = Binary { limit: None };
 
 impl Binary {
-    /// Another limit than 10 MiB.
+    /// Sets a limit other than 10 MiB.
     pub fn limit(mut self, bytes: usize) -> Binary {
         self.limit = Some(bytes);
         self

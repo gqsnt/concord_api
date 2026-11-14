@@ -1,29 +1,29 @@
 # concord-extras
 
-What Concord ships beside its core. Concord is the crate `concord-api`, used as `concord` in code.
+What Concord ships alongside its core. Concord is the crate `concord-api`, used as `concord` in code.
 
-Readers, writers and
-pagers use the core's public traits and helpers, including `body::Bounded`,
-`read::details` and `page::fragmentless`; a reader, a writer or a pager of yours uses
+Its readers, writers and
+pagers are built on the core's public traits and helpers, including `body::Bounded`,
+`read::details` and `page::fragmentless`, and your own reader, writer or pager uses
 the same items. Only the `tower` adapter also uses a hidden helper of the engine, for
-the URL of an answer.
+the URL of a response.
 
 | What | Items |
 |---|---|
 | Body writers | `json(x)`, `form(x)`, `multipart()` (feature `multipart`) |
 | Readers | `Json`, `Text`, `Binary`, `Stream` |
 | Pagers | `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` |
-| A credential | `basic(user, password)`, which gives a `Secret` |
+| A credential | `basic(user, password)`, which returns a `Secret` |
 | A transport | `tower::Tower`, a `tower` service as a transport (feature `tower`) |
 
 ## Who depends on it
 
-Most users: nobody. Depend on `concord-api`, which re-exports all of this and turns the features
-on through its own (`json`, `form`, `multipart`, `tower`).
+For most users, nothing: depend on `concord-api` instead, which re-exports all of this and enables
+these features through its own (`json`, `form`, `multipart`, `tower`).
 
-Read its source when you write a reader, a writer or a pager of your own: each file but
-`tower.rs` is an example of the public traits and helpers. The guide has each one with code
-to copy: [when Concord does not say what you need](https://github.com/gqsnt/concord_api/blob/main/docs/guide/extending.md).
+Read its source when you write your own reader, writer or pager: every file except
+`tower.rs` is an example of the public traits and helpers. The guide covers each one, with code
+to copy, in [When Concord does not cover what you need](https://github.com/gqsnt/concord_api/blob/main/docs/guide/extending.md).
 
 | Feature | What it turns on | Default |
 |---|---|---|

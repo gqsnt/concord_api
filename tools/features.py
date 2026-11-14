@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check every facade feature subset and isolated packages on stable and 1.96.
+"""Check facade feature combinations and isolated packages on stable and 1.96.
 
 Uses cargo package --list as the source inventory, expands workspace inheritance,
 and copies local dependencies into target/feature-isolation. Each check runs
@@ -21,6 +21,19 @@ import tomllib
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TARGET = REPO_ROOT / "target"
 ROOT = TARGET / "feature-isolation"
+FORWARDED = {"rustls", "http2", "system-proxy", "gzip", "brotli", "deflate", "socks"}
+
+
+def feature_sets(features):
+    """Cross Concord's features with no/all forwarders, then check each forwarder."""
+    forwarded = sorted(set(features) & FORWARDED)
+    own = sorted(set(features) - FORWARDED - {"default"})
+    selected = []
+    for size in range(len(own) + 1):
+        for subset in itertools.combinations(own, size):
+            selected.extend([tuple(subset), tuple(sorted((*subset, *forwarded)))])
+    selected.extend((name,) for name in forwarded)
+    return list(dict.fromkeys(selected))
 
 
 def value(item):
@@ -82,11 +95,9 @@ def main():
     args = parser.parse_args()
     workspace = tomllib.loads((REPO_ROOT / "Cargo.toml").read_text())["workspace"]
     members = workspace["members"]
-    # `default` is itself a selectable named feature. Enumerate it too, even
-    # though its combinations resolve to optional-feature sets already covered.
     features = sorted(tomllib.loads((REPO_ROOT / "concord-api/Cargo.toml").read_text())["features"])
-    subsets = [subset for n in range(len(features) + 1) for subset in itertools.combinations(features, n)]
-    print(f"FEATURES: {', '.join(features)}; {len(subsets)} named subsets plus all-features; {len(members)} isolated crates", flush=True)
+    subsets = feature_sets(features)
+    print(f"FEATURES: {len(subsets)} facade combinations; {len(members)} isolated crates", flush=True)
     if args.plan:
         for subset in subsets:
             print(",".join(subset) or "(none)")
@@ -127,7 +138,6 @@ def main():
             jobs = [(member, ["--no-default-features"]) for member in members]
             jobs += [(member, []) for member in members]
             jobs += [("concord-api", ["--no-default-features"] + (["--features", ",".join(subset)] if subset else [])) for subset in subsets]
-            jobs += [("concord-api", ["--all-features"])]
             for member, flags in jobs:
                 cwd = ROOT / member
                 command = ["cargo", "+" + toolchain, "check", "--offline", "--manifest-path", str(cwd / "Cargo.toml"), *flags]

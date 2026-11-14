@@ -27,7 +27,7 @@ impl Platform {
     }
 }
 
-/// How Riot says no: `{"status": {"message": "Data not found", "status_code": 404}}`.
+/// Riot's error response: `{"status": {"message": "Data not found", "status_code": 404}}`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct RiotProblem {
     pub status: RiotStatus,
@@ -39,7 +39,7 @@ pub struct RiotStatus {
     pub status_code: u16,
 }
 
-/// Riot's policy: a `429` was turned away before any work, so even a `POST` may go again.
+/// Riot's policy: a `429` was turned away before any work, so even a `POST` may be retried.
 pub fn retry() -> riot::Retry {
     riot::Retry::standard().not_applied_on(429)
 }

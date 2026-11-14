@@ -61,7 +61,7 @@ pub async fn me(riot: &Riot, token: Secret) -> riot::Result<()> {
 }
 
 /// A tournament: written against the stub, run against the live API. With `retry()`, a `429`
-/// on these `POST`s waits for its `Retry-After` and goes again.
+/// on these `POST`s waits for its `Retry-After` and is retried.
 pub async fn tournament(riot: &Riot, live: bool, callback: String) -> riot::Result<Vec<TournamentCode>> {
     let tournaments = riot.tournament(if live { TournamentApi::Live } else { TournamentApi::Stub });
     let provider = tournaments.register_provider(NewProvider { region: "EUW".into(), url: callback }).await?;

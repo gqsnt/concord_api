@@ -26,7 +26,7 @@ impl<T: Send> concord::page::IntoItems for SearchPage<T> {
 /// The last rate-limit headers of each resource (`core`, `search`, …), shared with the caller.
 pub type QuotaLog = Arc<Mutex<BTreeMap<String, HeaderMap>>>;
 
-/// `middleware ObserveQuota(quota.clone());`: it sees every answer, of every page and every try.
+/// `middleware ObserveQuota(quota.clone());`: it sees every response: each page, each attempt.
 pub struct ObserveQuota(pub QuotaLog);
 
 impl Middleware for ObserveQuota {
@@ -60,9 +60,9 @@ pub fn checked_repo_kind(
     Ok(kind.clone())
 }
 
-/// A repository that was renamed or moved: GitHub answers `301` with its new place. This follows
-/// at most four moves, on the same origin only, and keeps the generated call (its reader, its
-/// middleware, its credentials).
+/// A repository that was renamed or moved: GitHub responds with `301` and its new location.
+/// This follows at most four moves, on the same origin only, and keeps the generated call (its
+/// reader, its middleware, its credentials).
 pub async fn get_moved(github: &Github, owner: &str, name: &str)
     -> Result<Repository, Box<dyn std::error::Error + Send + Sync>>
 {

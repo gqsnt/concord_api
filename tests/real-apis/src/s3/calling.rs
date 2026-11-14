@@ -25,7 +25,7 @@ pub async fn list(bucket: &object_store::Bucket) -> object_store::Result<()> {
     Ok(())
 }
 
-/// Write an object with metadata of yours, read its headers, copy it to another key.
+/// Write an object with your own metadata, read its headers, copy it to another key.
 pub async fn put_and_copy(bucket: &object_store::Bucket) -> Result<(), BoxError> {
     let object = bucket.object("reports/2026/november.txt");
     let etag = object.put(Body::new("hello", "text/plain"), 5)
@@ -46,7 +46,7 @@ pub async fn if_changed(bucket: &object_store::Bucket, etag: &str) -> object_sto
     Ok(answer.into_value())
 }
 
-/// The first kilobyte of an object, as a stream of pieces.
+/// The first kilobyte of an object, as a stream of chunks.
 pub async fn first_kilobyte(bucket: &object_store::Bucket) -> object_store::Result<Vec<u8>> {
     let answer = bucket.object("large.bin").get().range("bytes=0-1023").send_full().await?;
     println!("{}", answer.status());                       // 206: a part of the object

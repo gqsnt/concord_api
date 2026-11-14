@@ -21,3 +21,11 @@ futures-core.workspace = true
 # `c6_misuse.rs` captures what is logged (see the same lines in `conformance`).
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 log = "0.4"
+
+# Make compressed response fixtures without allocating their expanded bodies.
+flate2 = "1"
+
+[features]
+gzip = ["concord/gzip"]
+deflate = ["concord/deflate"]
+socks = ["concord/socks"]

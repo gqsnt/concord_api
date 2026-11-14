@@ -11,10 +11,10 @@ import tomllib
 
 from matrix import rust_files, rust_tokens
 from sockets import cases as socket_cases, filterset, socket_doc_lines
+from features import feature_sets
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FEATURES = "concord-api/tower,concord-api/multipart"
 STEPS = ("props", "fmt", "check", "lint", "test", "doc", "msrv", "features", "todo", "matrix", "links")
 
 
@@ -37,7 +37,7 @@ def run(command, recipe):
 
 def commands(recipe):
     """Return commands in execution order; no later command runs after failure."""
-    full = ["--features", FEATURES]
+    full = ["--all-features"]
     if recipe == "props":
         return [["cargo", "test", "--offline", "-p", "concord-core", "-p", "concord-extras", "--all-features", "--test", "prop_*"]]
     if recipe == "fmt":
@@ -69,11 +69,11 @@ def commands(recipe):
         return [["cargo", "+1.96", "check", "--offline", "--workspace"] + full]
     if recipe == "features":
         with (REPO_ROOT / "concord-api" / "Cargo.toml").open("rb") as manifest:
-            names = set(tomllib.load(manifest).get("features", {}))
+            names = tomllib.load(manifest).get("features", {})
         base = ["cargo", "check", "--offline", "-p", "concord-api", "--no-default-features"]
-        # `default` is a named feature too; test its explicit selection alone.
-        return ([base] + [base + ["--features", name] for name in sorted(names)]
-                + [base + ["--all-features"]])
+        default = ["cargo", "check", "--offline", "-p", "concord-api"]
+        return [default] + [base + (["--features", ",".join(subset)] if subset else [])
+                            for subset in feature_sets(names)]
     if recipe == "links":
         return [[sys.executable, "-B", str(REPO_ROOT / "tools" / "links.py")]]
     if recipe == "matrix":

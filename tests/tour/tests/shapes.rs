@@ -404,7 +404,7 @@ fn request_with_an_entry_that_uses_the_question_mark() {
     assert!(source.is::<std::num::ParseIntError>());
 }
 
-// The names of the author, in the expressions of an answer (docs/internals/macro.md, “A name of the author, in the author’s Rust”).
+// The names of the author, in the expressions of an answer (docs/internals/macro.md, “The author’s names in the author’s Rust”).
 
 /// A client whose every send gets this answer.
 fn answering(status: u16, body: &'static str) -> Shapes {

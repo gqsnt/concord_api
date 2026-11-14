@@ -1,12 +1,12 @@
-//! Where a URL starts, when the user gives it.
+//! The start of a URL, when the caller provides it.
 
 use std::fmt;
 use std::str::FromStr;
 
-/// A scheme, a host, maybe a port, and maybe the first part of a path.
+/// A scheme, a host, an optional port, and an optional leading part of a path.
 ///
-/// For a server that the user hosts: `client Gitlab(url: Base, …) { base url; … }`, and
-/// for `with_base` on any client.
+/// Use it for a server that the caller hosts: `client Gitlab(url: Base, …) { base url; … }`,
+/// and with `with_base` on any client.
 ///
 /// ```
 /// # use concord_core as concord;
@@ -28,8 +28,8 @@ impl fmt::Debug for Base {
 impl FromStr for Base {
     type Err = BaseError;
 
-    /// No user, no query, no fragment, no backslash or ASCII control character.
-    /// The parsed scheme, host, port and decoded path must have the written meaning.
+    /// Rejects user information, a query, a fragment, a backslash and ASCII control characters.
+    /// The parsed scheme, host, port and decoded path must mean what the text says.
     /// An empty path is the root; equivalent host spellings and escapes are accepted.
     /// A trailing `/` is kept; only joining a following `path` removes the
     /// separator between the base and that path.
@@ -160,7 +160,7 @@ impl fmt::Display for Base {
     }
 }
 
-/// A text that is not a [`Base`].
+/// The error for a string that is not a valid [`Base`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BaseError {
     what: &'static str,
@@ -174,16 +174,16 @@ impl fmt::Display for BaseError {
 
 impl std::error::Error for BaseError {}
 
-/// A parsed base or text accepted by a generated client's `with_base`.
+/// A parsed base, or a string, that a generated client's `with_base` accepts.
 ///
-/// Accepts [`Base`], `&Base`, `&str`, [`String`] and `&String`. Text is checked by
-/// [`Base::from_str`]. A generated client's `with_base` stores any parse failure
-/// until request construction, where it becomes a Build error.
+/// Accepts [`Base`], `&Base`, `&str`, [`String`] and `&String`. A string is checked by
+/// [`Base::from_str`]. A generated client's `with_base` keeps any parse failure
+/// until the request is built, where it becomes a Build error.
 ///
-/// Closed: only Concord implements this trait. To validate eagerly, parse a
+/// Sealed: only Concord implements this trait. To validate eagerly, parse a
 /// [`Base`] first and pass that value to `with_base`.
 pub trait IntoBase: sealed::Sealed {
-    /// Parse text, or keep an already checked base.
+    /// Parses a string, or keeps a base that is already checked.
     fn into_base(self) -> Result<Base, BaseError>;
 }
 
