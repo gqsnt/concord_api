@@ -1,5 +1,5 @@
-error: no `base` in reach of this endpoint
-       label: no `base` here or above
+error: no `base` applies to this endpoint
+       label: no `base` is declared here or inherited
        help: set the intended base URL on this endpoint or an ancestor
  --> tests/diagnostics/rules/14_client.rs:2:41
   |
@@ -7,7 +7,7 @@ error: no `base` in reach of this endpoint
   |                                         ^^^^^
 
 error: unsupported attribute on the client
-       label: a client takes doc comments and #[cfg] only
+       label: a client accepts only doc comments and `#[cfg]`
        help: put `# [deprecated]` on a scope or endpoint
  --> tests/diagnostics/rules/14_client.rs:2:5
   |

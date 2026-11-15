@@ -1,6 +1,6 @@
 error: `idempotent` requires an endpoint
-       label: `idempotent` stands on an endpoint, not on a scope
-       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
+       label: `idempotent` cannot be declared on a scope
+       help: move `idempotent` to an endpoint, and combine it with any `idempotent` declared there or supplied by a part
  --> tests/diagnostics/rules/18_idempotent_scope.rs:2:40
   |
 2 |     client Workshop { scope fragment { idempotent; } }

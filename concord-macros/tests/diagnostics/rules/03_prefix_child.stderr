@@ -1,5 +1,5 @@
 error: `with_budget` is reserved by Concord
-       label: conflicts with a generated method
+       label: reserved for generated methods
        help: rename this child to `budget_item`
  --> tests/diagnostics/rules/03_prefix_child.rs:2:70
   |

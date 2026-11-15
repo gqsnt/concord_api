@@ -77,7 +77,12 @@ pub fn build_error(built: Built) -> String {
 /// The text of a shape that cannot be written at a place (one pattern for
 /// every place; the name is the input, or the key of a keyed entry).
 pub fn cannot_be_written(name: &str, place: &str, endpoint: &str) -> String {
-    format!("build error: input {name} cannot be written in a {place}, in {endpoint}")
+    let place = if place == "host" {
+        "host or port"
+    } else {
+        place
+    };
+    format!("build error: input {name} cannot be serialized into a {place}, in {endpoint}")
 }
 
 /// The URL as text.

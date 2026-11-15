@@ -402,7 +402,7 @@ fn c2_4_entries_bound_options_newtypes_and_collections_with_a_named_build_error(
                     .unwrap_err();
                 assert_eq!(
                     error.to_string(),
-                    "build error: input nested cannot be written in a body, in props.depth",
+                    "build error: input nested cannot be serialized into a body, in props.depth",
                     "depth={depth}, mode={mode}"
                 );
             }
@@ -421,7 +421,7 @@ fn c2_4_entries_bound_options_newtypes_and_collections_with_a_named_build_error(
             .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "build error: input nested cannot be written in a body, in props.depth"
+            "build error: input nested cannot be serialized into a body, in props.depth"
         );
     }
 }

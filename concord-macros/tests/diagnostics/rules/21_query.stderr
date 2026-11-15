@@ -1,4 +1,4 @@
-error: query pair `mode` is already set above
+error: query pair `mode` is already set by an ancestor
        label: replacement requires `override`
        help: write `override "mode" = 2;`
  --> tests/diagnostics/rules/21_query.rs:2:110

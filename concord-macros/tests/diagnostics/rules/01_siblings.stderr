@@ -12,16 +12,16 @@ error: the first child is here
 2 |     client Workshop { GET fetch(); POST fetch(); }
   |                           ^^^^^
 
-error: no `base` in reach of this endpoint
-       label: no `base` here or above
+error: no `base` applies to this endpoint
+       label: no `base` is declared here or inherited
        help: set the intended base URL on this endpoint or an ancestor
  --> tests/diagnostics/rules/01_siblings.rs:2:27
   |
 2 |     client Workshop { GET fetch(); POST fetch(); }
   |                           ^^^^^
 
-error: no `base` in reach of this endpoint
-       label: no `base` here or above
+error: no `base` applies to this endpoint
+       label: no `base` is declared here or inherited
        help: set the intended base URL on this endpoint or an ancestor
  --> tests/diagnostics/rules/01_siblings.rs:2:41
   |

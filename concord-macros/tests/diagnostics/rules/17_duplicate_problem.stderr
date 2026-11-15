@@ -1,6 +1,6 @@
 error: duplicate `problem` statement
        label: this node already declares `problem`
-       help: keep one declaration of this behaviour, choosing its intended value
+       help: keep one `problem` declaration with its intended value
  --> tests/diagnostics/rules/17_duplicate_problem.rs:2:50
   |
 2 |     client Workshop { problem Issue read Reader; problem Other read Reader; }

@@ -1,6 +1,6 @@
 error: duplicate `paginate` statement
        label: this node already declares `paginate`
-       help: keep one declaration of this behaviour, choosing its intended value
+       help: keep one `paginate` declaration with its intended value
  --> tests/diagnostics/rules/17_duplicate_paginate.rs:2:53
   |
 2 |     client Workshop { GET fetch() { paginate pager; paginate pager; } }

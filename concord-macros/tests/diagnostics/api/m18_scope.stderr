@@ -1,6 +1,6 @@
 error: `paginate` requires an endpoint
-       label: `paginate` stands on an endpoint, not on a scope
-       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
+       label: `paginate` cannot be declared on a scope
+       help: move `paginate` to an endpoint, and combine it with any `paginate` declared there or supplied by a part
   --> tests/diagnostics/api/m18_scope.rs:79:13
    |
 79 |             paginate by_object_id(starting_after, ending_before);

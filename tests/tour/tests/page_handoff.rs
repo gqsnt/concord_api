@@ -214,8 +214,8 @@ async fn c7_6_generated_read_body_watches_silence_and_accepts_continuing_pieces(
             let error = result.unwrap_err();
             assert_eq!(error.kind(), Kind::Transport);
             assert_eq!(error.class(), Some(Class::Timeout));
-            // "After a head, while a body is read: `transport error: the body was silent for 30 s after status 200 (<hint>), in <endpoint>`."
-            assert_eq!(error.to_string(), "transport error: the body was silent for 1 s after status 200 (with_idle_timeout changes it), in files.readme");
+            // "After a head, while a body is read: `transport error: no body data for 30 s after status 200 (<hint>), in <endpoint>`."
+            assert_eq!(error.to_string(), "transport error: no body data for 1 s after status 200 (with_idle_timeout changes it), in files.readme");
         } else {
             assert_eq!(result.unwrap(), "abc");
         }
@@ -299,8 +299,8 @@ async fn c7_6_generated_byte_stream_retains_its_silence_clock_after_handover() {
         if stalled {
             let error = body.try_next().await.unwrap_err();
             assert_eq!(error.class(), Some(Class::Timeout));
-            // "After a head, while a body is read: `transport error: the body was silent for 30 s after status 200 (<hint>), in <endpoint>`."
-            assert_eq!(error.to_string(), "transport error: the body was silent for 1 s after status 200 (with_idle_timeout changes it), in files.download");
+            // "After a head, while a body is read: `transport error: no body data for 30 s after status 200 (<hint>), in <endpoint>`."
+            assert_eq!(error.to_string(), "transport error: no body data for 1 s after status 200 (with_idle_timeout changes it), in files.download");
         } else {
             assert_eq!(body.try_next().await.unwrap().unwrap(), "b");
             assert_eq!(body.try_next().await.unwrap().unwrap(), "c");

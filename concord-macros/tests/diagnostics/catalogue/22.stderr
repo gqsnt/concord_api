@@ -1,5 +1,5 @@
-error: no header `accept` above to override
-       label: nothing is set above for this key
+error: no inherited header `accept` to override
+       label: no inherited value for this key
        help: write `"accept" = "…";`
  --> tests/diagnostics/catalogue/22.rs:2:64
   |

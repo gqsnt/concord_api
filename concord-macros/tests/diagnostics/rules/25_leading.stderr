@@ -1,6 +1,6 @@
 error: path segments must be nonempty
-       label: leading or doubled slash
-       help: remove leading or repeated slashes while keeping the path's segments and holes; omit an empty path statement
+       label: empty path or a leading or doubled slash
+       help: remove leading or repeated slashes while keeping the path's segments and placeholders; omit an empty path statement
  --> tests/diagnostics/rules/25_leading.rs:2:85
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { path "/records"; } }

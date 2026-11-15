@@ -51,7 +51,7 @@ impl FromStr for Base {
             .next()
             .unwrap_or("");
         if authority.contains('@') {
-            return Err(error("a user is not allowed"));
+            return Err(error("user information is not allowed"));
         }
         let url = reqwest::Url::parse(text).map_err(|_| error("invalid URL"))?;
         if url.host().is_none() {
@@ -402,7 +402,10 @@ mod tests {
     fn named_base_errors_precede_the_round_trip_check() {
         for (text, expected) in [
             ("ftp://example.test/", "expected http:// or https://"),
-            ("https://user@example.test/", "a user is not allowed"),
+            (
+                "https://user@example.test/",
+                "user information is not allowed",
+            ),
             ("https://example.test/prefix/./", "invalid path prefix"),
             ("https://example.test/prefix/%2e%2E/", "invalid path prefix"),
             ("https://example.test/prefix/ ", "invalid path prefix"),

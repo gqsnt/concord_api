@@ -1,12 +1,12 @@
-error: `paginate` is written in both parts `one` and `two`
+error: `paginate` is declared in both parts `one` and `two`
        label: the statements of a part count as this node's own
-       help: consolidate the conflicting contributions of these parts, retaining the intended values and input placements, or choose compatible parts
+       help: combine the conflicting declarations of these parts, keeping the intended values and input placements, or use compatible parts
  --> tests/diagnostics/rules/38_paginate_parts.rs:2:144
   |
 2 | ...inate pager; } part two() { paginate pager; } GET fetch(..one,..two); }
   |                                                                  ^^^^^
 
-error: the part `one` writes it here
+error: part `one` declares it here
  --> tests/diagnostics/rules/38_paginate_parts.rs:2:79
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; part one() { paginate pager; } part two() { paginate pager; } GET fe...

@@ -1,4 +1,4 @@
-error: expected a statement, part, scope or HTTP method
+error: expected a statement, `part`, `scope`, or HTTP method
        help: set the request URL with the `base` statement
  --> tests/diagnostics/suggestions/settings_base_url.rs:1:70
   |

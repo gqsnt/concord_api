@@ -1,5 +1,5 @@
-error: no header `x-mode` above to override
-       label: nothing is set above for this key
+error: no inherited header `x-mode` to override
+       label: no inherited value for this key
        help: write `"x-mode" = 1;`
  --> tests/diagnostics/rules/22_headers.rs:2:90
   |

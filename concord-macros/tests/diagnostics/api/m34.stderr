@@ -1,5 +1,5 @@
-error: an arm binds body, headers or status
-       label: no such part of an answer
+error: unknown field `header` in a status arm
+       label: expected `body`, `headers`, or `status`
        help: write `2xx { headers: header } => header.require("etag")?.to_owned()`
    --> tests/diagnostics/api/m34.rs:115:36
     |

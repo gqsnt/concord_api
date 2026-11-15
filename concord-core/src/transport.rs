@@ -27,7 +27,7 @@ use std::sync::Arc;
 /// A `tower` service is a transport too: `concord::tower::Tower`, with the `tower` feature.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot send a request",
-    note = "a reqwest::Client, concord::Http, a fake, or a type with concord::Transport"
+    note = "a `reqwest::Client`, `concord::Http`, a test transport, or a type that implements `concord::Transport`"
 )]
 pub trait Transport: Send + Sync + 'static {
     /// Sends the request.
@@ -739,7 +739,7 @@ mod contract_tests {
         let error: Error = Error::transport("tasks.get", 1, transport);
         assert_eq!(
             error.to_string(),
-            "transport error: name not found, in tasks.get"
+            "transport error: the host name could not be resolved, in tasks.get"
         );
 
         // Reqwest represents an empty address set with io::ErrorKind::NotConnected;
@@ -752,7 +752,7 @@ mod contract_tests {
         let error: Error = Error::transport("tasks.get", 1, transport);
         assert_eq!(
             error.to_string(),
-            "transport error: connection reset, in tasks.get"
+            "transport error: connection failed, in tasks.get"
         );
     }
 
@@ -890,7 +890,7 @@ mod contract_tests {
         let error: Error = Error::transport("tasks.get", 1, TransportError::timeout());
         assert_eq!(
             error.to_string(),
-            "transport error: a timeout was reported by the transport, in tasks.get"
+            "transport error: the transport reported a timeout, in tasks.get"
         );
     }
 
@@ -1287,7 +1287,7 @@ mod contract_tests {
         assert_eq!(error.class(), Some(Class::Connect));
         assert_eq!(
             error.to_string(),
-            "transport error: connection reset, in tasks.get"
+            "transport error: connection failed, in tasks.get"
         );
         server.join().unwrap();
     }
@@ -1312,7 +1312,7 @@ mod contract_tests {
             let word = if kind == io::ErrorKind::ConnectionRefused {
                 "connection refused"
             } else {
-                "connection reset"
+                "connection failed"
             };
             assert_eq!(
                 error.to_string(),

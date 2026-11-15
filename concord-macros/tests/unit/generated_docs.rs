@@ -261,7 +261,7 @@ fn c10_4_doc_rule_1_endpoint_lines_have_the_required_order_and_no_values() {
         "Inputs:",
         "Options:",
         "Status: `404`.",
-        "`.send().await` gives [`docs::Result`]<[`Vec`]<[`Item`]>>.",
+        "`.send().await` returns [`docs::Result`]<[`Vec`]<[`Item`]>>.",
     ];
     let positions: Vec<_> = expected
         .iter()
@@ -273,21 +273,35 @@ fn c10_4_doc_rule_1_endpoint_lines_have_the_required_order_and_no_values() {
         })
         .collect();
     assert!(positions.windows(2).all(|p| p[0] < p[1]));
-    assert!(f.methods["upload"].contains(&"This endpoint may not be repeated.".into()));
+    assert!(f.methods["upload"].contains(
+        &"A retry does not repeat this endpoint unless `Retry::not_applied_on` lists the status."
+            .into()
+    ));
     assert!(!f.all.join("\n").contains("HEADER_VALUE_MUST_NOT_LEAK"));
     let f = found("client Api { base \"https://repeat.test\"; POST once(); POST safe() { idempotent; } GET get(); }");
-    assert!(f.methods["once"].contains(&"This endpoint may not be repeated.".into()));
-    assert!(!f.methods["safe"].contains(&"This endpoint may not be repeated.".into()));
-    assert!(!f.methods["get"].contains(&"This endpoint may not be repeated.".into()));
+    assert!(f.methods["once"].contains(
+        &"A retry does not repeat this endpoint unless `Retry::not_applied_on` lists the status."
+            .into()
+    ));
+    assert!(!f.methods["safe"].contains(
+        &"A retry does not repeat this endpoint unless `Retry::not_applied_on` lists the status."
+            .into()
+    ));
+    assert!(!f.methods["get"].contains(
+        &"A retry does not repeat this endpoint unless `Retry::not_applied_on` lists the status."
+            .into()
+    ));
 }
 #[test]
 fn c10_4_doc_rule_2_links_keep_caller_paths_and_disambiguate_data() {
     let f=found("pub client Api { base \"https://types.test\"; read Json; scope account { GET get() -> Account; } }");
-    assert!(f.methods["get"].contains(&"`.await` gives [`api::Result`]<[`self::Account`]>.".into()));
+    assert!(
+        f.methods["get"].contains(&"`.await` returns [`api::Result`]<[`self::Account`]>.".into())
+    );
     assert!(!f.all.join("\n").contains("crate::api::Result"));
     let f = found(SOURCE);
     assert!(f.methods["items"]
-        .contains(&"`.send().await` gives [`docs::Result`]<[`Vec`]<[`Item`]>>.".into()));
+        .contains(&"`.send().await` returns [`docs::Result`]<[`Vec`]<[`Item`]>>.".into()));
 }
 #[test]
 fn c10_4_doc_rule_3_no_problem_shows_no_unit_problem_parameter() {
@@ -473,9 +487,9 @@ fn c1_16_send_names_its_public_result() {
     assert_eq!(
         f.methods["send"],
         [
-            "Send the call. On a paged endpoint this gives one page.",
+            "Send the call. On a paged endpoint this returns one page.",
             "Preparation starts on the first poll; only the value is kept.",
-            "`.send().await` gives [`api::Result`]<[`u32`]>.",
+            "`.send().await` returns [`api::Result`]<[`u32`]>.",
             "",
             "# Panics",
             "",
@@ -490,8 +504,7 @@ fn c10_4_doc_rule_7_generated_prose_uses_caller_vocabulary() {
     assert_eq!(
         f.methods["read_response"],
         [
-            "Read an answer obtained yourself using this endpoint's reader and status rules.",
-            "No retry or clock is applied, and pages are not advanced. Errors report zero tries."
+            "Read a response that you obtained yourself using this endpoint's reader and status rules. No retry, call timeout, or idle timeout is started; pages are not advanced, and errors report zero attempts.",
         ]
     );
     assert!(!f
@@ -525,7 +538,7 @@ fn c10_4_doc_rule_9_only_middleware_prose_reaches_the_client() {
 #[test]
 fn c10_4_c8_7_doc_rule_10_paged_calls_explain_pages_and_items() {
     let f = found(SOURCE);
-    let line="`.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.";
+    let line="`.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.";
     assert!(f.methods["items"].contains(&line.into()));
     assert_eq!(f.methods["pages"], [line]);
 }

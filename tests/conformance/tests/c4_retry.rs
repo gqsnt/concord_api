@@ -708,7 +708,7 @@ async fn c4_4_when_the_tries_run_out_the_last_outcome_is_the_result_unchanged() 
     assert_eq!(error.tries(), 3);
     assert_eq!(
         error.to_string(),
-        "refused: status 504, in tasks.get, after 3 tries"
+        "refused: status 504, in tasks.get, after 3 attempts"
     );
 }
 

@@ -1,6 +1,6 @@
-error: `query` cannot be overridden or removed
-       label: `override` and `remove` stand inside a block, before an entry or an arm
-       help: write `query {  }`
+error: `override` and `remove` cannot be used on `query`
+       label: edit keyword on a whole statement
+       help: put `override` or `remove` on individual entries or status arms, resolving inherited keys and preserving the intended values and expressions
  --> tests/diagnostics/rules/24_query_override.rs:2:80
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { override query {} } }

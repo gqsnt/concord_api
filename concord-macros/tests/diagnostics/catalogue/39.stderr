@@ -1,6 +1,6 @@
-error: an arm in reach reads a body, and this endpoint has no arrow
-       label: the body would be read into nothing
-       help: declare the intended result type after an arrow, or stop the arms in reach from reading a body
+error: a status arm reads the body, but this endpoint has no return type
+       label: no return type (`->`) is declared
+       help: declare the intended return type with `->`, or stop the arms that apply here from binding `body`
  --> tests/diagnostics/catalogue/39.rs:2:113
   |
 2 | client Tasks { base "https://a.example"; read Json; status { 2xx { body } => Reply::into_result(body)? } DELETE archive(); }

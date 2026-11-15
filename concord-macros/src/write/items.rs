@@ -37,7 +37,7 @@ impl Writer<'_> {
                 emit!(#(#attrs)* #[doc = #item_doc] #vis mod #module { #children })
             } else { TokenStream::new() };
             let must_use = endpoint.map(|e| if e.pager.is_some() {
-                emit!(#[must_use = ".send() gives one page; .pages() gives them all"])
+                emit!(#[must_use = "await `.send()` for one page, or use `.pages()` for all pages"])
             } else { emit!(#[must_use = "a call does nothing until sent or awaited"]) });
             emit! {
                 #(#attrs)* #[doc = #item_doc] #must_use

@@ -1,6 +1,6 @@
-error: a part cannot hold a child
-       label: `path`, `problem`, `middleware` and children belong to the tree
-       help: move `nested` into the scope that names the part
+error: a part cannot contain a child
+       label: children are declared in the client or a scope
+       help: move this child declaration into the client or an appropriate scope, preserving its inputs and references
  --> tests/diagnostics/rules/37_child.rs:2:84
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { GET nested(); } GET fetch(..fragment); }

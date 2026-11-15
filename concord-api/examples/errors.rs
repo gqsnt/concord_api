@@ -75,5 +75,5 @@ async fn main() {
 //   the API said no: no_such_item
 // refused: status 503, in shop.item
 //   refused; the status, the headers and the body are kept
-// transport error: no answer for 0.1 s (with_idle_timeout changes it), in shop.item
+// transport error: no response for 0.1 s (with_idle_timeout changes it), in shop.item
 //   no answer in time

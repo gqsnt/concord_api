@@ -213,7 +213,7 @@ placement_row!(
 placement_row!(
     c1_3_table1_path,
     "path \"records\";",
-    [None, None, None, Some("a part cannot hold `path`")]
+    [None, None, None, Some("a part cannot contain `path`")]
 );
 placement_row!(
     c1_3_table1_query,
@@ -256,9 +256,9 @@ placement_row!(
     "problem Issue read Reader;",
     [
         None,
-        Some("requires the client"),
-        Some("requires the client"),
-        Some("a part cannot hold `problem`")
+        Some("is allowed only on the client"),
+        Some("is allowed only on the client"),
+        Some("a part cannot contain `problem`")
     ]
 );
 placement_row!(
@@ -291,9 +291,9 @@ placement_row!(
     "middleware Layer;",
     [
         None,
-        Some("requires the client"),
-        Some("requires the client"),
-        Some("a part cannot hold `middleware`")
+        Some("is allowed only on the client"),
+        Some("is allowed only on the client"),
+        Some("a part cannot contain `middleware`")
     ]
 );
 
@@ -302,17 +302,17 @@ fn c1_17_table1_part_declarations() {
     accepted(r#"client Matrix { base "https://matrix.test"; part named() {} GET leaf(..named); }"#);
     refuses(
         "client Matrix { scope s { part inner() {} } }",
-        "requires the client",
+        "is allowed only on the client",
         "table 1 part / scope",
     );
     refuses(
         "client Matrix { GET leaf() { part inner() {} } }",
-        "requires the client",
+        "is allowed only on the client",
         "table 1 part / endpoint",
     );
     refuses(
         "client Matrix { part outer() { part inner() {} } GET leaf(..outer); }",
-        "requires the client",
+        "is allowed only on the client",
         "table 1 part / part",
     );
 }
@@ -329,7 +329,7 @@ fn c1_17_table1_spreads() {
     accepted(r#"client Matrix { base "https://matrix.test"; part named() {} GET leaf(..named); }"#);
     refuses(
         "client Matrix { part outer(..inner) {} part inner() {} GET leaf(..outer); }",
-        "part names no other part",
+        "only a scope or an endpoint can name a part",
         "table 1 spread / part",
     );
 }
@@ -369,7 +369,7 @@ fn table2_single(row: &str, first: &str, second: &str, endpoint_only: bool, allo
     for edit in ["override", "remove"] {
         refuses(
             &format!("client Matrix {{ {setup} GET leaf() {{ {edit} {first} }} }}"),
-            "cannot be overridden or removed",
+            "`override` and `remove` cannot be used on",
             &format!("table 2 {row} / {edit}"),
         );
     }
@@ -386,7 +386,7 @@ fn table2_single(row: &str, first: &str, second: &str, endpoint_only: bool, allo
             format!("part one() {{ {first} }}"),
             "..one",
             second,
-            Some("written in the part"),
+            Some("declared both in part"),
         ),
         (
             "two parts",
@@ -401,7 +401,7 @@ fn table2_single(row: &str, first: &str, second: &str, endpoint_only: bool, allo
         ));
         if !allowed_part {
             assert!(
-                errors.contains("a part cannot hold"),
+                errors.contains("a part cannot contain"),
                 "table 2 {row} / {column}: {errors}"
             );
         } else if let Some(expected) = expected {
@@ -486,7 +486,7 @@ fn c1_13_table2_path() {
             &format!(
                 r#"client Matrix {{ base "https://matrix.test"; GET leaf() {{ {edit} path "x"; }} }}"#
             ),
-            "paths cannot",
+            "`override` and `remove` cannot be used on `path`",
             &format!("table 2 path / {edit}"),
         );
     }
@@ -495,7 +495,7 @@ fn c1_13_table2_path() {
             &format!(
                 r#"client Matrix {{ part one() {{ path "a"; }} part two() {{ path "b"; }} GET leaf({signature}) {{ path "c"; }} }}"#
             ),
-            "a part cannot hold `path`",
+            "a part cannot contain `path`",
             "table 2 path / parts",
         );
     }
@@ -524,7 +524,7 @@ fn c1_21_table2_body_entries() {
     }
     refuses(
         r#"client Matrix { part one() { body make { "q" = 1; } } POST leaf(..one) { body other { "r" = 2; } } }"#,
-        "entry bodies join only",
+        "only body entry blocks with the same function path can be merged",
         "table 2 body entries / different functions",
     );
     refuses(
@@ -534,7 +534,7 @@ fn c1_21_table2_body_entries() {
     );
     refuses(
         r#"client Matrix { part one() { body make { "q" = 1; } } POST leaf(..one) { body make { "q" = 2; } } }"#,
-        "written in the part",
+        "declared both in part",
         "table 2 body entries / duplicate key",
     );
     refuses(
@@ -546,9 +546,9 @@ fn c1_21_table2_body_entries() {
 
 macro_rules! client_row { ($name:ident,$word:expr,$statement:expr) => { #[test] fn $name() {
     accepted(&format!("client Matrix {{ {} }}",$statement));
-    refuses(&format!("client Matrix {{ scope s {{ {} }} }}",$statement),"requires the client",concat!("table 2 ",$word," / below client"));
-    for edit in ["override","remove"] { refuses(&format!("client Matrix {{ {edit} {} }}",$statement),"cannot be overridden or removed",concat!("table 2 ",$word," / edit")); }
-    for signature in ["..one","..one, ..two"] { refuses(&format!("client Matrix {{ part one() {{ {0} }} part two() {{ {0} }} GET leaf({signature}); }}",$statement),"a part cannot hold",concat!("table 2 ",$word," / parts")); }
+    refuses(&format!("client Matrix {{ scope s {{ {} }} }}",$statement),"is allowed only on the client",concat!("table 2 ",$word," / below client"));
+    for edit in ["override","remove"] { refuses(&format!("client Matrix {{ {edit} {} }}",$statement),"`override` and `remove` cannot be used on",concat!("table 2 ",$word," / edit")); }
+    for signature in ["..one","..one, ..two"] { refuses(&format!("client Matrix {{ part one() {{ {0} }} part two() {{ {0} }} GET leaf({signature}); }}",$statement),"a part cannot contain",concat!("table 2 ",$word," / parts")); }
 } }; }
 client_row!(
     c1_13_table2_problem,
@@ -568,7 +568,7 @@ fn c1_13_table2_entries() {
             &format!(
                 r#"client Matrix {{ {setup} {kind} {{ "{key}" = 1; }} GET leaf() {{ {kind} {{ "{repeat}" = 2; }} }} }}"#
             ),
-            "already set above",
+            "already set by an ancestor",
             &format!("table 2 {kind} / plain"),
         );
         accepted(&format!(
@@ -586,7 +586,7 @@ fn c1_13_table2_entries() {
                 if edit.starts_with("remove") {
                     "to remove"
                 } else {
-                    "above"
+                    "no inherited"
                 },
                 &format!("table 2 {kind} / absent edit"),
             );
@@ -598,7 +598,7 @@ fn c1_13_table2_entries() {
             &format!(
                 r#"client Matrix {{ {setup} part one() {{ {kind} {{ "{key}" = 1; }} }} GET leaf(..one) {{ {kind} {{ "{repeat}" = 2; }} }} }}"#
             ),
-            "written in the part",
+            "declared both in part",
             &format!("table 2 {kind} / part and node"),
         );
         refuses(
@@ -617,12 +617,12 @@ fn c5_3_table2_status_arms() {
     );
     refuses(
         r#"client Matrix { status { 4xx => () } GET leaf() { status { 410 => () } } }"#,
-        "already set above",
+        "an inherited arm already matches",
         "table 2 arms / exact below class",
     );
     refuses(
         r#"client Matrix { status { 4xx => () } GET leaf() { status { remove 410 } } }"#,
-        "only the `4xx`",
+        "covered by the inherited `4xx` arm",
         "table 2 arms / removal matches key only",
     );
     refuses(
@@ -646,7 +646,7 @@ fn c5_3_table2_status_arms() {
     );
     refuses(
         r#"client Matrix { part one() { status { 410 => () } } GET leaf(..one) { status { 410 => () } } }"#,
-        "written in the part",
+        "declared both in part",
         "table 2 arms / part and node",
     );
     refuses(

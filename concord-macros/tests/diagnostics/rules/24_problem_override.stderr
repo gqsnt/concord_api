@@ -1,6 +1,6 @@
-error: `problem` cannot be overridden or removed
-       label: `override` and `remove` stand inside a block, before an entry or an arm
-       help: write `problem Issue read Reader;`
+error: `override` and `remove` cannot be used on `problem`
+       label: edit keyword on a whole statement
+       help: declare `problem` with the intended value, without `override` or `remove`; change ancestor declarations if needed
  --> tests/diagnostics/rules/24_problem_override.rs:2:23
   |
 2 |     client Workshop { override problem Issue read Reader; }

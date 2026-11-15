@@ -1,5 +1,5 @@
-error: no status arm `404` above to override
-       label: nothing is set above for this key
+error: no inherited status arm `404` to override
+       label: no inherited arm matches this key
        help: write `404 { body } => document_404::<GetReply>(body)?`
   --> tests/diagnostics/api/m22_arm.rs:31:26
    |

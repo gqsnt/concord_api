@@ -1,4 +1,4 @@
-error: no body entry `message_id` above to override
+error: no inherited body entry `message_id` to override
        label: a body inherits no entries
        help: write `"message_id" = message_id;`
   --> tests/diagnostics/api/m22_body.rs:50:34

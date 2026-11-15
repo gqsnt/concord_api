@@ -1,6 +1,6 @@
-error: an arm in reach reads a body, and this endpoint has no arrow
-       label: the body would be read into nothing
-       help: declare the intended result type after an arrow, or stop the arms in reach from reading a body
+error: a status arm reads the body, but this endpoint has no return type
+       label: no return type (`->`) is declared
+       help: declare the intended return type with `->`, or stop the arms that apply here from binding `body`
   --> tests/diagnostics/api/m39.rs:90:18
    |
 90 |             POST delete(channel: ChannelId, ts: Ts) {

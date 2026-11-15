@@ -163,7 +163,9 @@ impl Body {
             .windows(2)
             .any(|pair| matches!(pair, [left, right] if Arc::ptr_eq(left, right)))
         {
-            return Err(reused());
+            return Err(std::io::Error::other(
+                "the same body stream occurs more than once in the body",
+            ));
         }
         let mut guards = sources_to_claim
             .iter()
@@ -290,7 +292,7 @@ impl From<&Body> for Body {
 /// are two, and your own writer is used in the same way.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a body",
-    note = "a body is what json(x), form(x) or a function of yours gives: a concord::Body"
+    note = "a body expression returns a `concord::Body` or a `Result` of one, as `json(x)`, `form(x)` or your own function do"
 )]
 pub trait IntoBody: sealed::Sealed {
     /// Returns the body, or the reason there is none.
@@ -461,15 +463,23 @@ mod tests {
             .map_stream(|_| panic!("a failed claim cannot run wrappers"));
         let body = Body::concat([Body::from("prefix"), Body::concat([wrapped, used])]);
         assert!(body.as_bytes().is_none());
-        assert!(body.into_stream().is_err());
+        assert_eq!(
+            body.into_stream().err().unwrap().to_string(),
+            "the body stream was already used"
+        );
         assert_eq!(collect(fresh.into_stream().unwrap()), b"fresh");
     }
     #[test]
     fn duplicate_source_in_a_composition_fails_without_claiming_it() {
         let body = source("only once");
-        assert!(Body::concat([body.clone(), body.clone()])
+        let error = Body::concat([body.clone(), body.clone()])
             .into_stream()
-            .is_err());
+            .err()
+            .unwrap();
+        assert_eq!(
+            error.to_string(),
+            "the same body stream occurs more than once in the body"
+        );
         assert_eq!(collect(body.into_stream().unwrap()), b"only once");
     }
 }
@@ -912,7 +922,7 @@ mod presence_probe_tests {
 /// let value = Bounded::new(&42u8);
 /// let written: Result<(), std::io::Error> = Err(std::io::Error::other("format refused the value"));
 /// let error: WriteError = written.map_err(|source| value.error(source)).unwrap_err();
-/// assert_eq!(error.to_string(), "the body could not be written");
+/// assert_eq!(error.to_string(), "the body could not be serialized");
 /// assert_eq!(error.source().unwrap().to_string(), "format refused the value");
 /// ```
 pub struct WriteError {
@@ -929,7 +939,7 @@ impl WriteError {
 }
 impl fmt::Display for WriteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("the body could not be written")
+        f.write_str("the body could not be serialized")
     }
 }
 impl fmt::Debug for WriteError {
@@ -1161,7 +1171,7 @@ mod chain_tests {
         assert_eq!(
             messages
                 .iter()
-                .filter(|m| m.contains("the body could not be written"))
+                .filter(|m| m.contains("the body could not be constructed"))
                 .count(),
             1
         );

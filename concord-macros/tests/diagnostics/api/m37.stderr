@@ -1,6 +1,6 @@
-error: a part cannot hold `path`
-       label: `path`, `problem`, `middleware` and children belong to the tree
-       help: place this behaviour on the appropriate tree node; consolidate it with any existing statement there
+error: a part cannot contain `path`
+       label: `path` is declared on the client, a scope, or an endpoint
+       help: move `path` to the node that needs it, and combine it with any `path` already there
   --> tests/diagnostics/api/m37.rs:26:13
    |
 26 |             path "ids";

@@ -12,8 +12,8 @@ error: the first part is here
 2 |     client Workshop { part common() {} part common() {} GET fetch(..common); }
   |                            ^^^^^^
 
-error: no `base` in reach of this endpoint
-       label: no `base` here or above
+error: no `base` applies to this endpoint
+       label: no `base` is declared here or inherited
        help: set the intended base URL on this endpoint or an ancestor
  --> tests/diagnostics/rules/01_parts.rs:2:61
   |

@@ -1,6 +1,6 @@
-error: a `{*…}` hole must be a whole segment
+error: a `{*…}` placeholder must be a whole path segment
        label: `{*key}` shares its segment with `.bin`
-       help: write `path "objects/{key}.bin";`; a `{key}` hole may share its segment
+       help: write `path "objects/{key}.bin";`; a `{key}` placeholder may share its segment
  --> tests/diagnostics/rules/29_suffix.rs:2:96
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(key: String) { path "objects/{*key}.bin"; } }

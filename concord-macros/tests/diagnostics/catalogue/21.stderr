@@ -1,4 +1,4 @@
-error: header `accept` is already set above
+error: header `accept` is already set by an ancestor
        label: replacement requires `override`
        help: write `override "accept" = "…";`
  --> tests/diagnostics/catalogue/21.rs:2:94

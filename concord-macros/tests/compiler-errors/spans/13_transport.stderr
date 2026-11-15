@@ -6,7 +6,7 @@ error[E0277]: `{integer}` cannot send a request
   |                             |
   |                             required by a bound introduced by this call
   |
-  = note: a reqwest::Client, concord::Http, a fake, or a type with concord::Transport
+  = note: a `reqwest::Client`, `concord::Http`, a test transport, or a type that implements `concord::Transport`
 help: the following other types implement trait `concord::Transport`
  --> $WORKSPACE/concord-core/src/transport.rs
   |

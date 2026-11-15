@@ -1,4 +1,4 @@
-error: an arm binds body, headers or status
+error: duplicate binding `both` in a status arm
        label: name `both` is bound twice
        help: give these fields distinct binding names and update their uses in this arm's expression
  --> tests/diagnostics/rules/34_duplicate_binding.rs:2:118

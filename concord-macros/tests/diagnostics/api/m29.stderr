@@ -1,6 +1,6 @@
-error: a `{*…}` hole must be a whole segment
+error: a `{*…}` placeholder must be a whole path segment
        label: `{*path}` shares its segment with `.md`
-       help: write `path "contents/{path}.md";`; a `{path}` hole may share its segment
+       help: write `path "contents/{path}.md";`; a `{path}` placeholder may share its segment
    --> tests/diagnostics/api/m29.rs:166:22
     |
 166 |                 path "contents/{*path}.md";

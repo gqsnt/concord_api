@@ -593,7 +593,7 @@ fn table_7_2() -> Vec<Cell> {
             let line = result.err().map(|error| error.to_string());
             check(
                 line.as_deref()
-                    == Some("transport error: no answer for 30 s (with_idle_timeout changes it), in files.upload"),
+                    == Some("transport error: no response for 30 s (with_idle_timeout changes it), in files.upload"),
                 || format!("{line:?}"),
             )?;
             // Retry may then try again.
@@ -843,7 +843,7 @@ async fn c7_6_neither_clock_changes_the_other() {
     assert_eq!(start.elapsed(), secs(30));
     assert_eq!(
         error.to_string(),
-        "transport error: no answer for 30 s (with_idle_timeout changes it), in tasks.get"
+        "transport error: no response for 30 s (with_idle_timeout changes it), in tasks.get"
     );
 
     let script = Script::new();
@@ -992,7 +992,7 @@ async fn c7_6_timeout_is_one_clock_for_the_tries_the_waits_and_a_readers_own_wai
     assert_eq!(script.requests().len(), 2);
     assert_eq!(
         error.to_string(),
-        "transport error: the call took longer than 10 s (with_timeout), in tasks.get, after 2 tries"
+        "transport error: the call took longer than 10 s (with_timeout), in tasks.get, after 2 attempts"
     );
 
     // The same through a client of `tests/tour`: the second body never ends, and the clock for

@@ -461,7 +461,7 @@ mod c5_tests {
         assert_eq!(error.kind(), Kind::Mismatch);
         assert_eq!(error.kept(), Some(Kept::Complete));
         assert_eq!(error.body(), Some(b"".as_slice()));
-        assert!(error.to_string().contains("no arm takes this status"));
+        assert!(error.to_string().contains("no arm matches this status"));
         assert_eq!(error.headers().unwrap().get("x-id"), Some("one"));
         assert!(error.problem().is_none());
     }

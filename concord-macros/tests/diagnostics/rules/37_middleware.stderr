@@ -1,6 +1,6 @@
-error: a part cannot hold `middleware`
-       label: `path`, `problem`, `middleware` and children belong to the tree
-       help: place this behaviour on the appropriate tree node; consolidate it with any existing statement there
+error: a part cannot contain `middleware`
+       label: `middleware` is declared on the client
+       help: construct this middleware in the client block using required client inputs; qualify or move the values it needs
  --> tests/diagnostics/rules/37_middleware.rs:2:84
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { middleware Layer; } GET fetch(..fragment); }

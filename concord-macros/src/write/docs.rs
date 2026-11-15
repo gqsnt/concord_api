@@ -340,7 +340,7 @@ impl Writer<'_> {
             _ => false,
         };
         if cannot_repeat {
-            text.extend([String::new(), "This endpoint may not be repeated.".into()]);
+            text.extend([String::new(), "A retry does not repeat this endpoint unless `Retry::not_applied_on` lists the status.".into()]);
         }
         let action = if endpoint.pager.is_some() {
             ".send().await"
@@ -349,10 +349,10 @@ impl Writer<'_> {
         };
         text.extend([
             String::new(),
-            format!("`{action}` gives {}.", self.result_doc(endpoint)),
+            format!("`{action}` returns {}.", self.result_doc(endpoint)),
         ]);
         if endpoint.pager.is_some() {
-            text.extend([String::new(), "`.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.".into()]);
+            text.extend([String::new(), "`.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.".into()]);
         }
         lines(text)
     }

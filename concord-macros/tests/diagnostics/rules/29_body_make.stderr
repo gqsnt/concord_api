@@ -1,6 +1,6 @@
-error: a `{*…}` hole must be a whole segment
-       label: `{*code}` stands outside a path
-       help: write `"{code}"` with a `{code}` hole
+error: a `{*…}` placeholder is allowed only in `path`
+       label: `{*code}` is outside a `path` statement
+       help: write `"{code}"`, with a `{code}` placeholder
  --> tests/diagnostics/rules/29_body_make.rs:2:115
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(code: String) { body make { "x-code" = "{*code}"; } } }

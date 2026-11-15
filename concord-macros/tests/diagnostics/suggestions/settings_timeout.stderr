@@ -1,4 +1,4 @@
-error: expected a statement, part, scope or HTTP method
+error: expected a statement, `part`, `scope`, or HTTP method
        help: configure the timeout with `with_timeout` on the client or the call
  --> tests/diagnostics/suggestions/settings_timeout.rs:1:70
   |

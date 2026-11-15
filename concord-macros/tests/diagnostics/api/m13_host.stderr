@@ -1,5 +1,5 @@
-error: this URL input must supply one required value
-       label: an optional input cannot fill this hole
+error: a URL input cannot be optional
+       label: an optional input cannot fill this placeholder
        help: declare `route: Platform`, without `?`
   --> tests/diagnostics/api/m13_host.rs:47:18
    |

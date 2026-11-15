@@ -46,7 +46,7 @@ pub mod tasks {
     /// - [`status()`](concord::Error::status): inspect the HTTP status, when an answer arrived.
     ///
     /// For example, `{e}` prints names and status, without input values:
-    /// `refused: status 429, in tasks.list, after 3 tries`.
+    /// `refused: status 429, in tasks.list, after 3 attempts`.
     pub type Error = ::concord::Error;
 
     /// The result of a [`Tasks`](crate::Tasks) call, with [`Error`].
@@ -59,7 +59,7 @@ pub mod tasks {
 
     /// The call `tasks.list`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`tasks::Result`](crate::tasks::Result)<[`Vec`]<[`Task`](crate::Task)>>.
+    /// `.await` returns [`tasks::Result`](crate::tasks::Result)<[`Vec`]<[`Task`](crate::Task)>>.
     ///
     /// Create it with [`Tasks::list`](crate::Tasks::list).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -72,7 +72,7 @@ pub mod tasks {
 
     /// The call `tasks.create`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`tasks::Result`](crate::tasks::Result)<[`Task`](crate::Task)>.
+    /// `.await` returns [`tasks::Result`](crate::tasks::Result)<[`Task`](crate::Task)>.
     ///
     /// Create it with [`Tasks::create`](crate::Tasks::create).
     ///
@@ -93,7 +93,7 @@ pub mod tasks {
 
     /// The call `tasks.get`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`tasks::Result`](crate::tasks::Result)<[`Task`](crate::Task)>.
+    /// `.await` returns [`tasks::Result`](crate::tasks::Result)<[`Task`](crate::Task)>.
     ///
     /// Create it with [`Tasks::get`](crate::Tasks::get).
     ///
@@ -110,7 +110,7 @@ pub mod tasks {
 
     /// The call `tasks.delete`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`tasks::Result`](crate::tasks::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+    /// `.await` returns [`tasks::Result`](crate::tasks::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
     ///
     /// Create it with [`Tasks::delete`](crate::Tasks::delete).
     ///
@@ -231,7 +231,7 @@ pub mod riot {
     /// - [`status()`](concord::Error::status): inspect the HTTP status, when an answer arrived.
     ///
     /// For example, `{e}` prints names and status, without input values:
-    /// `refused: status 429, in riot.matches.ids, after 3 tries`.
+    /// `refused: status 429, in riot.matches.ids, after 3 attempts`.
     pub type Error = ::concord::Error<<() as __Types>::__Problem>;
 
     /// The result of a [`Riot`](crate::Riot) call, with [`Error`].
@@ -246,7 +246,7 @@ pub mod riot {
     pub mod matches {
         /// The call `riot.matches.ids`. Nothing is sent until a page is asked for.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         ///
         /// Create it with [`riot::Matches::ids`](crate::riot::Matches::ids).
         ///
@@ -255,7 +255,7 @@ pub mod riot {
         /// let _ = tour::Riot::new("key").matches(tour::Europe).ids(tour::Puuid::from("p")).await;
         /// # }
         /// ```
-        #[must_use = ".send() gives one page; .pages() gives them all"]
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
         #[derive(Clone)]
         pub struct Ids {
             pub(in super::super) __scope: super::Matches,
@@ -270,7 +270,7 @@ pub mod riot {
 
         /// The call `riot.matches.get`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`riot::Result`](crate::riot::Result)<[`Match`](crate::Match)>.
+        /// `.await` returns [`riot::Result`](crate::riot::Result)<[`Match`](crate::Match)>.
         ///
         /// Create it with [`riot::Matches::get`](crate::riot::Matches::get).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -287,7 +287,7 @@ pub mod riot {
     pub mod account {
         /// The call `riot.account.by_riot_id`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`riot::Result`](crate::riot::Result)<[`Option`]<[`tour::Account`](crate::Account)>>.
+        /// `.await` returns [`riot::Result`](crate::riot::Result)<[`Option`]<[`tour::Account`](crate::Account)>>.
         ///
         /// Create it with [`riot::Account::by_riot_id`](crate::riot::Account::by_riot_id).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -302,7 +302,7 @@ pub mod riot {
 
         /// The call `riot.account.me`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`riot::Result`](crate::riot::Result)<[`tour::Account`](crate::Account)>.
+        /// `.await` returns [`riot::Result`](crate::riot::Result)<[`tour::Account`](crate::Account)>.
         ///
         /// Create it with [`riot::Account::me`](crate::riot::Account::me).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -394,7 +394,7 @@ pub mod files {
     /// - [`status()`](concord::Error::status): inspect the HTTP status, when an answer arrived.
     ///
     /// For example, `{e}` prints names and status, without input values:
-    /// `refused: status 429, in files.download, after 3 tries`.
+    /// `refused: status 429, in files.download, after 3 attempts`.
     pub type Error = ::concord::Error;
 
     /// The result of a [`Files`](crate::Files) call, with [`Error`].
@@ -407,7 +407,7 @@ pub mod files {
 
     /// The call `files.exists`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`files::Result`](crate::files::Result)<[`bool`]>.
+    /// `.await` returns [`files::Result`](crate::files::Result)<[`bool`]>.
     ///
     /// Create it with [`Files::exists`](crate::Files::exists).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -420,7 +420,7 @@ pub mod files {
 
     /// The call `files.readme`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`files::Result`](crate::files::Result)<[`String`]>.
+    /// `.await` returns [`files::Result`](crate::files::Result)<[`String`]>.
     ///
     /// Create it with [`Files::readme`](crate::Files::readme).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -433,7 +433,7 @@ pub mod files {
 
     /// The call `files.download`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`files::Result`](crate::files::Result)<[`concord::ByteStream`]>.
+    /// `.await` returns [`files::Result`](crate::files::Result)<[`concord::ByteStream`]>.
     ///
     /// Create it with [`Files::download`](crate::Files::download).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -446,7 +446,7 @@ pub mod files {
 
     /// The call `files.upload`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`files::Result`](crate::files::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+    /// `.await` returns [`files::Result`](crate::files::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
     ///
     /// Create it with [`Files::upload`](crate::Files::upload).
     ///
@@ -468,7 +468,7 @@ pub mod files {
 
     /// The call `files.search`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`files::Result`](crate::files::Result)<[`Page`](crate::Page)>.
+    /// `.await` returns [`files::Result`](crate::files::Result)<[`Page`](crate::Page)>.
     ///
     /// Create it with [`Files::search`](crate::Files::search).
     ///
@@ -544,7 +544,7 @@ pub mod feed {
     /// - [`status()`](concord::Error::status): inspect the HTTP status, when an answer arrived.
     ///
     /// For example, `{e}` prints names and status, without input values:
-    /// `refused: status 429, in feed.list, after 3 tries`.
+    /// `refused: status 429, in feed.list, after 3 attempts`.
     pub type Error = ::concord::Error;
 
     /// The result of a [`Feed`](crate::Feed) call, with [`Error`].
@@ -557,7 +557,7 @@ pub mod feed {
 
     /// The call `feed.list`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Feed::list`](crate::Feed::list).
     ///
@@ -566,7 +566,7 @@ pub mod feed {
     /// let _ = tour::Feed::new().list().await;
     /// # }
     /// ```
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct List {
         pub(super) __client: super::Feed,
@@ -576,7 +576,7 @@ pub mod feed {
 
     /// The call `feed.by_cursor`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Feed::by_cursor`](crate::Feed::by_cursor).
     ///
@@ -585,7 +585,7 @@ pub mod feed {
     /// let _ = tour::Feed::new().by_cursor().await;
     /// # }
     /// ```
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct ByCursor {
         pub(super) __client: super::Feed,
@@ -595,7 +595,7 @@ pub mod feed {
 
     /// The call `feed.linked`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Feed::linked`](crate::Feed::linked).
     ///
@@ -604,7 +604,7 @@ pub mod feed {
     /// let _ = tour::Feed::new().linked().await;
     /// # }
     /// ```
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Linked {
         pub(super) __client: super::Feed,
@@ -712,7 +712,7 @@ pub mod shapes {
     /// - [`status()`](concord::Error::status): inspect the HTTP status, when an answer arrived.
     ///
     /// For example, `{e}` prints names and status, without input values:
-    /// `refused: status 429, in shapes.again, after 3 tries`.
+    /// `refused: status 429, in shapes.again, after 3 attempts`.
     pub type Error = ::concord::Error<<() as __Types>::__Problem>;
 
     /// The result of a [`Shapes`](crate::Shapes) call, with [`Error`].
@@ -725,7 +725,7 @@ pub mod shapes {
 
     /// The call `shapes.again`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::again`](crate::Shapes::again).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -738,7 +738,7 @@ pub mod shapes {
 
     /// The call `shapes.replace`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::replace`](crate::Shapes::replace).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -752,7 +752,7 @@ pub mod shapes {
 
     /// The call `shapes.order`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::order`](crate::Shapes::order).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -765,7 +765,7 @@ pub mod shapes {
 
     /// The call `shapes.upload`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::upload`](crate::Shapes::upload).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -778,7 +778,7 @@ pub mod shapes {
 
     /// The call `shapes.outcome`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Result`](::std::result::Result)<[`Item`](crate::Item), [`Conflict`](crate::Conflict)>>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Result`](::std::result::Result)<[`Item`](crate::Item), [`Conflict`](crate::Conflict)>>.
     ///
     /// Create it with [`Shapes::outcome`](crate::Shapes::outcome).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -791,7 +791,7 @@ pub mod shapes {
 
     /// The call `shapes.ping`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
     ///
     /// Create it with [`Shapes::ping`](crate::Shapes::ping).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -803,7 +803,7 @@ pub mod shapes {
 
     /// The call `shapes.present`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`bool`]>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`bool`]>.
     ///
     /// Create it with [`Shapes::present`](crate::Shapes::present).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -816,7 +816,7 @@ pub mod shapes {
 
     /// The call `shapes.create`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Receipt`](crate::Receipt)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Receipt`](crate::Receipt)>.
     ///
     /// Create it with [`Shapes::create`](crate::Shapes::create).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -829,7 +829,7 @@ pub mod shapes {
 
     /// The call `shapes.hosted`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::hosted`](crate::Shapes::hosted).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -842,7 +842,7 @@ pub mod shapes {
 
     /// The call `shapes.search`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Vec`]<[`Item`](crate::Item)>>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Vec`]<[`Item`](crate::Item)>>.
     ///
     /// Create it with [`Shapes::search`](crate::Shapes::search).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -856,7 +856,7 @@ pub mod shapes {
 
     /// The call `shapes.measured`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::measured`](crate::Shapes::measured).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -870,7 +870,7 @@ pub mod shapes {
 
     /// The call `shapes.parsed`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::parsed`](crate::Shapes::parsed).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -883,7 +883,7 @@ pub mod shapes {
 
     /// The call `shapes.counts`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Tally`](crate::Tally)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Tally`](crate::Tally)>.
     ///
     /// Create it with [`Shapes::counts`](crate::Shapes::counts).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -895,7 +895,7 @@ pub mod shapes {
 
     /// The call `shapes.strict`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::strict`](crate::Shapes::strict).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -907,7 +907,7 @@ pub mod shapes {
 
     /// The call `shapes.long_message`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::long_message`](crate::Shapes::long_message).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -919,7 +919,7 @@ pub mod shapes {
 
     /// The call `shapes.noted`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::noted`](crate::Shapes::noted).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -932,7 +932,7 @@ pub mod shapes {
 
     /// The call `shapes.titled`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::titled`](crate::Shapes::titled).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -946,7 +946,7 @@ pub mod shapes {
 
     /// The call `shapes.held`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Result`](::std::result::Result)<[`Item`](crate::Item), [`Conflict`](crate::Conflict)>>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Result`](::std::result::Result)<[`Item`](crate::Item), [`Conflict`](crate::Conflict)>>.
     ///
     /// Create it with [`Shapes::held`](crate::Shapes::held).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -1023,7 +1023,7 @@ pub mod shapes {
 
     /// The call `shapes.refusal`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
     ///
     /// Create it with [`Shapes::refusal`](crate::Shapes::refusal).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -1036,10 +1036,10 @@ pub mod shapes {
 
     /// The call `shapes.guarded`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::guarded`](crate::Shapes::guarded).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Guarded {
         pub(super) __client: super::Shapes,
@@ -1052,10 +1052,10 @@ pub mod shapes {
 
     /// The call `shapes.headed`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::headed`](crate::Shapes::headed).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Headed {
         pub(super) __client: super::Shapes,
@@ -1065,10 +1065,10 @@ pub mod shapes {
 
     /// The call `shapes.posted`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::posted`](crate::Shapes::posted).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Posted {
         pub(super) __client: super::Shapes,
@@ -1079,10 +1079,10 @@ pub mod shapes {
 
     /// The call `shapes.streamed`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::streamed`](crate::Shapes::streamed).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Streamed {
         pub(super) __client: super::Shapes,
@@ -1093,10 +1093,10 @@ pub mod shapes {
 
     /// The call `shapes.renewed`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::renewed`](crate::Shapes::renewed).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Renewed {
         pub(super) __client: super::Shapes,
@@ -1106,10 +1106,10 @@ pub mod shapes {
 
     /// The call `shapes.keyed_host`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::keyed_host`](crate::Shapes::keyed_host).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct KeyedHost {
         pub(super) __client: super::Shapes,
@@ -1120,10 +1120,10 @@ pub mod shapes {
 
     /// The call `shapes.roaming`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::roaming`](crate::Shapes::roaming).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Roaming {
         pub(super) __client: super::Shapes,
@@ -1134,10 +1134,10 @@ pub mod shapes {
 
     /// The call `shapes.offset`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::offset`](crate::Shapes::offset).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Offset {
         pub(super) __client: super::Shapes,
@@ -1147,10 +1147,10 @@ pub mod shapes {
 
     /// The call `shapes.numbered`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::numbered`](crate::Shapes::numbered).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Numbered {
         pub(super) __client: super::Shapes,
@@ -1160,10 +1160,10 @@ pub mod shapes {
 
     /// The call `shapes.addressed`. Nothing is sent until a page is asked for.
     ///
-    /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+    /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
     ///
     /// Create it with [`Shapes::addressed`](crate::Shapes::addressed).
-    #[must_use = ".send() gives one page; .pages() gives them all"]
+    #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
     #[derive(Clone)]
     pub struct Addressed {
         pub(super) __client: super::Shapes,
@@ -1173,7 +1173,7 @@ pub mod shapes {
 
     /// The call `shapes.remove`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
     ///
     /// Create it with [`Shapes::remove`](crate::Shapes::remove).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -1186,7 +1186,7 @@ pub mod shapes {
 
     /// The call `shapes.settled`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Result`](::std::result::Result)<[`Item`](crate::Item), [`Conflict`](crate::Conflict)>>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Result`](::std::result::Result)<[`Item`](crate::Item), [`Conflict`](crate::Conflict)>>.
     ///
     /// Create it with [`Shapes::settled`](crate::Shapes::settled).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -1199,7 +1199,7 @@ pub mod shapes {
 
     /// The call `shapes.part`. Nothing is sent until it is awaited.
     ///
-    /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Option`]<[`concord::ByteStream`]>>.
+    /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Option`]<[`concord::ByteStream`]>>.
     ///
     /// Create it with [`Shapes::part`](crate::Shapes::part).
     #[must_use = "a call does nothing until sent or awaited"]
@@ -1214,7 +1214,7 @@ pub mod shapes {
     pub mod wrapped {
         /// The call `shapes.wrapped.get`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
+        /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Item`](crate::Item)>.
         ///
         /// Create it with [`shapes::Wrapped::get`](crate::shapes::Wrapped::get).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -1228,7 +1228,7 @@ pub mod shapes {
 
         /// The call `shapes.wrapped.raw`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Envelope`](crate::Envelope)<[`Item`](crate::Item)>>.
+        /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Envelope`](crate::Envelope)<[`Item`](crate::Item)>>.
         ///
         /// Create it with [`shapes::Wrapped::raw`](crate::shapes::Wrapped::raw).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -1242,7 +1242,7 @@ pub mod shapes {
 
         /// The call `shapes.wrapped.find`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`Option`]<[`Item`](crate::Item)>>.
+        /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`Option`]<[`Item`](crate::Item)>>.
         ///
         /// Create it with [`shapes::Wrapped::find`](crate::shapes::Wrapped::find).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -1256,7 +1256,7 @@ pub mod shapes {
 
         /// The call `shapes.wrapped.touch`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+        /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
         ///
         /// Create it with [`shapes::Wrapped::touch`](crate::shapes::Wrapped::touch).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -1270,7 +1270,7 @@ pub mod shapes {
 
         /// The call `shapes.wrapped.holds`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`bool`]>.
+        /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`bool`]>.
         ///
         /// Create it with [`shapes::Wrapped::holds`](crate::shapes::Wrapped::holds).
         #[must_use = "a call does nothing until sent or awaited"]
@@ -1287,7 +1287,7 @@ pub mod shapes {
     pub mod sealed {
         /// The call `shapes.sealed.file`. Nothing is sent until it is awaited.
         ///
-        /// `.await` gives [`shapes::Result`](crate::shapes::Result)<[`concord::ByteStream`]>.
+        /// `.await` returns [`shapes::Result`](crate::shapes::Result)<[`concord::ByteStream`]>.
         ///
         /// Create it with [`shapes::Sealed::file`](crate::shapes::Sealed::file).
         #[must_use = "a call does nothing until sent or awaited"]

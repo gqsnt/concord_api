@@ -1,4 +1,4 @@
-error: a header name cannot be written with `_`
+error: a short entry in `headers` cannot use a name with `_`
        label: this entry would send a header named `if_match`
        help: write `"if-match" = if_match;`
   --> tests/diagnostics/api/m41.rs:17:17

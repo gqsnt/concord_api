@@ -145,8 +145,10 @@ fn c1_18_substitution_is_one_pass() {
     assert!(message.contains("query pair `{kind}`"));
     assert!(message.contains(r#"delete `remove "{kind}";`"#));
     let authored = line(r#"body format!("{node} {statement} {line}");"#);
-    let message = diag::requires_endpoint(&authored, "body", "client").render();
+    let message = diag::edit_path(&authored).render();
     assert!(message.contains(&authored.text()));
+    let message = diag::requires_endpoint(&authored, "{node} {statement}", "client").render();
+    assert_eq!(message, "`{node} {statement}` requires an endpoint\nlabel: `{node} {statement}` cannot be declared on a client\nhelp: move `{node} {statement}` to an endpoint, and combine it with any `{node} {statement}` declared there or supplied by a part");
 }
 
 #[test]
@@ -166,9 +168,16 @@ fn c1_18_edited_statements_use_their_actual_keyword_and_line() {
     ] {
         let message =
             diag::edited_statement(keyword, &line(&format!("{keyword} custom;"))).render();
-        assert!(message.starts_with(&format!("`{keyword}` cannot be")));
-        assert!(!message.contains("paths cannot"));
-        assert!(message.contains(&format!("{keyword} custom;")));
+        assert!(message.starts_with(&format!(
+            "`override` and `remove` cannot be used on `{keyword}`"
+        )));
+        assert!(!message.contains("`override` and `remove` cannot be used on `path`"));
+        let expected = if matches!(keyword, "headers" | "query" | "status") {
+            "put `override` or `remove` on individual entries or status arms, resolving inherited keys and preserving the intended values and expressions".to_owned()
+        } else {
+            format!("declare `{keyword}` with the intended value, without `override` or `remove`; change ancestor declarations if needed")
+        };
+        assert_eq!(message.split_once("\nhelp: ").unwrap().1, expected);
     }
 }
 
@@ -223,15 +232,15 @@ fn c1_18_help_contains_the_authors_tokens() {
         ),
         (
             "client C { POST g() { body form(payload); body form(second); } }",
-            "keep one declaration of this behaviour",
+            "keep one `body` declaration with its intended value",
         ),
         (
             "client C { scope s { idempotent retries_allowed; } }",
-            "place this behaviour on an endpoint",
+            "move `idempotent` to an endpoint, and combine it with any `idempotent` declared there or supplied by a part",
         ),
         (
             "client C { scope s { problem MyFault read FaultCodec; } }",
-            "consolidate it with an existing problem declaration",
+            "keep one `problem` declaration, with the intended type, in the client block",
         ),
         (
             r#"client C { METHOD "LOCK/2" acquire(lock_id: LockId); }"#,
@@ -312,7 +321,7 @@ fn c1_18_catalogue_variants_and_second_places_are_contextual() {
     assert!(variants[3].render().contains("OwnType"));
     assert!(variants[6]
         .render()
-        .contains(r#"query { "client" = client_id; }"#));
+        .contains("choose a distinct valid input name that conflicts with no owner, input or generated method, and update its existing references without changing wire names"));
     assert!(variants[7].render().contains(r#"write `"x" = client.x;`"#));
     assert!(variants[15].render().contains("override 404 => Missing"));
     assert!(!variants[15].render().contains("\"404\""));
@@ -377,9 +386,7 @@ fn c1_18_keywords_are_names_never_verbs_or_indefinite_articles() {
         for node in ["client", "scope"] {
             let text =
                 diag::requires_endpoint(&line(&format!("{keyword} own;")), keyword, node).render();
-            assert!(text.contains(&format!(
-                "`{keyword}` stands on an endpoint, not on a {node}"
-            )));
+            assert!(text.contains(&format!("`{keyword}` cannot be declared on a {node}")));
         }
     }
 }
@@ -445,7 +452,7 @@ fn c1_18_catalogue_additional_contexts_are_fully_bound() {
     for (message, expected) in [
         (
             diag::scope_input_in_part("route", &line("route: Region")),
-            "route: Region",
+            "move this placement to the scope or endpoint that owns the input; parts can use only their own inputs and client inputs",
         ),
         (
             diag::optional_base(&line("server: Base"), span),
@@ -457,7 +464,7 @@ fn c1_18_catalogue_additional_contexts_are_fully_bound() {
         ),
         (
             diag::part_requires_endpoint("body", &line("..payload")),
-            "..payload",
+            "apply this part to the endpoints that need it, and preserve any inputs or placements needed by their scopes",
         ),
         (
             diag::star_outside_path("route", &line(r#"query { "k" = "{route}"; }"#)),
@@ -469,11 +476,11 @@ fn c1_18_catalogue_additional_contexts_are_fully_bound() {
         ),
         (
             diag::problem_reader(&line("problem Fault;"), "FaultReader"),
-            "read FaultReader",
+            "declare a reader with `read` on the client, or after the problem type, before the semicolon",
         ),
         (
             diag::duplicate_field("body", &line("200 { body } => value"), span),
-            "field `body` is written twice",
+            "`body` is already bound in this arm",
         ),
         (
             diag::duplicate_binding("b", &line("200 { body: b, headers: h } => value"), span),
@@ -481,12 +488,12 @@ fn c1_18_catalogue_additional_contexts_are_fully_bound() {
         ),
         (
             diag::part_statement("problem", &line("problem Fault;")),
-            "move `problem Fault;`",
+            "keep one `problem` declaration, with the intended type, in the client block",
         ),
-        (diag::part_child(&line("GET own();")), "GET own();"),
+        (diag::part_child(&line("GET own();")), "move this child declaration into the client or an appropriate scope, preserving its inputs and references"),
         (
             diag::part_spread(&line("..own")),
-            "a part names no other part",
+            "only a scope or an endpoint can name a part",
         ),
         (
             diag::client_spread(&line("..own")),
@@ -535,14 +542,14 @@ fn c1_18_unknown_settings_explain_their_actual_home() {
             assert!(parsed(&source).diagnostics.numbers().is_empty());
             assert_eq!(
                 only_error(&source),
-                format!("expected a statement, part, scope or HTTP method\nhelp: {help}"),
+                format!("expected a statement, `part`, `scope`, or HTTP method\nhelp: {help}"),
                 "{source}"
             );
         }
     }
     assert_eq!(
         only_error("client C { mystery value; }"),
-        "expected a statement, part, scope or HTTP method"
+        "expected a statement, `part`, `scope`, or HTTP method"
     );
     // These names remain ordinary child names when the HTTP method is present.
     root("client C { GET timeout(); GET retry(); GET tries(); GET base_url(); GET auth(); }");
@@ -554,5 +561,41 @@ fn c1_16_bare_constructor_spelling_alone_does_not_identify_a_rust_item() {
         let source=format!("client C {{ base \"https://types.test\"; HEAD get() -> u32 {{ status {{ 2xx => {name} }} }} }}");
         let output = crate::expand(source.parse().unwrap()).to_string();
         assert!(!output.contains("compile_error"), "{output}");
+    }
+}
+
+#[test]
+fn c1_18_parser_messages_name_placeholders_and_signature_order() {
+    for (source, expected) in [
+        (
+            "client C { path \"{id other}\"; }",
+            "expected a placeholder containing `name` or `owner.name`, without spaces or comments",
+        ),
+        (
+            "client C { path \"{}\"; }",
+            "expected a placeholder containing `name` or `owner.name`, without spaces or comments",
+        ),
+        (
+            "client C { path \"{id/**/}\"; }",
+            "expected a placeholder containing `name` or `owner.name`, without spaces or comments",
+        ),
+        (
+            "client C { path \"{id\"; }",
+            "unclosed placeholder in a template",
+        ),
+        (
+            "client C { GET f() { GET g(); } }",
+            "expected a statement; an endpoint cannot contain children",
+        ),
+        (
+            "client C { GET f(..p, id: u64); }",
+            "inputs must precede `..name` entries in a signature",
+        ),
+        (
+            "client C { path \"a}\"; }",
+            "unmatched `}` in template\nhelp: write `}}` for a literal `}`",
+        ),
+    ] {
+        assert_eq!(only_error(source), expected, "{source}");
     }
 }

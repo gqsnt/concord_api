@@ -99,14 +99,14 @@ fn urls(script: &Script) -> Vec<String> {
         .collect()
 }
 
-/// `build error: the URL is at another origin than the call, in <endpoint>`.
+/// `build error: the URL leaves the origin of the call, in <endpoint>`.
 fn another_origin(endpoint: &str) -> String {
-    format!("build error: the URL is at another origin than the call, in {endpoint}")
+    format!("build error: the URL leaves the origin of the call, in {endpoint}")
 }
 
-/// `mismatch: status 200, the next page cannot be asked, in <endpoint>`.
+/// `mismatch: status 200, the next page cannot be requested, in <endpoint>`.
 fn cannot_be_asked(endpoint: &str) -> String {
-    format!("mismatch: status 200, the next page cannot be asked, in {endpoint}")
+    format!("mismatch: status 200, the next page cannot be requested, in {endpoint}")
 }
 
 /// `Shapes` over this script.
@@ -616,7 +616,7 @@ async fn c8_4_table_8_a_one_shot_body_fails_at_the_second_page() {
     assert_eq!(built.kind(), Kind::Build);
     assert_eq!(
         built.to_string(),
-        "build error: the body is a stream that was already sent, in shapes.streamed"
+        "build error: the one-shot body stream cannot be used in this request, in shapes.streamed"
     );
     end(pages.try_next().await);
     let requests = script.requests();

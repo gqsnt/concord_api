@@ -1,4 +1,4 @@
-error: paths cannot be overridden or removed
+error: `override` and `remove` cannot be used on `path`
        label: each path adds segments
        help: write `path "assets";` and change the ancestor's path if needed
    --> tests/diagnostics/api/m24_path.rs:197:25

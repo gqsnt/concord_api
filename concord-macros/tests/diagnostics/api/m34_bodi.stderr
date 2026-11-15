@@ -1,5 +1,5 @@
-error: an arm binds body, headers or status
-       label: no such part of an answer
+error: unknown field `bodi` in a status arm
+       label: expected `body`, `headers`, or `status`
        help: write `404 { body: bodi } => document_404::<GetReply>(bodi)?`
   --> tests/diagnostics/api/m34_bodi.rs:31:32
    |

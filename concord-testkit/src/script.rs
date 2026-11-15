@@ -240,7 +240,7 @@ impl Transport for Script {
         mut request: reqwest::Request,
         info: TryInfo,
     ) -> Result<reqwest::Response, TransportError> {
-        let try_text = format!("try {} of {}", info.number(), info.endpoint());
+        let try_text = format!("attempt {} of {}", info.number(), info.endpoint());
         let url = request.url().clone();
         let (index, step) = self.take(&request, info);
         let Some(step) = step else {

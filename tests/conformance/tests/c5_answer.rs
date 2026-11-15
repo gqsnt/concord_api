@@ -189,8 +189,7 @@ async fn c5_3_an_arm_that_binds_body_reads_it_with_the_reader_in_reach() {
 
 // C5.4 ------------------------------------------------------------------------------
 
-const LARGER: &str =
-    "mismatch: status 200, the body is larger than the limit of the reader, in tasks.get";
+const LARGER: &str = "mismatch: status 200, the body exceeds the reader's size limit, in tasks.get";
 
 #[tokio::test(start_paused = true)]
 async fn c5_4_an_announced_size_over_the_limit_is_a_mismatch_before_anything_is_read() {
@@ -231,7 +230,7 @@ async fn c5_4_bytes_are_counted_as_they_come_and_the_limit_is_10_mib() {
     assert_eq!(error.kind(), Kind::Mismatch);
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, the body is larger than the limit of the reader, in files.readme"
+        "mismatch: status 200, the body exceeds the reader's size limit, in files.readme"
     );
 }
 
@@ -253,7 +252,7 @@ async fn c5_4_a_body_that_breaks_is_a_transport_error_that_keeps_the_status_and_
     assert_eq!(error.headers().unwrap().get("x-a"), Some("1"));
     assert_eq!(
         error.to_string(),
-        "transport error: the body broke after status 200, in tasks.get"
+        "transport error: the response body could not be read after status 200, in tasks.get"
     );
 }
 
@@ -294,7 +293,7 @@ async fn c5_4_a_body_that_ends_early_on_the_wire() {
     assert!(error.is_status(200));
     assert_eq!(
         error.to_string(),
-        "transport error: the body broke after status 200, in tasks.get"
+        "transport error: the response body could not be read after status 200, in tasks.get"
     );
 }
 
@@ -339,7 +338,7 @@ async fn c5_4_a_chunk_that_would_pass_the_limit_is_not_kept() {
     assert_eq!(error.body(), Some(&b"ab"[..]));
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, the body is larger than the limit of the reader, in tasks.get"
+        "mismatch: status 200, the body exceeds the reader's size limit, in tasks.get"
     );
 }
 
@@ -382,7 +381,7 @@ async fn c5_4_a_content_length_is_the_announced_size_also_for_a_fake() {
     assert_eq!(error.kind(), Kind::Mismatch);
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, the body is larger than the limit of the reader, in files.readme"
+        "mismatch: status 200, the body exceeds the reader's size limit, in files.readme"
     );
     assert_eq!(error.kept(), None, "no byte was kept");
 }
@@ -424,7 +423,8 @@ async fn c5_4_an_empty_frame_counts_for_no_byte_of_the_announced_size() {
     // C5.4: "Bytes are counted as they come"; "A body that ends before its announced
     // size is a Transport error of class Body, never a shorter value." A frame of no byte
     // brings none: after it, one announced byte is still missing.
-    const SHORT: &str = "transport error: the body broke after status 200, in tasks.get";
+    const SHORT: &str =
+        "transport error: the response body could not be read after status 200, in tasks.get";
     let errors = [
         (
             "Json",
@@ -791,7 +791,7 @@ async fn c5_10_what_fails_later_is_a_transport_error_from_the_stream() {
     assert_eq!(error.tries(), 1);
     assert_eq!(
         error.to_string(),
-        "transport error: the body broke after status 200, in files.download"
+        "transport error: the response body could not be read after status 200, in files.download"
     );
 }
 
@@ -836,7 +836,7 @@ async fn c5_11_a_body_that_does_not_decode_prints_the_place_and_never_the_value(
     assert_eq!(error.kind(), Kind::Mismatch);
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, [1].id is not what the type says, in tasks.list"
+        "mismatch: status 200, [1].id could not be decoded, in tasks.list"
     );
     assert_eq!(error.reason(), None);
     let source = std::error::Error::source(&error).expect("a cause that Concord makes");
@@ -878,7 +878,7 @@ async fn c5_11_a_place_prints_key_and_variant_and_holds_at_most_32_pieces() {
         let result = prepared_get(core, RefusesAt(place)).send().await;
         assert_eq!(
             failure(result).to_string(),
-            format!("mismatch: status 200, {printed} is not what the type says, in tasks.get")
+            format!("mismatch: status 200, {printed} could not be decoded, in tasks.get")
         );
     }
 }
@@ -895,7 +895,7 @@ async fn c5_11_a_failed_decode_says_when_the_label_was_not_the_readers() {
 
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, the body is not what the type says and its content type is not the reader's, in tasks.get"
+        "mismatch: status 200, the body could not be decoded (unexpected content type), in tasks.get"
     );
 }
 

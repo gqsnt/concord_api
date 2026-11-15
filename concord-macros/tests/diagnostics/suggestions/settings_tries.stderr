@@ -1,4 +1,4 @@
-error: expected a statement, part, scope or HTTP method
+error: expected a statement, `part`, `scope`, or HTTP method
        help: configure retries with `with_retry` on the client or the call
  --> tests/diagnostics/suggestions/settings_tries.rs:1:70
   |

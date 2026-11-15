@@ -1,6 +1,6 @@
-error: `body` cannot be overridden or removed
-       label: `override` and `remove` stand inside a block, before an entry or an arm
-       help: write `body make();`
+error: `override` and `remove` cannot be used on `body`
+       label: edit keyword on a whole statement
+       help: declare `body` with the intended value, without `override` or `remove`; change ancestor declarations if needed
  --> tests/diagnostics/rules/24_body_override.rs:2:80
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { override body make(); } }

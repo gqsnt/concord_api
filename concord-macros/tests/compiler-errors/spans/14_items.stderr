@@ -4,7 +4,7 @@ error[E0277]: `u32` is not a list of items
 5 | fn caller(){ let _=C::new().get().pages().items(); }
   |                                           ^^^^^ the trait `IntoItems` is not implemented for `u32`
   |
-  = note: implement concord::page::IntoItems for your page type
+  = note: implement `concord::page::IntoItems` for your page type
 help: the trait `IntoItems` is implemented for `Vec<T>`
  --> $WORKSPACE/concord-core/src/page.rs
   |

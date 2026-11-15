@@ -1,6 +1,6 @@
 error: duplicate body entry `q` in this block
-       label: a key is written once in one node
-       help: consolidate these entries into one intended value, retaining every needed input placement or removing declarations that are no longer needed
+       label: a key is declared once in one node
+       help: keep one entry or removal for this key; preserve needed input references and remove inputs that become unused
  --> tests/diagnostics/rules/38_body_make_block.rs:2:101
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { body make { "q" = 1; "q" = 2; } } }

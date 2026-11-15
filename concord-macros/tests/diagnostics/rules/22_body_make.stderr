@@ -1,4 +1,4 @@
-error: no body entry `mode` above to override
+error: no inherited body entry `mode` to override
        label: a body inherits no entries
        help: write `"mode" = 1;`
  --> tests/diagnostics/rules/22_body_make.rs:2:92

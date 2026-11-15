@@ -1,5 +1,5 @@
 error: `override 2xx` leaves the inherited arm `202` in place
-       label: an exact arm from above still takes `202`
+       label: an inherited exact arm still matches `202`
        help: also write `override 202 =>()`, or `remove 202`
  --> tests/diagnostics/rules/44_class_override.rs:2:110
   |

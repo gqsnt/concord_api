@@ -12,15 +12,15 @@ error: the part `tft_queue` declares `queue` here
 39 |         part tft_queue(queue?: TftQueue) {
    |                        ^^^^^
 
-error: `queue` is written in both parts `tft_queue` and `lol_filter`
+error: `queue` is declared in both parts `tft_queue` and `lol_filter`
        label: the statements of a part count as this node's own
-       help: consolidate the conflicting contributions of these parts, retaining the intended values and input placements, or choose compatible parts
+       help: combine the conflicting declarations of these parts, keeping the intended values and input placements, or use compatible parts
    --> tests/diagnostics/api/m38_two_parts.rs:397:70
     |
 397 |             GET entries(tier: Tier, division: Division, ..tft_queue, ..lol_filter, ..ladder) -> Vec<TftLeagueEntry> {
     |                                                                      ^^^^^^^^^^^^
 
-error: the part `tft_queue` writes it here
+error: part `tft_queue` declares it here
   --> tests/diagnostics/api/m38_two_parts.rs:40:21
    |
 40 |             query { queue; }

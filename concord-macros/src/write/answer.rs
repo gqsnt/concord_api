@@ -65,11 +65,11 @@ impl Writer<'_> {
         output: &TokenStream,
     ) -> TokenStream {
         let Some((code, class)) = flat::status(&line.value.key) else {
-            self.internal(line.value.span, "an answer has an unchecked status key");
+            self.internal(line.value.span, "a status arm has an unchecked status key");
             return TokenStream::new();
         };
         let Some(expression) = &line.value.expression else {
-            self.internal(line.value.span, "an answer arm has no expression");
+            self.internal(line.value.span, "a status arm has no expression");
             return TokenStream::new();
         };
         let test = if class {
@@ -107,10 +107,7 @@ impl Writer<'_> {
                         parameters.push(emit!(#name: ::concord::http::StatusCode));
                         args.push(emit!(__status));
                     }
-                    _ => self.internal(
-                        field.name.span(),
-                        "an answer has an unchecked pattern field",
-                    ),
+                    _ => self.internal(field.name.span(), "a status arm has an unchecked field"),
                 }
             }
         }

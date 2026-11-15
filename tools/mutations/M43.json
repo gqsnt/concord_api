@@ -4,6 +4,6 @@
   "contract": "C5.2",
   "description": "Change no-arm message by one word",
   "file": "concord-core/src/error.rs",
-  "find": "                }\n                MismatchFailure::NoArm => f.write_str(\"no arm takes this status\"),\n                MismatchFailure::NextPage => f.write_str(\"the next page cannot be asked\"),\n",
-  "replace": "                }\n                MismatchFailure::NoArm => f.write_str(\"no arm takes this answer\"),\n                MismatchFailure::NextPage => f.write_str(\"the next page cannot be asked\"),\n"
+  "find": "                }\n                MismatchFailure::NoArm => f.write_str(\"no arm matches this status\"),\n                MismatchFailure::NextPage => f.write_str(\"the next page cannot be requested\"),\n",
+  "replace": "                }\n                MismatchFailure::NoArm => f.write_str(\"no arm takes this answer\"),\n                MismatchFailure::NextPage => f.write_str(\"the next page cannot be requested\"),\n"
 }

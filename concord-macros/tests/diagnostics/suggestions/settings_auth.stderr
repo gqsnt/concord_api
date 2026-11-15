@@ -1,4 +1,4 @@
-error: expected a statement, part, scope or HTTP method
+error: expected a statement, `part`, `scope`, or HTTP method
        help: place credentials in the appropriate `headers` entries
  --> tests/diagnostics/suggestions/settings_auth.rs:1:70
   |

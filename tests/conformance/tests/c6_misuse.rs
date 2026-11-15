@@ -386,7 +386,7 @@ async fn c5_4_a_body_of_1_gib_announced_is_refused_before_it_is_read() {
     assert_eq!(error.kind(), Kind::Mismatch);
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, the body is larger than the limit of the reader, in tasks.get"
+        "mismatch: status 200, the body exceeds the reader's size limit, in tasks.get"
     );
 }
 
@@ -450,7 +450,7 @@ async fn c7_1_a_301_to_another_host_is_not_followed() {
 #[tokio::test]
 async fn c8_4_a_link_to_another_origin_is_a_build_error_and_the_other_host_gets_nothing() {
     // C8.4, and messages section 2: "a page that leaves the origin of the first request of
-    // its `.pages()`" is `build error: the URL is at another origin than the call`.
+    // its `.pages()`" is `build error: the URL leaves the origin of the call`.
     capture();
     let server = Server::start().await;
     let other = Server::start().await;
@@ -474,7 +474,7 @@ async fn c8_4_a_link_to_another_origin_is_a_build_error_and_the_other_host_gets_
     assert_eq!(error.kind(), Kind::Build);
     assert_eq!(
         error.to_string(),
-        "build error: the URL is at another origin than the call, in feed.linked"
+        "build error: the URL leaves the origin of the call, in feed.linked"
     );
     clean("a Link to another origin", &error);
     assert!(other.requests().is_empty());

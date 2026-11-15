@@ -314,9 +314,9 @@ const _: () = {
         /// - `.queue(5)`: accepts [`i32`], &[`i32`], or an [`Option`]<[`i32`]>. `None` clears it. Only the matches of this queue.
         /// - `.start_time(5)`: accepts [`i64`], &[`i64`], or an [`Option`]<[`i64`]>. `None` clears it. Only the matches that started at or after this time, in seconds since the epoch.
         ///
-        /// `.send().await` gives [`riot::Result`]<[`Vec`]<[`MatchId`]>>.
+        /// `.send().await` returns [`riot::Result`]<[`Vec`]<[`MatchId`]>>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         /// Paging ends on an empty page or a page shorter than the supplied `count`; `count` is the maximum for each page.
         pub fn ids(&self, puuid: impl ::concord::arg::Arg<Puuid>) -> riot::matches::Ids {
             riot::matches::Ids {
@@ -342,7 +342,7 @@ const _: () = {
         ///
         /// - `id`: [`MatchId`] or &[`MatchId`]. The regional identifier of the match to fetch.
         ///
-        /// `.await` gives [`riot::Result`]<[`Match`]>.
+        /// `.await` returns [`riot::Result`]<[`Match`]>.
         pub fn get(&self, id: impl ::concord::arg::Arg<MatchId>) -> riot::matches::Get {
             riot::matches::Get {
                 __scope: self.clone(),
@@ -403,7 +403,7 @@ const _: () = {
         ///
         /// Status: `2xx`.
         ///
-        /// `.await` gives [`riot::Result`]<[`Option`]<[`tour::Account`](crate::Account)>>.
+        /// `.await` returns [`riot::Result`]<[`Option`]<[`tour::Account`](crate::Account)>>.
         pub fn by_riot_id(
             &self,
             game_name: impl ::concord::arg::Arg<String>,
@@ -430,7 +430,7 @@ const _: () = {
         ///
         /// - `access_token`: [`Secret`], &[`Secret`], [`String`], or &[`str`]. The player's bearer token.
         ///
-        /// `.await` gives [`riot::Result`]<[`tour::Account`](crate::Account)>.
+        /// `.await` returns [`riot::Result`]<[`tour::Account`](crate::Account)>.
         pub fn me(&self, access_token: impl ::concord::arg::Arg<Secret>) -> riot::account::Me {
             riot::account::Me {
                 __scope: self.clone(),
@@ -740,7 +740,7 @@ const _: () = {
         pages {
             /// Iterate over [`Vec`]<[`MatchId`]> pages.
             ///
-            /// `try_next().await` gives [`riot::Result`]<[`Option`]<[`Vec`]<[`MatchId`]>>>.
+            /// `try_next().await` returns [`riot::Result`]<[`Option`]<[`Vec`]<[`MatchId`]>>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Vec<MatchId>, RiotProblem> {
                 // The owners in reach, as views of references, then each input as its

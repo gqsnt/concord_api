@@ -1,6 +1,6 @@
-error: a `{*…}` hole must be a whole segment
-       label: `{*zone}` stands outside a path
-       help: write `"https://{zone}.workshop.test"` with a `{zone}` hole
+error: a `{*…}` placeholder is allowed only in `path`
+       label: `{*zone}` is outside a `path` statement
+       help: write `"https://{zone}.workshop.test"`, with a `{zone}` placeholder
  --> tests/diagnostics/rules/29_base.rs:2:97
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(zone: String) { base "https://{*zone}.workshop.test"; } }

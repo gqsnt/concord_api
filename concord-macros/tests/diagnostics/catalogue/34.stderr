@@ -1,5 +1,5 @@
-error: an arm binds body, headers or status
-       label: no such part of an answer
+error: unknown field `bodi` in a status arm
+       label: expected `body`, `headers`, or `status`
        help: write `200 { body: bodi } => bodi`
  --> tests/diagnostics/catalogue/34.rs:2:88
   |

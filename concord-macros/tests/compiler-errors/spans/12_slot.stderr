@@ -6,7 +6,7 @@ error[E0277]: `u32` is not an input of this endpoint
   |          |
   |          required by a bound introduced by this call
   |
-  = note: in paginate, a pager is given inputs: paginate by_offset(start);
+  = note: in `paginate`, pass the endpoint's inputs to the pager: `paginate by_offset(start);`
 note: required by a bound in `by_offset`
  --> $WORKSPACE/concord-extras/src/page.rs
   |
@@ -22,7 +22,7 @@ error[E0277]: `u32` is not an input of this endpoint
 2 | paginate concord::by_offset(42u32);
   |          ^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Slot<_>` is not implemented for `u32`
   |
-  = note: in paginate, a pager is given inputs: paginate by_offset(start);
+  = note: in `paginate`, pass the endpoint's inputs to the pager: `paginate by_offset(start);`
 note: required by a bound in `by_offset`
  --> $WORKSPACE/concord-extras/src/page.rs
   |
@@ -38,7 +38,7 @@ error[E0277]: `u32` is not an input of this endpoint
 2 | paginate concord::by_offset(42u32);
   |          ^^^^^^^ the trait `Slot<Get>` is not implemented for `u32`
   |
-  = note: in paginate, a pager is given inputs: paginate by_offset(start);
+  = note: in `paginate`, pass the endpoint's inputs to the pager: `paginate by_offset(start);`
 note: required by a bound in `by_offset`
  --> $WORKSPACE/concord-extras/src/page.rs
   |

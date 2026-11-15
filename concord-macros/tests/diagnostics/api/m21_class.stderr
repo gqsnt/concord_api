@@ -1,4 +1,4 @@
-error: status arm `200` is already set above
+error: an inherited arm already matches `200`
        label: replacement requires `override`
        help: write `override 200 { body } => body`
   --> tests/diagnostics/api/m21_class.rs:79:22

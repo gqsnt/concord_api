@@ -1,6 +1,6 @@
 error: `paginate` requires an endpoint
-       label: a scope cannot name a part holding `paginate`
-       help: move `..ladder` into the endpoint signature
+       label: a scope cannot name a part that contains `paginate`
+       help: apply this part to the endpoints that need it, and preserve any inputs or placements needed by their scopes
    --> tests/diagnostics/api/m18_spread.rs:265:39
     |
 265 |         scope league(route: Platform, ..ladder) {

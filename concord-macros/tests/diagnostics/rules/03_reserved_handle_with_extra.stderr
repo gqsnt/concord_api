@@ -1,6 +1,6 @@
 error: `with_extra` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `extra_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for with_extra
+       label: reserved for generated methods
+       help: rename this input to `extra_value` and update its references in the existing `query` placements and expressions; keep the wire keys and fixed text that spell `with_extra`
  --> tests/diagnostics/rules/03_reserved_handle_with_extra.rs:2:79
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; scope branch(with_extra?: String) { query { with_extra; } GET fetch(...

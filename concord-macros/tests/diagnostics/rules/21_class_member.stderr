@@ -1,4 +1,4 @@
-error: status arm `410` is already set above
+error: an inherited arm already matches `410`
        label: replacement requires `override`
        help: write `override 410 =>()`
  --> tests/diagnostics/rules/21_class_member.rs:2:110

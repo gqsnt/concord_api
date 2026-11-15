@@ -74,7 +74,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 2. A host hole.
     cells.push(text(
         "2. Invalid host hole",
-        "build error: input tenant is not one label of a host, in shapes.roaming",
+        "build error: input tenant cannot be used in this host label, in shapes.roaming",
         async {
             let script = Script::new();
             shapes(&script).roaming("a.b").pages()
@@ -83,7 +83,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 3. An empty path value.
     cells.push(text(
         "3. An empty path value",
-        "build error: input path_key gives an empty or dot path segment, in shapes.guarded",
+        "build error: input path_key is empty or produces a dot path segment, in shapes.guarded",
         async {
             let script = Script::new();
             shapes(&script).guarded("").pages()
@@ -92,7 +92,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 6. A header value.
     cells.push(text(
         "6. Invalid final header value",
-        "build error: the value of header x-cursor is not a legal header value, in shapes.headed",
+        "build error: the value of header x-cursor is invalid, in shapes.headed",
         async {
             let script = Script::new();
             shapes(&script).headed().cursor("a\nb").pages()
@@ -101,7 +101,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 9. A one-shot body at the second page.
     cells.push(text(
         "9. A body that is a one-shot stream, sent a second time",
-        "build error: the body is a stream that was already sent, in shapes.streamed",
+        "build error: the one-shot body stream cannot be used in this request, in shapes.streamed",
         async {
             let script = Script::new();
             script
@@ -115,7 +115,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 10. A middleware that will not send.
     cells.push(text(
         "10. A middleware or a transport that will not send",
-        "transport error: blocked before it was sent, in feed.list",
+        "transport error: the request was blocked before it was sent, in feed.list",
         async {
             let script = Script::new();
             feed(&script)
@@ -138,7 +138,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 12. After tries.
     cells.push(text(
         "12. The same, after tries",
-        "refused: status 429, in riot.matches.ids, after 3 tries",
+        "refused: status 429, in riot.matches.ids, after 3 attempts",
         async {
             let script = Script::new();
             for _ in 0..3 {
@@ -154,7 +154,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 14. Larger than the limit.
     cells.push(text(
         "14. A body larger than its limit",
-        "mismatch: status 200, the body is larger than the limit of the reader, in feed.list",
+        "mismatch: status 200, the body exceeds the reader's size limit, in feed.list",
         async {
             let script = Script::new();
             script
@@ -168,7 +168,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 15. A body that does not decode, with its place.
     cells.push(text(
         "15. A body that does not decode",
-        "mismatch: status 200, data[0].name is not what the type says, in feed.list",
+        "mismatch: status 200, data[0].name could not be decoded, in feed.list",
         async {
             let script = Script::new();
             give(
@@ -181,7 +181,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 16. And its label was not the reader's.
     cells.push(text(
         "16. A body that does not read, when its label was not the reader's either",
-        "mismatch: status 200, the body is not what the type says and its content type is not the reader's, in feed.list",
+        "mismatch: status 200, the body could not be decoded (unexpected content type), in feed.list",
         async {
             let script = Script::new();
             script
@@ -194,7 +194,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // (30): at the root, with the reader's label.
     cells.push(text(
         "A Mismatch at the root with the reader's label",
-        "mismatch: status 200, the body is not what the type says, in feed.list",
+        "mismatch: status 200, the body could not be decoded, in feed.list",
         async {
             let script = Script::new();
             give(&script, "<html></html>");
@@ -204,7 +204,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 18. A body that breaks.
     cells.push(text(
         "18. A body that breaks or ends early",
-        "transport error: the body broke after status 200, in feed.list",
+        "transport error: the response body could not be read after status 200, in feed.list",
         async {
             let script = Script::new();
             script
@@ -218,7 +218,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 19. A pager that refuses a page.
     cells.push(text(
         "19. A pager that refuses a page",
-        "mismatch: status 200, the next page cannot be asked, in shapes.guarded",
+        "mismatch: status 200, the next page cannot be requested, in shapes.guarded",
         async {
             let script = Script::new();
             give(&script, r#"{"items":[],"more":true}"#);
@@ -228,7 +228,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 19. Or asks for the request that was just sent.
     cells.push(text(
         "19. A pager that asks for the request that was just sent",
-        "mismatch: status 200, the next page cannot be asked, in feed.list",
+        "mismatch: status 200, the next page cannot be requested, in feed.list",
         async {
             let script = Script::new();
             give(&script, FEED_MORE);
@@ -252,7 +252,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 21. Another origin.
     cells.push(text(
         "21. A page that leaves the origin of the first request",
-        "build error: the URL is at another origin than the call, in shapes.roaming",
+        "build error: the URL leaves the origin of the call, in shapes.roaming",
         async {
             let script = Script::new();
             give(&script, r#"{"items":[],"next":"other"}"#);
@@ -262,7 +262,7 @@ async fn c8_4_the_texts_that_pages_can_produce() {
     // 23. Silence before a head.
     cells.push(text(
         "23. Silence for longer than idle_timeout",
-        "transport error: no answer for 30 s (with_idle_timeout changes it), in feed.list",
+        "transport error: no response for 30 s (with_idle_timeout changes it), in feed.list",
         async {
             let script = Script::new();
             script.never();
@@ -293,12 +293,12 @@ async fn c8_4_the_texts_that_pages_can_produce() {
         (
             "A timeout that a transport reported",
             Class::Timeout,
-            "transport error: a timeout was reported by the transport, in feed.list",
+            "transport error: the transport reported a timeout, in feed.list",
         ),
         (
             "A body that broke with no head known",
             Class::Body,
-            "transport error: the body broke, in feed.list",
+            "transport error: the body could not be read, in feed.list",
         ),
     ] {
         cells.push(text(row, expected, async move {
@@ -317,13 +317,13 @@ async fn c8_4_timeout_empty_body_and_base_messages_through_pages() {
     // "After a head, while a body is read: `transport error: the body was
     // silent for 30 s after status 200 (<hint>), in <endpoint>`." "The label sentence
     // [...] is printed only when the answer had a `Content-Type`." "A `with_base` that
-    // is no base: `build error: the base is not a URL that can be used (with_base), in
+    // is no base: `build error: the base is not a usable URL (with_base), in
     // <endpoint>`."
     let mut cells = Vec::new();
     // 1, with a `with_base` that is no base.
     cells.push(text(
         "1. Invalid base (with_base)",
-        "build error: the base is not a URL that can be used (with_base), in feed.list",
+        "build error: the base is not a usable URL (with_base), in feed.list",
         async {
             let script = Script::new();
             feed(&script).with_base("not a url").list().pages()
@@ -342,7 +342,7 @@ async fn c8_4_timeout_empty_body_and_base_messages_through_pages() {
     // silence while a body is read.
     cells.push(text(
         "A body that was silent after its head",
-        "transport error: the body was silent for 30 s after status 200 (with_idle_timeout changes it), in feed.list",
+        "transport error: no body data for 30 s after status 200 (with_idle_timeout changes it), in feed.list",
         async {
             let script = Script::new();
             script

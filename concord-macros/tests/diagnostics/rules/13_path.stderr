@@ -1,5 +1,5 @@
-error: this URL input must supply one required value
-       label: an optional input cannot fill this hole
+error: a URL input cannot be optional
+       label: an optional input cannot fill this placeholder
        help: declare `code: String`, without `?`
  --> tests/diagnostics/rules/13_path.rs:2:98
   |

@@ -54,7 +54,7 @@ Under any other `base` further down (an upload host, a second API), the descript
 
 GitHub's `upload_asset`, in [the block](describing-an-api.md#the-block), is written this way. A `path` has no `override` and no `remove`: a `path` that holds a secret is written under each `base` that needs it, not above them.
 
-The error is a `rustc` message in Concord's words: `a secret does not follow a change of base`, with the note `write this entry again with override, or remove it, under the new base` (for a `path`: `a secret in a path does not follow a change of base`). See [troubleshooting](troubleshooting.md#it-does-not-compile).
+The error is a `rustc` message in Concord's words: `a secret does not follow a change of base`, with the note `` declare this entry again with `override`, or remove it, under the new `base` `` (for a `path`: `a secret in a path does not follow a change of base`). See [troubleshooting](troubleshooting.md#it-does-not-compile).
 
 A caller's `with_base(…)` moves everything, secrets included: that is the caller's explicit choice. It also replaces the whole `base` ([C2.10](../reference/contracts.md#c2-building-a-request)), including any secret written in it. See [rule 16](../reference/rules.md) for the rule, and C8.9 of [the contracts](../reference/contracts.md) for the contract.
 

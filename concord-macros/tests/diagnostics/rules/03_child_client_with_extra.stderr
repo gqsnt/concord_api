@@ -1,5 +1,5 @@
 error: `with_extra` is reserved by Concord
-       label: conflicts with a generated method
+       label: reserved for generated methods
        help: rename this child to `extra_item`
  --> tests/diagnostics/rules/03_child_client_with_extra.rs:2:70
   |

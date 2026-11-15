@@ -1,6 +1,6 @@
 error: duplicate `base` statement
        label: this node already declares `base`
-       help: keep one declaration of this behaviour, choosing its intended value
+       help: keep one `base` declaration with its intended value
  --> tests/diagnostics/rules/17_duplicate_base.rs:2:68
   |
 2 |     client Workshop { GET fetch() { base "https://duplicate.test"; base "https://duplicate.test"; } }

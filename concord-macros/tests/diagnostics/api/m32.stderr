@@ -1,6 +1,6 @@
-error: this HEAD result needs a success arm
-       label: no arm supplies the declared result
-       help: in this `status` block, add a success arm returning the declared result without reading a body
+error: a HEAD endpoint with a return type requires a success status arm
+       label: no arm matches a 2xx status
+       help: add a success arm to this `status` block that returns the declared type without binding `body`
   --> tests/diagnostics/api/m32.rs:33:47
    |
 33 |             HEAD exists(id: String, ..output) -> bool {

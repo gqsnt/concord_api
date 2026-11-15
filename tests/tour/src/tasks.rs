@@ -123,7 +123,7 @@ const _: () = {
         ///
         /// - `.done(false)`: accepts [`bool`], &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it. Filter tasks by completion state.
         ///
-        /// `.await` gives [`tasks::Result`]<[`Vec`]<[`Task`]>>.
+        /// `.await` returns [`tasks::Result`]<[`Vec`]<[`Task`]>>.
         pub fn list(&self) -> tasks::List {
             tasks::List {
                 __client: self.clone(),
@@ -145,7 +145,7 @@ const _: () = {
         /// Retry: an unmarked `POST` may be sent again when the policy lists the
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
-        /// `.await` gives [`tasks::Result`]<[`Task`]>.
+        /// `.await` returns [`tasks::Result`]<[`Task`]>.
         pub fn create(&self, task: impl ::concord::arg::Arg<NewTask>) -> tasks::Create {
             tasks::Create {
                 __client: self.clone(),
@@ -164,7 +164,7 @@ const _: () = {
         ///
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the task to fetch.
         ///
-        /// `.await` gives [`tasks::Result`]<[`Task`]>.
+        /// `.await` returns [`tasks::Result`]<[`Task`]>.
         pub fn get(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Get {
             tasks::Get {
                 __client: self.clone(),
@@ -183,7 +183,7 @@ const _: () = {
         ///
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the task to delete.
         ///
-        /// `.await` gives [`tasks::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+        /// `.await` returns [`tasks::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
         pub fn delete(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Delete {
             tasks::Delete {
                 __client: self.clone(),

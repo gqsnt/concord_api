@@ -41,7 +41,7 @@ use std::task::{Context, Poll};
 /// ```
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a list of items",
-    note = "implement concord::page::IntoItems for your page type"
+    note = "implement `concord::page::IntoItems` for your page type"
 )]
 pub trait IntoItems: Send {
     /// The type of one item.
@@ -104,7 +104,7 @@ impl<T: Send> IntoItems for Vec<T> {
 /// whose marks are known does not.
 /// When a next URL already contains a secret query key, every pair with that key
 /// is removed before the current secret is added.
-#[must_use = "pages are asked for with `try_next`"]
+#[must_use = "pages are requested with `try_next`"]
 pub struct Pages<T, E = ()> {
     // The pager and exchange need only be Send. Mutex preserves Pages' Sync
     // promise; polling uses get_mut under the caller's exclusive borrow.
@@ -224,7 +224,7 @@ impl<T: Send, E: Send> futures_core::Stream for Pages<T, E> {
 /// implements [`IntoItems`].
 ///
 /// `I` is the type of an item, `E` the API's own problem type.
-#[must_use = "items are asked for with `try_next`"]
+#[must_use = "items are fetched with `try_next`"]
 pub struct Items<I, E = ()> {
     pages: Pages<I, E>,
 }
@@ -332,7 +332,7 @@ pub trait Call: Clone + Send + Sync + 'static {
 /// ```
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not an input of this endpoint",
-    note = "in paginate, a pager is given inputs: paginate by_offset(start);"
+    note = "in `paginate`, pass the endpoint's inputs to the pager: `paginate by_offset(start);`"
 )]
 pub trait Slot<C>: Copy + Send + Sync + 'static {
     /// The declared value type of the input, without the optional-input wrapper.
@@ -352,7 +352,7 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
 /// `concord::mismatch(…)` becomes a Mismatch. Both are returned by the `try_next()`
 /// after the page that arrived.
 #[diagnostic::on_unimplemented(
-    message = "a pager gives the next call: Some(call), None, or a Result of that"
+    message = "a pager returns the next call: `Some(call)`, `None`, or a `Result` of either"
 )]
 pub trait IntoNext<C: Call>: sealed::Sealed {
     /// Returns the next call, the end, or the failure.

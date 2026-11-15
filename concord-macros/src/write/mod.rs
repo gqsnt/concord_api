@@ -587,7 +587,7 @@ impl<'a> Writer<'a> {
             let make=emit_at!(expression.span()=> __pager(&self, || { #bindings #expression }));
             let call=emit_at!(expression.span()=> ::concord::__private::pages(self, __pager));
             emit_at!(expression.span()=>
-                /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+                /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
                 pub fn pages(self) -> ::concord::Pages<#output #shown_problem> {
                     fn __pager<__C, __N, __F>(_: &__C, __make: impl ::core::ops::FnOnce() -> __F) -> __F
                     where __C: ::concord::page::Call,

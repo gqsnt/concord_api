@@ -1,6 +1,6 @@
 error: `request` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `request_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for request
+       label: reserved for generated methods
+       help: rename this input to `request_value` and update its references in the existing `query` placements and expressions; keep the wire keys and fixed text that spell `request`
  --> tests/diagnostics/rules/03_optional_reserved.rs:2:76
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(request?: String) { query { request; } } }

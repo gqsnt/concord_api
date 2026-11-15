@@ -1,4 +1,4 @@
-error: ancestor inputs require their owner's name
+error: a short entry cannot name a qualified input
        label: a short entry names an input of this node
        help: write `"region" = client.region;`
  --> tests/diagnostics/rules/12_qualified_short.rs:2:90

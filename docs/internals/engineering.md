@@ -110,7 +110,7 @@ Every `Debug` of Concord's own types prints names and no value. `Debug` of an er
 | `headers { user_agent; }`, or a `host` header | It does not compile: write `"user-agent" = user_agent;`; the host comes from the `base`. |
 | An optional input of the client in a `middleware` expression | It does not compile: a middleware is made in `new`, before any option is set. |
 | An endpoint that no `base` applies to | It does not compile. |
-| `Self` in a type of a description | It does not compile: the macro says to write the path of the type. |
+| `Self` in a type of a description | It does not compile: the macro says to replace `Self` with the path of the intended type. |
 | An envelope arm from above (`2xx { body } => unpack(body)`) over an endpoint whose arrow is an `Option` or a `Result` | It does not compile: a `null` would silently become a `None`. The endpoint writes the arm itself, or removes it ([message 46](../reference/messages.md)). |
 | A type that is not `Clone` as an input | A compile error on the type, in the signature. |
 | A `match` on the kind of an error with no `_` arm | It does not compile: the enums are `#[non_exhaustive]`. |

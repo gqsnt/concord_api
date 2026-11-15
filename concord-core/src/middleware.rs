@@ -109,7 +109,7 @@ use std::sync::Arc;
 /// `request()` and `into_request()` return the request before any middleware runs.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a middleware",
-    note = "implement concord::Middleware with handle(request, info, next); next.send(request, info) sends on"
+    note = "implement `concord::Middleware` with `handle(request, info, next)`; `next.send(request, info)` passes the request on"
 )]
 pub trait Middleware: Send + Sync + 'static {
     /// Handles this request, sending it through the rest of the chain with `next.send`.

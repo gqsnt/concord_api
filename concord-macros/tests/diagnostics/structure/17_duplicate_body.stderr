@@ -1,6 +1,6 @@
 error: duplicate `body` statement
        label: this node already declares `body`
-       help: keep one declaration of this behaviour, choosing its intended value
+       help: keep one `body` declaration with its intended value
  --> tests/diagnostics/structure/17_duplicate_body.rs:5:13
   |
 5 |             body encode_payload(payload)?;

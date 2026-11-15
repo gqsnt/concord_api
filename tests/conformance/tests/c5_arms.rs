@@ -105,7 +105,7 @@ async fn c5_2_a_head_whose_arrow_has_no_arm_for_a_2xx_gives_a_mismatch_for_it() 
     );
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, no arm takes this status, in shapes.present"
+        "mismatch: status 200, no arm matches this status, in shapes.present"
     );
     let error = error_of(
         call.read_response(response(500, &[], "")).await,
@@ -229,7 +229,7 @@ async fn c5_8_require_or_mismatch_in_an_arm_ends_the_call_with_a_mismatch() {
     assert!(error.is_status(201));
     assert_eq!(
         error.to_string(),
-        "mismatch: status 201, the status arm refused the answer, in shapes.create"
+        "mismatch: status 201, the status arm rejected the response, in shapes.create"
     );
     // `3xx => Err(concord::mismatch("a redirect is not a receipt"))?`
     let error = error_of(
@@ -239,7 +239,7 @@ async fn c5_8_require_or_mismatch_in_an_arm_ends_the_call_with_a_mismatch() {
     );
     assert_eq!(
         error.to_string(),
-        "mismatch: status 303, the status arm refused the answer, in shapes.create"
+        "mismatch: status 303, the status arm rejected the response, in shapes.create"
     );
     // The words of the author are not printed in the line.
     assert!(!error.to_string().contains("redirect"));
@@ -259,7 +259,7 @@ async fn c5_11_a_key_of_a_map_prints_as_key_in_the_place() {
     let line = error.to_string();
     assert_eq!(
         line,
-        "mismatch: status 200, counts[key][1].n is not what the type says, in shapes.counts"
+        "mismatch: status 200, counts[key][1].n could not be decoded, in shapes.counts"
     );
     assert!(!line.contains("secret-name"));
     // And a map that reads.
@@ -452,7 +452,7 @@ fn without_arm() -> Vec<Cell> {
             }?;
             check(
                 line.as_deref()
-                    == Some("mismatch: status 200, no arm takes this status, in shapes.present"),
+                    == Some("mismatch: status 200, no arm matches this status, in shapes.present"),
                 || format!("{line:?}"),
             )
         }),
@@ -604,7 +604,7 @@ fn the_cells_of_the_added_endpoints() -> Vec<Cell> {
             script.answer(202);
             mismatch_line(
                 shapes(&script).remove(1).await,
-                "mismatch: status 202, the status arm refused the answer, in shapes.remove",
+                "mismatch: status 202, the status arm rejected the response, in shapes.remove",
             )?;
             let script = Script::new();
             script.answer(200).body("ignored");
@@ -626,7 +626,7 @@ fn the_cells_of_the_added_endpoints() -> Vec<Cell> {
             script.answer(202);
             mismatch_line(
                 shapes(&script).wrapped().touch(1).await,
-                "mismatch: status 202, the status arm refused the answer, in shapes.wrapped.touch",
+                "mismatch: status 202, the status arm rejected the response, in shapes.wrapped.touch",
             )
         }),
         cell(WITH_ARM, STREAM, async {
@@ -662,7 +662,7 @@ fn the_cells_of_the_added_endpoints() -> Vec<Cell> {
             wrapped_data(&script);
             mismatch_line(
                 shapes(&script).wrapped().holds(1).await,
-                "mismatch: status 200, no arm takes this status, in shapes.wrapped.holds",
+                "mismatch: status 200, no arm matches this status, in shapes.wrapped.holds",
             )?;
             let script = Script::new();
             script.answer(204);

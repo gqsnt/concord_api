@@ -1,6 +1,6 @@
-error: `problem` requires the client
+error: `problem` is allowed only on the client
        label: problem types are declared on the client
-       help: declare the intended problem type on the client; consolidate it with an existing problem declaration
+       help: keep one `problem` declaration, with the intended type, in the client block
  --> tests/diagnostics/structure/20_problem_scope.rs:4:13
   |
 4 |             problem TaskFault read FaultReader;

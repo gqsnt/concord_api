@@ -338,7 +338,7 @@ mod writer_error_tests {
     #[test]
     fn c2_14_json_keeps_one_format_error_below_fixed_writer_text() {
         let error = super::json(Invalid).unwrap_err();
-        assert_eq!(error.to_string(), "the body could not be written");
+        assert_eq!(error.to_string(), "the body could not be serialized");
         let cause = error.source().unwrap();
         let format = cause.downcast_ref::<serde_json::Error>().unwrap();
         assert_eq!(format.classify(), serde_json::error::Category::Data);
@@ -350,7 +350,7 @@ mod writer_error_tests {
     #[test]
     fn c2_14_form_keeps_one_format_error_below_fixed_writer_text() {
         let error = super::form(Invalid).unwrap_err();
-        assert_eq!(error.to_string(), "the body could not be written");
+        assert_eq!(error.to_string(), "the body could not be serialized");
         let cause = error.source().unwrap();
         assert_eq!(cause.to_string(), "original format failure");
         assert!(cause.source().is_none());

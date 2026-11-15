@@ -4,7 +4,7 @@ error[E0277]: `{integer}` is not a body
 2 | body 42;
   |      ^^ the trait `IntoBody` is not implemented for `{integer}`
   |
-  = note: a body is what json(x), form(x) or a function of yours gives: a concord::Body
+  = note: a body expression returns a `concord::Body` or a `Result` of one, as `json(x)`, `form(x)` or your own function do
 help: the following other types implement trait `IntoBody`
  --> $WORKSPACE/concord-core/src/body.rs
   |

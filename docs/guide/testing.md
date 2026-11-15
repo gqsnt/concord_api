@@ -81,7 +81,7 @@ async fn a_silent_server_ends_the_call_after_30_seconds() {
     assert_eq!(start.elapsed(), Duration::from_secs(30));
     assert_eq!(
         error.to_string(),
-        "transport error: no answer for 30 s (with_idle_timeout changes it), in tasks.get"
+        "transport error: no response for 30 s (with_idle_timeout changes it), in tasks.get"
     );
 }
 ```

@@ -61,7 +61,7 @@ pub mod a15 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; read Json; GET list(); GET status() -> u64 { path "s"; } } }
 }
-// 16: move `read Json;` before the first child
+// 16: move `read Json;` before the first part or child
 pub mod a16 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; read Json; GET get(); } }
@@ -86,7 +86,7 @@ pub mod a23 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; GET get() { status { } } } }
 }
-// 24: write `path "items";` ; write `headers { override "a" = "2"; "b" = "3"; }`
+// 24: write `path "items";`
 pub mod a24 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; headers { "a" = "1"; } GET get() { path "items"; headers { override "a" = "2"; "b" = "3"; } } } }
@@ -106,12 +106,12 @@ pub mod a34 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; read Json; GET get() -> Task { status { 200 { body: bodi } => bodi } } } }
 }
-// 35: did you mean `..page`?
+// 35: use `..page`, the closest declared part; check its inputs and statements first
 pub mod a35 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; part page(limit?: u32) { query { limit; } } GET list(..page); GET other(..page); } }
 }
-// 36: add `..keyed` to a signature
+// 36: apply this part to a compatible scope or endpoint, or remove its declaration
 pub mod a36 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; part keyed(k: String) { headers { "idempotency-key" = k; } } GET list(..keyed); } }

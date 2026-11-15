@@ -163,7 +163,7 @@ For a client `Riot`, as the macro generates it from [`tests/tour-gen/src/riot.rs
 
 **Every name that the macro makes for itself starts with `__`:** its private methods and constant (`__build_draft`, `__build_request`, `__read_answer`, `__prepare_inner`, `__ENDPOINT`), the fields that are not inputs (`__core`, `__parent`, `__options`), the hidden trait and its types (`__Types`, `__Input0`, `__Node0`, `__Problem`), the views (`__View0`), the slot types (`__Slot…`), and its locals. `call_methods!` adds `__prepare_if_none_match`. An author's name cannot start with `_`, so an optional input can never take the name of a helper such as `__build_request`.
 
-**A call to a paginated endpoint has no `IntoFuture`.** `.send()` returns one page, `.pages()` returns them all, and `.pages().items()` each item. The mistake `call.await` gets `rustc`'s own words (`is not a future`); the call's `#[must_use]` text says what to write. A call whose method is `GET` or `HEAD` also gets `send_if_none_match(etag)`, which is `__prepare_if_none_match(etag)` followed by `Prepared::send`.
+**A call to a paginated endpoint has no `IntoFuture`.** `.send()` returns one page, `.pages()` yields them all, and `.pages().items()` each item. The mistake `call.await` gets `rustc`'s own words (`is not a future`); the call's `#[must_use]` text says what to write. A call whose method is `GET` or `HEAD` also gets `send_if_none_match(etag)`, which is `__prepare_if_none_match(etag)` followed by `Prepared::send`.
 
 **Attributes.** `#[cfg]` on a node goes on everything that depends on the node, including the associated types of the hidden trait. A use of a deprecated item inside generated code does not warn (`#[allow(deprecated)]` there); the caller still gets the warning. A relative visibility (`pub(super)`) is rewritten for each module depth, so that it means what the author wrote. `#[doc(hidden)]` on a scope or an endpoint hides what is generated for it.
 
@@ -180,7 +180,7 @@ The wording and the place of each message are in [the messages](../reference/mes
 - **What is fixed.** Of the three lines of each of the 46 messages, the first (the message) and the place it points at are those of the messages page, word for word, and the code follows them (for [messages 18 and 20](../reference/messages.md) the place is the keyword). The label and the help are what the macro prints for the case: a help is in words where no exact replacement is safe (one of the three rules for every message, on the same page). The page copies them from the compiler fixtures. A test of contract C1.18 (its name starts with `c1_18_`) runs each case of the page through the whole macro and compares the three lines.
 - A message is a `compile_error!` at a span. `syn::Error::new_spanned(token, text)` creates it; errors are joined with `combine`, so that one build shows them all.
 - **One message, three lines.** Stable Rust gives a macro no labels and no help lines. The three parts of a message on the page are the lines of one text: the error, then what the place is, then what to write.
-- **Two places.** For a clash ("already declared", "is already set above") the macro emits a second error at the earlier place, with a text that says what is there: `the first child is here`, `the inherited header is set here`, ``the part `page` writes it here``.
+- **Two places.** For a clash ("already declared", "is already set by an ancestor") the macro emits a second error at the earlier place, with a text that says what is there: `the first child is here`, `the inherited header is set here`, ``part `page` declares it here``.
 - **A name suggested by [message 35](../reference/messages.md)** is the one part of the client nearest to the written name by edit distance, when no other part is as near, and when it is at most a third of the written name's length away (at least 1 edit, at most 3). Otherwise the help names no part.
 - **Inside a string, the whole string.** Stable Rust gives no span inside a literal. A message about a placeholder points at its template, and names the placeholder in words.
 - When `proc_macro::Diagnostic` is stable, the same texts will become real labels. Nothing else changes.
@@ -195,16 +195,16 @@ Everything inside the author's Rust is checked by `rustc`, and the message is it
 
 | Trait | When it is not met, at the author's expression |
 |---|---|
-| `Reader<T>` | `` `BadReader` cannot read a `Vec<MatchId>` `` · note: `write read Json; with use concord::Json;, or give BadReader a concord::Reader<Vec<MatchId>>` |
-| `IntoBody` | `` `Task` is not a body `` · note: `a body is what json(x), form(x) or a function of yours gives: a concord::Body` |
-| `__private::Value` | Its words (`` `Filter` cannot be written in a path, a query or a header `` · note: `it needs serde::Serialize, and must give one text, a list of texts, or nothing`) are never printed. A value that is neither a `Secret` nor `serde::Serialize` gets `rustc`'s E0599 at the author's expression: `` the method `adapt` exists for reference `&concord::__private::ValueRef<&Filter>`, but its trait bounds were not satisfied ``, with notes that name `SecretInput` and `Serialize`. |
-| `page::Slot<C>` | `` `u32` is not an input of this endpoint `` · note: `in paginate, a pager is given inputs: paginate by_offset(start);` |
-| `page::IntoNext<C>` | `` a pager gives the next call: Some(call), None, or a Result of that `` |
-| `Transport` | `` `X` cannot send a request `` · note: `a reqwest::Client, concord::Http, a fake, or a type with concord::Transport` |
-| `Middleware` | `` `X` is not a middleware `` · note: `implement concord::Middleware with handle(request, info, next); next.send(request, info) sends on` |
-| `page::IntoItems` | `` `Option<Vec<Task>>` is not a list of items `` · note: `implement concord::page::IntoItems for your page type` |
-| `__private::InheritAcrossBase` | `a secret does not follow a change of base` · note: `write this entry again with override, or remove it, under the new base` (at the author's entry) |
-| `__private::InheritPathAcrossBase` | `a secret in a path does not follow a change of base` · note: `write this path under each base that needs it, rather than above those bases` (the same gate, for a piece of a `path`: a `path` cannot be written again or removed) |
+| `Reader<T>` | `` `BadReader` cannot read a `Vec<MatchId>` `` · note: `` declare `read Json;` with `use concord::Json;`, or implement `concord::Reader<Vec<MatchId>>` for `BadReader` `` |
+| `IntoBody` | `` `Task` is not a body `` · note: `` a body expression returns a `concord::Body` or a `Result` of one, as `json(x)`, `form(x)` or your own function do `` |
+| `__private::Value` | Its words (`` `Filter` cannot be serialized for this placement `` · note: `` it must implement `serde::Serialize` and serialize to one scalar, a list of scalars, or nothing ``) are never printed. A value that is neither a `Secret` nor `serde::Serialize` gets `rustc`'s E0599 at the author's expression: `` the method `adapt` exists for reference `&concord::__private::ValueRef<&Filter>`, but its trait bounds were not satisfied ``, with notes that name `SecretInput` and `Serialize`. |
+| `page::Slot<C>` | `` `u32` is not an input of this endpoint `` · note: `` in `paginate`, pass the endpoint's inputs to the pager: `paginate by_offset(start);` `` |
+| `page::IntoNext<C>` | `` a pager returns the next call: `Some(call)`, `None`, or a `Result` of either `` |
+| `Transport` | `` `X` cannot send a request `` · note: `` a `reqwest::Client`, `concord::Http`, a test transport, or a type that implements `concord::Transport` `` |
+| `Middleware` | `` `X` is not a middleware `` · note: `` implement `concord::Middleware` with `handle(request, info, next)`; `next.send(request, info)` passes the request on `` |
+| `page::IntoItems` | `` `Option<Vec<Task>>` is not a list of items `` · note: `` implement `concord::page::IntoItems` for your page type `` |
+| `__private::InheritAcrossBase` | `a secret does not follow a change of base` · note: `` declare this entry again with `override`, or remove it, under the new `base` `` (at the author's entry) |
+| `__private::InheritPathAcrossBase` | `a secret in a path does not follow a change of base` · note: `` declare this `path` under each `base` that needs it, not on an ancestor of those bases `` (the same gate, for a piece of a `path`: a `path` cannot be written again or removed) |
 
 The macro still knows none of these items. The words belong to the traits.
 
@@ -231,7 +231,7 @@ To measure the expansion yourself, run `just bench --expansion tests/tour-gen/sr
 
 The documentation that the macro generates follows these rules. The macro can write each line from the description alone.
 
-1. An endpoint's method documents, in this order and only when it applies: the author's lines; the shape of the call; the request line; the names of the headers that are written for it (names, never values); each input with what it accepts; each option; one line that names the statuses with a meaning of their own here (`404`, `2xx`), without the arm (what each means is for the author to say, in the lines above); a line when the endpoint may not be repeated; what `.await` returns (for a paged endpoint, what `.send().await` returns: one page); pages, with one sentence: `.send().await` gives one page, and `.pages()` gives them all.
+1. An endpoint's method documents, in this order and only when it applies: the author's lines; the shape of the call; the request line; the names of the headers that are written for it (names, never values); each input with what it accepts; each option; one line that names the statuses with a meaning of their own here (`404`, `2xx`), without the arm (what each means is for the author to say, in the lines above); a line when the endpoint may not be repeated; what `.await` returns (for a paged endpoint, what `.send().await` returns: one page); pages, with one sentence: `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
 2. **A type named in generated text is a link, written as a caller writes it:** `riot::Result<Vec<MatchId>>`, never `crate::riot::Result<Vec<crate::MatchId>>`. An author's type that has the name of a handle is written with its path.
 3. **A client with no `problem` line shows no `()`:** `Retry`, `Sending<Vec<Task>>`, `concord::Error`.
 4. **A setter says what it accepts:** "Accepts a `u32`, a `&u32`, or an `Option<u32>`. `None` clears it.", with the type as the author spelled it and a link to `concord::arg::Arg` for text and lists. The macro does not guess what an alias stands for.
@@ -240,7 +240,7 @@ The documentation that the macro generates follows these rules. The macro can wr
 7. The words are the caller's. Generated text never says "the description" or "the arrow".
 8. The inputs of a part are shown like the node's own. The name of the part is not shown.
 9. The page of a client says that every request goes through a middleware, with the `///` lines that the author wrote above each `middleware`. The text of the expression is never printed: it could contain a literal key.
-10. A paged endpoint says: `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+10. A paged endpoint says: `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
 
 ## The editor
 

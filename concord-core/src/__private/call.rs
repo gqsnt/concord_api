@@ -205,9 +205,9 @@ macro_rules! call_methods {
         /// Send.
         impl $call {
             $crate::call_methods!(@doc send, [$($doc_method { $($doc_attrs)* })*], {
-            /// Send the call. On a paged endpoint this gives one page.
+            /// Send the call. On a paged endpoint this returns one page.
             /// Preparation starts on the first poll; only the value is kept.
-            #[doc = ::core::concat!("`.send().await` gives ", $await_type, ".")]
+            #[doc = ::core::concat!("`.send().await` returns ", $await_type, ".")]
             ///
             /// # Panics
             ///
@@ -236,7 +236,7 @@ macro_rules! call_methods {
 
             /// Send the call and get the [`reqwest::Response`](https://docs.rs/reqwest/0.13.5/reqwest/struct.Response.html) as it came.
             ///
-            /// Concord passes heads at or above 400 to the retry rules. It does not
+            /// Concord passes a response with a status of 400 or above to the retry rules. It does not
             /// apply the endpoint's status rules or read the body. On the first poll, prepares exactly as for
             /// `send_full()`, then sends that preparation only as far as the head.
             ///
@@ -280,8 +280,7 @@ macro_rules! call_methods {
         /// Look at the request, or change it.
         impl $call {
             $crate::call_methods!(@doc read_response, [$($doc_method { $($doc_attrs)* })*], {
-            /// Read an answer obtained yourself using this endpoint's reader and status rules.
-            /// No retry or clock is applied, and pages are not advanced. Errors report zero tries.
+            /// Read a response that you obtained yourself using this endpoint's reader and status rules. No retry, call timeout, or idle timeout is started; pages are not advanced, and errors report zero attempts.
             pub fn read_response(
                 &self,
                 __response: $crate::reqwest::Response,
@@ -297,8 +296,7 @@ macro_rules! call_methods {
             $crate::call_methods!(@doc request, [$($doc_method { $($doc_attrs)* })*], {
             /// The [`reqwest::Request`](https://docs.rs/reqwest/0.13.5/reqwest/struct.Request.html) that this call would send.
             /// The call can still be sent. This is the request before any middleware (such as a signer).
-            /// Refuses a one-shot body without taking it. No call clock starts and
-            /// neither the endpoint's `idle_timeout` nor its `idempotent` runs.
+            /// Refuses a one-shot body without taking it. The call timeout does not start, and neither the endpoint's `idle_timeout` nor its `idempotent` runs.
             pub fn request(&self) -> $($result)::+<$crate::reqwest::Request> {
                 self.__build_request(false)
             }
@@ -309,7 +307,7 @@ macro_rules! call_methods {
             ///
             /// Needed when the body is a stream that can be read only once.
             /// Takes that one-shot body. This is the request before any middleware.
-            /// No call clock starts and neither `idle_timeout` nor `idempotent`
+            /// The call timeout does not start, and neither `idle_timeout` nor `idempotent`
             /// from the endpoint runs.
             pub fn into_request(self) -> $($result)::+<$crate::reqwest::Request> {
                 self.__build_request(true)
@@ -318,7 +316,7 @@ macro_rules! call_methods {
 
             /// Change the built request before it enters the middleware chain.
             ///
-            /// The changed request is used on every try. Several changes run in the order added.
+            /// The changed request is used on every attempt. Several changes run in the order added.
             /// A header value marked sensitive is left out of the same-request comparison
             /// for pages, including when this edit sets that flag.
             /// If an edit changes the URL, its secret marks are no longer known;
@@ -424,7 +422,7 @@ macro_rules! call_methods {
             ///
             /// Replaces any `If-None-Match` set for this endpoint before the
             /// `edit_request` edits run, so those edits can replace or remove it.
-            /// An unclaimed 304 gives `None`; every other answer gives `Some(value)`.
+            /// On success: `None` for a 304 that no status arm matches, `Some(value)` otherwise.
             /// The status and headers are retained in both cases.
             ///
             /// # Panics

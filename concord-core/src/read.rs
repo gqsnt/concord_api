@@ -44,7 +44,7 @@ use std::task::{Context, Poll};
 /// ```
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot read a `{T}`",
-    note = "write read Json; with use concord::Json;, or give {Self} a concord::Reader<{T}>"
+    note = "declare `read Json;` with `use concord::Json;`, or implement `concord::Reader<{T}>` for `{Self}`"
 )]
 pub trait Reader<T>: Send + Sync {
     /// Consume the Incoming body once and return the declared value or a ReadError.
@@ -431,12 +431,12 @@ struct ReadSource {
 }
 impl std::fmt::Display for ReadSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the body is not the declared type")?;
+        f.write_str("the body could not be read")?;
         if !self.place.pieces.is_empty() {
             write!(f, " at {}", self.place)?;
         }
         if self.unexpected_label {
-            f.write_str("; unexpected content type")?;
+            f.write_str(" (unexpected content type)")?;
         }
         Ok(())
     }
@@ -1448,7 +1448,7 @@ mod c5_script_tests {
             assert_eq!(error.tries(), 3);
             assert_eq!(
                 error.to_string(),
-                "transport error: the body broke after status 201, in files.get, after 3 tries"
+                "transport error: the response body could not be read after status 201, in files.get, after 3 attempts"
             );
             assert!(std::error::Error::source(&error).is_none());
         }
@@ -1467,7 +1467,7 @@ mod c5_script_tests {
         assert_eq!(error.class(), Some(Class::Body));
         assert!(error
             .to_string()
-            .contains("the body broke after status 200"));
+            .contains("the response body could not be read after status 200"));
     }
 
     #[tokio::test(start_paused = true)]
@@ -1540,7 +1540,7 @@ mod c5_script_tests {
             assert_eq!(error.kind(), Kind::Mismatch);
             assert_eq!(error.body(), Some(b"prefix".as_slice()));
             assert_eq!(error.kept(), Some(Kept::Interrupted));
-            assert!(error.to_string().contains("no arm takes this status"));
+            assert!(error.to_string().contains("no arm matches this status"));
             assert_eq!(
                 clock.evidence.lock().unwrap().last().unwrap().kind,
                 KnownKind::NoArm
@@ -1611,7 +1611,7 @@ mod c5_script_tests {
         let error = body.try_next().await.unwrap_err();
         assert!(error.is_timeout());
         assert_eq!(error.status(), Some(http::StatusCode::OK));
-        assert_eq!(error.to_string(), "transport error: the body was silent for 2 s after status 200 (with_idle_timeout changes it), in files.get, after 3 tries");
+        assert_eq!(error.to_string(), "transport error: no body data for 2 s after status 200 (with_idle_timeout changes it), in files.get, after 3 attempts");
         assert_eq!(start.elapsed(), Duration::from_secs(2));
         assert!(body.try_next().await.unwrap().is_none());
     }
@@ -1746,7 +1746,7 @@ mod c5_script_tests {
             (
                 1,
                 None,
-                "the body was silent for 1 s after status 200 (with_idle_timeout changes it)",
+                "no body data for 1 s after status 200 (with_idle_timeout changes it)",
             ),
             (30, Some(2), "the call took longer than 2 s (with_timeout)"),
         ] {
@@ -1762,7 +1762,7 @@ mod c5_script_tests {
             .unwrap_err();
             assert_eq!(
                 error.to_string(),
-                format!("transport error: {text}, in files.get, after 3 tries")
+                format!("transport error: {text}, in files.get, after 3 attempts")
             );
             assert!(std::error::Error::source(&error).is_none());
             assert_eq!(error.headers().unwrap().get("x-id"), Some("one"));

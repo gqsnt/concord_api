@@ -19,9 +19,10 @@ use serde::Serialize;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 const ENDPOINT: &str = "tasks.get";
-const HOST: &str = "build error: input filter is not one label of a host, in tasks.get";
-const SEGMENT: &str = "build error: input filter gives an empty or dot path segment, in tasks.get";
-const SHAPE: &str = "build error: input filter cannot be written in a query, in tasks.get";
+const HOST: &str = "build error: input filter cannot be used in this host label, in tasks.get";
+const SEGMENT: &str =
+    "build error: input filter is empty or produces a dot path segment, in tasks.get";
+const SHAPE: &str = "build error: input filter cannot be serialized into a query, in tasks.get";
 const FINITE: &str = "build error: input filter is not a finite number, in tasks.get";
 const FINITE_HEADER: &str = "build error: input x-note is not a finite number, in tasks.get";
 
@@ -40,7 +41,7 @@ enum Want {
     /// it is marked sensitive.
     Header(&'static [&'static str], bool),
     /// The Build error of a shape that cannot be written at the place of the column:
-    /// `input <name> cannot be written in a <place>`.
+    /// `input <name> cannot be serialized into a <place>`.
     Shape,
     /// A Build error, word for word.
     Text(&'static str),
@@ -503,7 +504,7 @@ fn c2_5_table_4_each_shape_of_value_in_each_place_of_a_request() {
 enum FormWant {
     /// These bytes.
     Pairs(&'static str),
-    /// The writer refuses: a Build error, `the body could not be written`.
+    /// The writer refuses: a Build error, `the body could not be constructed`.
     Refused,
 }
 

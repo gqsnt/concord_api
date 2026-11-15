@@ -15,7 +15,7 @@ use tour::*;
 fn owned_send<T: Send + 'static>(value: T) {}
 fn cloneable<T: Clone>(value: &T) {}
 
-// Every endpoint, with the type that `.await` gives.
+// Every endpoint, with the type that `.await` returns.
 // The references check that arguments and setters take borrowed inputs.
 #[allow(clippy::needless_borrows_for_generic_args)]
 async fn every_endpoint(
@@ -320,7 +320,7 @@ fn request_of_a_body_that_the_caller_gives() {
     let stream = shapes.upload(Body::stream(Empty));
     assert_eq!(
         build_error(stream.request()),
-        "build error: the body is a stream; into_request takes it, in shapes.upload"
+        "build error: request() cannot take a one-shot body stream (use into_request), in shapes.upload"
     );
     let taken = stream.into_request().unwrap();
     assert!(taken.body().unwrap().as_bytes().is_none());
@@ -338,7 +338,7 @@ fn request_with_a_string_hole_in_the_host() {
     for tenant in ["", "a.b", "a b"] {
         assert_eq!(
             build_error(shapes.hosted(tenant).request()),
-            "build error: input tenant is not one label of a host, in shapes.hosted",
+            "build error: input tenant cannot be used in this host label, in shapes.hosted",
             "{tenant:?}"
         );
     }
@@ -361,7 +361,7 @@ fn request_with_a_float_and_a_struct_in_the_query() {
     };
     assert_eq!(
         build_error(shapes.search(1.5).filter(filter).request()),
-        "build error: input filter cannot be written in a query, in shapes.search"
+        "build error: input filter cannot be serialized into a query, in shapes.search"
     );
 }
 
@@ -373,13 +373,13 @@ fn request_with_a_written_content_length_and_a_body_that_fails() {
     assert_eq!(body_of(&request), br#"{"id":1,"title":"t"}"#);
     assert_eq!(
         build_error(shapes.measured(item("t"), 3).request()),
-        "build error: the content-length is not the length of the body, in shapes.measured"
+        "build error: the content-length does not match the body length, in shapes.measured"
     );
     // the author's error is the source.
     let error = shapes.measured(item(""), 20).request().unwrap_err();
     assert_eq!(
         error.to_string(),
-        "build error: the body could not be written, in shapes.measured"
+        "build error: the body could not be constructed, in shapes.measured"
     );
     let source = std::error::Error::source(&error).unwrap();
     assert!(source.is::<EmptyTitle>());
@@ -398,7 +398,7 @@ fn request_with_an_entry_that_uses_the_question_mark() {
     assert_eq!(error.kind(), Kind::Build);
     assert_eq!(
         error.to_string(),
-        "build error: input n could not be written, in shapes.parsed"
+        "build error: input n could not be evaluated, in shapes.parsed"
     );
     let source = std::error::Error::source(&error).unwrap();
     assert!(source.is::<std::num::ParseIntError>());

@@ -258,7 +258,7 @@ fn header_legal(text: &str) -> bool {
 fn failure(expected: &Shape, place: u8) -> Option<String> {
     let slot = match place {
         0 | 1 => "path",
-        2 | 3 => "host",
+        2 | 3 => "host or port",
         4 | 6 => "query",
         _ => "header",
     };
@@ -268,7 +268,7 @@ fn failure(expected: &Shape, place: u8) -> Option<String> {
     let message = if matches!(expected, Shape::Nonfinite) {
         Some("input input is not a finite number".to_owned())
     } else if shape_error {
-        Some(format!("input input cannot be written in a {slot}"))
+        Some(format!("input input cannot be serialized into a {slot}"))
     } else {
         match expected {
             Shape::One(text)
@@ -276,7 +276,7 @@ fn failure(expected: &Shape, place: u8) -> Option<String> {
                     || place == 1
                         && (text.is_empty() || text.split('/').any(|s| s == "." || s == "..")) =>
             {
-                Some("input input gives an empty or dot path segment".into())
+                Some("input input is empty or produces a dot path segment".into())
             }
             Shape::One(text)
                 if place == 2
@@ -286,7 +286,7 @@ fn failure(expected: &Shape, place: u8) -> Option<String> {
                         || text.ends_with('-')
                         || !text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')) =>
             {
-                Some("input input is not one label of a host".into())
+                Some("input input cannot be used in this host label".into())
             }
             Shape::One(text)
                 if place == 3
@@ -294,13 +294,13 @@ fn failure(expected: &Shape, place: u8) -> Option<String> {
                         || !text.bytes().all(|b| b.is_ascii_digit())
                         || text.parse::<u16>().is_err()) =>
             {
-                Some("the base is not a URL that can be used".into())
+                Some("the base is not a usable URL".into())
             }
             Shape::One(text) if matches!(place, 5 | 7) && !header_legal(text) => {
-                Some("the value of header x-value is not a legal header value".into())
+                Some("the value of header x-value is invalid".into())
             }
             Shape::List(texts) if place == 5 && texts.iter().any(|s| !header_legal(s)) => {
-                Some("the value of header x-value is not a legal header value".into())
+                Some("the value of header x-value is invalid".into())
             }
             _ => None,
         }
@@ -378,7 +378,7 @@ fn c2_4_depth_child() {
             assert_eq!(error.kind(), Kind::Build);
             assert_eq!(
                 error.to_string(),
-                "build error: input depth cannot be written in a query, in props.depth"
+                "build error: input depth cannot be serialized into a query, in props.depth"
             );
         } else {
             assert!(result.is_ok());
@@ -453,10 +453,15 @@ fn c2_4_the_depth_limit_applies_at_every_text_placement_and_in_lists() {
             }
             let result = d.finish::<()>(&Core::default(), &Options::default(), "props.depth");
             if depth >= 128 {
+                let place = if place == "host" {
+                    "host or port"
+                } else {
+                    place
+                };
                 assert_eq!(
                     result.unwrap_err().to_string(),
                     format!(
-                        "build error: input nested cannot be written in a {place}, in props.depth"
+                        "build error: input nested cannot be serialized into a {place}, in props.depth"
                     )
                 );
             } else {

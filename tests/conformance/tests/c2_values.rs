@@ -11,10 +11,9 @@ use concord::__private::{Piece, Value, ValueRef};
 use concord::Secret;
 use serde::Serialize;
 
-const SHAPE: &str = "build error: input filter cannot be written in a query, in tasks.get";
+const SHAPE: &str = "build error: input filter cannot be serialized into a query, in tasks.get";
 const FINITE: &str = "build error: input ratio is not a finite number, in tasks.get";
-const ILLEGAL: &str =
-    "build error: the value of header x-note is not a legal header value, in tasks.get";
+const ILLEGAL: &str = "build error: the value of header x-note is invalid, in tasks.get";
 
 /// One entry `"filter" = value;` in `query`.
 fn in_query(value: &dyn Value) -> Built {
@@ -715,7 +714,7 @@ fn c2_13_a_build_error_of_a_hole_names_its_input() {
     ]);
     assert_eq!(
         build_error(finish(draft, "tasks.get")),
-        "build error: input region is not one label of a host, in tasks.get"
+        "build error: input region cannot be used in this host label, in tasks.get"
     );
     let mut draft = concord::__private::Draft::new(http::Method::GET);
     draft.base(&[
@@ -725,13 +724,13 @@ fn c2_13_a_build_error_of_a_hole_names_its_input() {
     ]);
     assert_eq!(
         build_error(finish(draft, "tasks.get")),
-        "build error: input client.tenant is not one label of a host, in tasks.get"
+        "build error: input client.tenant cannot be used in this host label, in tasks.get"
     );
     let mut draft = get();
     draft.segment(&[val!("id", "")]);
     assert_eq!(
         build_error(finish(draft, "tasks.get")),
-        "build error: input id gives an empty or dot path segment, in tasks.get"
+        "build error: input id is empty or produces a dot path segment, in tasks.get"
     );
     let mut draft = get();
     draft.query("ratio", &[val!("ratio", f64::INFINITY)]);
@@ -756,14 +755,14 @@ fn c2_13_a_build_error_of_a_keyed_entry_names_its_key() {
     draft.query("labels", &[val!("labels", labels)]);
     assert_eq!(
         build_error(finish(draft, "tasks.get")),
-        "build error: input labels cannot be written in a query, in tasks.get"
+        "build error: input labels cannot be serialized into a query, in tasks.get"
     );
     // `headers { "x-labels" = client.labels; }`.
     let mut draft = get();
     draft.header("x-labels", &[val!("x-labels", Filter { done: false })]);
     assert_eq!(
         build_error(finish(draft, "tasks.get")),
-        "build error: input x-labels cannot be written in a header, in tasks.get"
+        "build error: input x-labels cannot be serialized into a header, in tasks.get"
     );
 }
 
@@ -780,7 +779,7 @@ fn c2_13_an_entry_whose_expression_fails_names_its_key_and_keeps_the_error_as_it
     assert_eq!(error.kind(), concord::error::Kind::Build);
     assert_eq!(
         error.to_string(),
-        "build error: input limit could not be written, in tasks.get"
+        "build error: input limit could not be evaluated, in tasks.get"
     );
     let source = std::error::Error::source(&error).expect("the author's error");
     assert_eq!(

@@ -12,7 +12,7 @@ help: the trait `concord::Reader<u32>` is not implemented for `Bad`
   |
 1 | struct Bad;
   | ^^^^^^^^^^
-  = note: write read Json; with use concord::Json;, or give Bad a concord::Reader<u32>
+  = note: declare `read Json;` with `use concord::Json;`, or implement `concord::Reader<u32>` for `Bad`
   = help: the following other types implement trait `concord::Reader<T>`:
             `&R` implements `concord::Reader<T>`
             `Json` implements `concord::Reader<T>`

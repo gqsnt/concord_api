@@ -141,9 +141,9 @@ const _: () = {
         ///
         /// - `.starting_after("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. Continue after this cursor.
         ///
-        /// `.send().await` gives [`feed::Result`]<[`Page`]>.
+        /// `.send().await` returns [`feed::Result`]<[`Page`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn list(&self) -> feed::List {
             feed::List {
                 __client: self.clone(),
@@ -162,9 +162,9 @@ const _: () = {
         ///
         /// - `.starting_after("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. Continue after this cursor.
         ///
-        /// `.send().await` gives [`feed::Result`]<[`Page`]>.
+        /// `.send().await` returns [`feed::Result`]<[`Page`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn by_cursor(&self) -> feed::ByCursor {
             feed::ByCursor {
                 __client: self.clone(),
@@ -179,9 +179,9 @@ const _: () = {
         ///
         /// Request: `GET https://feed.example.com/linked-items`.
         ///
-        /// `.send().await` gives [`feed::Result`]<[`Page`]>.
+        /// `.send().await` returns [`feed::Result`]<[`Page`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn linked(&self) -> feed::Linked {
             feed::Linked {
                 __client: self.clone(),
@@ -309,7 +309,7 @@ const _: () = {
         pages {
             /// Iterate over [`Page`] pages.
             ///
-            /// `try_next().await` gives [`feed::Result`]<[`Option`]<[`Page`]>>.
+            /// `try_next().await` returns [`feed::Result`]<[`Option`]<[`Page`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Page> {
                 // The owner in reach, then each input as its place; the expression is
@@ -447,7 +447,7 @@ const _: () = {
         pages {
             /// Iterate over [`Page`] pages.
             ///
-            /// `try_next().await` gives [`feed::Result`]<[`Option`]<[`Page`]>>.
+            /// `try_next().await` returns [`feed::Result`]<[`Option`]<[`Page`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Page> {
                 ::concord::__private::pages(self, {
@@ -556,7 +556,7 @@ const _: () = {
         pages {
             /// Iterate over [`Page`] pages.
             ///
-            /// `try_next().await` gives [`feed::Result`]<[`Option`]<[`Page`]>>.
+            /// `try_next().await` returns [`feed::Result`]<[`Option`]<[`Page`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Page> {
                 ::concord::__private::pages(self, {

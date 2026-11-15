@@ -9,11 +9,10 @@ use concord::__private::{AdaptValue as _, Core, Draft, Options};
 use concord::error::Kind;
 use concord::Base;
 
-const HOST: &str = "build error: input region is not one label of a host, in tasks.get";
-const BASE: &str = "build error: the base is not a URL that can be used, in tasks.get";
-const WITH_BASE: &str =
-    "build error: the base is not a URL that can be used (with_base), in tasks.get";
-const SEGMENT: &str = "build error: input id gives an empty or dot path segment, in tasks.get";
+const HOST: &str = "build error: input region cannot be used in this host label, in tasks.get";
+const BASE: &str = "build error: the base is not a usable URL, in tasks.get";
+const WITH_BASE: &str = "build error: the base is not a usable URL (with_base), in tasks.get";
+const SEGMENT: &str = "build error: input id is empty or produces a dot path segment, in tasks.get";
 
 /// `base "https://{region}.api.example.com";` then `path "ids";`.
 fn host_hole(region: &str) -> Built {
@@ -445,7 +444,7 @@ fn c2_2_the_url_is_what_the_library_reads_a_base_to_be() {
 
 #[test]
 fn c2_2_with_base_takes_the_same_text_and_a_text_that_is_not_a_base_is_a_build_error() {
-    // "A `with_base` that is no base: `build error: the base is not a URL that can be used (with_base), in <endpoint>`."
+    // "A `with_base` that is no base: `build error: the base is not a usable URL (with_base), in <endpoint>`."
     for text in [
         "not a base",
         "https://user@api.example.com",

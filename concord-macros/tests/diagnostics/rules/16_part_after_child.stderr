@@ -1,4 +1,4 @@
-error: statements must precede children
+error: parts must precede children
        label: part appears after a child
        help: move `part fragment() {  }` before the first child
  --> tests/diagnostics/rules/16_part_after_child.rs:2:36
@@ -8,7 +8,7 @@ error: statements must precede children
 
 error: part `fragment` is never used
        label: no scope or endpoint names `..fragment`
-       help: add `..fragment` to a signature, or remove the part
+       help: apply this part to a compatible scope or endpoint, or remove its declaration
  --> tests/diagnostics/rules/16_part_after_child.rs:2:41
   |
 2 |     client Workshop { GET fetch(); part fragment() {} }

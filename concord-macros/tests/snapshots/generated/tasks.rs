@@ -164,7 +164,7 @@ const _: () = {
         /// - `done`: Accepts a [`bool`], a &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it.
         ///   Filter tasks by completion state.
         ///
-        /// `.await` gives [`tasks::Result`]<[`Vec`]<[`Task`]>>.
+        /// `.await` returns [`tasks::Result`]<[`Vec`]<[`Task`]>>.
         pub fn list(&self) -> tasks::List {
             tasks::List {
                 __parent: ::core::clone::Clone::clone(self),
@@ -182,9 +182,9 @@ const _: () = {
         /// - `task`: Accepts a [`NewTask`] or a &[`NewTask`].
         ///   The task to create.
         ///
-        /// This endpoint may not be repeated.
+        /// A retry does not repeat this endpoint unless `Retry::not_applied_on` lists the status.
         ///
-        /// `.await` gives [`tasks::Result`]<[`Task`]>.
+        /// `.await` returns [`tasks::Result`]<[`Task`]>.
         pub fn create(&self, task: impl ::concord::arg::Arg<NewTask>) -> tasks::Create {
             tasks::Create {
                 __parent: ::core::clone::Clone::clone(self),
@@ -202,7 +202,7 @@ const _: () = {
         /// - `id`: Accepts a [`u64`] or a &[`u64`].
         ///   The identifier of the task to fetch.
         ///
-        /// `.await` gives [`tasks::Result`]<[`Task`]>.
+        /// `.await` returns [`tasks::Result`]<[`Task`]>.
         pub fn get(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Get {
             tasks::Get {
                 __parent: ::core::clone::Clone::clone(self),
@@ -220,7 +220,7 @@ const _: () = {
         /// - `id`: Accepts a [`u64`] or a &[`u64`].
         ///   The identifier of the task to delete.
         ///
-        /// `.await` gives [`tasks::Result`]<`()`>.
+        /// `.await` returns [`tasks::Result`]<`()`>.
         pub fn delete(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Delete {
             tasks::Delete {
                 __parent: ::core::clone::Clone::clone(self),

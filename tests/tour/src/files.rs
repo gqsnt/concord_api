@@ -171,7 +171,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`files::Result`]<[`bool`]>.
+        /// `.await` returns [`files::Result`]<[`bool`]>.
         pub fn exists(&self, id: impl ::concord::arg::Arg<DocId>) -> files::Exists {
             files::Exists {
                 __client: self.clone(),
@@ -190,7 +190,7 @@ const _: () = {
         ///
         /// - `repo`: [`String`], &[`String`], or &[`str`]. The repository whose README should be read.
         ///
-        /// `.await` gives [`files::Result`]<[`String`]>.
+        /// `.await` returns [`files::Result`]<[`String`]>.
         pub fn readme(&self, repo: impl ::concord::arg::Arg<String>) -> files::Readme {
             files::Readme {
                 __client: self.clone(),
@@ -209,7 +209,7 @@ const _: () = {
         ///
         /// - `id`: [`FileId`] or &[`FileId`]. The identifier of the file to download.
         ///
-        /// `.await` gives [`files::Result`]<[`concord::ByteStream`]>.
+        /// `.await` returns [`files::Result`]<[`concord::ByteStream`]>.
         pub fn download(&self, id: impl ::concord::arg::Arg<FileId>) -> files::Download {
             files::Download {
                 __client: self.clone(),
@@ -235,7 +235,7 @@ const _: () = {
         /// explicitly listed by `Retry::not_applied_on` can permit another try;
         /// a one-shot body still cannot be sent again.
         ///
-        /// `.await` gives [`files::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+        /// `.await` returns [`files::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
         pub fn upload(
             &self,
             name: impl ::concord::arg::Arg<String>,
@@ -267,7 +267,7 @@ const _: () = {
         /// Retry: an unmarked `POST` may be sent again when the policy lists the
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
-        /// `.await` gives [`files::Result`]<[`Page`]>.
+        /// `.await` returns [`files::Result`]<[`Page`]>.
         pub fn search(&self, text: impl ::concord::arg::Arg<String>) -> files::Search {
             files::Search {
                 __client: self.clone(),

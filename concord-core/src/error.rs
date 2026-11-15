@@ -97,69 +97,78 @@ impl Note {
             Self::Build(failure) => match failure {
                 BuildFailure::Http => f.write_str("the HTTP client could not be built"),
                 BuildFailure::UrlLength => f.write_str("the URL is too long to be sent"),
-                BuildFailure::NextUrl => f.write_str("the next URL is not a URL"),
-                BuildFailure::Base => f.write_str("the base is not a URL that can be used"),
-                BuildFailure::ReplacementBase => {
-                    f.write_str("the base is not a URL that can be used (with_base)")
+                BuildFailure::NextUrl => {
+                    f.write_str("the URL passed to at_url could not be parsed")
                 }
-                BuildFailure::Host(input) => write!(f, "input {input} is not one label of a host"),
+                BuildFailure::Base => f.write_str("the base is not a usable URL"),
+                BuildFailure::ReplacementBase => {
+                    f.write_str("the base is not a usable URL (with_base)")
+                }
+                BuildFailure::Host(input) => {
+                    write!(f, "input {input} cannot be used in this host label")
+                }
                 BuildFailure::Path(input) => {
-                    write!(f, "input {input} gives an empty or dot path segment")
+                    write!(f, "input {input} is empty or produces a dot path segment")
                 }
                 BuildFailure::Shape { input, slot } => {
                     let slot = match slot {
-                        ValuePlace::Host => "a host",
+                        ValuePlace::Host => "a host or port",
                         ValuePlace::Path => "a path",
                         ValuePlace::Query => "a query",
                         ValuePlace::Header => "a header",
                         ValuePlace::Body => "a body",
                     };
-                    write!(f, "input {input} cannot be written in {slot}")
+                    write!(f, "input {input} cannot be serialized into {slot}")
                 }
                 BuildFailure::Nonfinite(input) => write!(f, "input {input} is not a finite number"),
                 BuildFailure::Header(name) => {
-                    write!(f, "the value of header {name} is not a legal header value")
+                    write!(f, "the value of header {name} is invalid")
                 }
                 BuildFailure::Description(what) => {
                     write!(f, "the description is not valid ({what})")
                 }
                 BuildFailure::TooManyHeaders => f.write_str("the request has too many headers"),
                 BuildFailure::BodyDepth(input) => {
-                    write!(f, "input {input} cannot be written in a body")
+                    write!(f, "input {input} cannot be serialized into a body")
                 }
-                BuildFailure::Body => f.write_str("the body could not be written"),
-                BuildFailure::Entry(input) => write!(f, "input {input} could not be written"),
+                BuildFailure::Body => f.write_str("the body could not be constructed"),
+                BuildFailure::Entry(input) => write!(f, "input {input} could not be evaluated"),
                 BuildFailure::InspectStream => {
-                    f.write_str("the body is a stream; into_request takes it")
+                    f.write_str("request() cannot take a one-shot body stream (use into_request)")
                 }
                 BuildFailure::SpentStream => {
-                    f.write_str("the body is a stream that was already sent")
+                    f.write_str("the one-shot body stream cannot be used in this request")
                 }
-                BuildFailure::Origin => f.write_str("the URL is at another origin than the call"),
+                BuildFailure::Origin => f.write_str("the URL leaves the origin of the call"),
                 BuildFailure::ContentLength => {
-                    f.write_str("the content-length is not the length of the body")
+                    f.write_str("the content-length does not match the body length")
                 }
             },
             Self::Transport(Class::Connect, connection) => f.write_str(match connection {
                 Connection::Refused => "connection refused",
-                Connection::Reset => "connection reset",
-                Connection::Dns => "name not found",
+                Connection::Reset => "connection failed",
+                Connection::Dns => "the host name could not be resolved",
                 Connection::Other => "no connection",
             }),
-            Self::Transport(Class::Timeout, _) => {
-                f.write_str("a timeout was reported by the transport")
-            }
+            Self::Transport(Class::Timeout, _) => f.write_str("the transport reported a timeout"),
             Self::Transport(Class::Body, _) => {
-                f.write_str("the body broke")?;
                 if let Some(status) = status {
-                    write!(f, " after status {}", status.as_u16())?;
+                    write!(
+                        f,
+                        "the response body could not be read after status {}",
+                        status.as_u16()
+                    )?;
+                } else {
+                    f.write_str("the body could not be read")?;
                 }
                 Ok(())
             }
-            Self::Transport(Class::Blocked, _) => f.write_str("blocked before it was sent"),
+            Self::Transport(Class::Blocked, _) => {
+                f.write_str("the request was blocked before it was sent")
+            }
             Self::Transport(Class::Other, _) => f.write_str("the transport failed"),
             Self::Request(RequestFailure::Head) => {
-                f.write_str("the head of the answer could not be read")
+                f.write_str("the response status line or headers could not be parsed")
             }
             Self::Request(RequestFailure::Body) => f.write_str("the body of the request failed"),
             Self::ConnectTimeout(duration) => {
@@ -174,9 +183,9 @@ impl Note {
             Self::Clock(clock, duration) => {
                 match clock {
                     Clock::Idle | Clock::DescriptionIdle if status.is_some() => {
-                        f.write_str("the body was silent for ")?;
+                        f.write_str("no body data for ")?;
                     }
-                    Clock::Idle | Clock::DescriptionIdle => f.write_str("no answer for ")?,
+                    Clock::Idle | Clock::DescriptionIdle => f.write_str("no response for ")?,
                     Clock::Total => f.write_str("the call took longer than ")?,
                 }
                 seconds(f, *duration)?;
@@ -198,12 +207,12 @@ impl Note {
                     f.write_str("the content type is not the one the reader expects")
                 }
                 MismatchFailure::BodyLimit => {
-                    f.write_str("the body is larger than the limit of the reader")
+                    f.write_str("the body exceeds the reader's size limit")
                 }
                 MismatchFailure::Empty { unexpected_label } => {
                     f.write_str("the body is empty")?;
                     if *unexpected_label {
-                        f.write_str(" and its content type is not the reader's")?;
+                        f.write_str(" (unexpected content type)")?;
                     }
                     Ok(())
                 }
@@ -217,15 +226,15 @@ impl Note {
                     } else {
                         write!(f, "{place}")?;
                     }
-                    f.write_str(" is not what the type says")?;
+                    f.write_str(" could not be decoded")?;
                     if *unexpected_label {
-                        f.write_str(" and its content type is not the reader's")?;
+                        f.write_str(" (unexpected content type)")?;
                     }
                     Ok(())
                 }
-                MismatchFailure::NoArm => f.write_str("no arm takes this status"),
-                MismatchFailure::NextPage => f.write_str("the next page cannot be asked"),
-                MismatchFailure::Arm => f.write_str("the status arm refused the answer"),
+                MismatchFailure::NoArm => f.write_str("no arm matches this status"),
+                MismatchFailure::NextPage => f.write_str("the next page cannot be requested"),
+                MismatchFailure::Arm => f.write_str("the status arm rejected the response"),
             },
         }
     }
@@ -746,7 +755,7 @@ impl<E> fmt::Display for Error<E> {
         self.inner.note.fmt(f, self.status())?;
         write!(f, ", in {}", self.endpoint())?;
         if self.tries() > 1 {
-            write!(f, ", after {} tries", self.tries())?;
+            write!(f, ", after {} attempts", self.tries())?;
         }
         Ok(())
     }
@@ -932,7 +941,7 @@ mod tests {
     fn c6_2_text_01_invalid_base() {
         assert_eq!(
             build(BuildFailure::Base).to_string(),
-            "build error: the base is not a URL that can be used, in tasks.get"
+            "build error: the base is not a usable URL, in tasks.get"
         );
     }
 
@@ -940,7 +949,7 @@ mod tests {
     fn c6_2_text_02_host_input() {
         assert_eq!(
             build(BuildFailure::Host("region")).to_string(),
-            "build error: input region is not one label of a host, in tasks.get"
+            "build error: input region cannot be used in this host label, in tasks.get"
         );
     }
 
@@ -948,7 +957,7 @@ mod tests {
     fn c6_2_text_03_path_input() {
         assert_eq!(
             build(BuildFailure::Path("id")).to_string(),
-            "build error: input id gives an empty or dot path segment, in tasks.get"
+            "build error: input id is empty or produces a dot path segment, in tasks.get"
         );
     }
 
@@ -960,7 +969,7 @@ mod tests {
                 slot: ValuePlace::Query
             })
             .to_string(),
-            "build error: input filter cannot be written in a query, in tasks.get"
+            "build error: input filter cannot be serialized into a query, in tasks.get"
         );
     }
 
@@ -976,7 +985,7 @@ mod tests {
     fn c6_2_text_06_header_value() {
         assert_eq!(
             build(BuildFailure::Header("x-note")).to_string(),
-            "build error: the value of header x-note is not a legal header value, in tasks.get"
+            "build error: the value of header x-note is invalid, in tasks.get"
         );
     }
 
@@ -985,7 +994,7 @@ mod tests {
         let error: Error = Error::build("tasks.create", BuildFailure::Body);
         assert_eq!(
             error.to_string(),
-            "build error: the body could not be written, in tasks.create"
+            "build error: the body could not be constructed, in tasks.create"
         );
     }
 
@@ -994,7 +1003,7 @@ mod tests {
         let error: Error = Error::build("files.upload", BuildFailure::InspectStream);
         assert_eq!(
             error.to_string(),
-            "build error: the body is a stream; into_request takes it, in files.upload"
+            "build error: request() cannot take a one-shot body stream (use into_request), in files.upload"
         );
     }
 
@@ -1003,7 +1012,7 @@ mod tests {
         let error: Error = Error::build("files.upload", BuildFailure::SpentStream);
         assert_eq!(
             error.to_string(),
-            "build error: the body is a stream that was already sent, in files.upload"
+            "build error: the one-shot body stream cannot be used in this request, in files.upload"
         );
     }
 
@@ -1012,7 +1021,7 @@ mod tests {
         let error: Error = Error::transport("vault.balance", 1, TransportError::blocked());
         assert_eq!(
             error.to_string(),
-            "transport error: blocked before it was sent, in vault.balance"
+            "transport error: the request was blocked before it was sent, in vault.balance"
         );
     }
 
@@ -1039,7 +1048,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "refused: status 429, in riot.matches.ids, after 3 tries"
+            "refused: status 429, in riot.matches.ids, after 3 attempts"
         );
     }
 
@@ -1052,7 +1061,7 @@ mod tests {
     fn c6_2_text_14_body_limit() {
         assert_eq!(
             mismatch_at("tasks.get", MismatchFailure::BodyLimit).to_string(),
-            "mismatch: status 200, the body is larger than the limit of the reader, in tasks.get"
+            "mismatch: status 200, the body exceeds the reader's size limit, in tasks.get"
         );
     }
 
@@ -1067,7 +1076,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "mismatch: status 200, items[3].kind is not what the type says, in tasks.list"
+            "mismatch: status 200, items[3].kind could not be decoded, in tasks.list"
         );
     }
 
@@ -1082,7 +1091,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "mismatch: status 200, the body is not what the type says and its content type is not the reader's, in tasks.list"
+            "mismatch: status 200, the body could not be decoded (unexpected content type), in tasks.list"
         );
     }
 
@@ -1097,7 +1106,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "mismatch: status 204, no arm takes this status, in tasks.exists"
+            "mismatch: status 204, no arm matches this status, in tasks.exists"
         );
     }
 
@@ -1112,7 +1121,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "transport error: the body broke after status 200, in files.download"
+            "transport error: the response body could not be read after status 200, in files.download"
         );
     }
 
@@ -1127,7 +1136,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "mismatch: status 200, the next page cannot be asked, in tasks.list"
+            "mismatch: status 200, the next page cannot be requested, in tasks.list"
         );
     }
 
@@ -1148,7 +1157,7 @@ mod tests {
         let error: Error = Error::build("tasks.list", BuildFailure::Origin);
         assert_eq!(
             error.to_string(),
-            "build error: the URL is at another origin than the call, in tasks.list"
+            "build error: the URL leaves the origin of the call, in tasks.list"
         );
     }
 
@@ -1171,7 +1180,7 @@ mod tests {
         let error: Error = Error::clock("tasks.get", 1, Clock::Idle, Duration::from_secs(30));
         assert_eq!(
             error.to_string(),
-            "transport error: no answer for 30 s (with_idle_timeout changes it), in tasks.get"
+            "transport error: no response for 30 s (with_idle_timeout changes it), in tasks.get"
         );
     }
 
@@ -1189,7 +1198,7 @@ mod tests {
         let error: Error = Error::build("files.upload", BuildFailure::ContentLength);
         assert_eq!(
             error.to_string(),
-            "build error: the content-length is not the length of the body, in files.upload"
+            "build error: the content-length does not match the body length, in files.upload"
         );
     }
 
@@ -1472,7 +1481,7 @@ mod tests {
     fn c6_2_connection_words_use_structured_kinds_only() {
         for (source, expected) in [
             (std::io::ErrorKind::ConnectionRefused, "connection refused"),
-            (std::io::ErrorKind::ConnectionReset, "connection reset"),
+            (std::io::ErrorKind::ConnectionReset, "connection failed"),
             (std::io::ErrorKind::Other, "no connection"),
         ] {
             let error: Error = Error::transport(
@@ -1496,7 +1505,7 @@ mod tests {
         let error: Error = Error::transport("tasks.get", 1, TransportError::timeout());
         assert_eq!(
             error.to_string(),
-            "transport error: a timeout was reported by the transport, in tasks.get"
+            "transport error: the transport reported a timeout, in tasks.get"
         );
         let error: Error = Error::transport("tasks.get", 1, TransportError::new(Class::Other));
         assert_eq!(
@@ -1594,15 +1603,15 @@ mod tests {
         for (slot, expected) in [
             (
                 ValuePlace::Path,
-                "build error: input filter cannot be written in a path, in tasks.get",
+                "build error: input filter cannot be serialized into a path, in tasks.get",
             ),
             (
                 ValuePlace::Host,
-                "build error: input filter cannot be written in a host, in tasks.get",
+                "build error: input filter cannot be serialized into a host or port, in tasks.get",
             ),
             (
                 ValuePlace::Header,
-                "build error: input filter cannot be written in a header, in tasks.get",
+                "build error: input filter cannot be serialized into a header, in tasks.get",
             ),
         ] {
             assert_eq!(
@@ -1624,7 +1633,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "build error: input limit could not be written, in tasks.get"
+            "build error: input limit could not be evaluated, in tasks.get"
         );
         assert_eq!(error.kind(), Kind::Build);
         assert_eq!(error.tries(), 0);
@@ -1649,11 +1658,11 @@ mod tests {
         );
         assert_eq!(
             arm.to_string(),
-            "mismatch: status 200, the status arm refused the answer, in tasks.list"
+            "mismatch: status 200, the status arm rejected the response, in tasks.list"
         );
         assert_eq!(
             page.to_string(),
-            "mismatch: status 200, the next page cannot be asked, in tasks.list"
+            "mismatch: status 200, the next page cannot be requested, in tasks.list"
         );
     }
     #[test]
@@ -1665,7 +1674,7 @@ mod tests {
                 unexpected_label: true,
             },
         );
-        assert_eq!(error.to_string(),"mismatch: status 200, items[3].kind is not what the type says and its content type is not the reader's, in tasks.list");
+        assert_eq!(error.to_string(),"mismatch: status 200, items[3].kind could not be decoded (unexpected content type), in tasks.list");
         let error = mismatch_at(
             "tasks.list",
             MismatchFailure::Decode {
@@ -1675,7 +1684,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "mismatch: status 200, the body is not what the type says, in tasks.list"
+            "mismatch: status 200, the body could not be decoded, in tasks.list"
         );
     }
     #[test]
@@ -1683,7 +1692,7 @@ mod tests {
         let error: Error = Error::transport("files.download", 1, TransportError::new(Class::Body));
         assert_eq!(
             error.to_string(),
-            "transport error: the body broke, in files.download"
+            "transport error: the body could not be read, in files.download"
         );
     }
     #[derive(Debug)]
@@ -1707,18 +1716,18 @@ mod tests {
                 Some(Box::new(Chain("INNER_ONLY", None))),
             )),
         );
-        assert_eq!(error.details().to_string(),"build error: the body could not be written, in tasks.create\ncaused by: OUTER_ONLY\ncaused by: INNER_ONLY");
+        assert_eq!(error.details().to_string(),"build error: the body could not be constructed, in tasks.create\ncaused by: OUTER_ONLY\ncaused by: INNER_ONLY");
     }
     #[test]
     fn c6_2_connection_words_walk_four_wrappers_and_cover_all_io_kinds() {
         use std::io::ErrorKind::*;
         for (kind, word) in [
             (ConnectionRefused, "connection refused"),
-            (ConnectionReset, "connection reset"),
-            (ConnectionAborted, "connection reset"),
-            (BrokenPipe, "connection reset"),
-            (NotConnected, "connection reset"),
-            (UnexpectedEof, "connection reset"),
+            (ConnectionReset, "connection failed"),
+            (ConnectionAborted, "connection failed"),
+            (BrokenPipe, "connection failed"),
+            (NotConnected, "connection failed"),
+            (UnexpectedEof, "connection failed"),
             (Other, "no connection"),
         ] {
             let mut cause: Source = Box::new(std::io::Error::from(kind));
@@ -1764,7 +1773,11 @@ mod tests {
             ),
         ] {
             for (clock, lead, tail) in [
-                (Clock::Idle, "no answer for", "with_idle_timeout changes it"),
+                (
+                    Clock::Idle,
+                    "no response for",
+                    "with_idle_timeout changes it",
+                ),
                 (Clock::Total, "the call took longer than", "with_timeout"),
             ] {
                 let error: Error = Error::clock("tasks.get", 1, clock, duration);
@@ -1780,7 +1793,7 @@ mod tests {
     fn c6_2_the_tries_suffix_is_present_only_after_more_than_one_try() {
         for tries in [0, 1, 2, 3, u32::MAX] {
             let suffix = if tries > 1 {
-                format!(", after {tries} tries")
+                format!(", after {tries} attempts")
             } else {
                 String::new()
             };
@@ -1807,7 +1820,7 @@ mod tests {
                         Headers::default(),
                         MismatchFailure::Arm,
                     ),
-                    "mismatch: status 200, the status arm refused the answer",
+                    "mismatch: status 200, the status arm rejected the response",
                 ),
             ] {
                 assert_eq!(error.to_string(), format!("{lead}, in tasks.get{suffix}"));

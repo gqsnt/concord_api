@@ -1,4 +1,4 @@
-error: header `x-mode` is already set above
+error: header `x-mode` is already set by an ancestor
        label: replacement requires `override`
        help: write `override "X-Mode" = "two";`
  --> tests/diagnostics/rules/21_header.rs:2:120

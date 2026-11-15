@@ -1178,7 +1178,9 @@ mod engine_tests {
             } else {
                 let error = pages.try_next().await.unwrap_err();
                 assert_eq!(error.kind(), Kind::Build);
-                assert!(error.to_string().contains("another origin"));
+                assert!(error
+                    .to_string()
+                    .contains("the URL leaves the origin of the call"));
                 assert_eq!(script.requests().len(), 1);
             }
             over(&mut pages).await;
@@ -1287,7 +1289,9 @@ mod engine_tests {
             assert!(pages.try_next().await.unwrap().is_some());
             let error = pages.try_next().await.unwrap_err();
             assert_eq!(error.kind(), Kind::Build);
-            assert!(error.to_string().contains("already sent"));
+            assert!(error
+                .to_string()
+                .contains("the one-shot body stream cannot be used in this request"));
             assert_eq!(script.requests().len(), 1);
             over(&mut pages).await;
         }

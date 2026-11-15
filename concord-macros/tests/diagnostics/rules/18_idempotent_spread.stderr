@@ -1,6 +1,6 @@
 error: `idempotent` requires an endpoint
-       label: a scope cannot name a part holding `idempotent`
-       help: move `..fragment` into the endpoint signature
+       label: a scope cannot name a part that contains `idempotent`
+       help: apply this part to the endpoints that need it, and preserve any inputs or placements needed by their scopes
  --> tests/diagnostics/rules/18_idempotent_spread.rs:2:111
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { idempotent; } scope branch(..fragment) { GET fetch...

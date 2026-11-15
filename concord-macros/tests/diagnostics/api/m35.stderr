@@ -1,6 +1,6 @@
 error: no part named `lol_filters`
        label: not declared in the client block
-       help: did you mean `..lol_filter`? check the inputs and statements of that part
+       help: use `..lol_filter`, the closest declared part; check its inputs and statements first
    --> tests/diagnostics/api/m35.rs:106:48
     |
 106 |             GET ids(puuid: Puuid, ..history, ..lol_filters) -> Vec<MatchId> {

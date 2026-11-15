@@ -1,4 +1,4 @@
-error: query pair `code` is already set above
+error: query pair `code` is already set by an ancestor
        label: replacement requires `override`
        help: write `override "code" = code;`
  --> tests/diagnostics/rules/21_short_query.rs:2:119

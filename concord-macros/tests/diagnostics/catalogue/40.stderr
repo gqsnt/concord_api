@@ -1,5 +1,5 @@
-error: `per_second` is optional, and a middleware is made in `new`
-       label: only the required inputs of the client are set when `new` runs
+error: middleware cannot use the optional client input `per_second`
+       label: middleware is constructed in `new`, before optional inputs are set
        help: declare `per_second: u32`, without `?`
  --> tests/diagnostics/catalogue/40.rs:2:82
   |

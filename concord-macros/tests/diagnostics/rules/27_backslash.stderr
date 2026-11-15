@@ -1,6 +1,6 @@
 error: forbidden character in fixed path text
-       label: this character must come from an encoded value
-       help: move the forbidden fixed text into an input hole at this position; retain the other path text and holes
+       label: this character is not allowed in fixed text
+       help: move the forbidden fixed text into an input placeholder at this position; keep the other path text and placeholders
  --> tests/diagnostics/rules/27_backslash.rs:2:85
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { path "record\\data"; } }

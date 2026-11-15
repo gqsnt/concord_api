@@ -1,6 +1,6 @@
 error: duplicate `body` statement
        label: this node already declares `body`
-       help: keep one declaration of this behaviour, choosing its intended value
+       help: keep one `body` declaration with its intended value
  --> tests/diagnostics/catalogue/17.rs:2:85
   |
 2 | client Tasks { base "https://a.example"; POST create(task: Task) { body json(task); body json(task); } }

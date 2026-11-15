@@ -518,7 +518,7 @@ value for an empty response without reading it: `204 => None`. There is no reade
 
 **A `HEAD` with an arrow reads nothing,** so it needs no reader, and its arms produce every
 value. It must have an arm for a 2xx (an exact status, or the class `2xx`), or it does not
-compile. A status that no arm matches is not read either: a 2xx is a Mismatch (`no arm takes
+compile. A status that no arm matches is not read either: a 2xx is a Mismatch (`no arm matches
 this status`), any other status a Refused error. So `status { 200 => true, 404 => false }`
 makes a `204` a Mismatch; `2xx => true` matches every 2xx.
 

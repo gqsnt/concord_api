@@ -1,14 +1,14 @@
-error: nothing says how this answer is read
-       label: no `read` on the client or the problem line
-       help: supply a reader on the client or after the problem type, before the semicolon
+error: no reader applies to this response body
+       label: no `read` on the client or in this `problem` declaration
+       help: declare a reader with `read` on the client, or after the problem type, before the semicolon
  --> tests/diagnostics/rules/37_problem.rs:2:92
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { problem Issue; } GET fetch(..fragment); }
   |                                                                                            ^^^^^
 
-error: a part cannot hold `problem`
-       label: `path`, `problem`, `middleware` and children belong to the tree
-       help: place this behaviour on the appropriate tree node; consolidate it with any existing statement there
+error: a part cannot contain `problem`
+       label: `problem` is declared on the client
+       help: keep one `problem` declaration, with the intended type, in the client block
  --> tests/diagnostics/rules/37_problem.rs:2:84
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { problem Issue; } GET fetch(..fragment); }

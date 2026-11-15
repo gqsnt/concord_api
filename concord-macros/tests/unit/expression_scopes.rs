@@ -33,7 +33,7 @@ fn replace(source: &str, bad: &str, good: &str) -> String {
 fn c1_18_remove_idempotent_help_preserves_nonrepeatability() {
     let source = "client C { base \"https://a.test\"; POST create() { remove idempotent; } }";
     let d = diagnostics(source);
-    assert_eq!(help(&d, 24), "write `idempotent false;`");
+    assert_eq!(help(&d, 24), "declare `idempotent` with the intended value, without `override` or `remove`; change ancestor declarations if needed");
     let fixed = replace(source, "remove idempotent;", "idempotent false;");
     let flat = accepted(&fixed);
     assert!(flat.contains("idempotent false"));

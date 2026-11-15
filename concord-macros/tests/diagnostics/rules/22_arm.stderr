@@ -1,5 +1,5 @@
-error: no status arm `410` above to override
-       label: nothing is set above for this key
+error: no inherited status arm `410` to override
+       label: no inherited arm matches this key
        help: write `410 =>()`
  --> tests/diagnostics/rules/22_arm.rs:2:89
   |

@@ -1,6 +1,6 @@
 error: statements must precede children
        label: statement appears after a child
-       help: move `path "tasks/{task_id}";` before the first child
+       help: move `path "tasks/{task_id}";` before the first part or child
  --> tests/diagnostics/structure/16_statement_after_child.rs:4:9
   |
 4 |         path "tasks/{task_id}";

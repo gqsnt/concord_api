@@ -1,13 +1,13 @@
-error: no `base` in reach of this endpoint
-       label: no `base` here or above
+error: no `base` applies to this endpoint
+       label: no `base` is declared here or inherited
        help: set the intended base URL on this endpoint or an ancestor
  --> tests/diagnostics/rules/43_multiple.rs:2:143
   |
 2 | ...{ "Host" = "v"; "bad key" = "v"; } status { 601 => () } } GET other(); }
   |                                                                  ^^^^^
 
-error: this URL input must supply one required value
-       label: an optional input cannot fill this hole
+error: a URL input cannot be optional
+       label: an optional input cannot fill this placeholder
        help: declare `id: u32`, without `?`
  --> tests/diagnostics/rules/43_multiple.rs:2:64
   |
@@ -21,8 +21,8 @@ error: this input is marked optional here
   |                                                 ^
 
 error: path segments must be nonempty
-       label: leading or doubled slash
-       help: remove leading or repeated slashes while keeping the path's segments and holes; omit an empty path statement
+       label: empty path or a leading or doubled slash
+       help: remove leading or repeated slashes while keeping the path's segments and placeholders; omit an empty path statement
  --> tests/diagnostics/rules/43_multiple.rs:2:64
   |
 2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
@@ -38,7 +38,7 @@ error: `host` cannot be set in `headers`
 
 error: invalid header name
        label: expected a nonempty ASCII HTTP token
-       help: choose the intended nonempty ASCII HTTP header name, retaining this entry's value
+       help: choose the intended nonempty ASCII HTTP header name, preserving this entry's value or removal
  --> tests/diagnostics/rules/43_multiple.rs:2:97
   |
 2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...

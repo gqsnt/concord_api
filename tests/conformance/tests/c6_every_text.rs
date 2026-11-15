@@ -9,10 +9,10 @@
 //!
 //! The texts that no client of `tests/tour` can produce, and why:
 //!
-//! - `build error: the base is not a URL that can be used, in <endpoint>` (row 1, without
+//! - `build error: the base is not a usable URL, in <endpoint>` (row 1, without
 //!   `with_base`): every base of `tests/tour` is fixed text, which the macro checks (messages
 //!   26 and 27), or a host hole, which fails as a host hole; no client has a port hole.
-//! - `input <name> cannot be written in a path`, `… in a host`, `… in a header` (including
+//! - `input <name> cannot be serialized into a path`, `… into a host or port`, `… into a header` (including
 //!   for a value nested deeper than 128 levels): every input of `tests/tour` that stands in a
 //!   path, a host or a header is a number, a text or a `Secret`; only `shapes.search` has an
 //!   input that a place refuses (`filter`, in a query).
@@ -131,17 +131,17 @@ fn the_texts_of_a_request() -> Vec<Cell> {
     vec![
         row(
             "1. Invalid base, with a with_base that is no base",
-            "build error: the base is not a URL that can be used (with_base), in shapes.again",
+            "build error: the base is not a usable URL (with_base), in shapes.again",
             async { printed(tour::Shapes::new().with_base("not a url").again(1).request()) },
         ),
         row(
             "2. Invalid host hole",
-            "build error: input tenant is not one label of a host, in shapes.hosted",
+            "build error: input tenant cannot be used in this host label, in shapes.hosted",
             async { printed(tour::Shapes::new().hosted("a.b").request()) },
         ),
         row(
             "3. An empty path value, or a finished segment that is . or ..",
-            "build error: input path_key gives an empty or dot path segment, in shapes.guarded",
+            "build error: input path_key is empty or produces a dot path segment, in shapes.guarded",
             async {
                 let lines: Vec<_> = ["", ".", ".."]
                     .into_iter()
@@ -155,7 +155,7 @@ fn the_texts_of_a_request() -> Vec<Cell> {
         ),
         row(
             "4 and A shape that cannot be written at that place (a query)",
-            "build error: input filter cannot be written in a query, in shapes.search",
+            "build error: input filter cannot be serialized into a query, in shapes.search",
             async {
                 let filter = Filter {
                     owner: "ann".into(),
@@ -171,12 +171,12 @@ fn the_texts_of_a_request() -> Vec<Cell> {
         ),
         row(
             "6. Invalid final header value",
-            "build error: the value of header x-cursor is not a legal header value, in shapes.headed",
+            "build error: the value of header x-cursor is invalid, in shapes.headed",
             async { printed(tour::Shapes::new().headed().cursor("a\nb").send().await) },
         ),
         row(
             "6 and The label of a body that is not a legal header value",
-            "build error: the value of header content-type is not a legal header value, in shapes.upload",
+            "build error: the value of header content-type is invalid, in shapes.upload",
             async {
                 let body = concord::Body::new("abc", "text/plain\r\nx-injected: 1");
                 printed(tour::Shapes::new().upload(body).request())
@@ -192,22 +192,22 @@ fn the_texts_of_a_request() -> Vec<Cell> {
         ),
         row(
             "7. A body that could not be written",
-            "build error: the body could not be written, in shapes.measured",
+            "build error: the body could not be constructed, in shapes.measured",
             async { printed(tour::Shapes::new().measured(titled(""), 20).request()) },
         ),
         row(
             "An entry whose expression fails",
-            "build error: input n could not be written, in shapes.parsed",
+            "build error: input n could not be evaluated, in shapes.parsed",
             async { printed(tour::Shapes::new().parsed("twelve").request()) },
         ),
         row(
             "8. request() on a call whose body is a one-shot stream",
-            "build error: the body is a stream; into_request takes it, in shapes.upload",
+            "build error: request() cannot take a one-shot body stream (use into_request), in shapes.upload",
             async { printed(tour::Shapes::new().upload(stream("abc")).request()) },
         ),
         row(
             "9. A body that is a one-shot stream, sent a second time",
-            "build error: the body is a stream that was already sent, in shapes.streamed",
+            "build error: the one-shot body stream cannot be used in this request, in shapes.streamed",
             async {
                 let script = Script::new();
                 script
@@ -220,7 +220,7 @@ fn the_texts_of_a_request() -> Vec<Cell> {
         ),
         row(
             "21. A page that leaves the origin of the first request",
-            "build error: the URL is at another origin than the call, in shapes.roaming",
+            "build error: the URL leaves the origin of the call, in shapes.roaming",
             async {
                 let script = Script::new();
                 give(&script, 200, r#"{"items":[],"next":"other"}"#);
@@ -229,7 +229,7 @@ fn the_texts_of_a_request() -> Vec<Cell> {
         ),
         row(
             "25. A content-length written by the description that is not the length",
-            "build error: the content-length is not the length of the body, in shapes.measured",
+            "build error: the content-length does not match the body length, in shapes.measured",
             async { printed(tour::Shapes::new().measured(titled("t"), 3).request()) },
         ),
     ]
@@ -241,7 +241,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
     vec![
         row(
             "10. A middleware or a transport that will not send",
-            "transport error: blocked before it was sent, in shapes.again",
+            "transport error: the request was blocked before it was sent, in shapes.again",
             async {
                 let script = Script::new();
                 printed(
@@ -254,7 +254,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "18. A body that breaks or ends early",
-            "transport error: the body broke after status 200, in shapes.again",
+            "transport error: the response body could not be read after status 200, in shapes.again",
             async {
                 let script = Script::new();
                 script
@@ -275,8 +275,8 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
             },
         ),
         row(
-            "22 and A connection that failed: connection reset",
-            "transport error: connection reset, in shapes.again",
+            "22 and A connection that failed: connection failed",
+            "transport error: connection failed, in shapes.again",
             async {
                 let shapes = tour::Shapes::new()
                     .with_transport(Fails(Some(std::io::ErrorKind::ConnectionReset)));
@@ -289,8 +289,8 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
             async { printed(tour::Shapes::new().with_transport(Fails(None)).again(1).await) },
         ),
         row(
-            "22. A connection that failed: name not found",
-            "transport error: name not found, in shapes.again",
+            "22. A connection that failed: the host name could not be resolved",
+            "transport error: the host name could not be resolved, in shapes.again",
             async {
                 let http = concord::Http::with(|builder| builder.no_proxy().dns_resolver(NoName))
                     .map_err(|error| error.to_string())?;
@@ -328,7 +328,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "23. Silence for longer than idle_timeout",
-            "transport error: no answer for 30 s (with_idle_timeout changes it), in shapes.again",
+            "transport error: no response for 30 s (with_idle_timeout changes it), in shapes.again",
             async {
                 let script = Script::new();
                 script.never();
@@ -337,7 +337,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "23 and A clock length with a decimal part",
-            "transport error: no answer for 1.5 s (with_idle_timeout changes it), in shapes.again",
+            "transport error: no response for 1.5 s (with_idle_timeout changes it), in shapes.again",
             async {
                 let script = Script::new();
                 script.never();
@@ -347,7 +347,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "Silence before a head, on a clock that the description set",
-            "transport error: no answer for 5 s (with_idle_timeout on the call changes it), in shapes.order",
+            "transport error: no response for 5 s (with_idle_timeout on the call changes it), in shapes.order",
             async {
                 let script = Script::new();
                 script.never();
@@ -356,7 +356,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "A body that was silent after its head",
-            "transport error: the body was silent for 30 s after status 200 (with_idle_timeout changes it), in shapes.again",
+            "transport error: no body data for 30 s after status 200 (with_idle_timeout changes it), in shapes.again",
             async {
                 let script = Script::new();
                 script
@@ -369,7 +369,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "A body that was silent after its head, on a clock that the description set",
-            "transport error: the body was silent for 5 s after status 200 (with_idle_timeout on the call changes it), in shapes.order",
+            "transport error: no body data for 5 s after status 200 (with_idle_timeout on the call changes it), in shapes.order",
             async {
                 let script = Script::new();
                 script
@@ -402,7 +402,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "A timeout that a transport reported",
-            "transport error: a timeout was reported by the transport, in shapes.again",
+            "transport error: the transport reported a timeout, in shapes.again",
             async {
                 let shapes = tour::Shapes::new().with_transport(FailsWith(Class::Timeout));
                 printed(shapes.again(1).await)
@@ -410,7 +410,7 @@ fn the_texts_of_a_transport() -> Vec<Cell> {
         ),
         row(
             "A body that broke with no head known",
-            "transport error: the body broke, in shapes.again",
+            "transport error: the body could not be read, in shapes.again",
             async {
                 let shapes = tour::Shapes::new().with_transport(FailsWith(Class::Body));
                 printed(shapes.again(1).await)
@@ -435,7 +435,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "12. The same, after tries",
-            "refused: status 503, in shapes.again, after 3 tries",
+            "refused: status 503, in shapes.again, after 3 attempts",
             async {
                 let script = Script::new();
                 for _ in 0..3 {
@@ -459,7 +459,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "14. A body larger than its limit",
-            "mismatch: status 200, the body is larger than the limit of the reader, in shapes.again",
+            "mismatch: status 200, the body exceeds the reader's size limit, in shapes.again",
             async {
                 let script = Script::new();
                 script
@@ -472,7 +472,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "15. A body that does not decode, with its place",
-            "mismatch: status 200, counts[key][1].n is not what the type says, in shapes.counts",
+            "mismatch: status 200, counts[key][1].n could not be decoded, in shapes.counts",
             async {
                 let script = Script::new();
                 give(&script, 200, TALLY);
@@ -481,7 +481,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "15 and A place, when the label was not the reader's either",
-            "mismatch: status 200, counts[key][1].n is not what the type says and its content type is not the reader's, in shapes.counts",
+            "mismatch: status 200, counts[key][1].n could not be decoded (unexpected content type), in shapes.counts",
             async {
                 let script = Script::new();
                 script
@@ -493,7 +493,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "16. A body that does not read, when its label was not the reader's either",
-            "mismatch: status 200, the body is not what the type says and its content type is not the reader's, in shapes.counts",
+            "mismatch: status 200, the body could not be decoded (unexpected content type), in shapes.counts",
             async {
                 let script = Script::new();
                 script
@@ -505,7 +505,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "A Mismatch at the root with the reader's label",
-            "mismatch: status 200, the body is not what the type says, in shapes.counts",
+            "mismatch: status 200, the body could not be decoded, in shapes.counts",
             async {
                 let script = Script::new();
                 give(&script, 200, "not json");
@@ -523,7 +523,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "A body of no bytes, whose label was not the reader's",
-            "mismatch: status 200, the body is empty and its content type is not the reader's, in shapes.again",
+            "mismatch: status 200, the body is empty (unexpected content type), in shapes.again",
             async {
                 let script = Script::new();
                 script.answer(200).header("content-type", "text/plain");
@@ -532,7 +532,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "17. A 2xx that no arm takes, under the arrow of a HEAD",
-            "mismatch: status 200, no arm takes this status, in shapes.present",
+            "mismatch: status 200, no arm matches this status, in shapes.present",
             async {
                 let script = Script::new();
                 script.answer(200);
@@ -541,7 +541,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "mismatch(…) or require(…) in an arm",
-            "mismatch: status 201, the status arm refused the answer, in shapes.create",
+            "mismatch: status 201, the status arm rejected the response, in shapes.create",
             async {
                 let script = Script::new();
                 script.answer(201);
@@ -550,7 +550,7 @@ fn the_texts_of_an_answer() -> Vec<Cell> {
         ),
         row(
             "19. A pager that refuses a page",
-            "mismatch: status 200, the next page cannot be asked, in shapes.guarded",
+            "mismatch: status 200, the next page cannot be requested, in shapes.guarded",
             async {
                 let script = Script::new();
                 give(&script, 200, r#"{"items":[],"more":true}"#);
@@ -584,7 +584,7 @@ fn the_texts_on_the_wire() -> Vec<Cell> {
     vec![
         row(
             "A head of the answer that cannot be read",
-            "transport error: the head of the answer could not be read, in shapes.again",
+            "transport error: the response status line or headers could not be parsed, in shapes.again",
             async {
                 let (base, _) = raw_server(Some(b"not HTTP at all\r\n\r\n".to_vec()));
                 printed(shapes_on(&base).again(1).await)
@@ -613,14 +613,14 @@ async fn c6_2_every_text_that_the_engine_prints_through_a_client_of_tour() {
 
 #[tokio::test(start_paused = true)]
 async fn c6_2_a_next_url_that_is_no_url() {
-    // "A next URL that is no URL: `build error: the next URL is not a URL, in
+    // "A next URL that is no URL: `build error: the URL passed to at_url could not be parsed, in
     // <endpoint>`."
     let script = Script::new();
     give(&script, 200, r#"{"items":[],"next":"http://["}"#);
     let line = first_line(shapes(&script).addressed().pages()).await;
     assert_eq!(
         line.as_deref(),
-        Ok("build error: the next URL is not a URL, in shapes.addressed")
+        Ok("build error: the URL passed to at_url could not be parsed, in shapes.addressed")
     );
 }
 

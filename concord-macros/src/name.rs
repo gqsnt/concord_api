@@ -294,7 +294,7 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                         child.name.span(),
                         diag::reserved_child(name, &method_replacement(name, "item"))
                             .label(if reserved(name, &node.kind) {
-                                "conflicts with a generated method"
+                                "reserved for generated methods"
                             } else {
                                 "conflicts with a generated type alias"
                             })
@@ -409,7 +409,7 @@ fn api_name(
         } else {
             diag::keyword_endpoint(&line, &suggestion)
         };
-        diagnostics.raise(name.span(), if safe {message} else {message.help("choose a distinct legal Rust name that conflicts with no owner or generated method, and update its references while retaining wire names")});
+        diagnostics.raise(name.span(), if safe {message} else {message.help("choose a distinct valid Rust name that conflicts with no owner or generated method, and update its references while retaining wire names")});
     } else if !snake(&spelling) {
         let message = diag::invalid_name(&suggestion);
         diagnostics.raise(name.span(), if safe {message.help(format!("rename it to `{suggestion}` and update its references, retaining existing wire names"))}
@@ -486,7 +486,7 @@ fn remember<K: Ord, V: Copy>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Opti
 /// Name the actual placement kinds, including the statements of a part.
 fn rename_input_help(node: &Node, name: &str, replacement: &str, forbidden: &[String]) -> String {
     if !input_candidate(node, replacement, true, forbidden) {
-        return "choose a distinct legal input name that conflicts with no owner, input or generated method, and update its existing references without changing wire names".into();
+        return "choose a distinct valid input name that conflicts with no owner, input or generated method, and update its existing references without changing wire names".into();
     }
     let mut places = std::collections::BTreeSet::new();
     let mut pending = vec![node];
@@ -498,13 +498,22 @@ fn rename_input_help(node: &Node, name: &str, replacement: &str, forbidden: &[St
         }
         pending.extend(&node.children);
     }
-    let places = places.into_iter().collect::<Vec<_>>().join(", ");
+    let places = places
+        .into_iter()
+        .map(|place| format!("`{place}`"))
+        .collect::<Vec<_>>();
+    let places = match places.as_slice() {
+        [] => String::new(),
+        [one] => one.clone(),
+        [one, two] => format!("{one} and {two}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    };
     let location = if places.is_empty() {
         "placements and expressions".into()
     } else {
         format!("{places} placements and expressions")
     };
-    format!("rename this input to `{replacement}`; update its references in the existing {location}, retaining the wire keys and fixed text for {name}")
+    format!("rename this input to `{replacement}` and update its references in the existing {location}; keep the wire keys and fixed text that spell `{name}`")
 }
 
 pub(crate) fn expression_uses(expr: &syn::Expr, name: &str) -> bool {

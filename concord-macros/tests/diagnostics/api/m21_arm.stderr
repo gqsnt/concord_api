@@ -1,4 +1,4 @@
-error: status arm `2xx` is already set above
+error: an inherited arm already matches `2xx`
        label: replacement requires `override`
        help: write `override 2xx { body } => Identity::from_reply(body)?`
   --> tests/diagnostics/api/m21_arm.rs:22:65

@@ -394,7 +394,7 @@ fn c1_18_messages_point_at_the_specified_tokens() {
         ),
         (
             "client C {\n    scope s {\n        problem E;\n    }\n}",
-            "requires the client",
+            "is allowed only on the client",
             3,
             8,
         ),
@@ -467,7 +467,7 @@ fn c1_18_structure_messages_are_raised_together_and_sound_siblings_survive() {
     let text = result.diagnostics.into_tokens().to_string();
     for phrase in [
         "requires an endpoint",
-        "requires the client",
+        "is allowed only on the client",
         "method before",
         "expected",
         "precede children",
@@ -541,14 +541,12 @@ fn c1_18_structure_messages_name_actual_words_and_node_kinds() {
         for node in ["scope s", "GET g()"] {
             let text = errors(&format!("client C {{ {node} {{ {statement} }} }}"));
             assert!(
-                text.contains(&format!("`{word}` requires the client")),
+                text.contains(&format!("`{word}` is allowed only on the client")),
                 "{text}"
             );
         }
     }
-    assert!(
-        errors("client C { GET g(); part p() {} }").contains("statements must precede children")
-    );
+    assert!(errors("client C { GET g(); part p() {} }").contains("parts must precede children"));
 }
 
 #[test]
@@ -588,7 +586,7 @@ fn c1_18_entry_and_arm_errors_preserve_other_entries_arms_and_endpoints() {
 fn c1_18_an_endpoint_without_a_base_reports_message_43() {
     let text = crate::expand("client C { GET g(); }".parse().unwrap()).to_string();
     assert_eq!(text.matches("compile_error").count(), 1);
-    assert!(text.contains("no `base` in reach of this endpoint"));
+    assert!(text.contains("no `base` applies to this endpoint"));
     assert!(!text.contains("step 5"));
     let text = crate::expand("client C { list(); }".parse().unwrap()).to_string();
     assert!(!text.contains("later compiler passes"));

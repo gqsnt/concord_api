@@ -137,8 +137,8 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                         diagnostics.raise(
                             spread.name.span(),
                             diag::unknown_part(&part_name, &part_name).help(suggestion.map_or_else(
-                                || "declare the intended part in the client block, or correct this spread's name".to_owned(),
-                                |name| format!("did you mean `..{name}`? check the inputs and statements of that part"),
+                                || "declare the intended part in the client block, or correct this part name".to_owned(),
+                                |name| format!("use `..{name}`, the closest declared part; check its inputs and statements first"),
                             )),
                         );
                         local_taint = true;
@@ -316,18 +316,7 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                 } else {
                     diag::edited_statement(&word, &replacement)
                 };
-                let duplicate = match &statement.kind {
-                    StatementKind::Query(e) | StatementKind::Headers(e) => {
-                        let keys = e
-                            .entries
-                            .iter()
-                            .map(|e| flat::key(e, word == "headers"))
-                            .collect::<BTreeSet<_>>();
-                        keys.len() != e.entries.len()
-                    }
-                    _ => false,
-                };
-                diagnostics.raise(edit.span(),if duplicate {message.help("put edits on individual entries inside this block, consolidate repeated keys and retain every required input placement")} else {message});
+                diagnostics.raise(edit.span(), message);
                 continue;
             }
             if matches!(
@@ -439,7 +428,7 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                         diagnostics.raise_spanned(
                             ty,
                             diag::problem_reader(&statement_written(statement), "Json").help(
-                                "supply a reader on the client or after the problem type, before the semicolon",
+                                "declare a reader with `read` on the client, or after the problem type, before the semicolon",
                             ),
                         );
                     }
@@ -533,7 +522,7 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                     diag::part_statement(
                         &statement.keyword.to_string(),
                         &statement_written(statement),
-                    ).help("place this behaviour on the appropriate tree node; consolidate it with any existing statement there"),
+                    ),
                 );
             }
         }
@@ -542,7 +531,8 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                 let name = &nested.name;
                 diagnostics.raise(
                     nested.span,
-                    diag::part_placement(&Written::new(quote!(part #name() { }))),
+                    diag::part_placement(&Written::new(quote!(part #name() { })))
+                        .help("move this part declaration into the client block"),
                 );
             }
         }
@@ -671,11 +661,11 @@ fn conflict(
         }) {
             let dots = &spread.dots;
             let name = &spread.name;
-            diagnostics.raise_spanned(quote!(#dots #name), message.help("consolidate the conflicting contributions of these parts, retaining the intended values and input placements, or choose compatible parts"));
+            diagnostics.raise_spanned(quote!(#dots #name), message.help("combine the conflicting declarations of these parts, keeping the intended values and input placements, or use compatible parts"));
             return;
         }
     }
-    diagnostics.raise(span, message.help("consolidate these contributions, retaining the intended value or body function and every input placement; use compatible parts or remove inputs that are no longer needed"));
+    diagnostics.raise(span, message.help("keep one declaration with the intended value or body function and every input placement; use compatible parts, or remove inputs that become unused"));
 }
 
 type Seen<'a> = BTreeMap<String, Line<'a, Statement>>;
@@ -706,7 +696,7 @@ fn resolve_entries<'a>(
                         &key,
                         &Written::new(flat::entry_tokens(entry)),
                         first.origin.span,
-                    ).help("consolidate these entries into one intended value, retaining every needed input placement or removing declarations that are no longer needed"),
+                    ).help("keep one entry or removal for this key; preserve needed input references and remove inputs that become unused"),
                 );
             } else {
                 conflict(&key, &site, first, Some(kind), diagnostics);
@@ -800,7 +790,7 @@ fn resolve_arms<'a>(
                         &key,
                         &Written::new(quote!(#key)),
                         first.origin.span,
-                    ).help("consolidate these arms into one intended arm, retaining every needed input reference or removing declarations that are no longer needed"),
+                    ).help("keep one status arm or removal for this key; preserve needed input references and remove inputs that become unused"),
                 );
             } else {
                 conflict(&key, &site, first, Some("status arm"), diagnostics);
@@ -825,9 +815,7 @@ fn resolve_arms<'a>(
             } else if !source.origin.tainted {
                 let removal = Written::new(quote!(remove #key_tokens));
                 let message = if let Some(class) = class_arm {
-                    diag::remove_class_member(&key, &class.value.key.to_string(), &plain).help(
-                        "an exact removal cannot exclude a member of a class; write an overriding exact arm with the intended fields and expression",
-                    )
+                    diag::remove_class_member(&key, &class.value.key.to_string(), &plain)
                 } else {
                     diag::remove_arm(&key, &removal)
                 };
@@ -911,7 +899,7 @@ fn endpoint_checks(endpoint: &flat::Endpoint<'_>, head: bool, diagnostics: &mut 
                             quote!(status { remove #key })
                         }),
                         field.name.span(),
-                    ).help("declare the intended result type after an arrow, or stop the arms in reach from reading a body"),
+                    ).help("declare the intended return type with `->`, or stop the arms that apply here from binding `body`"),
                 );
             }
             if !head
@@ -986,7 +974,7 @@ fn endpoint_checks(endpoint: &flat::Endpoint<'_>, head: bool, diagnostics: &mut 
                         use concord::Json;
                     )),
                 )
-                .help("supply the intended reader on this endpoint or an ancestor"),
+                .help("declare the intended reader with `read` on this endpoint or an ancestor"),
             );
         }
     }
@@ -1001,7 +989,7 @@ fn missing_reader(span: proc_macro2::Span, diagnostics: &mut Diagnostics) {
                 use concord::Json;
             )),
         )
-        .help("supply the intended reader on this endpoint or an ancestor"),
+        .help("declare the intended reader with `read` on this endpoint or an ancestor"),
     );
 }
 

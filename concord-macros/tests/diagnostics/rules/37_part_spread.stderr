@@ -1,14 +1,14 @@
-error: no `base` in reach of this endpoint
-       label: no `base` here or above
+error: no `base` applies to this endpoint
+       label: no `base` is declared here or inherited
        help: set the intended base URL on this endpoint or an ancestor
  --> tests/diagnostics/rules/37_part_spread.rs:2:60
   |
 2 |     client Workshop { part one(..two) {} part two() {} GET fetch(..one); }
   |                                                            ^^^^^
 
-error: a part cannot hold a part spread
-       label: a part names no other part
-       help: move `..two` into a scope or endpoint signature
+error: a part cannot name another part
+       label: only a scope or an endpoint can name a part
+       help: move this part reference to a compatible scope or endpoint signature, preserving its inputs and placements
  --> tests/diagnostics/rules/37_part_spread.rs:2:34
   |
 2 |     client Workshop { part one(..two) {} part two() {} GET fetch(..one); }
@@ -16,7 +16,7 @@ error: a part cannot hold a part spread
 
 error: part `two` is never used
        label: no scope or endpoint names `..two`
-       help: add `..two` to a signature, or remove the part
+       help: apply this part to a compatible scope or endpoint, or remove its declaration
  --> tests/diagnostics/rules/37_part_spread.rs:2:47
   |
 2 |     client Workshop { part one(..two) {} part two() {} GET fetch(..one); }

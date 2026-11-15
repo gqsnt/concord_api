@@ -1,6 +1,6 @@
 error: `pages` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `pages_value`; update its references in the existing paginate, query placements and expressions, retaining the wire keys and fixed text for pages
+       label: reserved for generated methods
+       help: rename this input to `pages_value` and update its references in the existing `paginate` and `query` placements and expressions; keep the wire keys and fixed text that spell `pages`
   --> tests/diagnostics/api/m03_part.rs:34:21
    |
 34 |         part ladder(pages?: u32) {

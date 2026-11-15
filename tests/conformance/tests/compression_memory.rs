@@ -68,7 +68,7 @@ async fn c5_4_gzip_limit_counts_decoded_bytes_without_allocating_the_expanded_bo
     assert!(
         error
             .to_string()
-            .contains("the body is larger than the limit"),
+            .contains("the body exceeds the reader's size limit"),
         "{error}"
     );
     assert!(error.body().map_or(0, <[u8]>::len) <= 64 * 1024);

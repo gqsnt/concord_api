@@ -1,5 +1,5 @@
-error: `rate` is optional, and a middleware is made in `new`
-       label: only the required inputs of the client are set when `new` runs
+error: middleware cannot use the optional client input `rate`
+       label: middleware is constructed in `new`, before optional inputs are set
        help: declare `rate: u16`, without `?`
  --> tests/diagnostics/rules/40_qualified.rs:2:89
   |

@@ -1,5 +1,5 @@
-error: no `base` in reach of this endpoint
-       label: no `base` here or above
+error: no `base` applies to this endpoint
+       label: no `base` is declared here or inherited
        help: set the intended base URL on this endpoint or an ancestor
  --> tests/diagnostics/rules/10_self_problem.rs:2:58
   |
@@ -8,7 +8,7 @@ error: no `base` in reach of this endpoint
 
 error: `Self` has no meaning in a description
        label: `Self` is not the enclosing type here
-       help: write the path of the type
+       help: replace `Self` with the path of the intended type
  --> tests/diagnostics/rules/10_self_problem.rs:2:35
   |
 2 |     client Workshop { problem Vec<Self> read Reader; GET fetch(); }

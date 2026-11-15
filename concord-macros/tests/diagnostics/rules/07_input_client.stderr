@@ -1,6 +1,6 @@
-error: ambiguous input owner
-       label: this owner name is already in use
-       help: rename this input to `client_id`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for client
+error: name conflicts with an input owner
+       label: this name is already used by the client or a scope
+       help: rename this input to `client_id` and update its references in the existing `query` placements and expressions; keep the wire keys and fixed text that spell `client`
  --> tests/diagnostics/rules/07_input_client.rs:2:76
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(client: String) { query { client; } } }

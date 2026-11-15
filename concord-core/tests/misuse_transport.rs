@@ -183,7 +183,7 @@ async fn c6_2_c4_2_parse_errors_are_other_and_never_retried_without_sockets() {
         assert!(error.is_parse());
         assert_failure(
             reqwest_failure(error).await,
-            "the head of the answer could not be read",
+            "the response status line or headers could not be parsed",
             None,
         )
         .await;
@@ -265,7 +265,7 @@ async fn c6_2_real_reqwest_malformed_heads_and_request_body_failures() {
             if upload {
                 "the body of the request failed"
             } else {
-                "the head of the answer could not be read"
+                "the response status line or headers could not be parsed"
             },
             upload.then_some(io::ErrorKind::Other),
         )

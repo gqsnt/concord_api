@@ -8,7 +8,7 @@ error: statements must precede parts
 
 error: part `page` is never used
        label: no scope or endpoint names `..page`
-       help: add `..page` to a signature, or remove the part
+       help: apply this part to a compatible scope or endpoint, or remove its declaration
  --> tests/diagnostics/structure/16_statement_after_part.rs:3:14
   |
 3 |         part page() {}

@@ -1,5 +1,5 @@
 error: `new` is reserved by Concord
-       label: conflicts with a generated method
+       label: reserved for generated methods
        help: rename this child to `new_item`
  --> tests/diagnostics/rules/03_child_reserved.rs:2:70
   |

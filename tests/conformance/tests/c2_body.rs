@@ -12,12 +12,12 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const ONE_SHOT_REQUEST: &str =
-    "build error: the body is a stream; into_request takes it, in files.upload";
+    "build error: request() cannot take a one-shot body stream (use into_request), in files.upload";
 const ALREADY_SENT: &str =
-    "build error: the body is a stream that was already sent, in files.upload";
-const NOT_WRITTEN: &str = "build error: the body could not be written, in tasks.create";
+    "build error: the one-shot body stream cannot be used in this request, in files.upload";
+const NOT_WRITTEN: &str = "build error: the body could not be constructed, in tasks.create";
 const LENGTH: &str =
-    "build error: the content-length is not the length of the body, in files.upload";
+    "build error: the content-length does not match the body length, in files.upload";
 
 #[derive(Serialize)]
 struct Task {
@@ -1084,9 +1084,10 @@ fn c2_16_the_names_quote_and_percent_22_are_written_the_same() {
 #[tokio::test(start_paused = true)]
 async fn c2_7_c2_9_the_label_of_a_body_is_a_header_value() {
     // "`Body::new(bytes, label)` and `Body::stream(…, label)` with a label
-    // that is not a legal header value give the Build error of a header: `the value of header
-    // content-type is not a legal header value`."
-    const LABEL: &str = "build error: the value of header content-type is not a legal header value, in shapes.upload";
+    // that is not a legal header value give the Build error of a header:
+    // `the value of header content-type is invalid`."
+    const LABEL: &str =
+        "build error: the value of header content-type is invalid, in shapes.upload";
     for label in [
         "text/plain\r\nx-label-7d21: 1",
         "text/plain; x=label-7d21\n",

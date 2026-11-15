@@ -12,15 +12,15 @@ error: the part `one` declares `code` here
 2 |     client Workshop { base "https://workshop.test"; read Reader; part one(code: u32) { query { code; } } part two(code: u32) { query ...
   |                                                                           ^^^^
 
-error: `code` is written in both parts `one` and `two`
+error: `code` is declared in both parts `one` and `two`
        label: the statements of a part count as this node's own
-       help: consolidate the conflicting contributions of these parts, retaining the intended values and input placements, or choose compatible parts
+       help: combine the conflicting declarations of these parts, keeping the intended values and input placements, or use compatible parts
  --> tests/diagnostics/rules/38_input_parts.rs:2:162
   |
 2 | ...; } } part two(code: u32) { query { code; } } GET fetch(..one,..two); }
   |                                                                  ^^^^^
 
-error: the part `one` writes it here
+error: part `one` declares it here
  --> tests/diagnostics/rules/38_input_parts.rs:2:96
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; part one(code: u32) { query { code; } } part two(code: u32) { query ...

@@ -1,5 +1,5 @@
-error: this URL input must supply one required value
-       label: an optional input cannot fill this hole
+error: a URL input cannot be optional
+       label: an optional input cannot fill this placeholder
        help: declare `count: u32`, without `?`
    --> tests/diagnostics/api/m28_template.rs:208:22
     |

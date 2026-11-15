@@ -1,5 +1,5 @@
 error: unsupported attribute on an endpoint
-       label: an endpoint takes doc comments, #[cfg], #[deprecated] and #[doc(hidden)] only
+       label: an endpoint accepts only doc comments, `#[cfg]`, `#[deprecated]`, and `#[doc(hidden)]`
        help: remove `# [inline]` from this endpoint
  --> tests/diagnostics/rules/14_endpoint.rs:2:66
   |

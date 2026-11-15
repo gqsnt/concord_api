@@ -1,4 +1,4 @@
-error: paths cannot be overridden or removed
+error: `override` and `remove` cannot be used on `path`
        label: each path adds segments
        help: write `path "records";` and change the ancestor's path if needed
  --> tests/diagnostics/rules/24_path_override.rs:2:80

@@ -1,5 +1,5 @@
-error: ambiguous input owner
-       label: this owner name is already in use
+error: name conflicts with an input owner
+       label: the client or an enclosing scope already has this name
        help: choose a distinct scope name and update every qualified reference to this scope's inputs
  --> tests/diagnostics/rules/07_repeated_owner.rs:2:86
   |

@@ -168,8 +168,8 @@ async fn c7_6_body_idle_deadline_starts_before_the_first_poll_and_ready_work_win
             assert_eq!(error.kind(), Kind::Transport);
             assert_eq!(error.class(), Some(Class::Timeout));
             assert_eq!(error.tries(), 1);
-            // "After a head, while a body is read: `transport error: the body was silent for 30 s after status 200 (<hint>), in <endpoint>`."
-            assert_eq!(error.to_string(), "transport error: the body was silent for 3 s after status 200 (with_idle_timeout changes it), in files.readme");
+            // "After a head, while a body is read: `transport error: no body data for 30 s after status 200 (<hint>), in <endpoint>`."
+            assert_eq!(error.to_string(), "transport error: no body data for 3 s after status 200 (with_idle_timeout changes it), in files.readme");
         } else {
             assert_eq!(result.unwrap(), "ready");
         }

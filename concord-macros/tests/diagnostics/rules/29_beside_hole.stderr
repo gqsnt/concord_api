@@ -1,6 +1,6 @@
-error: a `{*…}` hole must be a whole segment
+error: a `{*…}` placeholder must be a whole path segment
        label: `{*rest}` shares its segment with `{prefix}`
-       help: write `path "{prefix}{rest}";`; a `{rest}` hole may share its segment
+       help: write `path "{prefix}{rest}";`; a `{rest}` placeholder may share its segment
  --> tests/diagnostics/rules/29_beside_hole.rs:2:113
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(prefix: String, rest: String) { path "{prefix}{*rest}"; } }

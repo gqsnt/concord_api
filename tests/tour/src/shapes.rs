@@ -496,7 +496,7 @@ const _: () = {
         ///
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the item.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn again(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Again {
             shapes::Again {
                 __client: self.clone(),
@@ -519,7 +519,7 @@ const _: () = {
         /// Retry: not sent again, even when retry is on, unless the policy lists the
         /// response status with `Retry::not_applied_on`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn replace(
             &self,
             id: impl ::concord::arg::Arg<u64>,
@@ -545,7 +545,7 @@ const _: () = {
         ///
         /// Retry: whether this call may be sent again is decided from its inputs, for each send.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn order(&self, trace: impl ::concord::arg::Arg<Trace>) -> shapes::Order {
             shapes::Order {
                 __client: self.clone(),
@@ -569,7 +569,7 @@ const _: () = {
         /// Retry: an unmarked `POST` may be sent again when the policy lists the
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn upload(&self, body: impl ::concord::arg::Arg<::concord::Body>) -> shapes::Upload {
             shapes::Upload {
                 __client: self.clone(),
@@ -590,7 +590,7 @@ const _: () = {
         ///
         /// Status: `409`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
+        /// `.await` returns [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
         pub fn outcome(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Outcome {
             shapes::Outcome {
                 __client: self.clone(),
@@ -605,7 +605,7 @@ const _: () = {
         ///
         /// Request: `HEAD https://shapes.example.com/ping`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+        /// `.await` returns [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
         pub fn ping(&self) -> shapes::Ping {
             shapes::Ping {
                 __client: self.clone(),
@@ -627,7 +627,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`bool`]>.
+        /// `.await` returns [`shapes::Result`]<[`bool`]>.
         pub fn present(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Present {
             shapes::Present {
                 __client: self.clone(),
@@ -655,7 +655,7 @@ const _: () = {
         /// Retry: an unmarked `POST` may be sent again when the policy lists the
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Receipt`]>.
+        /// `.await` returns [`shapes::Result`]<[`Receipt`]>.
         pub fn create(&self, item: impl ::concord::arg::Arg<Item>) -> shapes::Create {
             shapes::Create {
                 __client: self.clone(),
@@ -674,7 +674,7 @@ const _: () = {
         ///
         /// - `tenant`: [`String`], &[`String`], or &[`str`]. The tenant: one label of the host.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn hosted(&self, tenant: impl ::concord::arg::Arg<String>) -> shapes::Hosted {
             shapes::Hosted {
                 __client: self.clone(),
@@ -697,7 +697,7 @@ const _: () = {
         ///
         /// - `.filter(filter)`: accepts [`Filter`], &[`Filter`], or an [`Option`]<[`Filter`]>. `None` clears it. A struct: a query refuses it when the request is built.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Vec`]<[`Item`]>>.
+        /// `.await` returns [`shapes::Result`]<[`Vec`]<[`Item`]>>.
         pub fn search(&self, ratio: impl ::concord::arg::Arg<f64>) -> shapes::Search {
             shapes::Search {
                 __client: self.clone(),
@@ -723,7 +723,7 @@ const _: () = {
         /// Retry: an unmarked `POST` may be sent again when the policy lists the
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn measured(
             &self,
             item: impl ::concord::arg::Arg<Item>,
@@ -747,7 +747,7 @@ const _: () = {
         ///
         /// - `raw`: [`String`], &[`String`], or &[`str`]. The number, as text.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn parsed(&self, raw: impl ::concord::arg::Arg<String>) -> shapes::Parsed {
             shapes::Parsed {
                 __client: self.clone(),
@@ -762,7 +762,7 @@ const _: () = {
         ///
         /// Request: `GET https://shapes.example.com/counts`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Tally`]>.
+        /// `.await` returns [`shapes::Result`]<[`Tally`]>.
         pub fn counts(&self) -> shapes::Counts {
             shapes::Counts {
                 __client: self.clone(),
@@ -776,7 +776,7 @@ const _: () = {
         ///
         /// Request: `GET https://shapes.example.com/strict`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn strict(&self) -> shapes::Strict {
             shapes::Strict {
                 __client: self.clone(),
@@ -790,7 +790,7 @@ const _: () = {
         ///
         /// Request: `GET https://shapes.example.com/long-message`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn long_message(&self) -> shapes::LongMessage {
             shapes::LongMessage {
                 __client: self.clone(),
@@ -817,7 +817,7 @@ const _: () = {
         ///
         /// - `trace`: [`Trace`] or &[`Trace`]. What the reader notes.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn noted(&self, trace: impl ::concord::arg::Arg<Trace>) -> shapes::Noted {
             shapes::Noted {
                 __client: self.clone(),
@@ -839,7 +839,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn titled(
             &self,
             id: impl ::concord::arg::Arg<u64>,
@@ -865,7 +865,7 @@ const _: () = {
         ///
         /// Status: `409`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
+        /// `.await` returns [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
         pub fn held(&self, body: impl ::concord::arg::Arg<u64>) -> shapes::Held {
             shapes::Held {
                 __client: self.clone(),
@@ -886,7 +886,7 @@ const _: () = {
         ///
         /// Status: `4xx`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn refusal(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Refusal {
             shapes::Refusal {
                 __client: self.clone(),
@@ -913,9 +913,9 @@ const _: () = {
         /// - `.header_key("key")`: accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it. A key written in the header `x-key`.
         /// - `.cursor("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. The cursor of the page.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn guarded(&self, path_key: impl ::concord::arg::Arg<Secret>) -> shapes::Guarded {
             shapes::Guarded {
                 __client: self.clone(),
@@ -939,9 +939,9 @@ const _: () = {
         ///
         /// - `.cursor("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. The cursor of the page, sent as `x-cursor`.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn headed(&self) -> shapes::Headed {
             shapes::Headed {
                 __client: self.clone(),
@@ -961,9 +961,9 @@ const _: () = {
         /// - `.token("key")`: accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it. A token written in the body.
         /// - `.cursor("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. The cursor of the page, written in the body.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn posted(&self) -> shapes::Posted {
             shapes::Posted {
                 __client: self.clone(),
@@ -987,9 +987,9 @@ const _: () = {
         ///
         /// - `.cursor("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. The cursor of the page.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn streamed(&self, file: impl ::concord::arg::Arg<::concord::Body>) -> shapes::Streamed {
             shapes::Streamed {
                 __client: self.clone(),
@@ -1009,9 +1009,9 @@ const _: () = {
         ///
         /// - `.cursor("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. The cursor of the page.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn renewed(&self) -> shapes::Renewed {
             shapes::Renewed {
                 __client: self.clone(),
@@ -1034,9 +1034,9 @@ const _: () = {
         ///
         /// - `.cursor("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. The cursor of the page.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn keyed_host(&self, host_key: impl ::concord::arg::Arg<Secret>) -> shapes::KeyedHost {
             shapes::KeyedHost {
                 __client: self.clone(),
@@ -1060,9 +1060,9 @@ const _: () = {
         ///
         /// - `.cursor("next")`: accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. The cursor of the page.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn roaming(&self, tenant: impl ::concord::arg::Arg<String>) -> shapes::Roaming {
             shapes::Roaming {
                 __client: self.clone(),
@@ -1082,9 +1082,9 @@ const _: () = {
         ///
         /// - `.start(5)`: accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it. The index of the first item.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Vec`]<[`Item`]>>.
+        /// `.send().await` returns [`shapes::Result`]<[`Vec`]<[`Item`]>>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn offset(&self) -> shapes::Offset {
             shapes::Offset {
                 __client: self.clone(),
@@ -1103,9 +1103,9 @@ const _: () = {
         ///
         /// - `.page(5)`: accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it. The number of the page; the first is 1.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Vec`]<[`Item`]>>.
+        /// `.send().await` returns [`shapes::Result`]<[`Vec`]<[`Item`]>>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn numbered(&self) -> shapes::Numbered {
             shapes::Numbered {
                 __client: self.clone(),
@@ -1120,9 +1120,9 @@ const _: () = {
         ///
         /// Request: `GET https://shapes.example.com/addressed`.
         ///
-        /// `.send().await` gives [`shapes::Result`]<[`Batch`]>.
+        /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
-        /// `.send().await` gives one page; `.pages()` gives them all, and `.pages().items()` each item.
+        /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         pub fn addressed(&self) -> shapes::Addressed {
             shapes::Addressed {
                 __client: self.clone(),
@@ -1144,7 +1144,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+        /// `.await` returns [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
         pub fn remove(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Remove {
             shapes::Remove {
                 __client: self.clone(),
@@ -1165,7 +1165,7 @@ const _: () = {
         ///
         /// Status: `202`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
+        /// `.await` returns [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
         pub fn settled(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Settled {
             shapes::Settled {
                 __client: self.clone(),
@@ -1188,7 +1188,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Option`]<[`concord::ByteStream`]>>.
+        /// `.await` returns [`shapes::Result`]<[`Option`]<[`concord::ByteStream`]>>.
         pub fn part(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Part {
             shapes::Part {
                 __client: self.clone(),
@@ -1254,7 +1254,7 @@ const _: () = {
         ///
         /// Status: `2xx`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Item`]>.
+        /// `.await` returns [`shapes::Result`]<[`Item`]>.
         pub fn get(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Get {
             shapes::wrapped::Get {
                 __scope: self.clone(),
@@ -1273,7 +1273,7 @@ const _: () = {
         ///
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the item.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Envelope`]<[`Item`]>>.
+        /// `.await` returns [`shapes::Result`]<[`Envelope`]<[`Item`]>>.
         pub fn raw(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Raw {
             shapes::wrapped::Raw {
                 __scope: self.clone(),
@@ -1296,7 +1296,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`Option`]<[`Item`]>>.
+        /// `.await` returns [`shapes::Result`]<[`Option`]<[`Item`]>>.
         pub fn find(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Find {
             shapes::wrapped::Find {
                 __scope: self.clone(),
@@ -1319,7 +1319,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+        /// `.await` returns [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
         pub fn touch(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Touch {
             shapes::wrapped::Touch {
                 __scope: self.clone(),
@@ -1342,7 +1342,7 @@ const _: () = {
         ///
         /// Status: `404`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`bool`]>.
+        /// `.await` returns [`shapes::Result`]<[`bool`]>.
         pub fn holds(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Holds {
             shapes::wrapped::Holds {
                 __scope: self.clone(),
@@ -1384,7 +1384,7 @@ const _: () = {
         ///
         /// Status: `2xx`.
         ///
-        /// `.await` gives [`shapes::Result`]<[`concord::ByteStream`]>.
+        /// `.await` returns [`shapes::Result`]<[`concord::ByteStream`]>.
         pub fn file(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::sealed::File {
             shapes::sealed::File {
                 __scope: self.clone(),
@@ -4857,7 +4857,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -5025,7 +5025,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -5208,7 +5208,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -5407,7 +5407,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -5591,7 +5591,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -5780,7 +5780,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -5972,7 +5972,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -6138,7 +6138,7 @@ const _: () = {
         pages {
             /// Iterate over [`Vec`]<[`Item`]> pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Vec`]<[`Item`]>>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Vec`]<[`Item`]>>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -6301,7 +6301,7 @@ const _: () = {
         pages {
             /// Iterate over [`Vec`]<[`Item`]> pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Vec`]<[`Item`]>>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Vec`]<[`Item`]>>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is
@@ -6424,7 +6424,7 @@ const _: () = {
         pages {
             /// Iterate over [`Batch`] pages.
             ///
-            /// `try_next().await` gives [`shapes::Result`]<[`Option`]<[`Batch`]>>.
+            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
             /// Each page is one call. Nothing is asked until iteration starts.
             pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
                 // The owner in reach, then each input as its place; the expression is

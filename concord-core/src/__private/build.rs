@@ -1089,7 +1089,10 @@ mod tests {
                 Piece::Val("region", &value),
                 Piece::Lit(".test/"),
             ]);
-            assert_eq!(error(d), named("input region is not one label of a host"));
+            assert_eq!(
+                error(d),
+                named("input region cannot be used in this host label")
+            );
         }
         for value in ["-bad".to_owned(), "bad-".to_owned(), "a".repeat(64)] {
             let mut d = draft();
@@ -1098,7 +1101,10 @@ mod tests {
                 Piece::Val("region", &value),
                 Piece::Lit(".test/"),
             ]);
-            assert_eq!(error(d), named("input region is not one label of a host"));
+            assert_eq!(
+                error(d),
+                named("input region cannot be used in this host label")
+            );
         }
         for base in [
             "https://127.1/",
@@ -1116,11 +1122,7 @@ mod tests {
         ] {
             let mut d = draft();
             d.base(&[Piece::Lit(base)]);
-            assert_eq!(
-                error(d),
-                named("the base is not a URL that can be used"),
-                "{base:?}"
-            );
+            assert_eq!(error(d), named("the base is not a usable URL"), "{base:?}");
         }
         for port in ["", "-1", "65536", "1.5", "4/evil"] {
             let mut d = draft();
@@ -1128,7 +1130,7 @@ mod tests {
                 Piece::Lit("https://example.test:"),
                 Piece::Val("port", &port),
             ]);
-            assert_eq!(error(d), named("the base is not a URL that can be used"));
+            assert_eq!(error(d), named("the base is not a usable URL"));
         }
     }
     #[test]
@@ -1158,7 +1160,7 @@ mod tests {
                     .finish(&core.clone(), &Options::default(), "tasks.get")
                     .unwrap_err()
                     .to_string(),
-                named("the base is not a URL that can be used (with_base)")
+                named("the base is not a usable URL (with_base)")
             );
         }
         // A caller replacement replaces even a deferred error in the description's base.
@@ -1179,7 +1181,7 @@ mod tests {
             d.segment(&[Piece::Val("id", &value)]);
             assert_eq!(
                 error(d),
-                named("input id gives an empty or dot path segment")
+                named("input id is empty or produces a dot path segment")
             );
         }
         let mut d = draft();
@@ -1209,7 +1211,10 @@ mod tests {
     fn c2_4_a_whole_hole_template_rejects_a_list() {
         let mut d = draft();
         d.query("q", &[Piece::Lit(""), Piece::Val("ids", &vec!["a", "b"])]);
-        assert_eq!(error(d), named("input ids cannot be written in a query"));
+        assert_eq!(
+            error(d),
+            named("input ids cannot be serialized into a query")
+        );
     }
 
     #[test]
@@ -1261,7 +1266,7 @@ mod tests {
             d.segments("file", &value);
             assert_eq!(
                 error(d),
-                named("input file gives an empty or dot path segment")
+                named("input file is empty or produces a dot path segment")
             );
         }
     }
@@ -1375,10 +1380,7 @@ mod tests {
         for value in ["a\nb", "a\rb", "\x7f", "é"] {
             let mut d = draft();
             d.header("x-note", &[Piece::Val("note", &value)]);
-            assert_eq!(
-                error(d),
-                named("the value of header x-note is not a legal header value")
-            );
+            assert_eq!(error(d), named("the value of header x-note is invalid"));
         }
         let secret = Secret::new("token");
         let mut d = draft();
@@ -1421,7 +1423,10 @@ mod tests {
             ],
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(error(d), named("input list cannot be written in a query"));
+        assert_eq!(
+            error(d),
+            named("input list cannot be serialized into a query")
+        );
         let mut d = draft();
         d.query(
             "note",
@@ -1451,7 +1456,10 @@ mod tests {
         let mut d = draft();
         d.body(Err::<Body, _>(std::io::Error::other("writer cause")));
         let failure = finish(d).unwrap_err();
-        assert_eq!(failure.to_string(), named("the body could not be written"));
+        assert_eq!(
+            failure.to_string(),
+            named("the body could not be constructed")
+        );
         assert_eq!(
             std::error::Error::source(&failure).unwrap().to_string(),
             "writer cause"
@@ -1488,7 +1496,7 @@ mod tests {
                     .unwrap_err();
                 assert_eq!(
                     error.to_string(),
-                    named("the value of header content-type is not a legal header value")
+                    named("the value of header content-type is invalid")
                 );
                 assert_eq!(error.tries(), 0);
                 assert!(std::error::Error::source(&error).is_none());
@@ -1514,7 +1522,7 @@ mod tests {
             d.header("content-length", &[Piece::Val("size", &length)]);
             assert_eq!(
                 error(d),
-                named("the content-length is not the length of the body")
+                named("the content-length does not match the body length")
             );
         }
         let mut d = draft();
@@ -1549,7 +1557,7 @@ mod tests {
             d.body(&body);
             assert_eq!(
                 error(d),
-                named("the body is a stream; into_request takes it")
+                named("request() cannot take a one-shot body stream (use into_request)")
             );
         }
         let mut d = draft();
@@ -1564,7 +1572,7 @@ mod tests {
             d.finish_for_send(&Core::<()>::default(), &Options::default(), "tasks.get")
                 .unwrap_err()
                 .to_string(),
-            named("the body is a stream that was already sent")
+            named("the one-shot body stream cannot be used in this request")
         );
         assert!(source.into_stream().is_err());
     }
@@ -1574,7 +1582,7 @@ mod tests {
         d.query("filter", &[Piece::Val("client.filter", &vec![vec![1]])]);
         assert_eq!(
             error(d),
-            named("input client.filter cannot be written in a query")
+            named("input client.filter cannot be serialized into a query")
         );
         let mut d = draft();
         d.header("x-note", &[Piece::Val("note", &f64::NAN)]);
@@ -1700,7 +1708,7 @@ mod tests {
                     .finish(&Core::<()>::default(), &options, "tasks.get")
                     .unwrap_err()
                     .to_string(),
-                named("the URL is at another origin than the call")
+                named("the URL leaves the origin of the call")
             );
         }
     }
@@ -1721,7 +1729,7 @@ mod tests {
                 .finish(&Core::<()>::default(), &options, "tasks.get")
                 .unwrap_err()
                 .to_string(),
-            named("the URL is at another origin than the call")
+            named("the URL leaves the origin of the call")
         );
         options.at_url("https://example.test/okay");
         assert!(draft()
@@ -1762,7 +1770,7 @@ mod tests {
         ]);
         assert_eq!(
             error(d),
-            named("input id gives an empty or dot path segment")
+            named("input id is empty or produces a dot path segment")
         );
         let mut d = draft();
         d.base(&[
@@ -1823,11 +1831,11 @@ mod tests {
                     Piece::Val("region", &""),
                     Piece::Lit(".test/"),
                 ],
-                "input region is not one label of a host",
+                "input region cannot be used in this host label",
             ),
             (
                 vec![Piece::Lit("https://example.test:"), Piece::Val("port", &"")],
-                "the base is not a URL that can be used",
+                "the base is not a usable URL",
             ),
         ] {
             let mut d = draft();
@@ -1840,7 +1848,10 @@ mod tests {
             Piece::Val("region", &"é"),
             Piece::Lit(".test/"),
         ]);
-        assert_eq!(error(d), named("input region is not one label of a host"));
+        assert_eq!(
+            error(d),
+            named("input region cannot be used in this host label")
+        );
         let mut d = draft();
         d.base(&[Piece::Lit("https://xn--xample-9ua.test/")]);
         assert!(finish(d).is_ok());
@@ -1876,7 +1887,10 @@ mod tests {
             "limit",
             Box::new(std::io::Error::other("entry cause")),
         );
-        assert_eq!(error.to_string(), named("input limit could not be written"));
+        assert_eq!(
+            error.to_string(),
+            named("input limit could not be evaluated")
+        );
         assert_eq!(
             std::error::Error::source(&error).unwrap().to_string(),
             "entry cause"
@@ -2033,7 +2047,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "build error: the next URL is not a URL, in tasks.get"
+            "build error: the URL passed to at_url could not be parsed, in tasks.get"
         );
     }
     #[test]
@@ -2080,7 +2094,7 @@ mod tests {
         assert_eq!(count.load(Ordering::SeqCst), 1);
         assert_eq!(
             error.to_string(),
-            "build error: the body could not be written, in body.send"
+            "build error: the body could not be constructed, in body.send"
         );
         assert!(!format!("{error:?}").contains("private"));
     }
@@ -2106,7 +2120,7 @@ mod template_depth_test {
                 .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "build error: input deep cannot be written in a body, in template.post"
+            "build error: input deep cannot be serialized into a body, in template.post"
         );
         assert!(
             Draft::body_template::<()>("template.post", &[Piece::Val("deep", &Nested(128))])

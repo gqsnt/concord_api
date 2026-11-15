@@ -1,6 +1,6 @@
-error: `part` requires the client
+error: `part` is allowed only on the client
        label: parts are declared on the client
-       help: declare parts on the client; retain only permitted part statements and place tree behaviour on the appropriate scope or endpoint
+       help: declare this part in the client block; move each unsupported declaration to a location that permits it
  --> tests/diagnostics/structure/20_part_scope.rs:4:13
   |
 4 |             part own(limit?: u32) { query { limit; } }

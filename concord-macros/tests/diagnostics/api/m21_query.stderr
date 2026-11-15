@@ -1,4 +1,4 @@
-error: query pair `encoding-type` is already set above
+error: query pair `encoding-type` is already set by an ancestor
        label: replacement requires `override`
        help: write `override "encoding-type" = "url";`
   --> tests/diagnostics/api/m21_query.rs:68:21
@@ -12,7 +12,7 @@ error: the inherited query pair is set here
 51 |             query { "encoding-type" = "url"; }
    |                     ^^^^^^^^^^^^^^^
 
-error: query pair `encoding-type` is already set above
+error: query pair `encoding-type` is already set by an ancestor
        label: replacement requires `override`
        help: write `override "encoding-type" = "url";`
   --> tests/diagnostics/api/m21_query.rs:87:21

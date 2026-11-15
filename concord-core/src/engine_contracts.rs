@@ -335,9 +335,9 @@ async fn c7_6_idle_text_names_the_phase_and_the_winning_setting() {
                 .await
                 .unwrap_err();
             let note = if after_head {
-                format!("the body was silent for {seconds} s after status 200")
+                format!("no body data for {seconds} s after status 200")
             } else {
-                format!("no answer for {seconds} s")
+                format!("no response for {seconds} s")
             };
             assert_eq!(
                 error.to_string(),
@@ -403,13 +403,13 @@ async fn c5_2_empty_decode_names_emptiness_and_only_a_present_wrong_label() {
         (
             "",
             Some("text/plain"),
-            "the body is empty and its content type is not the reader's",
+            "the body is empty (unexpected content type)",
         ),
-        ("bad", None, "the body is not what the type says"),
+        ("bad", None, "the body could not be decoded"),
         (
             "bad",
             Some("text/plain"),
-            "the body is not what the type says and its content type is not the reader's",
+            "the body could not be decoded (unexpected content type)",
         ),
     ] {
         let headers: Vec<_> = label
@@ -434,7 +434,7 @@ fn c2_10_an_invalid_replacement_base_names_with_base_only_on_that_failure() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "build error: the base is not a URL that can be used (with_base), in client.get"
+        "build error: the base is not a usable URL (with_base), in client.get"
     );
     let mut bad = Draft::new(http::Method::GET);
     bad.base(&[Piece::Lit("not a base")]);
@@ -443,6 +443,6 @@ fn c2_10_an_invalid_replacement_base_names_with_base_only_on_that_failure() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "build error: the base is not a URL that can be used, in client.get"
+        "build error: the base is not a usable URL, in client.get"
     );
 }

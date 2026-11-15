@@ -296,24 +296,24 @@ async fn c6_2_the_texts_of_messages_section_2() {
     let mut cells = Vec::new();
 
     let script = Script::new();
-    // "A `with_base` that is no base: `build error: the base is not a URL that can be used (with_base), in <endpoint>`."
+    // "A `with_base` that is no base: `build error: the base is not a usable URL (with_base), in <endpoint>`."
     cells.push(text(
         "Invalid base, port or changed parsed host",
-        "build error: the base is not a URL that can be used (with_base), in tasks.get",
+        "build error: the base is not a usable URL (with_base), in tasks.get",
         tasks(&script).with_base("not a url").get(7).send(),
     ));
 
     for repo in ["", ".", ".."] {
         cells.push(text(
             "An empty path value, or a finished segment that is . or ..",
-            "build error: input repo gives an empty or dot path segment, in files.readme",
+            "build error: input repo is empty or produces a dot path segment, in files.readme",
             files(&script).readme(repo).send(),
         ));
     }
 
     cells.push(riot_text(
         "Invalid final header value",
-        "build error: the value of header authorization is not a legal header value, in riot.account.me",
+        "build error: the value of header authorization is invalid, in riot.account.me",
         riot(&script).account(tour::Europe).me("tok\nen").send(),
     ));
 
@@ -327,7 +327,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
                 Err(error) => error.to_string(),
             };
             check(
-                line == "build error: the body is a stream; into_request takes it, in files.upload",
+                line == "build error: request() cannot take a one-shot body stream (use into_request), in files.upload",
                 || format!("{line:?}"),
             )
         },
@@ -350,7 +350,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
                 Err(error) => error.to_string(),
             };
             check(
-                line == "build error: the body is a stream that was already sent, in files.upload",
+                line == "build error: the one-shot body stream cannot be used in this request, in files.upload",
                 || format!("{line:?}"),
             )?;
             check(script.requests().len() == 1, || {
@@ -361,7 +361,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
 
     cells.push(text(
         "A middleware or a transport that will not send",
-        "transport error: blocked before it was sent, in tasks.get",
+        "transport error: the request was blocked before it was sent, in tasks.get",
         tasks(&script)
             .with_middleware(Blocks::default())
             .get(7)
@@ -394,23 +394,27 @@ async fn c6_2_the_texts_of_messages_section_2() {
             .await;
         let line = failure(result).to_string();
         check(
-            line == "refused: status 429, in riot.matches.ids, after 3 tries",
+            line == "refused: status 429, in riot.matches.ids, after 3 attempts",
             || format!("{line:?}"),
         )
     }));
 
-    cells.push(cell("A body larger than its limit", "printed text", async {
-        let script = Script::new();
-        script
-            .answer(200)
-            .declare_length(10 * concord::MIB as u64 + 1)
-            .stall();
-        let line = failure(tasks(&script).get(7).await).to_string();
-        check(
-            line == "mismatch: status 200, the body is larger than the limit of the reader, in tasks.get",
+    cells.push(cell(
+        "A body larger than its limit",
+        "printed text",
+        async {
+            let script = Script::new();
+            script
+                .answer(200)
+                .declare_length(10 * concord::MIB as u64 + 1)
+                .stall();
+            let line = failure(tasks(&script).get(7).await).to_string();
+            check(
+            line == "mismatch: status 200, the body exceeds the reader's size limit, in tasks.get",
             || format!("{line:?}"),
         )
-    }));
+        },
+    ));
 
     cells.push(cell("A body that does not decode", "printed text", async {
         let script = Script::new();
@@ -421,7 +425,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
         );
         let line = failure(tasks(&script).list().await).to_string();
         check(
-            line == "mismatch: status 200, [3].done is not what the type says, in tasks.list",
+            line == "mismatch: status 200, [3].done could not be decoded, in tasks.list",
             || format!("{line:?}"),
         )
     }));
@@ -437,7 +441,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
                 .body("<html></html>");
             let line = failure(tasks(&script).get(7).await).to_string();
             check(
-                line == "mismatch: status 200, the body is not what the type says and its content type is not the reader's, in tasks.get",
+                line == "mismatch: status 200, the body could not be decoded (unexpected content type), in tasks.get",
                 || format!("{line:?}"),
             )
         },
@@ -454,7 +458,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
             // "`ByteStream::try_next()` gives a `concord::read::StreamError`".
             let line = stream_failure(stream.try_next().await).to_string();
             check(
-                line == "transport error: the body broke after status 200, in files.download",
+                line == "transport error: the response body could not be read after status 200, in files.download",
                 || format!("{line:?}"),
             )
         },
@@ -462,7 +466,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
 
     cells.push(text(
         "A URL given to at_url that leaves the origin that the call builds",
-        "build error: the URL is at another origin than the call, in tasks.get",
+        "build error: the URL leaves the origin of the call, in tasks.get",
         tasks(&script)
             .get(7)
             .at_url("https://elsewhere.example/api/tasks/7")
@@ -494,7 +498,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
             let line =
                 failure(tasks(&script).with_retry(Retry::standard()).get(7).await).to_string();
             check(
-                line == "transport error: no connection, in tasks.get, after 3 tries",
+                line == "transport error: no connection, in tasks.get, after 3 attempts",
                 || format!("{line:?}"),
             )
         },
@@ -508,7 +512,7 @@ async fn c6_2_the_texts_of_messages_section_2() {
             script.never();
             let line = failure(tasks(&script).get(7).await).to_string();
             check(
-                line == "transport error: no answer for 30 s (with_idle_timeout changes it), in tasks.get",
+                line == "transport error: no response for 30 s (with_idle_timeout changes it), in tasks.get",
                 || format!("{line:?}"),
             )
         },
@@ -699,7 +703,7 @@ async fn c6_2_a_clock_length_prints_its_decimal_part() {
         );
         assert_eq!(
             error.to_string(),
-            format!("transport error: no answer for {printed} s (with_idle_timeout changes it), in tasks.get")
+            format!("transport error: no response for {printed} s (with_idle_timeout changes it), in tasks.get")
         );
 
         let script = Script::new();
@@ -731,7 +735,7 @@ async fn c6_2_the_reason_of_an_arm_is_never_printed() {
     assert_eq!(error.reason(), Some("a redirect is not a receipt"));
     assert_eq!(
         error.to_string(),
-        "mismatch: status 302, the status arm refused the answer, in shapes.create"
+        "mismatch: status 302, the status arm rejected the response, in shapes.create"
     );
     for printed in [
         error.to_string(),
@@ -939,7 +943,7 @@ async fn c6_2_c4_2_a_head_that_cannot_be_read_is_class_other_and_not_tried_again
         assert_eq!(error.class(), Some(Class::Other), "{case}");
         assert_eq!(
             error.to_string(),
-            "transport error: the head of the answer could not be read, in shapes.again",
+            "transport error: the response status line or headers could not be parsed, in shapes.again",
             "{case}"
         );
         assert_eq!(error.tries(), 1, "{case}");

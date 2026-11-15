@@ -276,7 +276,7 @@ fn signature(input: ParseStream<'_>) -> syn::Result<Signature> {
             spread_seen = true;
         } else {
             if spread_seen {
-                return Err(content.error("inputs must precede part spreads"));
+                return Err(content.error("inputs must precede `..name` entries in a signature"));
             }
             let attrs = content.call(Attribute::parse_outer)?;
             let name = content.call(Ident::parse_any)?;
@@ -404,8 +404,8 @@ fn block_item(
                     parsed.keyword.span(),
                     diag::duplicate_statement(&line, &spelling, *first).help(
                         if matches!(parsed.kind, StatementKind::Headers(_) | StatementKind::Query(_) | StatementKind::Status(_)) {
-                            "consolidate these blocks into one, retaining every intended entry or arm and resolving repeated keys"
-                        } else { "keep one declaration of this behaviour, choosing its intended value" }
+                            "merge these blocks into one, keeping every intended entry or arm and resolving repeated keys".to_owned()
+                        } else { format!("keep one `{spelling}` declaration with its intended value") }
                     ),
                 );
             } else {
@@ -423,7 +423,7 @@ fn block_item(
                     })
                 });
                 if loses_input || depth > 1 {
-                    message=message.help("construct this middleware in the client block using required client inputs; qualify or move the values it needs and consolidate existing middleware declarations");
+                    message=message.help("construct this middleware in the client block using required client inputs; qualify or move the values it needs");
                 }
             }
             node.parse_failed = true;
@@ -454,7 +454,7 @@ fn block_item(
         }
         if !matches!(node.kind, NodeKind::Client | NodeKind::Part) {
             node.parse_failed = true;
-            diagnostics.raise(keyword.span(), diag::part_placement(&line).help("declare parts on the client; retain only permitted part statements and place tree behaviour on the appropriate scope or endpoint"));
+            diagnostics.raise(keyword.span(), diag::part_placement(&line).help("declare this part in the client block; move each unsupported declaration to a location that permits it"));
         }
         state.phase = state.phase.max(Phase::Parts);
         descendants.push(part);
@@ -465,7 +465,7 @@ fn block_item(
         if matches!(node.kind, NodeKind::Endpoint(_)) {
             return Err(syn::Error::new(
                 keyword.span(),
-                "expected a statement; this block cannot hold children",
+                "expected a statement; an endpoint cannot contain children",
             ));
         }
         let next_depth = depth + usize::from(spelling == "scope");
@@ -502,7 +502,7 @@ fn block_item(
         descendants.push(child);
         return Ok(());
     }
-    let expected = "expected a statement, part, scope or HTTP method";
+    let expected = "expected a statement, `part`, `scope`, or HTTP method";
     let help = match spelling.as_str() {
         "timeout" => Some("configure the timeout with `with_timeout` on the client or the call"),
         "retry" | "tries" => Some("configure retries with `with_retry` on the client or the call"),
@@ -526,13 +526,17 @@ fn placement(word: &str, kind: &NodeKind, line: &Written) -> Option<diag::Messag
         } else {
             "scope"
         };
-        return Some(diag::requires_endpoint(line, word, node).help("place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part"));
+        return Some(diag::requires_endpoint(line, word, node));
     }
     // Part contents belong to message 37 in resolve, including problem and
     // middleware; the parser keeps them without applying the tree placement rule.
     if matches!(kind, NodeKind::Scope | NodeKind::Endpoint(_)) {
         match word {
-            "problem" => return Some(diag::problem_placement(line).help("declare the intended problem type on the client; consolidate it with an existing problem declaration")),
+            "problem" => {
+                return Some(diag::problem_placement(line).help(
+                    "keep one `problem` declaration, with the intended type, in the client block",
+                ))
+            }
             "middleware" => return Some(diag::middleware_placement(line)),
             _ => {}
         }
@@ -880,15 +884,15 @@ fn template(literal: LitStr) -> syn::Result<Template> {
                         break;
                     }
                     if ch == '{' || ch.is_whitespace() {
-                        return Err(syn::Error::new(span, "expected a template hole with a name or owner.name, without spaces or comments"));
+                        return Err(syn::Error::new(span, "expected a placeholder containing `name` or `owner.name`, without spaces or comments"));
                     }
                     hole.push(ch);
                 }
                 if !closed {
-                    return Err(syn::Error::new(span, "unclosed template hole"));
+                    return Err(syn::Error::new(span, "unclosed placeholder in a template"));
                 }
                 let mut reference = (|input: ParseStream<'_>| reference(input)).parse_str(&hole)
-                    .map_err(|_| syn::Error::new(span, "expected a template hole with a name or owner.name, without spaces or comments"))?;
+                    .map_err(|_| syn::Error::new(span, "expected a placeholder containing `name` or `owner.name`, without spaces or comments"))?;
                 // Rust's lexer discards comments. The spelling check prevents that
                 // from admitting comments inside a decoded hole.
                 let spelling = match &reference.owner {
@@ -896,7 +900,7 @@ fn template(literal: LitStr) -> syn::Result<Template> {
                     None => reference.name.to_string(),
                 };
                 if spelling != hole {
-                    return Err(syn::Error::new(span, "expected a template hole with a name or owner.name, without spaces or comments"));
+                    return Err(syn::Error::new(span, "expected a placeholder containing `name` or `owner.name`, without spaces or comments"));
                 }
                 reference.span = span;
                 reference.name.set_span(span);
@@ -912,7 +916,7 @@ fn template(literal: LitStr) -> syn::Result<Template> {
             '}' => {
                 return Err(syn::Error::new(
                     span,
-                    "unmatched `}` in template; write `}}` for a literal brace",
+                    "unmatched `}` in template\nhelp: write `}}` for a literal `}`",
                 ))
             }
             ch => text.push(ch),
@@ -1028,7 +1032,7 @@ fn no_string_suffix(literal: &LitStr) -> syn::Result<()> {
     } else {
         Err(syn::Error::new(
             literal.span(),
-            "a language string cannot have a suffix",
+            "a string literal cannot have a suffix",
         ))
     }
 }

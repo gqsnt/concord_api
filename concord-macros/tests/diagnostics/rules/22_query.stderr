@@ -1,5 +1,5 @@
-error: no query pair `mode` above to override
-       label: nothing is set above for this key
+error: no inherited query pair `mode` to override
+       label: no inherited value for this key
        help: write `"mode" = 1;`
  --> tests/diagnostics/rules/22_query.rs:2:88
   |

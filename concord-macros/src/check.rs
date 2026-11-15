@@ -123,7 +123,7 @@ pub(crate) fn check(client: &Client, resolved: &flat::Client<'_>, diagnostics: &
                     let key = &arm.value.key;
                     checker.diagnostics.raise(
                         field.name.span(),
-                        diag::head_body(&Written::new(quote!(#key => true))).help("remove the body binding and rewrite this arm's expression to compute its result from status and headers only"),
+                        diag::head_body(&Written::new(quote!(#key => true))).help("remove the `body` binding and update this arm's expression so it no longer uses the response body"),
                     );
                 }
             }
@@ -143,8 +143,8 @@ pub(crate) fn check(client: &Client, resolved: &flat::Client<'_>, diagnostics: &
                     },
                     diag::head_success(&Written::new(quote!(status { 2xx => true }))).help(
                         if crate::resolve::has_status(endpoint.node) {
-                            "in this `status` block, add a success arm returning the declared result without reading a body"
-                        } else { "add a status block with a success arm returning the declared result without reading a body" }
+                            "add a success arm to this `status` block that returns the declared type without binding `body`"
+                        } else { "add a `status` block with a success arm that returns the declared type without binding `body`" }
                     ),
                 );
             }
@@ -166,7 +166,7 @@ pub(crate) fn check(client: &Client, resolved: &flat::Client<'_>, diagnostics: &
                 {
                     checker.diagnostics.raise(
                         input.input.span,
-                        diag::unused_input(&input.input.name.to_string()).help("place this input in the intended path, base, query, headers, body or behaviour, or remove its declaration"),
+                        diag::unused_input(&input.input.name.to_string()).help("use this input in the intended `path`, `base`, `query`, `headers`, `body`, or expression, or remove its declaration"),
                     );
                 }
             }
@@ -238,7 +238,10 @@ fn field_repair(arm: &Arm, field: &Field, origin: &Origin<'_>) -> String {
     let replacement = match field.name.to_string().as_str() {
         "header" => "headers",
         "bodi" => "body",
-        _ => return "choose the intended answer field and retain the binding used by this arm's expression".into(),
+        _ => {
+            return "choose the intended field and keep the binding that this arm's expression uses"
+                .into()
+        }
     };
     if arm.fields.as_ref().is_some_and(|fields| {
         fields
@@ -246,14 +249,14 @@ fn field_repair(arm: &Arm, field: &Field, origin: &Origin<'_>) -> String {
             .iter()
             .any(|other| !std::ptr::eq(other, field) && other.name == replacement)
     }) {
-        return "choose the intended answer fields without repeating a field or binding, and retain the names used by the expression".into();
+        return "choose the intended fields without repeating a field or binding, and keep the names that the expression uses".into();
     }
     if replacement == "body"
         && (!reader_in_reach(origin)
             || origin.placed.output.is_none()
             || matches!(&origin.placed.kind, NodeKind::Endpoint(method) if method.keyword == "HEAD" || method.custom.as_ref().is_some_and(|m| m.value() == "HEAD")))
     {
-        return "choose the intended answer field and retain its expression's binding; reading a body also needs an arrow, a reader and a method other than HEAD".into();
+        return "choose the intended field and keep the binding used by the arm's expression; reading `body` also needs a return type, a reader, and a method other than `HEAD`".into();
     }
     let key = &arm.key;
     let edit = &arm.edit;
@@ -375,6 +378,7 @@ impl Checker<'_> {
                                 self.diagnostics.raise(
                                     field.name.span(),
                                     diag::arm_field(
+                                        &name,
                                         &replacement,
                                         &Written::new(quote!(body: value)),
                                     )
@@ -386,7 +390,7 @@ impl Checker<'_> {
                                 self.diagnostics.raise(
                                     field.name.span(),
                                     diag::duplicate_field(&name, &replacement, first).help(
-                                        "bind each answer field once; retain the bindings used by this arm's expression",
+                                        "bind each field once; keep the bindings that this arm's expression uses",
                                     ),
                                 );
                             }
@@ -461,7 +465,7 @@ impl Checker<'_> {
         if short && reference.owner.is_some() {
             self.diagnostics.raise(
                 reference.span,
-                diag::short_entry(
+                diag::qualified_short_entry(
                     &reference
                         .owner
                         .as_ref()
@@ -507,24 +511,9 @@ impl Checker<'_> {
                 let message = if short {
                     diag::short_entry(&owner_name, &name)
                 } else if base_reference {
-                    diag::ancestor_base(&owner_name, &name).label(format!(
-                        "`{name}` belongs to {}",
-                        if owner_name == "client" {
-                            "the client"
-                        } else {
-                            &owner_name
-                        }
-                    ))
+                    diag::ancestor_base(&owner_name, &name)
                 } else {
-                    diag::ancestor_hole(
-                        &format!("{owner_name}.{name}"),
-                        &name,
-                        if owner_name == "client" {
-                            "the client"
-                        } else {
-                            &owner_name
-                        },
-                    )
+                    diag::ancestor_hole(&format!("{owner_name}.{name}"), &name, &owner_name)
                 };
                 self.diagnostics.raise(reference.span, message);
                 return;
@@ -546,7 +535,7 @@ impl Checker<'_> {
                 diag::scope_input_in_part(
                     &flat::reference_text(reference),
                     &Written::new(quote!(#ident: String)),
-                ).help("a part can use only its own inputs and the client's; move this placement to the scope or endpoint that owns the input"),
+                ).help("move this placement to the scope or endpoint that owns the input; parts can use only their own inputs and client inputs"),
             );
         } else {
             self.diagnostics.raise(
@@ -555,8 +544,8 @@ impl Checker<'_> {
                     if reference.owner.is_some() {
                         "declare the missing input in the named owner's signature, or correct the owner and input name"
                     } else if matches!(origin.written.kind, NodeKind::Part) {
-                        "a part sees only its own inputs and the client's; correct this reference, or move the placement to the scope or endpoint that owns the input and remove any unnecessary part or spread"
-                    } else { "correct this input name, or declare the intended input in this signature and place every declared input" }
+                        "correct this reference to use a part input or client input, or move the placement to the scope or endpoint that owns the input; remove any unnecessary part declaration or reference"
+                    } else { "correct this input name, or declare the intended input in this signature and use every declared input" }
                 ),
             );
         }
@@ -585,7 +574,7 @@ impl Checker<'_> {
                     let replacement = syn::LitStr::new(&header_suggestion(&key), span);
                     self.diagnostics.raise(
                         span,
-                        diag::header_name(&Written::new(quote!(#replacement))).label("expected a nonempty ASCII HTTP token").help("choose the intended nonempty ASCII HTTP header name, retaining this entry's value"),
+                        diag::header_name(&Written::new(quote!(#replacement))).label("expected a nonempty ASCII HTTP token").help("choose the intended nonempty ASCII HTTP header name, preserving this entry's value or removal"),
                     );
                 }
                 if let EntryKind::Short(reference) = &entry.kind {
@@ -615,7 +604,7 @@ impl Checker<'_> {
                         });
                         let m = diag::short_header(&name, &header);
                         self.diagnostics.raise(reference.span, if collision || mixed {
-                            m.help("write the intended hyphenated header name explicitly, consolidating entries for that name and retaining its intended input")
+                            m.help("write the intended hyphenated header name as the key, merge any other entry for that name, and keep its input")
                         } else {m.help(format!("write `{}`",replacement.text()))});
                     }
                 }
@@ -653,13 +642,15 @@ impl Checker<'_> {
                                 || (place == Place::Path && matches!(ch, ' ' | '#' | '%'))
                         })
                     {
-                        self.diagnostics.raise(
-                            span,
+                        let message = if place == Place::Base {
+                            diag::base_character().help("correct this part of the base to form the intended URL; host and port placeholders must contain values valid in those positions")
+                        } else {
                             diag::path_character(
                                 &Written::new(quote!(value: String)),
                                 &Written::new(quote!(path "{value}";)),
-                            ).help("move the forbidden fixed text into an input hole at this position; retain the other path text and holes"),
-                        );
+                            )
+                        };
+                        self.diagnostics.raise(span, message);
                     }
                 }
                 TemplatePiece::Hole {
@@ -697,7 +688,7 @@ impl Checker<'_> {
                 self.diagnostics.raise(
                     span,
                     diag::empty_path(&Written::new(quote!(path #replacement;))).help(
-                        "remove leading or repeated slashes while keeping the path's segments and holes; omit an empty path statement",
+                        "remove leading or repeated slashes while keeping the path's segments and placeholders; omit an empty path statement",
                     ),
                 );
             }
@@ -706,7 +697,7 @@ impl Checker<'_> {
                     self.diagnostics.raise(
                         span,
                         diag::dot_path(segment, &Written::new(quote!(path "target";))).help(
-                            "write the intended path without dot segments, preserving the other segments and holes",
+                            "write the intended path without dot segments, preserving the other segments and placeholders",
                         ).label(format!("`{segment}` is a dot segment")),
                     );
                 }
@@ -749,7 +740,7 @@ impl Checker<'_> {
                     || origin.owners.iter().any(|owner| has_query(owner.node));
                 let message = diag::path_query(&replacement);
                 self.diagnostics.raise(span, if existing || duplicate_pairs || query.contains('%') || query.contains('+') || path.value().is_empty() {
-                    message.help("merge every query pair with the existing query entries from this node, its parts and ancestors; resolve repeated keys deliberately and decode URL escapes; retain the path before the question mark")
+                    message.help("merge every query pair with the existing query entries from this node, its parts, and ancestors; resolve repeated keys deliberately and decode URL escapes; retain the path before the question mark")
                 } else { message });
             }
         } else if place == Place::Base {
@@ -762,7 +753,7 @@ impl Checker<'_> {
                                 diag::dot_path(
                                     segment,
                                     &Written::new(quote!(base "https://api.example.com/target";)),
-                                ).help("write the intended base without dot segments, retaining its scheme, host and other path segments").label(format!("`{segment}` is a dot segment")),
+                                ).help("write the intended base without dot segments, retaining its scheme, host, and other path segments").label(format!("`{segment}` is a dot segment")),
                             );
                         }
                     }
@@ -771,17 +762,11 @@ impl Checker<'_> {
                             span,
                             diag::empty_path(&Written::new(
                                 quote!(base "https://api.example.com/target";),
-                            )).help("remove doubled slashes in the base's path, retaining its scheme, host, segments and holes"),
+                            )).label("leading or doubled slash").help("remove doubled slashes in the base's path, retaining its scheme, host, segments, and placeholders"),
                         );
                     }
                     if path.chars().any(|ch| matches!(ch, ' ' | '#' | '%')) {
-                        self.diagnostics.raise(
-                            span,
-                            diag::path_character(
-                                &Written::new(quote!(value: String)),
-                                &Written::new(quote!(base "https://api.example.com/{value}";)),
-                            ).help("move the forbidden fixed text into an input hole at this position; retain the rest of this base"),
-                        );
+                        self.diagnostics.raise(span, diag::base_character());
                     }
                 }
             }
@@ -963,6 +948,10 @@ fn input_type(input: &Input, diagnostics: &mut Diagnostics) {
 }
 
 fn attributes(node: &Node, diagnostics: &mut Diagnostics) {
+    fn hidden(attr: &syn::Attribute) -> bool {
+        attr.path().is_ident("doc")
+            && matches!(&attr.meta, syn::Meta::List(list) if list.tokens.to_string() == "hidden")
+    }
     fn doc(attr: &syn::Attribute) -> bool {
         attr.path().is_ident("doc") && matches!(attr.meta, syn::Meta::NameValue(_))
     }
@@ -970,14 +959,29 @@ fn attributes(node: &Node, diagnostics: &mut Diagnostics) {
         let valid = doc(attr)
             || (attr.path().is_ident("cfg") && !matches!(node.kind, NodeKind::Part))
             || (matches!(node.kind, NodeKind::Scope | NodeKind::Endpoint(_))
-                && (attr.path().is_ident("deprecated")
-                    || (attr.path().is_ident("doc")
-                        && matches!(&attr.meta, syn::Meta::List(list) if list.tokens.to_string() == "hidden"))));
+                && (attr.path().is_ident("deprecated") || hidden(attr)));
         if !valid {
             let written = Written::new(attr.to_token_stream());
             let message = match node.kind {
-                NodeKind::Client => diag::client_attribute(&written, "a scope or endpoint"),
-                NodeKind::Part => diag::part_attribute(&written, "a scope or endpoint"),
+                NodeKind::Client => {
+                    let message = diag::client_attribute(&written, "a scope or endpoint");
+                    if attr.path().is_ident("deprecated") || hidden(attr) {
+                        message
+                    } else {
+                        message.help(format!("remove `{}` from the client", written.text()))
+                    }
+                }
+                NodeKind::Part => {
+                    let message = diag::part_attribute(&written, "a scope or endpoint");
+                    if attr.path().is_ident("cfg")
+                        || attr.path().is_ident("deprecated")
+                        || hidden(attr)
+                    {
+                        message
+                    } else {
+                        message.help(format!("remove `{}` from this part", written.text()))
+                    }
+                }
                 NodeKind::Scope => diag::scope_attribute(&written),
                 NodeKind::Endpoint(_) => diag::endpoint_attribute(&written),
             };

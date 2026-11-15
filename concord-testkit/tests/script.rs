@@ -105,7 +105,7 @@ async fn a_try_with_nothing_scripted_gets_599() {
     assert_eq!(answer.status(), 599);
     assert_eq!(
         answer.text().await.unwrap(),
-        "concord-testkit: nothing scripted for try 4 of tasks.list\n"
+        "concord-testkit: nothing scripted for attempt 4 of tasks.list\n"
     );
     assert_eq!(script.requests().len(), 1);
 }

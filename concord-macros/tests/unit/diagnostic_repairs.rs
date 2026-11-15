@@ -242,6 +242,14 @@ fn repairs(fixture: &str, broken: &str, intended: &str, d: &crate::diag::Diagnos
         .collect();
     let first = messages.first().copied().unwrap_or("");
     let written = || code_after(first, "write `");
+    if matches!(fixture, "m24_block.rs" | "m24_base.rs" | "m24_read.rs") {
+        let expected = match fixture {
+            "m24_block.rs" => "put `override` or `remove` on individual entries or status arms, resolving inherited keys and preserving the intended values and expressions".to_owned(),
+            "m24_base.rs" => "declare `base` with the intended value, without `override` or `remove`; change ancestor declarations if needed".to_owned(),
+            _ => "declare `read` with the intended value, without `override` or `remove`; change ancestor declarations if needed".to_owned(),
+        };
+        assert_eq!(first.split_once("\nhelp: ").unwrap().1, expected);
+    }
     let corrected = match fixture {
         "m02.rs" => rename_mutations(fixture, broken, "account", &code_after(first, "to `")),
         "m03_input.rs" => rename_mutations(fixture, broken, "request", &code_after(first, "to `")),
@@ -297,14 +305,14 @@ fn repairs(fixture: &str, broken: &str, intended: &str, d: &crate::diag::Diagnos
         "m24_block.rs" => replace(
             broken,
             "override headers { \"accept\" = \"application/vnd.github.diff\"; }",
-            &written(),
+            "headers { override \"accept\" = \"application/vnd.github.diff\"; }",
         ),
         "m24_base.rs" => replace(
             broken,
             "override base \"https://uploads.github.com\";",
-            &written(),
+            "base \"https://uploads.github.com\";",
         ),
-        "m24_read.rs" => replace(broken, "override read Binary;", &written()),
+        "m24_read.rs" => replace(broken, "override read Binary;", "read Binary;"),
         "m24_path.rs" => replace(broken, "override path \"assets\";", &written()),
         "m28.rs" if first.contains("write `") => replace(
             broken,
@@ -327,7 +335,8 @@ fn repairs(fixture: &str, broken: &str, intended: &str, d: &crate::diag::Diagnos
         "m23_arm.rs" | "m23_header.rs" | "m23_query.rs" => replace(broken, &code_after(first, "delete `"), ""),
         "m38_body.rs" => intended.to_owned(),
         "m18_spread.rs" => {
-            let spread = code_after(first, "move `");
+            assert!(first.ends_with("help: apply this part to the endpoints that need it, and preserve any inputs or placements needed by their scopes"));
+            let spread = "..ladder";
             let fixed = replace(broken, "scope league(route: Platform, ..ladder)", "scope league(route: Platform)");
             replace(&fixed, "GET entries(queue: Queue, tier: Tier, division: Division)", &format!("GET entries(queue: Queue, tier: Tier, division: Division, {spread})"))
         }
@@ -387,7 +396,7 @@ fn repairs(fixture: &str, broken: &str, intended: &str, d: &crate::diag::Diagnos
         "m35.rs" => replace(
             broken,
             "..lol_filters",
-            &code_after(first, "did you mean `"),
+            &code_after(first, "use `"),
         ),
         "m44.rs" => append_arm(broken, "remove 200", false),
         "m46_option.rs" => append_arm(broken, &code_after(first, "block, add `"), false),
@@ -603,7 +612,7 @@ fn c1_18_wrappers_retain_the_real_expression_and_placement() {
     let help = d
         .messages()
         .iter()
-        .find(|m| m.starts_with("an arm from above"))
+        .find(|m| m.starts_with("an inherited arm"))
         .unwrap();
     assert!(help.contains("in this `status` block"));
     assert!(help.contains("Some(telegram_result(body)?)"));
@@ -614,7 +623,7 @@ fn c1_18_wrappers_retain_the_real_expression_and_placement() {
     assert!(d
         .messages()
         .iter()
-        .any(|m| m.contains("in this `status` block")));
+        .any(|m| m.contains("add a success arm to this `status` block that returns the declared type without binding `body`")));
 }
 
 #[test]
@@ -656,6 +665,67 @@ fn c1_18_a_part_cannot_capture_a_scope_input_by_declaring_it_again() {
         .iter()
         .find(|m| m.starts_with("unknown input"))
         .unwrap();
-    assert!(message.contains("a part sees only its own inputs and the client's"));
+    assert!(message.contains("correct this reference to use a part input or client input"));
     assert!(!message.contains("declare the intended input in this signature"));
+}
+
+#[test]
+fn c1_18_unsupported_attributes_name_their_destination_and_statement() {
+    for (source, expected) in [
+        (
+            "client C { base \"https://a.test\"; #[allow(dead_code)] part p() {} GET f(..p); }",
+            "unsupported attribute on a part\nlabel: a part takes doc comments only\nhelp: remove `#[allow(dead_code)]` from this part",
+        ),
+        (
+            "#[allow(dead_code)] client C { base \"https://a.test\"; GET f(); }",
+            "unsupported attribute on the client\nlabel: a client accepts only doc comments and `#[cfg]`\nhelp: remove `#[allow(dead_code)]` from the client",
+        ),
+        (
+            "client C { base \"https://a.test\"; #[cfg(test)] middleware Layer; GET f(); }",
+            "unsupported attribute on `middleware`\nlabel: `middleware` accepts only doc comments\nhelp: remove `#[cfg(test)]` from this statement",
+        ),
+    ] {
+        let d = diagnostics(source);
+        assert_eq!(d.numbers(), [14], "{source}");
+        assert_eq!(d.messages(), [expected], "{source}");
+    }
+}
+
+#[test]
+fn c1_18_ancestor_placeholders_and_bases_name_the_owning_scope() {
+    for (source, expected) in [
+        (
+            "client C { base \"https://a.test\"; scope x(id: String) { GET f() { path \"{id}\"; } } }",
+            "ancestor inputs require their owner's name\nlabel: `id` belongs to scope `x`\nhelp: write `{x.id}`",
+        ),
+        (
+            "client C { scope x(url: Base) { GET f() { base url; } } }",
+            "ancestor inputs require their owner's name\nlabel: `url` belongs to scope `x`\nhelp: write `base x.url;`",
+        ),
+    ] {
+        let d = diagnostics(source);
+        assert_eq!(d.numbers(), [12], "{source}");
+        assert_eq!(d.messages(), [expected], "{source}");
+    }
+}
+
+#[test]
+fn c1_18_reserved_input_help_lists_three_placements_or_none() {
+    for (source, expected) in [
+        (
+            "client C { base \"https://a.test\"; POST f(send?: String) { headers { \"x-send\" = send; } query { send; } body writer(send); } }",
+            "`send` is reserved by Concord\nlabel: reserved for generated methods\nhelp: rename this input to `send_value` and update its references in the existing `body`, `headers`, and `query` placements and expressions; keep the wire keys and fixed text that spell `send`",
+        ),
+        (
+            "client C { base \"https://a.test\"; GET f(send?: String); }",
+            "`send` is reserved by Concord\nlabel: reserved for generated methods\nhelp: rename this input to `send_value` and update its references in the existing placements and expressions; keep the wire keys and fixed text that spell `send`",
+        ),
+    ] {
+        let d = diagnostics(source);
+        let messages: Vec<_> = d.numbers().iter().zip(d.messages())
+            .filter(|(number, _)| **number == 3)
+            .map(|(_, message)| message.as_str())
+            .collect();
+        assert_eq!(messages, [expected], "{source}");
+    }
 }

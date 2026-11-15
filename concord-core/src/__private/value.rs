@@ -6,8 +6,8 @@ use crate::secret::Secret;
 /// How a value is written as text, in a path, a host, a query or a header: by `serde`.
 /// Nothing (`None`), one text, or a list of texts.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` cannot be written in a path, a query or a header",
-    note = "it needs serde::Serialize, and must give one text, a list of texts, or nothing"
+    message = "`{Self}` cannot be serialized for this placement",
+    note = "it must implement `serde::Serialize` and serialize to one scalar, a list of scalars, or nothing"
 )]
 pub trait Value {
     /// Writes the value.
@@ -155,8 +155,8 @@ impl<'a, T: serde::Serialize> AdaptValue for &&'a ValueRef<T> {
 /// ```
 #[diagnostic::on_unimplemented(
     message = "a secret does not follow a change of base",
-    label = "this inherited entry holds a Secret",
-    note = "write this entry again with override, or remove it, under the new base"
+    label = "this inherited entry holds a `Secret`",
+    note = "declare this entry again with `override`, or remove it, under the new `base`"
 )]
 pub trait InheritAcrossBase {}
 impl<T: serde::Serialize + ?Sized> InheritAcrossBase for &T {}
@@ -166,7 +166,7 @@ pub fn inherited<V: InheritAcrossBase>(value: V) -> V {
     value
 }
 
-/// A path hole crossing a second base: paths cannot be overridden or removed.
+/// A path hole crossing a second base: `override` and `remove` cannot be used on `path`.
 ///
 /// ```compile_fail
 /// use concord_core::{Secret, __private::{AdaptValue, ValueRef, inherited_path}};
@@ -175,8 +175,8 @@ pub fn inherited<V: InheritAcrossBase>(value: V) -> V {
 /// ```
 #[diagnostic::on_unimplemented(
     message = "a secret in a path does not follow a change of base",
-    label = "this inherited path holds a Secret",
-    note = "write this path under each base that needs it, rather than above those bases"
+    label = "this inherited path holds a `Secret`",
+    note = "declare this `path` under each `base` that needs it, not on an ancestor of those bases"
 )]
 pub trait InheritPathAcrossBase {}
 impl<T: serde::Serialize + ?Sized> InheritPathAcrossBase for &T {}
@@ -303,7 +303,7 @@ pub(super) enum WriteFailure {
 }
 impl fmt::Display for WriteFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("value cannot be written")
+        f.write_str("value cannot be serialized")
     }
 }
 impl std::error::Error for WriteFailure {}

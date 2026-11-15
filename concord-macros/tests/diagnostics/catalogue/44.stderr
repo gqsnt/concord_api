@@ -1,5 +1,5 @@
 error: `override 2xx` leaves the inherited arm `200` in place
-       label: an exact arm from above still takes `200`
+       label: an inherited exact arm still matches `200`
        help: also write `override 200 { body } => body`, or `remove 200`
  --> tests/diagnostics/catalogue/44.rs:2:113
   |
