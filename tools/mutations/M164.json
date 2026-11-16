@@ -1,0 +1,9 @@
+{
+  "id": "M164",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "Give the cost back when the request ends, also when it failed or was dropped",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                account.in_flight = account.in_flight.saturating_sub(u128::from(selected.cost));\n",
+  "replace": "                account.in_flight = account.in_flight.saturating_sub(u128::from(selected.cost));\n                for window in &mut account.windows {\n                    window.used = window.used.saturating_sub(u128::from(selected.cost));\n                    window.remaining = window.remaining.saturating_add(selected.cost).min(window.capacity);\n                }\n"
+}

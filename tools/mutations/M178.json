@@ -1,0 +1,9 @@
+{
+  "id": "M178",
+  "area": "records",
+  "contract": "C11.9",
+  "description": "An empty JSON line is skipped instead of being an error",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "            record = record.saturating_add(1);\n",
+  "replace": "            if line.is_empty() {\n                return Ok(None);\n            }\n            record = record.saturating_add(1);\n"
+}

@@ -115,11 +115,9 @@ A read is a `GET`, as Slack documents it; a write sends JSON or a form, whicheve
 
 The data types are plain `serde` types, named here but not shown; ids and timestamps stay `String`: `AuthIdentity` (`team_id`, `user_id`), `Conversation` (`id`), `ChannelInfo` (`channel`), `Message` (`ts`), `MessageReceipt` (`channel`, `ts`), `User` (`id`), `UserInfo` (`user`), `UploadTicket` (`upload_url`, `file_id`), `UploadedFile` (`id`, `title`), `CompletedFiles`, and the Block Kit types `Block`, `Attachment`, `Modal`, `OpenedView`.
 
-Slack's errors, its pages, its retry policy, and the bytes of an upload:
+Slack's errors, its pages and its retry policy:
 
 ```rust
-use concord::bytes::Bytes;
-use concord::reqwest;
 use concord::Fail;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -186,18 +184,20 @@ pub fn slack_response<T: DeserializeOwned>(body: Value) -> Result<T, Fail<SlackP
 pub fn retry() -> slack::Retry {
     slack::Retry::standard().not_applied_on(429)
 }
+```
 
-/// The middle step of an upload: the bytes go to the URL that Slack returned, on another host.
-/// A plain `reqwest` client sends them, with none of the client's credentials.
-pub async fn upload_bytes(url: &str, bytes: Bytes) -> Result<(), reqwest::Error> {
-    let answer = reqwest::Client::new()
-        .post(url)
-        .header("content-type", "application/octet-stream")
-        .body(bytes)
-        .send()
-        .await?;
-    answer.error_for_status()?;
-    Ok(())
+The bytes of an upload go to the URL that Slack returns, on another host, so that host has a description of its own. It has its own base and none of the API's credentials: the token is never sent with the bytes, and a URL on another host is refused before anything is sent.
+
+```rust
+use concord::Body;
+
+concord::api! {
+    /// The host that receives the bytes of an upload, at the `upload_url` that Slack returns.
+    pub client SlackUploads {
+        base "https://files.slack.com";        // `upload_url` is `https://files.slack.com/upload/v1/…`
+        /// The middle step of an upload. Call it with `concord::transfer::at`.
+        POST upload(bytes: Body) { body bytes; }
+    }
 }
 ```
 
@@ -205,7 +205,7 @@ pub async fn upload_bytes(url: &str, bytes: Bytes) -> Result<(), reqwest::Error>
 
 ```rust
 use concord::bytes::Bytes;
-use concord::Secret;
+use concord::{Body, Secret};
 use std::time::Duration;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -250,7 +250,8 @@ pub async fn post(slack: &Slack) -> slack::Result<()> {
 /// An upload in three steps: request a URL, send the bytes there, then share the file.
 pub async fn upload(slack: &Slack, name: &str, bytes: Bytes) -> Result<(), BoxError> {
     let ticket = slack.files().get_upload_url_external(name, bytes.len() as u64).await?;
-    upload_bytes(&ticket.upload_url, bytes).await?;
+    let bytes = Body::new(bytes, "application/octet-stream");
+    concord::transfer::at(SlackUploads::new().upload(bytes), &ticket.upload_url)?.await?;
     let file = UploadedFile { id: ticket.file_id, title: Some(name.to_owned()) };
     slack.files().complete_upload_external([file]).channel_id("C123").await?;
     Ok(())
@@ -263,8 +264,8 @@ pub async fn upload(slack: &Slack, name: &str, bytes: Bytes) -> Result<(), BoxEr
 |---|---|
 | An error inside a `200`. `problem` alone reads only the bodies of statuses that are not 2xx. | One arm on the client, `2xx { body } => slack_response(body)?`: it reads `ok`, then returns the success or the client's problem. |
 | A family prefix with no `/` after it: `conversations.` before `list`. `path` adds whole segments. | The whole method name in each endpoint; the scope only groups them. |
-| A complete URL that Slack returns for the bytes of an upload, on another host, with its query. | A plain `reqwest` client sends the bytes there, with none of your keys (`upload_bytes`). Its error is a `reqwest::Error`, not a `slack::Error`. |
+| A complete URL that Slack returns for the bytes of an upload, on another host, with its query. | A second description, `SlackUploads`, with that host as its base and no token, and `concord::transfer::at(call, url)` to send its call to that URL. Its error is a `slack_uploads::Error`, not a `slack::Error`. |
 | A list in one value, joined by commas: `types=public_channel,private_channel`. | `"types" = types.as_ref().map(\|v\| v.join(","));`. |
 | An input with the same name as the scope that contains it: `files` under `scope files`. | Another name in the signature, and the key in the entry: `"files" = uploads;`. |
 | An acknowledgement that contains nothing but `"ok": true`. An endpoint with no return type reads no body, so it does not compile under the arm that reads `ok`. | A return type with no fields, `-> Acknowledged`: the arm checks `ok`. |
-| A quota per method and per workspace, shared by every call. | A middleware layer that holds back each method after its `429`, as the quota on the [Riot Games](riot.md) page does. |
+| A quota per method and per workspace, shared by every call. | A `concord::limit::Limit` with a bucket for each method, shared by the clients of one workspace: a `429` holds its method for its `Retry-After`. The quota on the [Riot Games](riot.md) page is built the same way. |

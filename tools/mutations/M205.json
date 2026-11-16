@@ -1,0 +1,9 @@
+{
+  "id": "M205",
+  "area": "JSON lines body",
+  "contract": "C12.5",
+  "description": "A json_lines serialization failure drops its cause from the source chain",
+  "file": "concord-extras/src/body/json_lines.rs",
+  "find": "            Self::Serialize { source, .. } => Some(source),",
+  "replace": "            Self::Serialize { .. } => None,"
+}

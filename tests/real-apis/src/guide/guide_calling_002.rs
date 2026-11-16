@@ -1,0 +1,7 @@
+concord::api! {
+pub client Elasticsearch(origin: concord::Base, authorization: concord::Secret) {
+        base origin;
+        headers { "authorization" = authorization; }
+        GET search() -> serde_json::Value { path "books/_search"; read concord::Json; }
+    }
+}

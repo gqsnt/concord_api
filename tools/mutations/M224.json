@@ -1,0 +1,9 @@
+{
+  "id": "M224",
+  "area": "request signing",
+  "contract": "C12.10",
+  "description": "The middleware polls a streaming body once before refusing to sign it.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "            let payload = match self.payload(&request)? {",
+  "replace": "            if request.body().is_some_and(|body| body.as_bytes().is_none()) {\n                std::future::poll_fn(|cx| {\n                    if let Some(body) = request.body_mut().as_mut() {\n                        let _ = http_body::Body::poll_frame(std::pin::Pin::new(body), cx);\n                    }\n                    std::task::Poll::Ready(())\n                }).await;\n            }\n            let payload = match self.payload(&request)? {"
+}

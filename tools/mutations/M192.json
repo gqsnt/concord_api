@@ -1,0 +1,9 @@
+{
+  "id": "M192",
+  "area": "bracketed form",
+  "contract": "C12.1",
+  "description": "A unit variant is written as its index instead of its Serde name",
+  "file": "concord-extras/src/body/bracket_form.rs",
+  "find": "        _: u32,\n        variant: &'static str,\n    ) -> Result<(), FormatError> {\n        self.scalar(variant)",
+  "replace": "        index: u32,\n        _: &'static str,\n    ) -> Result<(), FormatError> {\n        self.scalar(index)"
+}

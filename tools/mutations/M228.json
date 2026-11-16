@@ -1,0 +1,9 @@
+{
+  "id": "M228",
+  "area": "request signing",
+  "contract": "C12.10",
+  "description": "A query escape whose decoded bytes are not UTF-8 is signed instead of refused.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "        if std::str::from_utf8(&name).is_err() || std::str::from_utf8(&value).is_err() {\n            return Err(SignError::InvalidRequest);\n        }\n",
+  "replace": ""
+}

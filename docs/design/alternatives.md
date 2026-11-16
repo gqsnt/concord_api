@@ -161,6 +161,21 @@ Every entry has the same form: Concord's choice, the other design, what that des
 - **Tradeoff.** Less that Concord ships, or one writer that every upload shares.
 - **Why Concord's way.** Uploads are common (Telegram, Stripe), and the boundary and the escaping are easy to get wrong. A shipped writer also keeps the rule "the same inputs, the same request", and turns a stream used twice into a Build error before a byte goes out.
 
+### Writers that take what `json` takes, with one convention each
+
+- **Concord.** Four more writers ship in `concord-extras`, each a function like `json`: `bracket_form(value)` and `bracket_pairs(value)` (feature `form`), `gzip(body)` (feature `gzip-body`), `multipart_mixed(parts)` and `multipart_related(parts)` (feature `multipart`), and `json_lines(records, max_bytes)` (feature `json`). `bracket_form` and `bracket_pairs` take what `form` takes: `bracket_form` has no size parameter, so `body concord::bracket_form { metadata; expand; }` works as `body concord::form { … }` does, under the same guard against deep nesting. Each writer has one convention: `a[b]` for a map and `a[0]` for every list; one gzip member with no time in its header; parts with their own headers, the first related part as the root; one JSON value per line, with a line feed after each. Only `json_lines` takes a bound, because its iterator can be lazy, so the size of its input is not already in the author's hands.
+  ```rust
+  POST write(events: Vec<String>) {
+      headers { "content-encoding" = "gzip"; }
+      body concord::gzip(concord::json(events)?);
+  }
+  ```
+- **The other designs.** Writers with options: a choice of conventions for nested keys (`a[0]` or `a[]`, as the `qs` package of Node.js offers), a size parameter on every writer, a `gzip` that also sets `Content-Encoding`, or that compresses a stream as it is sent. Or one feature for each writer.
+- **They win.** One writer covers Rack and Rails (`a[]`) as well as Stripe (`a[0]`). A size parameter bounds what every writer builds. A `gzip` that sets its own header cannot be used without it.
+- **They lose.** A writer with options is a small language of its own, and the entry form `body w { a; b; }` has no place for an argument. A bound on a value that the author already holds in memory protects nothing. A writer returns a `Body`, which carries no header but its content type, so a `gzip` that set a header would need a second way from a writer to the request; and a stream compressed as it is sent could not be sent again on a retry, nor compared between two pages. One feature per writer adds features and removes no dependency.
+- **Tradeoff.** One writer for every convention, or one convention per writer and your own writer for the rest.
+- **Why Concord's way.** A writer is a plain function, and your own is a few lines ([a writer of bodies](../guide/extending.md#a-writer-of-bodies)); a shipped one is worth it where the convention is common and easy to get wrong. One convention each keeps the entry form, and gives the same bytes for the same input, so that a retry and a page comparison see one body. Features follow the formats: `json` also gives `json_lines`, `form` gives `bracket_form` and `bracket_pairs`, `multipart` gives the three multipart writers, and `gzip-body`, the one that adds a dependency (`flate2`), gives `gzip`.
+
 ### What an endpoint knows about time
 
 - **Concord.** The statement `idle_timeout <expression>;`, on an endpoint, a scope, the client or a part (the nearest one applies), sets the idle timeout for the calls below it, computed from the inputs:
@@ -343,4 +358,96 @@ Every entry has the same form: Concord's choice, the other design, what that des
 - **It loses.** Concord would own redirect state and cycles.
 - **Tradeoff.** Moved resources that work with no extra code, or one call that is one exchange.
 - **Why Concord's way.** One call is one exchange, and a credential is never carried elsewhere by a redirect that nobody described.
+- **Can come later without breaking.**
+
+### A limit, described bucket by bucket
+
+- **Concord.** `concord::limit::Limit` is a middleware. Each bucket is described in one place: the key that a request is charged to, its windows (known in advance, or learned from the headers of a response), its cost, and which `429` holds it.
+  ```rust
+  Limit::new()
+      .bucket(Bucket::new(|call| Some(format!("{} application", call.request().url().host_str()?)))
+          .learn(counts("x-app-rate-limit", "x-app-rate-limit-count"))
+          .hit_when(|seen| seen.header("x-rate-limit-type") == Some("application")))
+  ```
+  A call is charged to all its buckets or to none, before it is sent. The limit never sends a request again, and never fails a call after its response: a header that cannot be read teaches nothing, and the response is returned as it is.
+- **The other designs.** A limit that sends the request again after a `429`, once its `Retry-After` has passed. A limit that fails a call whose response headers it cannot read. Or the keys, the windows, the costs and the rules for a `429` in separate tables, joined by the name of the bucket.
+- **They win.** A `429` is recovered with no retry policy. A server that changes its headers is noticed at the first response. Separate tables let one rule serve many buckets.
+- **They lose.** A limit that sends again repeats an unmarked `POST`, past the engine's checks, in an attempt that `tries()` does not count. A limit that fails after a response hides a write that succeeded: the server did the work, and the caller sees an error. Separate tables spread one bucket over several places, and a name misspelled in one of them silently makes another bucket.
+- **Tradeoff.** A limit that recovers on its own, or one that only plans, and leaves sending again to retry.
+- **Why Concord's way.** Sending again is the job of retry, which already knows which request may be repeated ([C4.1](../reference/contracts.md)); an attempt that the engine makes again goes through the limit like any other, and waits behind the same gates. A response that was received is the truth about what the server did, so it is returned unchanged: the worst that an unreadable header can do is let one more request through, and the server answers it with a `429` that the limit reads. A bucket in one place is read in one place.
+
+### A renewal that is a shared future, and a `401` that the engine retries
+
+- **Concord.** `concord::auth::Renewed` keeps one token. When it is missing or about to expire, the first call starts a renewal, and the calls that come meanwhile wait for the same one. The renewal is a future that those calls share, not a task: a call that is dropped leaves it to the others, and when the last one is dropped, the renewal is dropped with it. A `401` marks the token as rejected and is returned as it is; `after_401`, added to the retry policy, asks the engine for one more attempt.
+  ```rust
+  let documents = Documents::new().with_middleware(renewed)
+      .with_retry(Retry::standard().when(after_401));
+  ```
+- **The other design.** A background task renews the token, and the middleware sends the request again with a new token after a `401`, as OkHttp's `Authenticator` and Azure's bearer policy do.
+- **It wins.** A renewal finishes even when every call that waited for it was dropped, so the next call finds a token. Recovery from a `401` needs no line in the retry policy.
+- **It loses.** A task is something that Concord would start on your runtime, and it can outlive the calls and the client that needed it. A middleware that sends again goes around the engine: an unmarked `POST`, or a body that is a stream, is sent twice, and `tries()` counts one attempt.
+- **Tradeoff.** A renewal that survives its callers, or no work that nobody waits for.
+- **Why Concord's way.** Concord starts no task of its own, so a dropped call leaves nothing running, and the next call starts the renewal again. Whether a request may be sent twice is decided in one place, the engine, for every middleware; `after_401` is one rule on a policy that the client already has, and an API that promises that a `401` applied nothing says so with `not_applied_on(401)`.
+
+### Readers of records, with a bound and no default
+
+- **Concord.** `read JsonLines::new(64 * KIB);` and `read Sse::new(16 * KIB);`. The bound of one record is an argument, with no default. A record over the bound is an error that ends the stream, and the reader holds at most its bound, plus one chunk of the transport.
+- **The other designs.** A default bound, as `Json` has 10 MiB for a whole body. Or no bound: a reader of lines that grows its buffer until the line ends.
+- **They win.** `read JsonLines;` is shorter, and most records are small.
+- **They lose.** With no bound, a server that never ends its line fills the memory of the client. A default bound is a number that fits no stream: a delta of a streamed reply and a whole object of a Kubernetes watch differ by orders of magnitude, so a default that is too small fails on the first large record, and one that is too large bounds nothing.
+- **Tradeoff.** One argument less, or a bound that the author chose.
+- **Why Concord's way.** A whole body ends, so one limit for the whole body is a safe default. A stream may never end, so the bound that matters is the bound of one record, and the size of a record is a fact of the API, which the author of the description knows.
+
+### A URL that the API returned: a second description, and `at_url`
+
+- **Concord.** There is no call type for a URL that the API returned. The other host is described on its own, with its own `base` and none of the API's credentials, and `concord::transfer::at(call, url)` checks the URL and returns `call.at_url(url)`. `at_url` never changes the origin: a URL at another origin than the base of that call is a Build error ([C8.6](../reference/contracts.md)).
+  ```rust
+  client Uploads(origin: Base) {
+      base origin;
+      POST send(bytes: Body) { body bytes; }
+  }
+  ```
+  ```rust
+  concord::transfer::at(uploads.send(bytes), &ticket.url)?.await?;
+  ```
+- **The other design.** A call type of its own for a URL that is known only at run time: a method, the URL and a body, with its own rules for headers, retry and timeouts.
+- **It wins.** No second description: one line at the call.
+- **It loses.** It is a second way to make a call, beside the description, with rules of its own to learn and to keep in step with the engine's. It could only be built on hidden parts of the engine, which nothing in `concord-extras` but the `tower` adapter uses. And the rule that keeps a credential at its origin would be written a second time.
+- **Tradeoff.** One line at the call, or one way to make a call.
+- **Why Concord's way.** The description and the engine already have what is needed: a description of the other host carries none of the API's credentials, and `at_url` is the engine's, so the origin rule is the engine's too, with the retry, timeout, reader and body rules of every call. What is left is small: refusing a URL that would not be sent as it is written, because a server checks a signed URL against the bytes that it signed.
+
+### A refresh token that rotates: a driver that the application polls, and a pair handed back
+
+- **Concord.** `concord::auth::Rotating::new(&base, store, exchange)` returns the middleware and a `RotationDriver`, a future that runs the exchanges and the saves. The application polls it or spawns it; Concord starts no task. While the driver is polled, a renewal that began is finished even when every call that waited for it was dropped. `renewal_timeout` bounds how long a call waits, and never cancels the exchange. A pair that the server issued and the store could not keep is not dropped: the driver ends with `RotationError::Unsaved`, which holds the pair, and the application saves it by its own means.
+  ```rust
+  let (auth, driver) = Rotating::new(&base, store, exchange);
+  let driver_task = tokio::spawn(driver);       // the application's task, not Concord's
+  ```
+- **The other designs.** A task that Concord starts on the runtime. Or a renewal that is a future shared by the calls that wait, as for `Renewed` ([above](#a-renewal-that-is-a-shared-future-and-a-401-that-the-engine-retries)). Or a driver that drops the pair, with an error, when its last save fails.
+- **They win.** A task needs no line in the application. A shared future needs neither a task nor a driver. A dropped pair keeps the result of the driver small.
+- **They lose.** A task outlives the calls and the client, on a runtime that Concord does not own. A shared future is dropped with its last call, and an exchange that was sent and then dropped can only lose the replacement token: the old one is spent, and the account then needs a person. A timeout that cancels the exchange is the same loss, and so is a pair dropped after its save failed, only later.
+- **Tradeoff.** One line less in the application, or a renewal whose owner is named.
+- **Why Concord's way.** Concord starts no task, and a single-use token cannot be renewed by a future that any call may drop. The driver is the owner that the application names, as the connection future of `hyper` and the `Connection` of `tokio-postgres` are: the library gives the future, and the application decides where it runs. The author bounds the exchange itself, with the timeout of the client that calls the token endpoint. When the store cannot keep a pair, the application is the last place that can, so the pair goes back to it.
+
+### Signing: a middleware for one origin, and `sign` for one request
+
+- **Concord.** `concord::sign::SigV4` (feature `sign`) is a middleware for a service with one origin and one region: it checks the origin against its base before a key is used, and signs each attempt anew. `SigV4::sign(&mut request, region)` signs one request, for an adapter whose hosts are known only per call; that adapter checks the origin itself. Two functions are public for the two checks that a provider's own proof most often gets wrong: `body_bytes`, which refuses a stream without polling it, and `check_origin`. There are no digest helpers.
+- **The other designs.** The middleware only, for one origin and one region. Or public helpers for any signature: SHA-256 and HMAC, and a view of the request to sign.
+- **They win.** With the middleware only, there is one way to sign, and Concord always checks the origin. With helpers, an author writes a provider's proof without another crate.
+- **They lose.** With the middleware only, an object store whose host changes with the bucket, and a call to another region, cannot be signed. Helpers duplicate `sha2` and `hmac`, which an author of a proof imports anyway; they would cover one hash, and they would be a public surface to keep for as long as Concord exists.
+- **Tradeoff.** One way to sign, or the way that each adapter needs; a kit for every proof, or only the two checks that such a kit would hide.
+- **Why Concord's way.** The [S3 example](../examples/s3.md) has a host for each bucket and calls to other regions, and it must be writable: `sign` exists for it, and the check of the origin is then the adapter's, as the first paragraph of the rustdoc of `sign` says. A provider's own HMAC proof is a recipe with `hmac` and `sha2` ([a middleware](../guide/credentials.md#a-middleware)); what Concord adds is what such a recipe gets wrong: hashing a stream, and signing for another host.
+
+### Needs that have a recipe, not a value
+
+- **Concord.** Seven needs have a recipe in the guide, compiled and run by the repository's tests, and no value in the library: [a key made for one write](../guide/retries.md#a-key-made-for-one-write), [a documented download redirect](../guide/extending.md#a-documented-download-redirect), a provider's own HMAC proof ([a middleware](../guide/credentials.md#a-middleware)), and the four weighed here against a value: a large upload sent again with a new stream ([a body that is a stream](../guide/retries.md#a-body-that-is-a-stream)), [binary frames](../guide/responses-and-errors.md#binary-frames), [a multipart response and its batch](../guide/responses-and-errors.md#a-multipart-response-and-its-batch), and [several hosts](../guide/calling.md#several-hosts).
+- **The other designs.** A value for each: a body that opens its stream again for each attempt; a reader of length-prefixed frames; a reader of multipart responses, with a parser of the HTTP responses that a batch holds; a pool of hosts, with failover in the engine.
+- **They win.** Each need is one line of a description, and the engine's retry covers a large upload.
+- **They lose.** Each value is a surface that Concord keeps for as long as it exists, for few APIs, and each repeats or goes around something that already holds.
+  - A body that opens again needs the engine to carry a plan for the body through every attempt, with edits and middleware that see the request without its body. The large uploads of the examples would not gain: the S3 upload is `idempotent false`, and the headers of a returned URL are added with `edit_request`.
+  - `LengthDelimitedCodec` over `StreamReader`, from `tokio-util`, which `reqwest` already depends on, reads frames, and it reads the same `ByteStream`, so the timeouts and the head of the response are kept.
+  - A parser of MIME of Concord's own would serve a handful of products. `multer` reads a finite reply under a limit on the whole stream, which is the limit that protects memory.
+  - A pool cannot be the engine's: a second client starts counting attempts again, and each call has its own timeout. One client for each trusted origin, each with its own credentials, keeps a credential with its base.
+- **Tradeoff.** A line in the description, or a few dozen lines that the author can read and change.
+- **Why Concord's way.** The recipes need nothing new from the engine: they rely on contracts that already hold (a stream is sent once, a `ByteStream` keeps both timeouts, a credential stays with its base), and the tests of the recipes pin those contracts.
 - **Can come later without breaking.**

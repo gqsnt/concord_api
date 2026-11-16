@@ -1,0 +1,9 @@
+{
+  "id": "M166",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A cost equal to the capacity of a known window is CostExceedsCapacity",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "if cost > window.capacity {",
+  "replace": "if cost >= window.capacity {"
+}

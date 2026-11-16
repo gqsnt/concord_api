@@ -1,0 +1,9 @@
+{
+  "id": "M169",
+  "area": "limit",
+  "contract": "C11.6",
+  "description": "When a history is full, drop the oldest entry without moving its debt, so that debt is never released and the window loses capacity for good",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                    *next = next.saturating_add(oldest);",
+  "replace": "                    let _ = (next, oldest);"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M225",
+  "area": "request signing",
+  "contract": "C12.10",
+  "description": "An unsigned S3 stream is signed over HTTP.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "if request.url().scheme() != \"https\" {",
+  "replace": "if false && request.url().scheme() != \"https\" {"
+}

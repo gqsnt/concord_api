@@ -1,15 +1,23 @@
 # real-apis: every description shown in the docs compiles
 
-A workspace crate, never published. It sends no request: it only has to compile.
+A workspace crate, never published. Descriptions compile, and recipe tests send requests only to scripted transports; no test calls a real API.
 
 - `src/<api>/` for each page of [`docs/examples/`](../../docs/examples/README.md): each file is a
   block of the page, word for word (`description.rs`, `beside.rs`, `calling.rs`), except
   `stand_ins*.rs`: the data types that the page only names, cut to the fields its code uses.
-- `s3/wire.rs` and `riot/quota.rs` also compile in the library's test configuration,
-  with dependencies confined to this crate's dev-dependencies. Ordinary library builds
-  use `stand_in_wire.rs` and `stand_in_quota.rs`.
+  The first whole description uses `description.rs`; later ones use `description_002.rs`,
+  `description_003.rs`, and so on, in page order (helpers and fragments do not count).
+  Each whole description needs its own fenced block. Include each additional file in
+  its own module in `src/<api>/mod.rs` and re-export its client there.
+- `s3/wire.rs` also compiles in the library's test configuration, with dependencies
+  confined to this crate's dev-dependencies. Ordinary library builds use `stand_in_wire.rs`.
 - `src/guide/`: current whole descriptions from the guide, reference overview, and root README,
   with stand-in types. `fixtures/descriptions/` retains their exact page text and inventory.
+- `fixtures/recipes/` holds complete Rust blocks from the guide. `tests/writer_recipes.rs`
+  and `tests/stream_recipes.rs` include those same files, run them with `Script`, and
+  check each block against its page word for word. The latter covers Docker/AWS frames,
+  multipart responses and batches, separate service hosts, and the caller's upload loop.
+  These files use dev-dependencies and are not library implementations.
 - `src/regressions/`: earlier descriptions retained as independent compilation and request tests.
 - `tests/pages.rs` checks every whole description against its page and its compiled source,
   and checks the helper and calling blocks of all eight example pages word for word.

@@ -4,14 +4,14 @@
 
 This page is for a Rust developer who calls the API server of a Kubernetes cluster. It gives a client with 18 endpoints that you can copy (pods, the scale and status of a deployment, custom resources), and shows a watch that never ends, a log followed as it is written, patches whose type is given by a header, and a certificate that the connection needs.
 
-Here is Kubernetes as Concord sees it. The server is the cluster's own (`https://10.0.0.1:6443`, or a proxy with a prefix): `base server;`, an input of type `Base`. Its certificate is signed by the cluster's own authority, so the transport must trust it: `connect(server, ca_pem)` builds the client. Authentication is a bearer token or, inside a pod, a token file that Kubernetes renews (a middleware layer reads it). Lists are paginated by a `continue` token; a watch is a response that never ends, with one JSON event on each line, read by the author's own reader. Every query key is in camelCase. Kubernetes rejects a request with a `Status` object (`code`, `reason`, `message`, `details`), which also appears as a line of a watch and as the response to some deletes. The Kubernetes reference is [kubernetes.io/docs/reference/kubernetes-api](https://kubernetes.io/docs/reference/kubernetes-api/). `(unsure)` marks a detail about Kubernetes that has not been checked.
+Here is Kubernetes as Concord sees it. The server is the cluster's own (`https://10.0.0.1:6443`, or a proxy with a prefix): `base server;`, an input of type `Base`. Its certificate is signed by the cluster's own authority, so the transport must trust it: `connect(server, ca_pem)` builds the client. Authentication is a bearer token or, inside a pod, a token file that Kubernetes renews (a middleware layer reads it). Lists are paginated by a `continue` token; a watch is a response that never ends, with one JSON event on each line, read by `JsonLines`. Every query key is in camelCase. Kubernetes rejects a request with a `Status` object (`code`, `reason`, `message`, `details`), which also appears as a line of a watch and as the response to some deletes. The Kubernetes reference is [kubernetes.io/docs/reference/kubernetes-api](https://kubernetes.io/docs/reference/kubernetes-api/). `(unsure)` marks a detail about Kubernetes that has not been checked.
 
 ## The description
 
 ```rust
 use std::time::Duration;
-use concord::read::Stream;
-use concord::{json, Base, Json, Secret, Text};
+use concord::read::{JsonLines, RecordStream, Stream};
+use concord::{json, Base, Json, Secret, Text, MIB};
 
 concord::api! {
     /// The Kubernetes API of one cluster (a subset): pods, two subresources of a deployment, custom resources.
@@ -47,7 +47,7 @@ concord::api! {
                 "watch" = "true"; "resourceVersion" = resource_version;
                 "allowWatchBookmarks" = allow_watch_bookmarks; "timeoutSeconds" = timeout_seconds;
             }
-            read WatchLines;
+            read JsonLines::new(4 * MIB);    // one object and its type: by default the server refuses a body over 3 MiB
             idle_timeout Duration::from_secs(u64::from(timeout_seconds.unwrap_or(3600)) + 60);
         }
         /// What every write takes.
@@ -82,7 +82,7 @@ concord::api! {
                 path "namespaces/{namespace}/pods";
 
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> Watch<Pod>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
                 POST create(pod: Pod, ..write) -> Pod { body json(pod); }
 
                 /// `None` when there is no such pod, or no such namespace.
@@ -129,7 +129,7 @@ concord::api! {
             scope all_pods {
                 path "pods";
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> Watch<Pod>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
             }
         }
 
@@ -186,13 +186,12 @@ concord::api! {
 
 The data types are plain `serde` types, named here but not shown: `Pod`, `Deployment`, `Scale`, `DynamicObject` (`apiVersion`, `kind`, `metadata`, and the rest as a JSON map), `ObjectMeta`, `ListMeta` (`continue`, `resourceVersion`), `Head` (`metadata` only), `Preconditions` (`uid`, `resourceVersion`), three enums (`Propagation`, `VersionMatch`, `FieldValidation`), and `Status`: `code`, `reason` (`"NotFound"`, `"Conflict"`, `"Expired"`, …), `message`, `details` (with `retryAfterSeconds`).
 
-The list and its pages, the patch, the response to a delete, the watch, how a client is built, and the API's retry policy:
+The list and its pages, the patch, the response to a delete, the events of a watch, how a client is built, and the API's retry policy:
 
 ```rust
 use concord::http::HeaderValue;
-use concord::read::{Incoming, ReadError, Reader, Stream, StreamError};
 use concord::transport::{TransportError, TryInfo};
-use concord::{reqwest, Base, ByteStream, Middleware, Next};
+use concord::{reqwest, Base, Middleware, Next};
 use serde::de::{DeserializeOwned, Deserializer};
 use serde::Deserialize;
 use std::time::Duration;
@@ -284,59 +283,6 @@ pub enum WatchEvent<T> {
     Deleted(T),
     Bookmark(Head),
     Error(Status),
-}
-
-/// `read WatchLines;`: the body as it arrives, split into lines.
-#[derive(Clone, Copy, Debug)]
-pub struct WatchLines;
-
-impl<T: Send + 'static> Reader<Watch<T>> for WatchLines {
-    async fn read(&self, body: Incoming) -> Result<Watch<T>, ReadError> {
-        let bytes: ByteStream = Stream.read(body).await?;
-        Ok(Watch { bytes, line: Vec::new(), item: std::marker::PhantomData })
-    }
-}
-
-/// A watch: one event after another, until the server ends it.
-#[derive(Debug)]
-pub struct Watch<T> {
-    bytes: ByteStream,
-    line: Vec<u8>,
-    item: std::marker::PhantomData<fn() -> T>,
-}
-
-/// What breaks a watch after its head. It is not a `kubernetes::Error`: Concord makes those.
-#[derive(Debug)]
-pub enum WatchError {
-    Line(serde_json::Error),
-    Stream(StreamError),
-}
-
-impl std::fmt::Display for WatchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WatchError::Line(_) => f.write_str("a line of the watch is not an event"),
-            WatchError::Stream(_) => f.write_str("the watch broke"),
-        }
-    }
-}
-
-impl std::error::Error for WatchError {}
-
-impl<T: DeserializeOwned> Watch<T> {
-    /// The next event; `None` when the server ended the watch.
-    pub async fn try_next(&mut self) -> Result<Option<WatchEvent<T>>, WatchError> {
-        loop {
-            if let Some(end) = self.line.iter().position(|&b| b == b'\n') {
-                let line: Vec<u8> = self.line.drain(..=end).collect();
-                return serde_json::from_slice(&line).map(Some).map_err(WatchError::Line);
-            }
-            match self.bytes.try_next().await.map_err(WatchError::Stream)? {
-                Some(piece) => self.line.extend_from_slice(&piece),
-                None => return Ok(None),
-            }
-        }
-    }
 }
 
 /// A client for one cluster: its server, and the authority that signed its certificate (PEM, from
@@ -457,7 +403,7 @@ pub async fn drain(kube: &Kubernetes) -> kubernetes::Result<()> {
 
 | Kubernetes wants | What to write |
 |---|---|
-| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others, and `WatchError` for malformed bytes and lines. The caller of a watch handles three cases: the call's error, `WatchError`, and the `Error` event. |
+| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others. A line that is too long or is not an event, or a stream that breaks, ends the watch with a `concord::read::RecordError`. The caller of a watch handles three cases: the call's error, `RecordError`, and the `Error` event. |
 | The cluster's certificate, as much an input as the server. `new` cannot take it: a certificate is set on the transport. | `connect(server, ca_pem)`, with `concord::Http::with(…)`. The doc comment of the client points to it. |
 | Keys in camelCase, and inputs in snake_case: 17 of the 23 entries use the long form, `"labelSelector" = label_selector;`. | The long form, once for each key, in a part. |
 | A custom resource, typed. A scope has no type parameter. | `DynamicObject`, decoded by the caller with `serde_json::from_value`; or one scope for each type. |

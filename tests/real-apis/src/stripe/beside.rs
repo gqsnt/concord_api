@@ -1,44 +1,10 @@
 use concord::page::{Call, Slot};
-use concord::{Answer, Body, Fail, Headers};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use concord::{Answer, Fail, Headers};
+use serde::Deserialize;
 use std::time::Duration;
-
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// The version these types were written for.
 pub const API_VERSION: &str = "2026-10-28.endive";
-
-/// `body stripe_form { … }`: Stripe's form, with nested keys: `metadata[order]=7781`,
-/// `items[0][price]=price_1`, `expand[0]=customer`. A `None` is left out.
-pub fn stripe_form<T: Serialize>(params: T) -> Result<Body, BoxError> {
-    let mut pairs = Vec::new();
-    if let Value::Object(fields) = serde_json::to_value(params)? {
-        for (key, value) in fields {
-            flatten(key, value, &mut pairs);
-        }
-    }
-    Ok(concord::form(pairs)?)
-}
-
-fn flatten(key: String, value: Value, pairs: &mut Vec<(String, String)>) {
-    match value {
-        Value::Null => {}
-        Value::Bool(b) => pairs.push((key, b.to_string())),
-        Value::Number(n) => pairs.push((key, n.to_string())),
-        Value::String(s) => pairs.push((key, s)),
-        Value::Array(items) => {
-            for (i, item) in items.into_iter().enumerate() {
-                flatten(format!("{key}[{i}]"), item, pairs);
-            }
-        }
-        Value::Object(fields) => {
-            for (k, v) in fields {
-                flatten(format!("{key}[{k}]"), v, pairs);
-            }
-        }
-    }
-}
 
 /// A page of a list.
 #[derive(Debug, Deserialize)]

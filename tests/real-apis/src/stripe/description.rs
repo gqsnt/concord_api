@@ -69,7 +69,7 @@ concord::api! {
             expand?: Vec<String>,
         ) {
             headers { "idempotency-key" = idempotency_key; }
-            body stripe_form { expand; }
+            body concord::bracket_form { expand; }
             idempotent;
         }
 
@@ -80,7 +80,7 @@ concord::api! {
                 email?: String, name?: String, description?: String,
                 payment_method?: String, metadata?: Metadata, ..write,
             ) -> Customer {
-                body stripe_form { email; name; description; payment_method; metadata; }
+                body concord::bracket_form { email; name; description; payment_method; metadata; }
             }
             /// `None` when the customer was deleted: Stripe responds with `200` and `deleted: true`.
             /// An id that never existed is still a `404`.
@@ -93,7 +93,7 @@ concord::api! {
                 metadata?: Metadata, ..write,
             ) -> Customer {
                 path "{id}";
-                body stripe_form { email; name; description; metadata; }
+                body concord::bracket_form { email; name; description; metadata; }
             }
             DELETE delete(id: CustomerId) -> Deleted<CustomerId> { path "{id}"; }
             GET list(email?: String, ..listed, ..expanded) -> List<Customer> { query { email; } }
@@ -107,12 +107,12 @@ concord::api! {
                 amount: u64, currency: Currency, customer?: CustomerId,
                 payment_method?: String, confirm?: bool, metadata?: Metadata, ..write,
             ) -> PaymentIntent {
-                body stripe_form { amount; currency; customer; payment_method; confirm; metadata; }
+                body concord::bracket_form { amount; currency; customer; payment_method; confirm; metadata; }
             }
             GET retrieve(id: PaymentIntentId, ..expanded) -> PaymentIntent { path "{id}"; }
             POST update(id: PaymentIntentId, amount?: u64, metadata?: Metadata, ..write) -> PaymentIntent {
                 path "{id}";
-                body stripe_form { amount; metadata; }
+                body concord::bracket_form { amount; metadata; }
             }
             /// `Err` when the card was declined (`402`); the intent is in `error.payment_intent`.
             /// An `Ok` may still wait for the customer: look at `status` and `next_action`.
@@ -120,16 +120,16 @@ concord::api! {
                 id: PaymentIntentId, payment_method?: String, return_url?: String, ..write,
             ) -> Result<PaymentIntent, Declined> {
                 path "{id}/confirm";
-                body stripe_form { payment_method; return_url; }
+                body concord::bracket_form { payment_method; return_url; }
                 status { 402 { body } => Err(body) }
             }
             POST capture(id: PaymentIntentId, amount_to_capture?: u64, ..write) -> PaymentIntent {
                 path "{id}/capture";
-                body stripe_form { amount_to_capture; }
+                body concord::bracket_form { amount_to_capture; }
             }
             POST cancel(id: PaymentIntentId, cancellation_reason?: String, ..write) -> PaymentIntent {
                 path "{id}/cancel";
-                body stripe_form { cancellation_reason; }
+                body concord::bracket_form { cancellation_reason; }
             }
             GET list(customer?: CustomerId, ..listed, ..expanded) -> List<PaymentIntent> {
                 query { customer; }
@@ -145,7 +145,7 @@ concord::api! {
                 payment_intent?: PaymentIntentId, charge?: ChargeId, amount?: u64,
                 reason?: String, metadata?: Metadata, ..write,
             ) -> Refund {
-                body stripe_form { payment_intent; charge; amount; reason; metadata; }
+                body concord::bracket_form { payment_intent; charge; amount; reason; metadata; }
             }
             GET retrieve(id: RefundId, ..expanded) -> Refund { path "{id}"; }
             /// Only a refund whose status is `requires_action`.
@@ -164,7 +164,7 @@ concord::api! {
                 customer: CustomerId, items: Vec<NewItem>, default_payment_method?: String,
                 cancel_at_period_end?: bool, metadata?: Metadata, ..write,
             ) -> Subscription {
-                body stripe_form { customer; items; default_payment_method; cancel_at_period_end; metadata; }
+                body concord::bracket_form { customer; items; default_payment_method; cancel_at_period_end; metadata; }
             }
             GET retrieve(id: SubscriptionId, ..expanded) -> Subscription { path "{id}"; }
             POST update(
@@ -172,7 +172,7 @@ concord::api! {
                 proration_behavior?: String, metadata?: Metadata, ..write,
             ) -> Subscription {
                 path "{id}";
-                body stripe_form { items; cancel_at_period_end; proration_behavior; metadata; }
+                body concord::bracket_form { items; cancel_at_period_end; proration_behavior; metadata; }
             }
             /// Cancels now. To cancel at the end of the period: `update` with `cancel_at_period_end`.
             DELETE cancel(id: SubscriptionId, invoice_now?: bool, prorate?: bool, ..expanded) -> Subscription {
@@ -196,7 +196,7 @@ concord::api! {
                 collection_method?: CollectionMethod, days_until_due?: u32, metadata?: Metadata,
                 ..write,
             ) -> Invoice {
-                body stripe_form {
+                body concord::bracket_form {
                     customer; subscription; auto_advance; collection_method; days_until_due; metadata;
                 }
             }
@@ -211,12 +211,12 @@ concord::api! {
             }
             POST finalize(id: InvoiceId, auto_advance?: bool, ..write) -> Invoice {
                 path "{id}/finalize";
-                body stripe_form { auto_advance; }
+                body concord::bracket_form { auto_advance; }
             }
             /// `Err` when the payment was declined (`402`).
             POST pay(id: InvoiceId, payment_method?: String, ..write) -> Result<Invoice, Declined> {
                 path "{id}/pay";
-                body stripe_form { payment_method; }
+                body concord::bracket_form { payment_method; }
                 status { 402 { body } => Err(body) }
             }
             POST void(id: InvoiceId, ..write) -> Invoice { path "{id}/void"; }

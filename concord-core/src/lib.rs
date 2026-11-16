@@ -4,7 +4,8 @@
 //! shipped implementations. This crate knows **no format, no scheme and no pager**: it provides the
 //! traits they are built with. What `concord` ships (`json`, `Json`, `by_offset`, …) lives in
 //! `concord-extras` and uses public extension traits and helpers. The Tower adapter also uses a
-//! hidden helper of the engine for the URL of a response.
+//! hidden helper of the engine for the URL of a response, and `gzip` one for the content type
+//! of the body that it compresses.
 //!
 //! The engine builds requests, sends them through middleware and a transport, applies
 //! retry policies and the call's timeouts, reads responses, and walks pages. Readers, transports,
@@ -22,7 +23,7 @@
 //! | [`error`] | [`Error`]: the single error type of a client. |
 //! | [`retry`] | [`Retry`]: whether and how a failed request is retried. |
 //! | [`page`] | [`Pages`] and [`Items`]: lists that span several responses, and the building blocks of a pager. |
-//! | [`middleware`] | [`Middleware`] and [`Next`]: middleware that every request passes through, such as a signer or a token refresher. |
+//! | [`middleware`] | [`Middleware`] and [`Next`]: middleware that every request passes through, such as a signer, `concord::auth::Renewed` for a token that is renewed, or `concord::limit::Limit`. |
 //! | [`transport`] | [`Transport`]: what actually sends a request, and a fake transport for tests. |
 //! | [`arg`] | The types that a generated method accepts as an argument. |
 //!

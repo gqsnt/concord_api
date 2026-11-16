@@ -9,7 +9,7 @@
 //! |---|---|
 //! | `concord-macros` | [`api!`]. It knows the tree, the statements and the inputs, but nothing about the expressions on their right-hand side. |
 //! | `concord-core` | The values and traits of a call: [`Secret`], [`Base`], [`Body`], [`Reader`], [`Retry`], [`Error`], [`Pages`], [`Middleware`], [`Transport`], [`Http`]; [`fake`] and [`reply`] for tests. |
-//! | `concord-extras` | The shipped implementations: [`json`], [`form`], optional multipart; [`struct@Json`], [`struct@Text`], [`struct@Binary`], [`read::Stream`]; [`by_offset`], [`by_offset_limit`], [`by_page`], [`by_cursor`], [`by_link`], [`by_next_url`]; [`basic`]. Readers, writers and pagers use public traits and helpers; the Tower adapter also uses a hidden helper for the URL of a response. |
+//! | `concord-extras` | The shipped implementations: [`json`], [`form`], [`bracket_form`], [`bracket_pairs`], [`json_lines`], optional `gzip`, `multipart`, `multipart_mixed` and `multipart_related`; [`struct@Json`], [`struct@Text`], [`struct@Binary`], [`read::Stream`], [`read::JsonLines`], [`read::Sse`]; [`by_offset`], [`by_offset_limit`], [`by_page`], [`by_cursor`], [`by_link`], [`by_next_url`]; [`basic`]; optional `auth` (with rotating credentials under `rotating`), `sign` and `limit`; [`transfer`]. These use public traits and helpers. The Tower adapter also uses a hidden helper for the URL of a response, and `gzip` uses one to read the content type of the body that it compresses. |
 //!
 //! The reader `Stream` is named through its module, [`read::Stream`]: at the root, its name would
 //! clash with the `Stream` trait that most async code imports.
@@ -103,8 +103,16 @@ pub use concord_extras::basic;
 pub use concord_extras::body::form;
 #[cfg(feature = "json")]
 pub use concord_extras::body::json;
+#[cfg(feature = "form")]
+pub use concord_extras::body::{bracket_form, bracket_pairs, BracketFormError};
+#[cfg(feature = "gzip-body")]
+pub use concord_extras::body::{gzip, GzipError};
+#[cfg(feature = "json")]
+pub use concord_extras::body::{json_lines, JsonLinesError};
 #[cfg(feature = "multipart")]
 pub use concord_extras::body::{multipart, Multipart, MultipartError};
+#[cfg(feature = "multipart")]
+pub use concord_extras::body::{multipart_mixed, multipart_related, MimeWriteError};
 pub use concord_extras::page::{
     by_cursor, by_link, by_next_url, by_offset, by_offset_limit, by_page,
 };
@@ -122,14 +130,19 @@ pub mod base {
     pub use concord_core::base::*;
 }
 
-/// The body of a request as a value, and the JSON, form and optional multipart writers.
+/// The body of a request as a value, and the optional request body writers.
 pub mod body {
     pub use concord_core::body::*;
-    #[cfg(any(feature = "json", feature = "form", feature = "multipart"))]
+    #[cfg(any(
+        feature = "json",
+        feature = "form",
+        feature = "multipart",
+        feature = "gzip-body"
+    ))]
     pub use concord_extras::body::*;
 }
 
-/// How a response becomes a value: the [`Reader`] trait and four readers.
+/// How a response becomes a value: whole bodies, byte streams and bounded records.
 ///
 /// | Reader | After the arrow | What it reads |
 /// |---|---|---|
@@ -137,6 +150,8 @@ pub mod body {
 /// | [`Text`](struct@Text) | `String` | the whole body as UTF-8, at most 10 MiB |
 /// | [`Binary`](struct@Binary) | `bytes::Bytes` | the whole body, at most 10 MiB |
 /// | [`Stream`](read::Stream) | [`ByteStream`] | nothing: the body is handed over as it comes |
+/// | [`JsonLines`](read::JsonLines) | [`RecordStream<T>`](read::RecordStream) | one JSON value per line, with an explicit byte bound |
+/// | [`Sse`](read::Sse) | [`RecordStream<SseEvent>`](read::RecordStream) | server-sent events, with an explicit byte bound |
 ///
 /// **`Stream` is named through its module:** `read concord::read::Stream;`, or
 /// `use concord::read::Stream;`. There is no `concord::Stream`: at the root it would clash
@@ -175,7 +190,8 @@ pub mod page {
     pub use concord_extras::page::*;
 }
 
-/// Middleware that every request passes through, such as a signer or a token refresher.
+/// Middleware that every request passes through, such as a signer, `auth::Renewed` for a token
+/// that is renewed, or `limit::Limit`.
 pub mod middleware {
     pub use concord_core::middleware::*;
 }
@@ -184,6 +200,21 @@ pub mod middleware {
 pub mod transport {
     pub use concord_core::transport::*;
 }
+
+#[cfg(feature = "auth")]
+#[doc(inline)]
+pub use concord_extras::auth;
+
+#[cfg(feature = "sign")]
+#[doc(inline)]
+pub use concord_extras::sign;
+
+#[cfg(feature = "limit")]
+#[doc(inline)]
+pub use concord_extras::limit;
+
+#[doc(inline)]
+pub use concord_extras::transfer;
 
 /// The types that a generated method accepts as an argument.
 pub mod arg {

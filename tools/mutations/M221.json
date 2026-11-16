@@ -1,0 +1,9 @@
+{
+  "id": "M221",
+  "area": "request signing",
+  "contract": "C12.9",
+  "description": "A service other than S3 signs existing path escapes without encoding them again.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "_ => segments.push(encode(piece.as_bytes())),",
+  "replace": "_ => segments.push(encode(&decode(piece)?)),"
+}

@@ -184,6 +184,27 @@ A signature has no default values. A filter that the provider documents as optio
 
 An entry whose value is `None` is left out: in `query`, in `headers`, and in a body of entries (below). No `if` is needed.
 
+**Nested query keys.** A fixed key is literal: `query { "a[b]" = value; "tags[]" = tags; }`. For a filter tree whose keys are known only at run time, `concord::bracket_pairs` (feature `form`) writes maps as `a[b]` and every list as `a[0]`, `a[1]`. Append its unencoded pairs with `edit_request`; `query_pairs_mut()` preserves the existing pairs and encodes the new ones once. Rack and Rails read an indexed list as a map with numeric keys, so those APIs need their own writer.
+
+```rust
+concord::api! {
+    pub client Search {
+        base "https://search.example.com";
+        GET find() { query { "page" = 1; } }
+    }
+}
+
+async fn search(filters: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>)
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+{
+    let pairs = concord::bracket_pairs(&filters)?;
+    Search::new().find().edit_request(move |request| {
+        request.url_mut().query_pairs_mut().extend_pairs(&pairs);
+    }).await?;
+    Ok(())
+}
+```
+
 Two rules about entries are checked, because a wrong guess would otherwise go unnoticed ([rules](../reference/rules.md)):
 
 - **In `headers`, a short entry whose name contains `_` is rejected.** `headers { user_agent; }` would send a header named `user_agent`, so write `"user-agent" = user_agent;`. In `query`, the short form works as usual. (`host` cannot be a key of `headers` either: the host comes from the `base`.)
@@ -400,6 +421,6 @@ let test  = Vault::new("k").with_transport(concord::fake(…));  // the fake get
 
 `middleware` appears on the client only, and may be written several times. A request goes first through the middleware that the caller added, then through the description's middleware layers in the order written, and then to the transport. So the author's layers are the last before the wire, and the author writes the signing layer last, so that nothing changes a request after it is signed. The expression can use the required inputs of the client and nothing else: an optional input is rejected. The value is created once, in `new`, so it can hold state that all calls share, and it runs for every attempt and every page. Nothing below the client can remove it.
 
-See the [grammar](../reference/grammar.md) for the syntax and [rule 26](../reference/rules.md) for what you cannot guess. A complete middleware layer is written out in [a middleware](credentials.md#a-middleware), and [a middleware](extending.md#a-middleware) shows how a caller adds one of their own.
+See the [grammar](../reference/grammar.md) for the syntax and [rule 26](../reference/rules.md) for what you cannot guess. A complete middleware layer is written out in [a middleware](credentials.md#a-middleware), and [a middleware](extending.md#a-middleware) shows how a caller adds one of their own. Concord ships four: [a token that is renewed](credentials.md#a-token-that-is-renewed), [a refresh token that rotates](credentials.md#a-refresh-token-that-rotates), AWS Signature Version 4 ([a middleware](credentials.md#a-middleware)), and [limits shared by the calls of a client](retries.md#limits-shared-by-the-calls-of-a-client).
 
 See [the examples](../examples/README.md) for eight real APIs described in this language.

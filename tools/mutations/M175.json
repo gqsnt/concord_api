@@ -1,0 +1,9 @@
+{
+  "id": "M175",
+  "area": "records",
+  "contract": "C11.8",
+  "description": "An SSE event of exactly its bound is TooLarge",
+  "file": "concord-extras/src/read/records.rs",
+  "find": ".filter(|&size| size <= self.max)",
+  "replace": ".filter(|&size| size < self.max)"
+}

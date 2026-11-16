@@ -1,0 +1,9 @@
+{
+  "id": "M162",
+  "area": "limit",
+  "contract": "C11.4",
+  "description": "A bucket without hit_when is not held by a 429",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "selected.definition.hit.as_ref().is_none_or(|hit| {",
+  "replace": "selected.definition.hit.as_ref().is_some_and(|hit| {"
+}

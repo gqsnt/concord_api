@@ -1,0 +1,9 @@
+{
+  "id": "M153",
+  "area": "auth",
+  "contract": "C11.2",
+  "description": "A late 401 rejects whatever token is current, also a newer one",
+  "file": "concord-extras/src/auth.rs",
+  "find": "Arc::ptr_eq(current.generation(), &generation)",
+  "replace": "{ let _ = (current, &generation); true }"
+}

@@ -4,7 +4,7 @@
 
 This page is for a Rust developer who calls the Stripe API. It gives a client with 38 endpoints that you can copy, and shows form bodies with nested keys, `expand`, an idempotency key on every `POST`, and a card decline as a value.
 
-Here is Stripe as Concord sees it. There is one host, `api.stripe.com`, under `/v1`; files go to `files.stripe.com`. Authentication is a secret key, `authorization: Bearer sk_…`; the API version goes in `stripe-version`, and with Connect, the account goes in `stripe-account`. A `POST` sends a form with nested keys (`metadata[order]=7781`, `items[0][price]=…`): a body of entries, `body stripe_form { … }`, with the author's own writer that flattens them, and a part that adds `expand` to every one of these bodies. Every `POST` carries an idempotency key, so each one may be retried. Lists are paginated by the id of their last object, and searches by a token. Stripe rejects a request with `{"error": {"type", "code", "message", …}}`, read into `StripeProblem`; a declined card is a `402`, which the description turns into an `Err` in the endpoint's own return type. Stripe's own reference is [docs.stripe.com/api](https://docs.stripe.com/api). `(unsure)` marks a detail about Stripe that has not been checked.
+Here is Stripe as Concord sees it. There is one host, `api.stripe.com`, under `/v1`; files go to `files.stripe.com`. Authentication is a secret key, `authorization: Bearer sk_…`; the API version goes in `stripe-version`, and with Connect, the account goes in `stripe-account`. A `POST` sends a form with nested keys (`metadata[order]=7781`, `items[0][price]=…`): a body of entries, `body concord::bracket_form { … }`, with the shipped indexed-key form writer, and a part that adds `expand` to every one of these bodies. Every `POST` carries an idempotency key, so each one may be retried. Lists are paginated by the id of their last object, and searches by a token. Stripe rejects a request with `{"error": {"type", "code", "message", …}}`, read into `StripeProblem`; a declined card is a `402`, which the description turns into an `Err` in the endpoint's own return type. Stripe's own reference is [docs.stripe.com/api](https://docs.stripe.com/api). `(unsure)` marks a detail about Stripe that has not been checked.
 
 ## The description
 
@@ -80,7 +80,7 @@ concord::api! {
             expand?: Vec<String>,
         ) {
             headers { "idempotency-key" = idempotency_key; }
-            body stripe_form { expand; }
+            body concord::bracket_form { expand; }
             idempotent;
         }
 
@@ -91,7 +91,7 @@ concord::api! {
                 email?: String, name?: String, description?: String,
                 payment_method?: String, metadata?: Metadata, ..write,
             ) -> Customer {
-                body stripe_form { email; name; description; payment_method; metadata; }
+                body concord::bracket_form { email; name; description; payment_method; metadata; }
             }
             /// `None` when the customer was deleted: Stripe responds with `200` and `deleted: true`.
             /// An id that never existed is still a `404`.
@@ -104,7 +104,7 @@ concord::api! {
                 metadata?: Metadata, ..write,
             ) -> Customer {
                 path "{id}";
-                body stripe_form { email; name; description; metadata; }
+                body concord::bracket_form { email; name; description; metadata; }
             }
             DELETE delete(id: CustomerId) -> Deleted<CustomerId> { path "{id}"; }
             GET list(email?: String, ..listed, ..expanded) -> List<Customer> { query { email; } }
@@ -118,12 +118,12 @@ concord::api! {
                 amount: u64, currency: Currency, customer?: CustomerId,
                 payment_method?: String, confirm?: bool, metadata?: Metadata, ..write,
             ) -> PaymentIntent {
-                body stripe_form { amount; currency; customer; payment_method; confirm; metadata; }
+                body concord::bracket_form { amount; currency; customer; payment_method; confirm; metadata; }
             }
             GET retrieve(id: PaymentIntentId, ..expanded) -> PaymentIntent { path "{id}"; }
             POST update(id: PaymentIntentId, amount?: u64, metadata?: Metadata, ..write) -> PaymentIntent {
                 path "{id}";
-                body stripe_form { amount; metadata; }
+                body concord::bracket_form { amount; metadata; }
             }
             /// `Err` when the card was declined (`402`); the intent is in `error.payment_intent`.
             /// An `Ok` may still wait for the customer: look at `status` and `next_action`.
@@ -131,16 +131,16 @@ concord::api! {
                 id: PaymentIntentId, payment_method?: String, return_url?: String, ..write,
             ) -> Result<PaymentIntent, Declined> {
                 path "{id}/confirm";
-                body stripe_form { payment_method; return_url; }
+                body concord::bracket_form { payment_method; return_url; }
                 status { 402 { body } => Err(body) }
             }
             POST capture(id: PaymentIntentId, amount_to_capture?: u64, ..write) -> PaymentIntent {
                 path "{id}/capture";
-                body stripe_form { amount_to_capture; }
+                body concord::bracket_form { amount_to_capture; }
             }
             POST cancel(id: PaymentIntentId, cancellation_reason?: String, ..write) -> PaymentIntent {
                 path "{id}/cancel";
-                body stripe_form { cancellation_reason; }
+                body concord::bracket_form { cancellation_reason; }
             }
             GET list(customer?: CustomerId, ..listed, ..expanded) -> List<PaymentIntent> {
                 query { customer; }
@@ -156,7 +156,7 @@ concord::api! {
                 payment_intent?: PaymentIntentId, charge?: ChargeId, amount?: u64,
                 reason?: String, metadata?: Metadata, ..write,
             ) -> Refund {
-                body stripe_form { payment_intent; charge; amount; reason; metadata; }
+                body concord::bracket_form { payment_intent; charge; amount; reason; metadata; }
             }
             GET retrieve(id: RefundId, ..expanded) -> Refund { path "{id}"; }
             /// Only a refund whose status is `requires_action`.
@@ -175,7 +175,7 @@ concord::api! {
                 customer: CustomerId, items: Vec<NewItem>, default_payment_method?: String,
                 cancel_at_period_end?: bool, metadata?: Metadata, ..write,
             ) -> Subscription {
-                body stripe_form { customer; items; default_payment_method; cancel_at_period_end; metadata; }
+                body concord::bracket_form { customer; items; default_payment_method; cancel_at_period_end; metadata; }
             }
             GET retrieve(id: SubscriptionId, ..expanded) -> Subscription { path "{id}"; }
             POST update(
@@ -183,7 +183,7 @@ concord::api! {
                 proration_behavior?: String, metadata?: Metadata, ..write,
             ) -> Subscription {
                 path "{id}";
-                body stripe_form { items; cancel_at_period_end; proration_behavior; metadata; }
+                body concord::bracket_form { items; cancel_at_period_end; proration_behavior; metadata; }
             }
             /// Cancels now. To cancel at the end of the period: `update` with `cancel_at_period_end`.
             DELETE cancel(id: SubscriptionId, invoice_now?: bool, prorate?: bool, ..expanded) -> Subscription {
@@ -207,7 +207,7 @@ concord::api! {
                 collection_method?: CollectionMethod, days_until_due?: u32, metadata?: Metadata,
                 ..write,
             ) -> Invoice {
-                body stripe_form {
+                body concord::bracket_form {
                     customer; subscription; auto_advance; collection_method; days_until_due; metadata;
                 }
             }
@@ -222,12 +222,12 @@ concord::api! {
             }
             POST finalize(id: InvoiceId, auto_advance?: bool, ..write) -> Invoice {
                 path "{id}/finalize";
-                body stripe_form { auto_advance; }
+                body concord::bracket_form { auto_advance; }
             }
             /// `Err` when the payment was declined (`402`).
             POST pay(id: InvoiceId, payment_method?: String, ..write) -> Result<Invoice, Declined> {
                 path "{id}/pay";
-                body stripe_form { payment_method; }
+                body concord::bracket_form { payment_method; }
                 status { 402 { body } => Err(body) }
             }
             POST void(id: InvoiceId, ..write) -> Invoice { path "{id}/void"; }
@@ -295,50 +295,16 @@ concord::api! {
 
 The data types are plain `serde` types, named here but not shown. Ids, each a `#[serde(transparent)]` `String` with `From<&str>` and `Display`: `AccountId`, `CustomerId`, `PaymentIntentId`, `RefundId`, `SubscriptionId`, `InvoiceId`, `BalanceTransactionId`, `EventId`, `ChargeId`, `PriceId`, `PayoutId`. The response types: `Customer`, `PaymentIntent` (its `customer` is an `Expandable<Customer>`), `Refund`, `Subscription`, `Invoice`, `Balance`, `BalanceTransaction`, `Event`, `StripeFile`, `Deleted<I>`. The request types and the filters: `Metadata` (a `BTreeMap<String, String>`), `NewItem`, `Currency`, `SubscriptionFilter`, `InvoiceStatus`, `CollectionMethod`, `FilePurpose`, `Upload { name, content_type, bytes }`. Errors: `StripeProblem` and `Declined`, each `{ error: StripeError }`.
 
-The form writer, the pages, `expand`, a deleted customer, and Stripe's retry policy:
+The pages, `expand`, a deleted customer, and Stripe's retry policy:
 
 ```rust
 use concord::page::{Call, Slot};
-use concord::{Answer, Body, Fail, Headers};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use concord::{Answer, Fail, Headers};
+use serde::Deserialize;
 use std::time::Duration;
-
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// The version these types were written for.
 pub const API_VERSION: &str = "2026-10-28.endive";
-
-/// `body stripe_form { … }`: Stripe's form, with nested keys: `metadata[order]=7781`,
-/// `items[0][price]=price_1`, `expand[0]=customer`. A `None` is left out.
-pub fn stripe_form<T: Serialize>(params: T) -> Result<Body, BoxError> {
-    let mut pairs = Vec::new();
-    if let Value::Object(fields) = serde_json::to_value(params)? {
-        for (key, value) in fields {
-            flatten(key, value, &mut pairs);
-        }
-    }
-    Ok(concord::form(pairs)?)
-}
-
-fn flatten(key: String, value: Value, pairs: &mut Vec<(String, String)>) {
-    match value {
-        Value::Null => {}
-        Value::Bool(b) => pairs.push((key, b.to_string())),
-        Value::Number(n) => pairs.push((key, n.to_string())),
-        Value::String(s) => pairs.push((key, s)),
-        Value::Array(items) => {
-            for (i, item) in items.into_iter().enumerate() {
-                flatten(format!("{key}[{i}]"), item, pairs);
-            }
-        }
-        Value::Object(fields) => {
-            for (k, v) in fields {
-                flatten(format!("{key}[{k}]"), v, pairs);
-            }
-        }
-    }
-}
 
 /// A page of a list.
 #[derive(Debug, Deserialize)]
@@ -463,7 +429,7 @@ fn should_retry(headers: Option<&Headers>) -> Option<bool> {
 }
 ```
 
-`stripe_form` writes a list with indexes (`items[0][price]`, `expand[0]`), as Stripe's own libraries do (unsure: Stripe's examples also show `expand[]`).
+`concord::bracket_form` writes a list with indexes (`items[0][price]`, `expand[0]`), as Stripe's own libraries do (unsure: Stripe's examples also show `expand[]`). The writer keeps Serde's field order and renamed unit variants without first making a JSON tree. Empty or bracket-bearing map keys and payload-bearing enum variant operations are refused.
 
 ## Calling it
 
@@ -558,7 +524,7 @@ pub async fn evidence(platform_key: String, pdf: Vec<u8>) -> stripe::Result<Stri
 | Stripe wants | What to write |
 |---|---|
 | `expand`, which changes the shape of the response: an id becomes the object. The return type is fixed. | A field that holds both shapes, `Expandable<T>`, and a `match` at the call. |
-| A form with nested keys. The `form` that Concord provides is flat. | Your own writer that flattens the value, `stripe_form`, named before a body of entries: the entries of the parts and those of the node are merged. |
+| A form with nested keys. | `body concord::bracket_form { … }`: the entries of the parts and those of the node are merged; maps use brackets and every list uses indices. |
 | An API version that is always sent, with a default. A signature cannot declare a default. | The default in the entry, `version.as_deref().unwrap_or(API_VERSION)`, stated in the doc comment of the input. |
 | A deleted customer: a `200` with `deleted: true`, not a `404`. | `-> Option<Customer>` with an arm that reads both shapes: `200 { body } => MaybeDeleted::live(body)`. |
 | `type` and `query` as names: `type` is a Rust keyword. | `kind?: String` with `"type" = kind;`. `query` is an ordinary name: `query { query; }` is legal. |

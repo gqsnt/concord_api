@@ -16,9 +16,11 @@ help: the trait `concord::Reader<u32>` is not implemented for `Bad`
   = help: the following other types implement trait `concord::Reader<T>`:
             `&R` implements `concord::Reader<T>`
             `Json` implements `concord::Reader<T>`
-            `Stream` implements `concord::Reader<ByteStream>`
+            `JsonLines` implements `concord::Reader<RecordStream<T>>`
+            `Sse` implements `concord::Reader<RecordStream<SseEvent>>`
             `Text` implements `concord::Reader<String>`
             `concord::Binary` implements `concord::Reader<concord::bytes::Bytes>`
+            `concord::read::Stream` implements `concord::Reader<ByteStream>`
 note: required by a bound in `__reader`
  --> tests/compiler-errors/spans/02_problem_reader.rs:3:18
   |

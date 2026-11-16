@@ -1,0 +1,9 @@
+{
+  "id": "M157",
+  "area": "auth",
+  "contract": "C11.3",
+  "description": "Renew early only when what is left is strictly below the margin, not at the margin",
+  "file": "concord-extras/src/auth.rs",
+  "find": ".is_some_and(|current| current.token().remaining() <= policy.margin)",
+  "replace": ".is_some_and(|current| current.token().remaining() < policy.margin)"
+}

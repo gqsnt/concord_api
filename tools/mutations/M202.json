@@ -1,0 +1,9 @@
+{
+  "id": "M202",
+  "area": "JSON lines body",
+  "contract": "C12.4",
+  "description": "Line feeds separate records, so the last record has no LF",
+  "file": "concord-extras/src/body/json_lines.rs",
+  "find": "    for (index, record) in records.into_iter().enumerate() {\n        let value = concord_core::body::Bounded::new(&record);\n        if let Err(source) = serde_json::to_writer(&mut output, &value) {\n            if output.full {\n                return Err(JsonLinesError::TooLarge);\n            }\n            return Err(JsonLinesError::Serialize {\n                record: index.saturating_add(1),\n                source: value.error(source),\n            });\n        }\n        output\n            .write_all(b\"\\n\")\n            .map_err(|_| JsonLinesError::TooLarge)?;\n    }\n",
+  "replace": "    for (index, record) in records.into_iter().enumerate() {\n        if index > 0 {\n            output\n                .write_all(b\"\\n\")\n                .map_err(|_| JsonLinesError::TooLarge)?;\n        }\n        let value = concord_core::body::Bounded::new(&record);\n        if let Err(source) = serde_json::to_writer(&mut output, &value) {\n            if output.full {\n                return Err(JsonLinesError::TooLarge);\n            }\n            return Err(JsonLinesError::Serialize {\n                record: index.saturating_add(1),\n                source: value.error(source),\n            });\n        }\n    }\n"
+}

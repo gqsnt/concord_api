@@ -4,11 +4,11 @@ use concord::{by_cursor, Base, Body, ByteStream};
 
 concord::api! {
     /// An object store that speaks S3: buckets, objects, and uploads in several parts.
-    pub client ObjectStore(region: String, credentials: Credentials) {
+    pub client ObjectStore(region: String, credentials: Credentials, origins: Vec<Base>) {
         read Xml;
         problem S3Problem;
         /// Signs every request: each page, each attempt.
-        middleware Signed::new(credentials.clone(), region.clone());
+        middleware Signed::new(credentials.clone(), region.clone(), origins.clone());
 
         part version(version_id?: String) {
             query { "versionId" = version_id; }

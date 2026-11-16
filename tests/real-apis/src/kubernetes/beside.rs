@@ -1,7 +1,6 @@
 use concord::http::HeaderValue;
-use concord::read::{Incoming, ReadError, Reader, Stream, StreamError};
 use concord::transport::{TransportError, TryInfo};
-use concord::{reqwest, Base, ByteStream, Middleware, Next};
+use concord::{reqwest, Base, Middleware, Next};
 use serde::de::{DeserializeOwned, Deserializer};
 use serde::Deserialize;
 use std::time::Duration;
@@ -93,59 +92,6 @@ pub enum WatchEvent<T> {
     Deleted(T),
     Bookmark(Head),
     Error(Status),
-}
-
-/// `read WatchLines;`: the body as it arrives, split into lines.
-#[derive(Clone, Copy, Debug)]
-pub struct WatchLines;
-
-impl<T: Send + 'static> Reader<Watch<T>> for WatchLines {
-    async fn read(&self, body: Incoming) -> Result<Watch<T>, ReadError> {
-        let bytes: ByteStream = Stream.read(body).await?;
-        Ok(Watch { bytes, line: Vec::new(), item: std::marker::PhantomData })
-    }
-}
-
-/// A watch: one event after another, until the server ends it.
-#[derive(Debug)]
-pub struct Watch<T> {
-    bytes: ByteStream,
-    line: Vec<u8>,
-    item: std::marker::PhantomData<fn() -> T>,
-}
-
-/// What breaks a watch after its head. It is not a `kubernetes::Error`: Concord makes those.
-#[derive(Debug)]
-pub enum WatchError {
-    Line(serde_json::Error),
-    Stream(StreamError),
-}
-
-impl std::fmt::Display for WatchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WatchError::Line(_) => f.write_str("a line of the watch is not an event"),
-            WatchError::Stream(_) => f.write_str("the watch broke"),
-        }
-    }
-}
-
-impl std::error::Error for WatchError {}
-
-impl<T: DeserializeOwned> Watch<T> {
-    /// The next event; `None` when the server ended the watch.
-    pub async fn try_next(&mut self) -> Result<Option<WatchEvent<T>>, WatchError> {
-        loop {
-            if let Some(end) = self.line.iter().position(|&b| b == b'\n') {
-                let line: Vec<u8> = self.line.drain(..=end).collect();
-                return serde_json::from_slice(&line).map(Some).map_err(WatchError::Line);
-            }
-            match self.bytes.try_next().await.map_err(WatchError::Stream)? {
-                Some(piece) => self.line.extend_from_slice(&piece),
-                None => return Ok(None),
-            }
-        }
-    }
 }
 
 /// A client for one cluster: its server, and the authority that signed its certificate (PEM, from

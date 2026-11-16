@@ -1,0 +1,9 @@
+{
+  "id": "M222",
+  "area": "request signing",
+  "contract": "C12.9",
+  "description": "The TE header remains in the signature although the transport may remove it.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "        \"proxy-connection\",\n        \"te\",\n        \"trailer\",",
+  "replace": "        \"proxy-connection\",\n        \"trailer\","
+}

@@ -4,7 +4,7 @@
 
 This page is for a Rust developer who calls the Riot Games API (League of Legends, Teamfight Tactics, Riot accounts). It gives a client with 62 endpoints that you can copy, and shows many hosts chosen by an input, and a quota that every call shares.
 
-Here is Riot as Concord sees it. A route is a host: a platform (`euw1`, `kr`) serves what lives on one game server, and a region (`europe`, `asia`) serves accounts and matches. Two parts, `platform` and `region`, each contain the statement `base "https://{route}.api.riotgames.com";`, and each of Riot's API groups (`league-v4`, `match-v5`, …) is a scope that includes one of them: `riot.league(Platform::Euw1)`. Authentication is the developer portal key, sent in the header `x-riot-token` to every host; for a signed-in player, the Riot Sign On token replaces it (the part `player`). A match history is paginated by `start` and `count` (`by_offset_limit`), and a ladder by page number (`by_page`). Riot rejects a request with an error status and `{"status": {"message": …, "status_code": …}}`, read into `RiotProblem`; "no such player" is a `404`, which the lookups turn into `None`. Every response reports how full the rate limits are, per host and per method, and a middleware layer reads it. Riot's own reference is [developer.riotgames.com/apis](https://developer.riotgames.com/apis). `(unsure)` marks a fact about Riot that has not been checked.
+Here is Riot as Concord sees it. A route is a host: a platform (`euw1`, `kr`) serves what lives on one game server, and a region (`europe`, `asia`) serves accounts and matches. Two parts, `platform` and `region`, each contain the statement `base "https://{route}.api.riotgames.com";`, and each of Riot's API groups (`league-v4`, `match-v5`, …) is a scope that includes one of them: `riot.league(Platform::Euw1)`. Authentication is the developer portal key, sent in the header `x-riot-token` to every host; for a signed-in player, the Riot Sign On token replaces it (the part `player`). A match history is paginated by `start` and `count` (`by_offset_limit`), and a ladder by page number (`by_page`). Riot rejects a request with an error status and `{"status": {"message": …, "status_code": …}}`, read into `RiotProblem`; "no such player" is a `404`, which the lookups turn into `None`. Every response reports how full the rate limits are, per host and per method, and a `Limit` from `concord::limit` learns from it. Riot's own reference is [developer.riotgames.com/apis](https://developer.riotgames.com/apis). `(unsure)` marks a fact about Riot that has not been checked.
 
 ## The description
 
@@ -26,9 +26,9 @@ concord::api! {
         read Json;
         problem RiotProblem;
         /// Riot's limits, per host and per method, shared by every call of this client.
-        /// It waits before a request that the last responses say is over a limit, and
-        /// holds the host or the method for `Retry-After` after a `429`.
-        middleware Quota::new();
+        /// A request waits until both of its buckets have room, and a `429` holds the
+        /// bucket that it names for `Retry-After`.
+        middleware quota();
 
         /// A platform and its host: `euw1` in `https://euw1.api.riotgames.com`.
         part platform(route: Platform) {
@@ -427,93 +427,36 @@ pub fn retry() -> riot::Retry {
 }
 ```
 
-The quota is shown in full, because it is the only part that is not obvious. Riot counts requests per key in two kinds of bucket: the application's, per host, and a method's, per host and endpoint. Every response reports how full each window of its buckets is (`x-app-rate-limit: 20:1,100:120` and `x-app-rate-limit-count: 20:1,31:120`), and a `429` says how long to wait. `Quota` holds a bucket while it is full, and each request waits for its two buckets before it is sent. That wait does not count as silence for the idle timeout, so only the call timeout, `with_timeout`, bounds it. This block needs `tokio`, with its `time` feature.
+The quota is a `Limit`, from `concord::limit` (the feature `limit` of `concord`). Riot counts requests per key in two buckets on each host: one for the application, and one for each method. Every response reports the windows of both. `X-App-Rate-Limit: 20:1,100:120` gives the capacity of each window (20 requests in 1 second, 100 in 120 seconds), and `X-App-Rate-Limit-Count: 20:1,31:120` how much of each is used; `X-Method-Rate-Limit` and `X-Method-Rate-Limit-Count` do the same for the method. `counts` reads such a pair of headers. A `429` also says which bucket it is about in `X-Rate-Limit-Type` (`application`, `method` or `service`), and how long to wait in `Retry-After`.
 
 ```rust
-use concord::reqwest::{self, header::HeaderMap};
-use concord::transport::{TransportError, TryInfo};
-use concord::{Middleware, Next};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use concord::limit::{counts, Bucket, Limit};
 use std::time::Duration;
-use tokio::time::{sleep_until, Instant};
 
-/// Riot's limits: a bucket for the application on each host, and one for each method. A bucket
-/// that the responses show full is held, and a request waits for its two buckets before it is sent.
-#[derive(Clone, Default)]
-pub struct Quota(Arc<Mutex<HashMap<String, Instant>>>);
-
-impl Quota {
-    pub fn new() -> Quota {
-        Quota::default()
-    }
-
-    fn held(&self, bucket: &str) -> Option<Instant> {
-        let now = Instant::now();
-        let buckets = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        buckets.get(bucket).copied().filter(|until| *until > now)
-    }
-
-    fn hold(&self, bucket: &str, wait: Duration) {
-        let until = Instant::now() + wait;
-        let mut buckets = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let slot = buckets.entry(bucket.to_owned()).or_insert(until);
-        *slot = (*slot).max(until);
-    }
-}
-
-impl Middleware for Quota {
-    async fn handle(&self, request: reqwest::Request, info: TryInfo, next: Next<'_>)
-        -> Result<reqwest::Response, TransportError>
-    {
-        let app = request.url().host_str().unwrap_or_default().to_owned();  // euw1.api.riotgames.com
-        let method = format!("{app} {}", info.endpoint());                   // … riot.league.entries
-        while let Some(until) = self.held(&app).max(self.held(&method)) {
-            sleep_until(until).await;
-        }
-        let answer = next.send(request, info).await?;
-        let headers = answer.headers();
-        for (bucket, limits, counts) in [
-            (&app, "x-app-rate-limit", "x-app-rate-limit-count"),
-            (&method, "x-method-rate-limit", "x-method-rate-limit-count"),
-        ] {
-            if let Some(window) = full_window(headers, limits, counts) {
-                self.hold(bucket, window);      // a whole window: Riot does not say when it began
-            }
-        }
-        if answer.status() == 429 {
-            let wait = seconds(headers, "retry-after").unwrap_or(Duration::from_secs(1));
-            match headers.get("x-rate-limit-type").and_then(|v| v.to_str().ok()) {
-                Some("application") => self.hold(&app, wait),
-                _ => self.hold(&method, wait),
-            }
-        }
-        Ok(answer)
-    }
-}
-
-/// The longest window whose count has reached its limit: `20:1,100:120` against `20:1,31:120`.
-fn full_window(headers: &HeaderMap, limits: &str, counts: &str) -> Option<Duration> {
-    let pairs = |name: &str| -> Vec<(u64, u64)> {
-        let text = headers.get(name).and_then(|v| v.to_str().ok()).unwrap_or("");
-        text.split(',').filter_map(|pair| {
-            let (n, seconds) = pair.trim().split_once(':')?;
-            Some((n.parse().ok()?, seconds.parse().ok()?))
-        }).collect()
-    };
-    let counts = pairs(counts);
-    pairs(limits).into_iter()
-        .filter(|(limit, window)| counts.iter().any(|(n, w)| w == window && n >= limit))
-        .map(|(_, window)| Duration::from_secs(window))
-        .max()
-}
-
-fn seconds(headers: &HeaderMap, name: &str) -> Option<Duration> {
-    headers.get(name)?.to_str().ok()?.trim().parse().ok().map(Duration::from_secs)
+/// Riot's limits: a bucket for the application on each host, and one for each method on each
+/// host. Each bucket learns its windows from the responses; clones share the buckets.
+pub fn quota() -> Limit {
+    let application = Bucket::new(|call| Some(call.request().url().host_str()?.to_owned()))
+        .learn(counts("x-app-rate-limit", "x-app-rate-limit-count"))
+        .hit_when(|seen| seen.header("x-rate-limit-type") == Some("application"));
+    let method = Bucket::new(|call| {
+        Some(format!("{} {}", call.request().url().host_str()?, call.info().endpoint()))
+    })
+    .learn(counts("x-method-rate-limit", "x-method-rate-limit-count"))
+    .hit_when(|seen| seen.header("x-rate-limit-type") != Some("application"));
+    Limit::new()
+        // Wait up to the longest window, 120 seconds: by default, a full window fails with `MaxHold`.
+        .max_hold(Duration::from_secs(120))
+        // A `429` of a service limit can come without `Retry-After`: hold its bucket for a second.
+        .without_retry_after(Duration::from_secs(1))
+        .bucket(application)
+        .bucket(method)
 }
 ```
 
-Two requests sent at the same time can both pass a bucket that the next response shows as full. The `429` that may follow holds the bucket for its `Retry-After`, and `retry()` retries the request after that, through the same wait. Here the live tournament API and its stub share one method bucket, because they are one endpoint of the description, which is stricter than Riot.
+Each request is counted in its two buckets before it is sent, so a full window makes the next request wait instead of drawing a `429`. Every window of both buckets is charged, or none is, and a bucket that has not seen a response yet lets one request through at a time. A wait does not count as silence for the idle timeout. A request that would wait a time known to be longer than `max_hold` fails at once with `LimitError::MaxHold` as the source of its error (`LimitError::find(&e)` returns it). The default is 60 seconds, and a full 120-second window of a development key can take longer, so `quota()` sets `max_hold` to that window. A `429` holds the bucket that `X-Rate-Limit-Type` names for its `Retry-After`, and `retry()` retries the request after that, through the same wait. Here the live tournament API and its stub share one method bucket, because they are one endpoint of the description, which is stricter than Riot.
+
+What it does not see: another process, or another `Limit`, that uses the same key spends the same allowance, and shows only in the counts of the next response. A `service` limit is Riot's own, reported in no header, so nothing counts it in advance; its `429` holds the method bucket for `Retry-After`, and a `429` that comes without `Retry-After` holds it for one second, the wait that `without_retry_after` sets (unsure: how long Riot wants).
 
 ## Calling it
 
@@ -598,7 +541,7 @@ pub async fn tournament(riot: &Riot, live: bool, callback: String) -> riot::Resu
 | "No such thing" as a `404` on 23 lookups. | `status { 404 => None }` on each lookup. On a scope, the arm would also apply to its lists, which are not an `Option`. |
 | `match` and `type`, which are Rust keywords. | `matches` for the scope; `kind?: MatchType` with `"type" = kind;`. |
 | A `429` on a `POST` of the tournament API: Riot rejected it before doing anything (unsure). | `Retry::standard().not_applied_on(429)`, provided as `retry()`. Not `idempotent;`: that would also retry the `POST` after a lost connection. |
-| A `Retry-After` longer than 60 seconds (a window of 120 seconds). | Concord does not wait more than 60 seconds: the call fails, and `e.retry_after()` returns how long to wait. The quota still holds the bucket for the next call. |
-| One quota for every client of one key. | One client for each key, cloned where it is needed: a clone shares the middleware. |
+| A `Retry-After` longer than 60 seconds (a window of 120 seconds). | The retry policy does not wait more than 60 seconds: the call fails, and `e.retry_after()` returns how long to wait. The limit still holds the bucket, and the next call through it waits until the bucket opens, because `quota()` sets `max_hold` to 120 seconds. |
+| One quota for every client of one key. | One client for each key, cloned where it is needed: a clone shares the limit. |
 | A history without `.count(…)`: Riot returns 20. `by_offset_limit` stops at a page shorter than the `count` that the caller set, and knows nothing about Riot's 20. | Set `.count(…)`; without it, the last request returns an empty page. |
 | The endpoints keyed by summoner id, which Riot replaced by the PUUID. | Left out, except one: `#[deprecated(note = …)]` on an endpoint warns each caller at compile time. |

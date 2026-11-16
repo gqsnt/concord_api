@@ -1,0 +1,7 @@
+concord::api! {
+pub client Uploads(origin: concord::Base) {
+    // the host that receives the bytes: its own base, nothing of the API's client
+    base origin;
+    POST send(bytes: concord::Body) { body bytes; }
+}
+}

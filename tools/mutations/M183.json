@@ -1,0 +1,9 @@
+{
+  "id": "M183",
+  "area": "records",
+  "contract": "C11.10",
+  "description": "A failure of the body ends the stream as if it were complete",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "                Poll::Ready(Some(Err(error))) => return Poll::Ready(Err(error.into())),",
+  "replace": "                Poll::Ready(Some(Err(error))) => {\n                    drop(error);\n                    return Poll::Ready(Ok(None));\n                }"
+}

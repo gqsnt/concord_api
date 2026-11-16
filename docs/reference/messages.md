@@ -445,7 +445,7 @@ help: declare the intended return type with `->`, or stop the arms that apply he
 
 ### Middleware
 
-**40.** `middleware Limit::new(per_second);`, where `per_second?: u32` is an optional input of the client.  
+**40.** `middleware PerSecond::new(per_second);`, where `per_second?: u32` is an optional input of the client and `PerSecond` a middleware of the author's own.  
 Point: `per_second`.
 
 ```text
@@ -545,7 +545,7 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 
 | Failure | Printed text |
 |---|---|
-| A middleware or a transport that will not send (a signature that could not be created) | `transport error: the request was blocked before it was sent, in vault.balance` |
+| A middleware or a transport that will not send (a request that `concord::sign::SigV4` would not sign; a token that `concord::auth::Renewed` or `concord::auth::Rotating` could not renew; a call that `concord::limit::Limit` refused). The reason, a `SignError`, a `RenewalError`, a `RotationError` or a `LimitError`, is `source()`, and the `find` of its type (`SignError::find(&e)`, `RenewalError::find(&e)`, `RotationError::find(&e)`, `LimitError::find(&e)`) returns it | `transport error: the request was blocked before it was sent, in vault.balance` |
 | A connection that failed before a head was received | `transport error: connection refused, in tasks.get` |
 | The connect timeout of the HTTP client, when its length is known (a `concord::Http` built with no `Http::with` closure) | `transport error: no connection after 30 s (the connect timeout of the HTTP client), in tasks.get` |
 | The same, when its length is not known (`Http::with`, or the caller's own client) | `transport error: no connection (the connect timeout of the HTTP client), in tasks.get` |

@@ -1,5 +1,3 @@
-use concord::bytes::Bytes;
-use concord::reqwest;
 use concord::Fail;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -65,17 +63,4 @@ pub fn slack_response<T: DeserializeOwned>(body: Value) -> Result<T, Fail<SlackP
 /// Slack's policy: a `429` was not applied, so even a `POST` may be retried after `Retry-After`.
 pub fn retry() -> slack::Retry {
     slack::Retry::standard().not_applied_on(429)
-}
-
-/// The middle step of an upload: the bytes go to the URL that Slack returned, on another host.
-/// A plain `reqwest` client sends them, with none of the client's credentials.
-pub async fn upload_bytes(url: &str, bytes: Bytes) -> Result<(), reqwest::Error> {
-    let answer = reqwest::Client::new()
-        .post(url)
-        .header("content-type", "application/octet-stream")
-        .body(bytes)
-        .send()
-        .await?;
-    answer.error_for_status()?;
-    Ok(())
 }

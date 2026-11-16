@@ -4,7 +4,7 @@
 
 This page is for a Rust developer who wants to see their kind of API in Concord. It presents eight real APIs, each with a complete description to copy from, the Rust code that goes with it, a few calls, and what does not fit well.
 
-These are examples of Concord, not SDKs for these providers. Each detail of a provider comes from its documentation, and a detail that is uncertain is marked `(unsure)` on its page. No test calls a real API. Every description, the Rust code beside it and the calls compile in the crate [`tests/real-apis`](../../tests/real-apis/README.md); two blocks that need other crates (the S3 signer, the Riot quota) compile only in its tests.
+These are examples of Concord, not SDKs for these providers. Each detail of a provider comes from its documentation, and a detail that is uncertain is marked `(unsure)` on its page. No test calls a real API. Every description, the Rust code beside it and the calls compile in the crate [`tests/real-apis`](../../tests/real-apis/README.md); one block that needs another crate (the XML reader and writer of S3) compiles only in its tests.
 
 ## The eight APIs
 
@@ -27,13 +27,13 @@ Each escape hatch is plain Rust, written next to the description or in the calli
 |---|---|---|
 | An error inside a `200` | An arm on the 2xx that reads the body and returns the client's problem, or the value. | [Slack](slack.md), [Telegram](telegram.md), [S3](s3.md) |
 | A write retried after a `429` that was not applied | The author's retry policy, `Retry::standard().not_applied_on(429)`, provided as `retry()`. Not `idempotent;`, which would also retry it after a lost connection. | [Riot](riot.md), [Slack](slack.md), [Telegram](telegram.md), [Kubernetes](kubernetes.md) |
-| A shared quota, the headers of every response, a signature | A `middleware` in the description: it sees every attempt and every page. | [Riot](riot.md), [GitHub](github.md), [S3](s3.md) |
+| The headers of every response, a signature | A `middleware` in the description: it sees every attempt and every page. | [GitHub](github.md), [S3](s3.md) |
 | "Request it again at the new location" after a `301` | Concord follows no redirects: a function that sends the same call to the new URL, or your own `reqwest::Client` that follows them, passed to `with_transport`. | [GitHub](github.md) |
 | A response whose shape depends on an option (`expand`, `filter_path`, `format`) | The return type is fixed: a type that holds every shape, or `send_raw()` for the rest. | [Stripe](stripe.md), [Elasticsearch](elasticsearch.md) |
-| Records inside a stream, and an error record among them | `read Stream;` yields the bytes; your own reader splits them into records. | [Kubernetes](kubernetes.md) |
+| Records inside a stream, and an error record among them | `read JsonLines::new(bound);` returns a `RecordStream<T>`: an error record is one variant of `T`. | [Kubernetes](kubernetes.md) |
 | One operation under two methods (`GET` and `POST`) | Two endpoints, or your own method with `.edit_request(…)`. | [Elasticsearch](elasticsearch.md), [Telegram](telegram.md) |
 | A header whose name the caller chooses (`x-amz-meta-*`), or one made from the bytes of the body | `.edit_request(…)` on the call, or the middleware. | [S3](s3.md) |
-| A complete URL that the server returns, on another host | A plain `reqwest` client sends it, with none of your keys. | [Slack](slack.md) |
+| A complete URL that the server returns, on another host | A second description with that host as its base and none of your keys; `concord::transfer::at(call, url)` checks the URL and returns that description's call, to send to it. | [Slack](slack.md) |
 | A long poll that sends the same request again after an empty response | Your own loop: pagination stops when the same request would be sent twice in a row. | [Telegram](telegram.md) |
 | A lifetime over several calls (open, walk, close) | Your own function around the calls. | [Elasticsearch](elasticsearch.md) |
 | A certificate that the connection needs | `concord::Http::with(…)` passed to `with_transport`, in a function that the author provides. | [Kubernetes](kubernetes.md) |

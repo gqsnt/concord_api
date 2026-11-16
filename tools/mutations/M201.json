@@ -1,0 +1,9 @@
+{
+  "id": "M201",
+  "area": "JSON lines body",
+  "contract": "C12.4",
+  "description": "A body of exactly max_bytes is refused: the bound is compared with >= instead of >",
+  "file": "concord-extras/src/body/json_lines.rs",
+  "find": "if bytes.len() > self.max.saturating_sub(self.bytes.len()) {",
+  "replace": "if bytes.len() >= self.max.saturating_sub(self.bytes.len()) {"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M167",
+  "area": "limit",
+  "contract": "C11.6",
+  "description": "Refuse the key that would reach max_keys, not the one that would exceed it",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": ".saturating_sub(state.policy.max_keys);",
+  "replace": ".saturating_sub(state.policy.max_keys.saturating_sub(1));"
+}

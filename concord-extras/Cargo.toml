@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/concord-extras"
 publish.workspace = true
-description = "What Concord ships beside its core: JSON, form and multipart writers, four readers, six pagers, Basic, a tower adapter. Depend on `concord-api` instead."
+description = "Concord's writers, bounded readers, pagers, credential renewal, shared limits and returned-URL checks. Depend on `concord-api` instead."
 readme = "README.md"
 keywords = ["http", "json", "pagination", "multipart", "client"]
 categories = ["web-programming::http-client"]
@@ -30,21 +30,44 @@ serde_urlencoded = { version = "0.7", optional = true }
 tower-service = { version = "0.3", optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
 getrandom = { version = "0.3", optional = true }
+futures-core.workspace = true
+tokio = { version = "1", default-features = false, features = ["time"], optional = true }
+http-body = { version = "1", optional = true }
+# Request compression is independent of response decompression in the core.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"], optional = true }
+hmac = { version = "0.13", optional = true }
+sha2 = { version = "0.11", optional = true }
+hex = { version = "0.4", optional = true }
+time = { version = "0.3", default-features = false, features = ["std", "formatting"], optional = true }
 
 [dev-dependencies]
-proptest = { version = "1.12", default-features = false, features = ["std"] }
 bincode = "1.3.3"
+concord-testkit = { path = "../concord-testkit" }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+proptest = { version = "1.12", default-features = false, features = ["std"] }
 serde_json.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+# Rustdoc examples use the same facade and macro as applications.
+concord = { package = "concord-api", path = "../concord-api", default-features = false, features = ["json", "form", "auth", "rotating", "sign", "limit", "multipart", "gzip-body"] }
 
 [features]
 default = ["json", "form"]
-# `json(x)` and `Json`.
+# Shared expiring credentials.
+auth = ["dep:tokio", "dep:futures-util"]
+# Single-use refresh tokens and an application-polled renewal future.
+rotating = ["auth", "tokio/sync"]
+# Request-signing helpers and Signature Version 4 middleware.
+sign = ["dep:hmac", "dep:sha2", "dep:hex", "dep:time", "dep:tokio"]
+# Shared Retry-After gates, concurrency and keyed budgets.
+limit = ["dep:tokio", "tokio/sync", "dep:http-body"]
+# JSON bodies and records, and their readers.
 json = ["dep:serde_json", "dep:serde_path_to_error"]
-# `form(x)`.
+# Flat and nested forms, and nested query pairs.
 form = ["dep:serde_urlencoded"]
 # A `tower` service as a transport: `concord_extras::tower::Tower`.
 tower = ["dep:tower-service", "dep:futures-util"]
 
 # RFC 7578 multipart body writer.
 multipart = ["dep:futures-util", "dep:getrandom"]
+# Buffered gzip request bodies; not response decompression.
+gzip-body = ["dep:flate2"]

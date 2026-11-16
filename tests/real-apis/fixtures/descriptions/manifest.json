@@ -21,8 +21,22 @@
     "client": "Tasks"
   },
   {
+    "page": "docs/guide/calling.md",
+    "block": 4,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_calling_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_calling_001.rs",
+    "client": "Algolia"
+  },
+  {
+    "page": "docs/guide/calling.md",
+    "block": 4,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_calling_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_calling_002.rs",
+    "client": "Elasticsearch"
+  },
+  {
     "page": "docs/guide/credentials.md",
-    "block": 1,
+    "block": 2,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_credentials_001.api",
     "compiled": "tests/real-apis/src/guide/guide_credentials_001.rs",
     "client": "Vault"
@@ -36,17 +50,87 @@
   },
   {
     "page": "docs/guide/describing-an-api.md",
-    "block": 9,
+    "block": 5,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_002.api",
     "compiled": "tests/real-apis/src/guide/guide_describing-an-api_002.rs",
+    "client": "Search"
+  },
+  {
+    "page": "docs/guide/describing-an-api.md",
+    "block": 10,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_describing-an-api_003.rs",
     "client": "Stripe"
   },
   {
     "page": "docs/guide/describing-an-api.md",
-    "block": 12,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_003.api",
-    "compiled": "tests/real-apis/src/guide/guide_describing-an-api_003.rs",
+    "block": 13,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_004.api",
+    "compiled": "tests/real-apis/src/guide/guide_describing-an-api_004.rs",
     "client": "Vault"
+  },
+  {
+    "page": "docs/guide/extending.md",
+    "block": 3,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_extending_001.rs",
+    "client": "Logs"
+  },
+  {
+    "page": "docs/guide/extending.md",
+    "block": 12,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_extending_002.rs",
+    "client": "Uploads"
+  },
+  {
+    "page": "docs/guide/extending.md",
+    "block": 14,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_extending_003.rs",
+    "client": "Archives"
+  },
+  {
+    "page": "docs/guide/extending.md",
+    "block": 14,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_004.api",
+    "compiled": "tests/real-apis/src/guide/guide_extending_004.rs",
+    "client": "Downloads"
+  },
+  {
+    "page": "docs/guide/responses-and-errors.md",
+    "block": 8,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_001.rs",
+    "client": "Docker"
+  },
+  {
+    "page": "docs/guide/responses-and-errors.md",
+    "block": 9,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_002.rs",
+    "client": "S3"
+  },
+  {
+    "page": "docs/guide/responses-and-errors.md",
+    "block": 11,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_003.rs",
+    "client": "Gmail"
+  },
+  {
+    "page": "docs/guide/responses-and-errors.md",
+    "block": 11,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_004.api",
+    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_004.rs",
+    "client": "SharePoint"
+  },
+  {
+    "page": "docs/guide/retries.md",
+    "block": 3,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_retries_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_retries_001.rs",
+    "client": "Payments"
   },
   {
     "page": "docs/guide/testing.md",
@@ -117,6 +201,13 @@
     "fixture": "tests/real-apis/fixtures/descriptions/examples_slack_001.api",
     "compiled": "tests/real-apis/src/slack/description.rs",
     "client": "Slack"
+  },
+  {
+    "page": "docs/examples/slack.md",
+    "block": 3,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_slack_002.api",
+    "compiled": "tests/real-apis/src/slack/description_002.rs",
+    "client": "SlackUploads"
   },
   {
     "page": "docs/examples/stripe.md",

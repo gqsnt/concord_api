@@ -1,0 +1,9 @@
+{
+  "id": "M203",
+  "area": "JSON lines body",
+  "contract": "C12.4",
+  "description": "A record that does not serialize is reported with a zero-based position",
+  "file": "concord-extras/src/body/json_lines.rs",
+  "find": "record: index.saturating_add(1),",
+  "replace": "record: index,"
+}

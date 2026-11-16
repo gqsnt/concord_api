@@ -1,5 +1,5 @@
 use concord::page::{Call, Slot};
-use concord::{reqwest, Answer, Body, Fail};
+use concord::{reqwest, Answer, Fail};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,16 +23,6 @@ pub struct EsCause {
 pub struct Pit {
     pub id: String,
     pub keep_alive: String,
-}
-
-/// `body ndjson(lines);`: one JSON value on each line, and a line break after the last one.
-pub fn ndjson(lines: &[Value]) -> Result<Body, serde_json::Error> {
-    let mut bytes = Vec::new();
-    for line in lines {
-        serde_json::to_writer(&mut bytes, line)?;
-        bytes.push(b'\n');
-    }
-    Ok(Body::new(bytes, "application/x-ndjson"))
 }
 
 /// A `404` with `"found": false` is a missing document, a normal response; with `"error"`, it

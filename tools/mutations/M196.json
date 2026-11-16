@@ -1,0 +1,9 @@
+{
+  "id": "M196",
+  "area": "gzip body",
+  "contract": "C12.2",
+  "description": "A stream body is claimed and polled once before it is refused",
+  "file": "concord-extras/src/body/gzip.rs",
+  "find": "    let bytes = body.as_bytes().ok_or(GzipError::Stream)?;",
+  "replace": "    let Some(bytes) = body.as_bytes() else {\n        if let Ok(mut stream) = body.into_stream() {\n            let mut context = std::task::Context::from_waker(std::task::Waker::noop());\n            drop(futures_core::Stream::poll_next(stream.as_mut(), &mut context));\n        }\n        return Err(GzipError::Stream);\n    };"
+}

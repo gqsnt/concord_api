@@ -10,7 +10,7 @@ This page is for a developer who changes Concord. It lists the rules that the co
 |---|---|
 | `concord-core` | The traits and the engine. No format, no authentication scheme, no pager. |
 | `concord-macros` | `api!`. |
-| `concord-extras` | What ships with Concord: `json`, `form`, `multipart`, the readers, the pagers, `basic`, `tower`. Written with the public traits and helpers of the core; only the `tower` adapter also uses a hidden helper of the engine, for the URL of a response. |
+| `concord-extras` | What ships with Concord: `json`, `form`, `multipart` and the other body writers, the readers (with `JsonLines` and `Sse` for records), the pagers, `basic`, `auth`, `sign`, `limit`, `transfer`, `tower`. Written with the public traits and helpers of the core; two items also use a hidden helper of the core: the `tower` adapter, for the URL of a response, and `gzip`, for the content type of the body it compresses. |
 | `concord-api` | The facade that people depend on (package `concord-api`, library `concord`). |
 | `concord-testkit` | For tests: a scripted local server, and a scripted transport with virtual time. |
 | `tests/tour` | The test clients, written by hand as the macro would generate them: `Tasks` and `Riot` of [the tour](../guide/tour.md), and `Files`, `Feed`, `Shapes`. |
@@ -28,8 +28,8 @@ Every check runs offline, from the root of the repository, through [`justfile`](
 | `just` | Lists the recipes. |
 | `just gate` | `just props`, then in order: `fmt`, `check`, `lint`, `test`, `doc`, `msrv`, `features`, `todo`, `matrix`, `links`. It stops at the first failure. |
 | `just fmt` | `cargo fmt --all --check`. |
-| `just check` | `cargo check` of the workspace, all targets, without and with the features `tower` and `multipart`. |
-| `just lint` | Clippy on the workspace, all targets, with those features. Every warning is an error. |
+| `just check` | `cargo check` of the workspace, all targets, with the default features, then with every feature (`--all-features`). |
+| `just lint` | Clippy on the workspace, all targets, with every feature. Every warning is an error. |
 | `just test` | `cargo nextest run` on the workspace, then the doc tests. With `CONCORD_SKIP_SOCKETS=1`, the tests that need local sockets are skipped, and the number of skipped tests is printed. |
 | `just doc` | `cargo doc --no-deps`, with `RUSTDOCFLAGS=-D warnings`: a `rustdoc` warning, such as a broken link, fails. |
 | `just msrv` | `cargo +1.96 check` of the workspace. |
@@ -153,9 +153,14 @@ Each file of [`tools/mutations/`](../../tools/mutations) is one mutation: a smal
 | `Sending` (a call in progress) | yes | — | yes | **Not cancel safe**, like any request. Dropped in the transport: the request may have reached the server. Dropped between two attempts, or while a body is read: nothing more goes out. After a drop, Concord starts no further attempt ([a drop](engine.md#a-drop)). |
 | `Pages::try_next`, `Items::try_next` | yes | — | — | **Cancel safe.** The exchange in flight lives in the value and continues with the next `try_next`. Nothing is lost, nothing is sent twice. After an error they are over, as a stream too. |
 | `ByteStream::try_next` | yes | — | — | **Cancel safe.** No chunk is lost. |
+| `RecordStream::try_next` | yes | — | — | **Cancel safe.** No byte and no part of a record is lost, and the idle timer stops, as for `ByteStream`. Nothing is sent again. Dropping the `RecordStream` releases the body, and a permit of `max_in_flight`. |
+| `Sending`, while it waits for a renewal (`concord::auth::Renewed`) | yes | — | yes | The renewal is shared by the calls that wait for it, and is not a task: a dropped call leaves it to the others. When the last one is dropped, the renewal is dropped with it, and the next call starts a new one. |
+| `Sending`, while it waits for a refresh token that rotates (`concord::auth::Rotating`) | yes | — | yes | The renewal is the driver's, not the call's: while the driver is polled, a renewal that began goes on and its pair is saved, or handed back in `RotationError::Unsaved`. The wait of a call ends at `renewal_timeout`, which never cancels the exchange. |
+| `RotationDriver` (polled by the application) | yes | no | yes | **It stops the credential.** Its work, a save in progress included, is dropped with it; nothing runs from `Drop`. The calls that wait fail with `RotationError::Stopped`, unless their deadline has already passed. Before another owner uses the account, the application makes sure that the dropped operation of the store can have no later effect. |
+| `Sending`, while it waits for a limit (`concord::limit::Limit`) | yes | — | yes | It leaves no waiter, and is charged nothing. Dropped while it is sent or while its body is read, it leaves no permit of `max_in_flight`; what it was charged once the request left is not given back. |
 | `Reader::read`, `Transport::send` (yours) | must be | — | — | Your future is dropped with the call. |
 
-The two timeouts are `tokio` timers, so a test that pauses time controls them ([the two timeouts](engine.md#the-two-timeouts)). Concord needs a `tokio` runtime, as `reqwest` does, and starts no task of its own.
+The two timeouts are `tokio` timers, so a test that pauses time controls them ([the two timeouts](engine.md#the-two-timeouts)). So are the waits of `auth`, `rotating` and `limit`, and the clock of `sign`. Concord needs a `tokio` runtime, as `reqwest` does, and starts no task of its own: a renewal of `Renewed` is one future shared by the calls that wait for it, and the renewals of `Rotating` are done by its driver, a future that the application polls.
 
 **Why.** A client is shared between tasks, and a `select!` drops futures. What a drop does must be known before it happens.
 
@@ -171,7 +176,7 @@ Each published crate says `rust-version = "1.96"`.
 
 ### A feature adds, and changes nothing else
 
-`json` and `form` (on by default) bring in `serde_json` and `serde_urlencoded`; `tower` adds an adapter, and `multipart` a body writer. The TLS stack is a feature too: the application chooses it, not the library.
+`json` and `form` (on by default) bring in `serde_json` and `serde_urlencoded`; `json` also gives `json_lines`, and `form` gives `bracket_form` and `bracket_pairs`; `tower` adds an adapter, `multipart` three body writers, `gzip-body` a gzip writer and `flate2`, `auth` a token that is renewed, `rotating` a refresh token that rotates (it turns on `auth`), `sign` AWS Signature Version 4 and its crates of cryptography, and `limit` limits shared by the calls of a client. The TLS stack is a feature too: the application chooses it, not the library.
 
 **Why.** Two crates in one program may turn on different features of Concord. Cargo unifies them, and neither may break.
 
@@ -239,7 +244,7 @@ The three crates that appear in public signatures are re-exported as they are: `
 
 ### It composes with the ecosystem
 
-`concord::tower::Tower<S>` (feature `tower`): a `tower` service is a transport. `Pages`, `Items` and `ByteStream` are `futures` streams. `reqwest::Client` is a transport.
+`concord::tower::Tower<S>` (feature `tower`): a `tower` service is a transport. `Pages`, `Items`, `ByteStream` and `RecordStream` are `futures` streams. `reqwest::Client` is a transport.
 
 ### Explicit, with safe defaults
 
@@ -250,6 +255,10 @@ The three crates that appear in public signatures are re-exported as they are: `
 | The whole call | No limit. | `with_timeout(…)` |
 | Connecting | 30 seconds. | `concord::Http::with(…)`, or your own HTTP client. |
 | A body read whole | At most 10 MiB. | `read Json.limit(…);` |
+| A record of `JsonLines` or `Sse` | No default: the bound is an argument. | `JsonLines::new(…)`, `Sse::new(…)` |
+| A renewal of `concord::auth::Renewed` | At most 30 seconds. | `renewal_timeout(…)` |
+| A wait of `concord::auth::Rotating` | At most 30 seconds for a call. The exchange and the operations of the store are never timed out. | `renewal_timeout(…)`; the timeout of the client that calls the token endpoint |
+| A wait of `concord::limit::Limit` | At most 60 seconds for one call; no cap on the calls in flight; at most 1024 keys, of which a key that holds nothing is forgotten when room is needed; no wait after a `429` without `Retry-After`. | `max_hold(…)`, `max_in_flight(…)`, `max_keys(…)`, `without_retry_after(…)` |
 | What an error keeps | At most 64 KiB of the body, and 1 KiB of a reader's own message. | — |
 | A redirect | Not followed: a `3xx` is a response. | An arm; or your own HTTP client. |
 | Cookies, `Referer` | None. | `Http::with(…)`, or your own HTTP client. |
@@ -267,8 +276,8 @@ Nothing else is ambient: no file is read, and no global state is kept.
 | | The policy |
 |---|---|
 | Versions | Semantic versioning. A change that breaks a description, a call or an extension trait is a major version. A new major version of `reqwest` is a new major version of Concord: its types are in almost every signature. |
-| `reqwest`, `http`, `bytes`, `serde` | They are in the public surface, so their major versions are Concord's. `tower-service` and `futures-core` are behind a feature or used for one trait: the same holds for them. `tokio` is used only for its timer and is in no public signature, so its new major version is not one of Concord's. |
-| Enums | `Kind`, `Class`, `Kept` are `#[non_exhaustive]`. Every other type has private fields. |
+| `reqwest`, `http`, `bytes`, `serde` | They are in the public surface, so their major versions are Concord's. `tower-service` and `futures-core` are behind a feature or used for one trait: the same holds for them. `tokio` is in no public signature (the core uses its timer; `auth` its timer; `rotating` its timer and its `sync` feature; `sign` its clock; `limit` its timer and its `sync` feature), so its new major version is not one of Concord's. |
+| Enums | `Kind`, `Class`, `Kept` and the errors of `concord-extras` are `#[non_exhaustive]`. `concord::auth::Stored` is exhaustive on purpose: every store must save every state, so a state added later breaks a store when it compiles, not when it is asked to save the state just after the server issued a token. Every other type has private fields. |
 | Traits to implement | `Reader`, `Middleware`, `Transport`, `IntoItems`, and `Slot` for the slots of a call: a new method always comes with a default implementation. |
 | Traits not to implement | `Arg`, `IntoBody` and `IntoNext` are sealed, so that a case can be added. `page::Call` is implemented by the macro for every call, and by nobody else. |
 | A call | An option of the API keeps its own name (Telegram's `send_message` too). Concord's own names are a closed list, plus the prefix `with_`. Concord adds no name to a call, a handle or a client in a minor version unless it starts with `with_`, so it cannot collide. |
@@ -308,7 +317,14 @@ Each step is one more thing to learn, never a rewrite.
 | An upload of files | `body multipart().file(…).finish();` (feature `multipart`) | 1 |
 | A body in a format of your own | `body xml(task);` and a function | about 5 |
 | A pager of your own | `paginate keyset(after);` and a function | about 10 |
-| A signature, a token that is renewed | `middleware Signed::new(key.clone());` and a type with `Middleware` | about 15 |
+| A signature | `middleware Signed::new(key.clone());` and a type with `Middleware` | about 15 |
+| AWS Signature Version 4 | `middleware signer.clone();`, with `SigV4::new(…)` as an input of the client (feature `sign`) | 2 |
+| A token that is renewed | `with_middleware(Renewed::new(&base, renew))` and a function that fetches a token, from a description of the token endpoint (feature `auth`) | about 20 |
+| A refresh token that rotates | `Rotating::new(&base, store, exchange)`, a `CredentialStore`, and a task of the application that polls the driver (feature `rotating`) | about 70, with a store on disk |
+| A limit shared by the calls | `with_middleware(Limit::new().max_in_flight(4))` (feature `limit`) | 1 |
+| Nested keys, a gzip body, MIME parts, JSON Lines | `body bracket_form { … }`, `body gzip(json(x)?)` with its `content-encoding`, `multipart_mixed(parts)`, `json_lines(records, bound)` | 1 or 2 |
+| Records in a stream | `read JsonLines::new(64 * KIB);` or `read Sse::new(16 * KIB);` | 1 |
+| A URL that the API returned | a second description, and `transfer::at(call, &url)?` | about 7 |
 | A format to read of your own | `read Xml;` and a type with `Reader` | about 10 |
 | One request changed by hand | `.edit_request(\|request\| …)` | 1 |
 | The raw response | `.send_raw()` | 1 |

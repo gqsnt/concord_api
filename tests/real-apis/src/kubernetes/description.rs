@@ -1,6 +1,6 @@
 use std::time::Duration;
-use concord::read::Stream;
-use concord::{json, Base, Json, Secret, Text};
+use concord::read::{JsonLines, RecordStream, Stream};
+use concord::{json, Base, Json, Secret, Text, MIB};
 
 concord::api! {
     /// The Kubernetes API of one cluster (a subset): pods, two subresources of a deployment, custom resources.
@@ -36,7 +36,7 @@ concord::api! {
                 "watch" = "true"; "resourceVersion" = resource_version;
                 "allowWatchBookmarks" = allow_watch_bookmarks; "timeoutSeconds" = timeout_seconds;
             }
-            read WatchLines;
+            read JsonLines::new(4 * MIB);    // one object and its type: by default the server refuses a body over 3 MiB
             idle_timeout Duration::from_secs(u64::from(timeout_seconds.unwrap_or(3600)) + 60);
         }
         /// What every write takes.
@@ -71,7 +71,7 @@ concord::api! {
                 path "namespaces/{namespace}/pods";
 
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> Watch<Pod>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
                 POST create(pod: Pod, ..write) -> Pod { body json(pod); }
 
                 /// `None` when there is no such pod, or no such namespace.
@@ -118,7 +118,7 @@ concord::api! {
             scope all_pods {
                 path "pods";
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> Watch<Pod>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
             }
         }
 

@@ -1,0 +1,9 @@
+{
+  "id": "M170",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "Release the permit of max_in_flight at the head of the response, not at the end of the body",
+  "file": "concord-extras/src/limit/body.rs",
+  "find": "        let permit = if body.is_end_stream() {",
+  "replace": "        let permit = if true {"
+}

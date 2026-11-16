@@ -23,7 +23,7 @@ It runs these steps in order and stops at the first failure:
 |---|---|
 | `props` | The property tests of `concord-core` and `concord-extras` (256 cases each; `PROPTEST_CASES=4096 just props` for more). |
 | `fmt` | `cargo fmt --check`. |
-| `check` | The workspace and every target, with and without the `tower` and `multipart` features. |
+| `check` | The workspace and every target, with the default features, then with every feature (`--all-features`). |
 | `lint` | Clippy on every target; a warning is an error. |
 | `test` | Every test, with `cargo nextest`, then the doc tests. |
 | `doc` | The documentation builds. |
@@ -47,7 +47,7 @@ Where local sockets cannot be opened, `CONCORD_SKIP_SOCKETS=1 just gate` skips t
 | `just features-all` | Checks every subset of the features of `concord-api`, on stable and on 1.96. |
 | `just panics` | Lists every place in the library code that could panic; each one needs a `PANIC-SAFETY` comment that explains why it cannot. |
 | `just docs-audit` | Builds the documentation of `concord-api`, `concord-core`, `concord-extras` and `concord-testkit` with strict `rustdoc`, and lists the doc comments that only repeat a name. |
-| `just doc-examples` | Checks that the complete descriptions in the guide, the reference overview, this repository's `README.md` and the example pages match their copies in `tests/real-apis`, and that those copies compile. `just test` runs it too. To refresh the copies, `python3 -B tools/doc_examples.py` writes candidates under `target/doc-examples/`; review them and copy them to the paths shown there. |
+| `just doc-examples` | Checks that the complete descriptions in the guide, the reference overview, this repository's `README.md` and the example pages match their copies in `tests/real-apis`, and that those copies compile. `just test` runs it too. To refresh the copies, `python3 -B tools/doc_examples.py` writes candidates under `target/doc-examples/`; review them and copy them to the paths shown there. The recipes of the guide are kept whole in `tests/real-apis` (most in `fixtures/recipes`); its tests run them and check each against its page, word for word. |
 | `just bench` | Opt-in measurements: the time and the allocations of a call. |
 
 The tests of the tools themselves have no recipe; run them by hand: `python3 -B -m unittest discover -s tools`.
@@ -58,7 +58,7 @@ The tests of the tools themselves have no recipe; run them by hand: `python3 -B 
 concord-api/      the crate a user depends on (library name `concord`): the facade, and examples/
 concord-core/     the engine and the traits
 concord-macros/   api!; its documentation is src/reference.md
-concord-extras/   json, form, multipart, the readers, the pagers, basic, tower
+concord-extras/   the body writers, the readers, the pagers, basic, auth, sign, limit, transfer, tower
 concord-testkit/  for tests: a scripted local server, a transport with virtual time
 tests/            workspace crates that are never published (see tests/README.md)
 tools/            the scripts behind `just`

@@ -1,0 +1,9 @@
+{
+  "id": "M209",
+  "area": "rotating token",
+  "contract": "C12.6",
+  "description": "The new pair is installed and used before its save, and kept in use when the save fails",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "        if let Err(error) = self.save(Stored::Ready(next.pair.clone()), None).await {\n            self.lock().reload = true;\n            return Err(error);\n        }\n        self.install(next)",
+  "replace": "        let installed = self.install(next.clone());\n        if let Err(error) = self.save(Stored::Ready(next.pair.clone()), None).await {\n            self.lock().reload = true;\n            return Err(error);\n        }\n        installed"
+}

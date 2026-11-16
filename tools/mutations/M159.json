@@ -1,0 +1,9 @@
+{
+  "id": "M159",
+  "area": "auth",
+  "contract": "C11.3",
+  "description": "A zero renewal_timeout is not InvalidPolicy, and the renewal is started",
+  "file": "concord-extras/src/auth.rs",
+  "find": "                if policy.timeout.is_zero() {\n                    return Err(RenewalError::InvalidPolicy);",
+  "replace": "                if policy.timeout.is_zero() && false {\n                    return Err(RenewalError::InvalidPolicy);"
+}

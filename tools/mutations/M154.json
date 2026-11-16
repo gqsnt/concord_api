@@ -1,0 +1,9 @@
+{
+  "id": "M154",
+  "area": "auth",
+  "contract": "C11.2",
+  "description": "after_401 asks for another attempt after a 401 on any attempt, not only the first",
+  "file": "concord-extras/src/auth.rs",
+  "find": "tried.number() == 1 && tried.status()",
+  "replace": "tried.number() >= 1 && tried.status()"
+}

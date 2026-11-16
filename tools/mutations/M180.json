@@ -1,0 +1,9 @@
+{
+  "id": "M180",
+  "area": "records",
+  "contract": "C11.9",
+  "description": "A leading BOM counts toward the bound of the first line",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "                        self.bom = (matched < UTF8_BOM.len()).then_some(matched);\n",
+  "replace": "                        self.bom = (matched < UTF8_BOM.len()).then_some(matched);\n                        if matched == UTF8_BOM.len() {\n                            self.max = self.max.saturating_sub(UTF8_BOM.len());\n                        }\n"
+}

@@ -4,9 +4,9 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// A client for one region, and a bucket by its address: the bucket in the host, or in the path.
 pub fn connect(credentials: Credentials) -> Result<(ObjectStore, object_store::Bucket), BoxError> {
-    let store = ObjectStore::new("eu-west-1", credentials);
     let photos: Base = "https://photos.s3.eu-west-1.amazonaws.com".parse()?;
     // Or, with the bucket in the path: "https://s3.eu-west-1.amazonaws.com/photos".
+    let store = ObjectStore::new("eu-west-1", credentials, vec![photos.clone()]);
     let bucket = store.bucket(photos);
     Ok((store, bucket))
 }

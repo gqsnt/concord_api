@@ -1,0 +1,12 @@
+concord::api! {
+pub client S3(origin: concord::Base, authorization: concord::Secret) {
+        base origin;
+        headers { "authorization" = authorization; }
+        POST select(key: String, query: concord::Body) -> concord::ByteStream {
+            path "{*key}";
+            query { "select" = ""; "select-type" = 2; }
+            body query;
+            read concord::read::Stream;
+        }
+    }
+}

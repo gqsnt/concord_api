@@ -1,0 +1,9 @@
+concord::api! {
+    pub client Logs {
+        base "https://logs.example.com";
+        POST write(events: Vec<String>) {
+            headers { "content-encoding" = "gzip"; }
+            body concord::gzip(concord::json(events)?);
+        }
+    }
+}

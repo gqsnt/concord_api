@@ -7,6 +7,7 @@ pub struct S3Problem {
 }
 #[derive(Debug, serde::Deserialize)]
 pub struct BucketsPage {
+    #[serde(rename = "ContinuationToken")]
     pub continuation_token: Option<String>,
 }
 #[derive(Debug, serde::Deserialize)]
@@ -39,9 +40,39 @@ pub struct PartsPage {
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct CreateBucketConfiguration {}
 #[derive(Clone, Debug, serde::Serialize)]
-pub struct DeleteBatch {}
+#[serde(rename = "Delete")]
+pub struct DeleteBatch {
+    #[serde(rename = "@xmlns")]
+    namespace: &'static str,
+    #[serde(rename = "Object")]
+    objects: Vec<DeleteObject>,
+    #[serde(rename = "Quiet")]
+    quiet: bool,
+}
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct DeleteObject {
+    #[serde(rename = "Key")]
+    key: String,
+}
+impl DeleteBatch {
+    pub fn new(keys: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            namespace: "http://s3.amazonaws.com/doc/2006-03-01/",
+            objects: keys.into_iter().map(|key| DeleteObject { key }).collect(),
+            quiet: false,
+        }
+    }
+}
 #[derive(Debug, serde::Deserialize)]
-pub struct DeleteResult {}
+pub struct DeleteResult {
+    #[serde(rename = "Deleted", default)]
+    pub deleted: Vec<DeletedObject>,
+}
+#[derive(Debug, serde::Deserialize)]
+pub struct DeletedObject {
+    #[serde(rename = "Key")]
+    pub key: String,
+}
 #[derive(Debug, serde::Deserialize)]
 pub struct InitiatedUpload {
     pub upload_id: String,

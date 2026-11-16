@@ -1,0 +1,9 @@
+{
+  "id": "M191",
+  "area": "bracketed form",
+  "contract": "C12.1",
+  "description": "The pairs are sorted by key, so a map's entries leave the order of the value",
+  "file": "concord-extras/src/body/bracket_form.rs",
+  "find": "    Ok(pairs)\n}",
+  "replace": "    pairs.sort();\n    Ok(pairs)\n}"
+}

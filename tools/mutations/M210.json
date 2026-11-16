@@ -1,0 +1,9 @@
+{
+  "id": "M210",
+  "area": "rotating token",
+  "contract": "C12.6",
+  "description": "A failed last save rolls back to the old pair, so the next renewal sends the old refresh token again",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "        self.commit(next).await?;\n        cleanup.map_err",
+  "replace": "        if let Err(error) = self.commit(next).await {\n            let retired = {\n                let mut state = self.lock();\n                state.blocked = false;\n                state.reload = false;\n                (state.pending.take(), state.current.replace(current))\n            };\n            drop(retired);\n            return Err(error);\n        }\n        cleanup.map_err"
+}

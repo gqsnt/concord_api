@@ -13,6 +13,9 @@ pub mod telegram;
 /// Current whole descriptions and a registry of their compiled client types.
 pub mod guide;
 
-/// Compiled regression clients retained independently of current pages.
+/// Additional compiled clients with request assertions.
 #[doc(hidden)]
 pub mod regressions;
+
+#[allow(missing_docs)]
+pub mod credential_signing;

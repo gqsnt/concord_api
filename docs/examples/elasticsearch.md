@@ -89,7 +89,7 @@ concord::api! {
         /// Many writes in one request: a line of action, then a line of document, for each one.
         POST bulk(lines: Vec<Value>, ..output, ..write_options) -> BulkReply {
             path "_bulk";
-            body ndjson(lines);
+            body concord::json_lines(lines, 10 * concord::MIB);
         }
 
         /// A search in a point in time, page after page. No index in the URL: the point in time
@@ -120,17 +120,19 @@ concord::api! {
 }
 ```
 
+The bulk writer's 10 MiB limit is this example's policy for the complete encoded request, including line feeds. A larger batch fails before sending; split it or change that bound for the deployment. The writer supplies no action/document pairs and does not interpret item errors.
+
 A document, a query and the settings of an index are `serde_json::Value`, because each deployment has its own mappings. Four writes declare `idempotent false;`, because a second attempt is not the same as the first: `put` and `delete_document` give the document a new version each time, and an index created or deleted twice gets an error the second time (`400`: it exists; `404`: it is gone), which hides the fact that the first attempt succeeded.
 
 ## Beside the description
 
 The data types are plain `serde` types, named here but not shown: `GetReply` (`_id`, `found`, `_source`), `WriteReply` (`_id`, `result`), `IndexAck` (`acknowledged`), `CountReply` (`count`), `SearchPage` (`timed_out`, `_shards`, `hits`, `pit_id`), `Hits` and `Hit` (`_id`, `_source`, `sort`), `OpenedPit` (`id`), `ClosedPit`, `BulkReply` (`errors`, `items`: for each line, a map from its action to a `BulkItem` with `status` and `error`), and `Refresh` (`true`, `false`, `wait_for`).
 
-Elasticsearch's errors, the body of many lines, the missing document, the pager of a point in time, the `_cat` table, and a search sent as a `POST`:
+Elasticsearch's errors, the missing document, the pager of a point in time, the `_cat` table, and a search sent as a `POST`:
 
 ```rust
 use concord::page::{Call, Slot};
-use concord::{reqwest, Answer, Body, Fail};
+use concord::{reqwest, Answer, Fail};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -154,16 +156,6 @@ pub struct EsCause {
 pub struct Pit {
     pub id: String,
     pub keep_alive: String,
-}
-
-/// `body ndjson(lines);`: one JSON value on each line, and a line break after the last one.
-pub fn ndjson(lines: &[Value]) -> Result<Body, serde_json::Error> {
-    let mut bytes = Vec::new();
-    for line in lines {
-        serde_json::to_writer(&mut bytes, line)?;
-        bytes.push(b'\n');
-    }
-    Ok(Body::new(bytes, "application/x-ndjson"))
 }
 
 /// A `404` with `"found": false` is a missing document, a normal response; with `"error"`, it
@@ -311,7 +303,7 @@ pub async fn search(es: &Elasticsearch) -> elasticsearch::Result<()> {
 | A search as a `GET` or as a `POST`, the same operation. An endpoint has exactly one method. | The `GET`, and your own method that changes it: `.post()`, with `edit_request` (see [When Concord does not cover what you need](../guide/extending.md)). |
 | A `404` with two bodies: a missing document (a normal response) or a missing index (an error). | An arm on the `404` that reads the body and returns one or the other: `document_404`. |
 | A point in time to open, walk and close: a lifetime over several calls. | Your own function (`walk` above) that closes it after the walk, even after an error; otherwise the server lets it expire. |
-| A body of many JSON lines (NDJSON). | Your own writer, `ndjson`, named after `body`. |
+| A body of many JSON lines (NDJSON). | `concord::json_lines(lines, 10 * concord::MIB)`: compact JSON and LF after every record, including the last. |
 | A `200` for a bulk write in which some lines failed. | The response holds a result for each line: check each `error`. Nothing is retried automatically. |
 | `_cat` as text, or as JSON rows with `format=json`. The return type is fixed. | One type for both (`CatReply`), and an arm that reads the text and parses it when JSON was requested. |
 | `?pretty`, a key with no value. | `pretty?: bool`: `.pretty(true)` sends `pretty=true`, which Elasticsearch accepts. |

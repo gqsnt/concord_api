@@ -26,6 +26,22 @@ mod reference_overview_001 {
     }
 }
 #[doc(hidden)]
+mod guide_calling_001 {
+    use super::support::*;
+    include!("guide_calling_001.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Algolia>()
+    }
+}
+#[doc(hidden)]
+mod guide_calling_002 {
+    use super::support::*;
+    include!("guide_calling_002.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Elasticsearch>()
+    }
+}
+#[doc(hidden)]
 mod guide_credentials_001 {
     use super::support::*;
     include!("guide_credentials_001.rs");
@@ -46,7 +62,7 @@ mod guide_describing_an_api_002 {
     use super::support::*;
     include!("guide_describing-an-api_002.rs");
     pub(super) fn compiled() -> &'static str {
-        ::std::any::type_name::<Stripe>()
+        ::std::any::type_name::<Search>()
     }
 }
 #[doc(hidden)]
@@ -54,7 +70,87 @@ mod guide_describing_an_api_003 {
     use super::support::*;
     include!("guide_describing-an-api_003.rs");
     pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Stripe>()
+    }
+}
+#[doc(hidden)]
+mod guide_describing_an_api_004 {
+    use super::support::*;
+    include!("guide_describing-an-api_004.rs");
+    pub(super) fn compiled() -> &'static str {
         ::std::any::type_name::<Vault>()
+    }
+}
+#[doc(hidden)]
+mod guide_extending_001 {
+    use super::support::*;
+    include!("guide_extending_001.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Logs>()
+    }
+}
+#[doc(hidden)]
+mod guide_extending_002 {
+    use super::support::*;
+    include!("guide_extending_002.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Uploads>()
+    }
+}
+#[doc(hidden)]
+mod guide_extending_003 {
+    use super::support::*;
+    include!("guide_extending_003.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Archives>()
+    }
+}
+#[doc(hidden)]
+mod guide_extending_004 {
+    use super::support::*;
+    include!("guide_extending_004.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Downloads>()
+    }
+}
+#[doc(hidden)]
+mod guide_responses_and_errors_001 {
+    use super::support::*;
+    include!("guide_responses-and-errors_001.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Docker>()
+    }
+}
+#[doc(hidden)]
+mod guide_responses_and_errors_002 {
+    use super::support::*;
+    include!("guide_responses-and-errors_002.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<S3>()
+    }
+}
+#[doc(hidden)]
+mod guide_responses_and_errors_003 {
+    use super::support::*;
+    include!("guide_responses-and-errors_003.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Gmail>()
+    }
+}
+#[doc(hidden)]
+mod guide_responses_and_errors_004 {
+    use super::support::*;
+    include!("guide_responses-and-errors_004.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<SharePoint>()
+    }
+}
+#[doc(hidden)]
+mod guide_retries_001 {
+    use super::support::*;
+    include!("guide_retries_001.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Payments>()
     }
 }
 #[doc(hidden)]
@@ -90,15 +186,27 @@ mod guide_tour_003 {
     }
 }
 /// The concrete client types emitted by every documented description.
-pub fn compiled_descriptions() -> [&'static str; 19] {
+pub fn compiled_descriptions() -> [&'static str; 32] {
     [
         readme_001::compiled(),
         readme_002::compiled(),
         reference_overview_001::compiled(),
+        guide_calling_001::compiled(),
+        guide_calling_002::compiled(),
         guide_credentials_001::compiled(),
         guide_describing_an_api_001::compiled(),
         guide_describing_an_api_002::compiled(),
         guide_describing_an_api_003::compiled(),
+        guide_describing_an_api_004::compiled(),
+        guide_extending_001::compiled(),
+        guide_extending_002::compiled(),
+        guide_extending_003::compiled(),
+        guide_extending_004::compiled(),
+        guide_responses_and_errors_001::compiled(),
+        guide_responses_and_errors_002::compiled(),
+        guide_responses_and_errors_003::compiled(),
+        guide_responses_and_errors_004::compiled(),
+        guide_retries_001::compiled(),
         guide_testing_001::compiled(),
         guide_tour_001::compiled(),
         guide_tour_002::compiled(),
@@ -109,6 +217,7 @@ pub fn compiled_descriptions() -> [&'static str; 19] {
         ::std::any::type_name::<crate::riot::Riot>(),
         ::std::any::type_name::<crate::s3::ObjectStore>(),
         ::std::any::type_name::<crate::slack::Slack>(),
+        ::std::any::type_name::<crate::slack::SlackUploads>(),
         ::std::any::type_name::<crate::stripe::Stripe>(),
         ::std::any::type_name::<crate::telegram::Telegram>(),
     ]

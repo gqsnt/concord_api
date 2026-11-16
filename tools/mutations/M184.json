@@ -1,0 +1,9 @@
+{
+  "id": "M184",
+  "area": "transfer",
+  "contract": "C11.11",
+  "description": "Accept a URL with a fragment",
+  "file": "concord-extras/src/transfer.rs",
+  "find": "if authority.contains('@') || url.contains('#') {",
+  "replace": "if authority.contains('@') {"
+}

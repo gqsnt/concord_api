@@ -1,0 +1,9 @@
+{
+  "id": "M216",
+  "area": "rotating token",
+  "contract": "C12.7",
+  "description": "A dropped driver does not stop the credential, so calls wait instead of failing with Stopped",
+  "file": "concord-extras/src/auth/rotating.rs",
+  "find": "impl Drop for RotationDriver {\n    fn drop(&mut self) {\n        self.cleanup();\n    }\n}",
+  "replace": "impl Drop for RotationDriver {\n    fn drop(&mut self) {}\n}"
+}

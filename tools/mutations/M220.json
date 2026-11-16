@@ -1,0 +1,9 @@
+{
+  "id": "M220",
+  "area": "request signing",
+  "contract": "C12.9",
+  "description": "A raw plus in the query is signed as a plus instead of a space.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "        let name = decode(&name.replace('+', \" \"))?;\n        let value = decode(&value.replace('+', \" \"))?;",
+  "replace": "        let name = decode(name)?;\n        let value = decode(value)?;"
+}

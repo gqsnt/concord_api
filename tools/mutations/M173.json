@@ -1,0 +1,9 @@
+{
+  "id": "M173",
+  "area": "limit",
+  "contract": "C11.6",
+  "description": "When a history is full, forget the oldest debt instead of merging it at the later expiry, so a call goes early",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                    *next = next.saturating_add(oldest);",
+  "replace": "                    let _ = next;\n                    self.used = self.used.saturating_sub(oldest);"
+}

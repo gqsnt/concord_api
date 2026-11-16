@@ -1,0 +1,9 @@
+{
+  "id": "M215",
+  "area": "rotating token",
+  "contract": "C12.7",
+  "description": "The driver renews even when the pair it holds is fresh, so a demand starts a renewal that is not needed",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "        if fresh {\n            return Ok(());\n        }\n        let Some(current) = current else {",
+  "replace": "        if fresh && current.is_none() {\n            return Ok(());\n        }\n        let Some(current) = current else {"
+}

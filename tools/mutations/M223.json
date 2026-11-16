@@ -1,0 +1,9 @@
+{
+  "id": "M223",
+  "area": "request signing",
+  "contract": "C12.10",
+  "description": "The middleware checks the origin only after signing with the credentials.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "            if !self\n                .origin\n                .as_ref()\n                .is_some_and(|base| same_origin(request.url(), base))\n            {\n                return Err(SignError::WrongOrigin);\n            }\n            self.validate(&request, &self.region)?;\n            let payload = match self.payload(&request)? {\n                None => \"UNSIGNED-PAYLOAD\".into(),\n                Some(bytes) => {\n                    let mut hash = Sha256::new();\n                    hash_payload(bytes, |chunk| hash.update(chunk)).await;\n                    hex::encode(hash.finalize())\n                }\n            };\n            yield_once().await;\n            self.finish(&mut request, &self.region, &payload)\n",
+  "replace": "            self.validate(&request, &self.region)?;\n            let payload = match self.payload(&request)? {\n                None => \"UNSIGNED-PAYLOAD\".into(),\n                Some(bytes) => {\n                    let mut hash = Sha256::new();\n                    hash_payload(bytes, |chunk| hash.update(chunk)).await;\n                    hex::encode(hash.finalize())\n                }\n            };\n            yield_once().await;\n            self.finish(&mut request, &self.region, &payload)?;\n            if !self\n                .origin\n                .as_ref()\n                .is_some_and(|base| same_origin(request.url(), base))\n            {\n                return Err(SignError::WrongOrigin);\n            }\n            Ok(())\n"
+}

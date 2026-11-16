@@ -1,20 +1,28 @@
 //! What Concord ships next to its core.
 //!
-//! JSON, form and optional multipart writers, four readers, six pagers, HTTP Basic, and an adapter for
-//! `tower`. These extensions use the public traits of `concord-core`. Body writers use
+//! JSON, form and optional gzip and multipart writers, bounded readers (including records), six pagers,
+//! HTTP Basic, credential renewal (`auth`), request signing (`sign`), shared limits (`limit`), returned-URL checks
+//! ([`transfer`]), and an adapter for `tower`. These extensions use the public traits of
+//! `concord-core`. Body writers use
 //! [`concord_core::body::Bounded`] and [`concord_core::body::WriteError`] to keep
 //! safe input names and the original format error; your own writers use the same extension point.
 //! Readers share [`concord_core::read::details`]; pagers share
 //! [`concord_core::page::fragmentless`]. Both helpers are public extension points.
 //! The Tower adapter also uses a hidden helper of the engine for the URL of an answer;
-//! that helper is outside the extension API.
+//! that helper is outside the extension API. `gzip` uses another, to read the content
+//! type of the body that it compresses. Returned-URL checks use public `page::Call`.
 //!
 //! Applications depend on the crate `concord-api`, which re-exports this one.
 //!
 //! | Module | What it holds | Built with |
 //! |---|---|---|
-//! | [`body`] | `json(x)`, `form(x)`, `multipart()` (feature `multipart`) | `concord_core::Body` |
-//! | [`read`] | `Json`, `Text`, `Binary`, `Stream` | `concord_core::Reader` |
+//! | [`body`] | JSON, nested form and optional gzip and multipart writers | `concord_core::Body` |
+//! | [`read`] | `Json`, `Text`, `Binary`, `Stream`, `JsonLines`, `Sse` | `concord_core::Reader` |
+//! | `auth` (feature `auth`) | `Renewed`, `AccessToken`, `after_401` | `concord_core::Middleware` |
+//! | `auth` (feature `rotating`) | `Rotating`, `RotationDriver`, durable credential records | `concord_core::Middleware`, `Future` |
+//! | `sign` (feature `sign`) | `SigV4`, `Credentials`, `body_bytes`, `check_origin` | `concord_core::Middleware`, `reqwest::Request` |
+//! | `limit` (feature `limit`) | `Limit`, `Bucket`, `Window`, header learners | `concord_core::Middleware` |
+//! | [`transfer`] | `at(call, url)`, a checked returned URL | `concord_core::page::Call` |
 //! | [`page`] | `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` | `concord_core::page::{Call, Slot}` |
 //! | the root | `basic(user, password)` | `concord_core::Secret` |
 //! | `tower` (feature `tower`) | `Tower` | `concord_core::Transport` |
@@ -44,13 +52,20 @@
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
 
+#[cfg(feature = "auth")]
+pub mod auth;
 pub mod body;
+#[cfg(feature = "limit")]
+pub mod limit;
 #[cfg(feature = "multipart")]
 pub use body::{multipart, Multipart, MultipartError};
 pub mod page;
 pub mod read;
+#[cfg(feature = "sign")]
+pub mod sign;
 #[cfg(feature = "tower")]
 pub mod tower;
+pub mod transfer;
 
 use concord_core::Secret;
 

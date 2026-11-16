@@ -9,14 +9,19 @@ This page is for the author or the caller of a client who needs something that t
 | Layer | The usual way | Extension point or escape hatch |
 |---|---|---|
 | The description | The placement statements | Your own Rust value after `body`, `read`, `paginate`, `middleware` or in an arm. Your own methods beside the generated ones. |
+| Nested forms | `body concord::bracket_form { a; b; }` (feature `form`) | One indexed-key convention; `bracket_pairs` supplies the unencoded pairs for a runtime query. |
+| Gzip bodies | `body concord::gzip(concord::json(events)?);` (feature `gzip-body`) | Buffered bodies only; the description sets `content-encoding`. |
+| MIME multipart bodies | `multipart_mixed(parts)`, `multipart_related(parts)` (feature `multipart`) | Ordered buffered parts with their own `HeaderMap`; the first related part is the root. |
+| JSON records | `body concord::json_lines(records, max_bytes);` (feature `json`) | One JSON value per line, including the last LF; the bound covers the whole body. |
 | An endpoint that is not described | — | Add it to the description, or write your own method beside the generated ones. (There is no raw call on a handle; the name `call` is reserved for one.) |
 | One call | `.await` | `.edit_request(\|request\| …)` changes the built `reqwest::Request` before it is handed to the transport. `.with_retry(…)`, `.with_timeout(…)` and `.with_idle_timeout(…)` apply to this call only. `request()` lets you inspect the request. |
 | A request that you send yourself | — | `request()`, then `read_response(response)`. |
 | The response | A typed value | `send_full()`. `send_if_none_match(etag)`. `send_raw()`: the `reqwest::Response` after retry, with no status rule and nothing read (retry then looks at the head only). `read Stream;` for bytes as they arrive. |
-| The client | `Riot::new(key)` | `with_middleware(…)` for what every request passes through. `with_transport(…)` for the transport, and `concord::Http::with(…)` for a setting of the HTTP client. `with_base(…)`. |
+| The client | `Riot::new(key)` | `with_middleware(…)` for what every request passes through: your own layer, or one that Concord ships (`auth::Renewed`, `auth::Rotating`, `sign::SigV4`, `limit::Limit`). `with_transport(…)` for the transport, and `concord::Http::with(…)` for a setting of the HTTP client. `with_base(…)`. |
+| A URL that the API returned, on another host | — | A second description with its own `base`, and `concord::transfer::at(call, url)` ([below](#a-url-that-the-api-returned)). |
 | Below | — | Plain `reqwest`: `Request`, `Response`, `Client`. |
 
-These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset` and the others are in a crate of their own, `concord-extras`, and every file in it except `tower.rs` is an example worth reading. (Only the `tower` adapter also uses a hidden helper of the engine, for the URL of a response; that helper is not a public extension point.)
+These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset`, the readers of records, `auth::Renewed`, `limit::Limit`, `transfer::at` and the others are in a crate of their own, `concord-extras`, and every file in it except `tower.rs` is an example worth reading. (Two items also use a hidden helper of the core: the `tower` adapter, for the URL of a response, and `gzip`, for the content type of the body it compresses. Those helpers are not public extension points.)
 
 ## A writer of bodies
 
@@ -43,7 +48,23 @@ pub fn xml<T: serde::Serialize>(value: T) -> Result<concord::Body, WriteError> {
 }
 ```
 
-`value.error(e)` takes the `Bounded` by value, so the input's name goes into only one error. To combine bodies, `Body::concat(parts)` returns one body made of several, in order; `body.as_bytes()` returns the bytes of a body held in memory; and `body.into_stream()` turns any body into a stream. See [a body that is sent](responses-and-errors.md#a-body-that-is-sent) for what a body expression may return and how a body is resent. The shipped writers are in [`concord-extras/src/body.rs`](../../concord-extras/src/body.rs) (`json` is three lines) and [`multipart.rs`](../../concord-extras/src/multipart.rs).
+`value.error(e)` takes the `Bounded` by value, so the input's name goes into only one error. To combine bodies, `Body::concat(parts)` returns one body made of several, in order; `body.as_bytes()` returns the bytes of a body held in memory; and `body.into_stream()` turns any body into a stream. See [a body that is sent](responses-and-errors.md#a-body-that-is-sent) for what a body expression may return and how a body is resent. The shipped writers are in [`concord-extras/src/body.rs`](../../concord-extras/src/body.rs) (`json` is three lines), [`multipart.rs`](../../concord-extras/src/multipart.rs) and [`body/`](../../concord-extras/src/body).
+
+For a compressed request, compose the writers and declare the encoding header:
+
+```rust
+concord::api! {
+    pub client Logs {
+        base "https://logs.example.com";
+        POST write(events: Vec<String>) {
+            headers { "content-encoding" = "gzip"; }
+            body concord::gzip(concord::json(events)?);
+        }
+    }
+}
+```
+
+`gzip` keeps the input body's content type and produces repeatable compressed bytes with no timestamp in their header. It refuses a stream without polling it. The description sets `Content-Encoding` because a writer returns a `Body`, which carries no request header except its content type. The transport can determine the compressed body's length; do not copy a `Content-Length` from the uncompressed input. The `gzip-body` feature writes requests independently of the `gzip` feature for response decompression.
 
 ## A reader
 
@@ -67,7 +88,7 @@ impl Reader<String> for Upper {
 }
 ```
 
-`body.bytes(limit)` reads the whole body, up to a limit; `body.stream()` hands it over as it arrives. Applying `?` to the result of `bytes` already produces the right error. A decoder's message can quote the body, so it goes in `with_details`, which keeps 1 KiB of it for `e.details()` (`concord::read::details` truncates a string the same way). See [reading a success](responses-and-errors.md#reading-a-success) for a reader of a complete format, XML, with every part of `Incoming` and `ReadError` explained. The shipped readers are in [`concord-extras/src/read.rs`](../../concord-extras/src/read.rs).
+`body.bytes(limit)` reads the whole body, up to a limit; `body.stream()` hands it over as it arrives. Applying `?` to the result of `bytes` already produces the right error. A decoder's message can quote the body, so it goes in `with_details`, which keeps 1 KiB of it for `e.details()` (`concord::read::details` truncates a string the same way). See [reading a success](responses-and-errors.md#reading-a-success) for a reader of a complete format, XML, with every part of `Incoming` and `ReadError` explained. The shipped readers are in [`concord-extras/src/read.rs`](../../concord-extras/src/read.rs), and the readers of records in [`read/records.rs`](../../concord-extras/src/read/records.rs).
 
 ## A pager
 
@@ -98,7 +119,7 @@ A pager returns `Some(next call)`, or `None` at the end. A pager that can reject
 
 ## A middleware
 
-A middleware layer is something that every request passes through as it is sent: a signature, a token that is renewed, a quota, a counter. It is a type that implements `concord::Middleware`. The author of a client names it in the description (`middleware Signed::new(key.clone());`, written out in [a middleware](credentials.md#a-middleware)). A caller adds their own with `with_middleware`:
+A middleware layer is something that every request passes through as it is sent: a signature, a token that is renewed, a quota, a counter. It is a type that implements `concord::Middleware`. Concord ships four: `concord::auth::Renewed` for a token that is renewed ([a token that is renewed](credentials.md#a-token-that-is-renewed)), `concord::auth::Rotating` for a refresh token that rotates ([a refresh token that rotates](credentials.md#a-refresh-token-that-rotates)), `concord::sign::SigV4` for AWS Signature Version 4 ([a middleware](credentials.md#a-middleware)), and `concord::limit::Limit` for a rate limit ([limits shared by the calls of a client](retries.md#limits-shared-by-the-calls-of-a-client)). For anything else, you write your own. The author of a client names it in the description (`middleware Signed::new(key.clone());`, written out in [a middleware](credentials.md#a-middleware)). A caller adds their own with `with_middleware`:
 
 ```rust
 use concord::transport::{TransportError, TryInfo};
@@ -153,7 +174,7 @@ impl Transport for Logged {
 let riot = Riot::new(key).with_transport(Logged { http: Client::new() });
 ```
 
-`with_transport` replaces only the transport: every middleware layer still runs above it. `TransportError::from` removes the URL from a `reqwest::Error`. A transport must not change what the last middleware signed. With the `tower` feature, a `tower` service is a transport, `concord::tower::Tower::new(stack)`, and its layers (a rate limit, a limit on concurrent requests) sit beneath the client.
+`with_transport` replaces only the transport: every middleware layer still runs above it. `TransportError::from` removes the URL from a `reqwest::Error`. A transport must not change what the last middleware signed. With the `tower` feature, a `tower` service is a transport, `concord::tower::Tower::new(stack)`, and its layers (a rate limit, a limit on concurrent requests) sit beneath the client. A `tower` layer waits inside the transport, so the idle timeout counts its wait as silence, and a limit on concurrent requests there ends at the response head; `concord::limit::Limit` waits above the transport, and its `max_in_flight` holds a place until the body has been read ([limits shared by the calls of a client](retries.md#limits-shared-by-the-calls-of-a-client)).
 
 **A setting of the HTTP client** (a certificate, a proxy) needs no transport of your own: `concord::Http::with(|builder| …)` returns Concord's client with your setting, and you pass it to `with_transport` ([the client](calling.md#the-client)).
 
@@ -178,6 +199,88 @@ let game = call.await?;
 ```
 
 `.edit_request` takes a function `Fn(&mut reqwest::Request)`. It cannot fail. It runs once for each request that is built: once per call, once per page, and the changed request is used on every attempt. Several `.edit_request` calls on one call all run, in the order they were written, and a later one sees what an earlier one did. They run before the middleware. A header value that such a function marks sensitive is left out, like a secret, when two pages are compared. What it changes is your own code's responsibility: the promises about where a request goes are not checked again ([where the promises stop](promises.md#where-the-promises-stop)).
+
+## A URL that the API returned
+
+Some APIs return a URL on another host: an upload URL with a signature in its query, a link to download a file. Such a URL is not a call of the API's client, which sends every request to its own origin and carries the API's credentials (`call.at_url(url)` never changes the origin). It belongs to a second description, with its own `base` and none of the API's credentials or middleware:
+
+```rust
+pub client Uploads(origin: concord::Base) {
+    // the host that receives the bytes: its own base, nothing of the API's client
+    base origin;
+    POST send(bytes: concord::Body) { body bytes; }
+}
+```
+
+```rust
+use concord::http::{HeaderMap, HeaderName, HeaderValue};
+
+let ticket = files.upload_ticket().await?;                 // the API returns { url, headers }
+let origin: concord::Base = "https://uploads.example.com".parse()?;   // where you expect the bytes to go
+let uploads = Uploads::new(origin);
+
+let mut returned = HeaderMap::new();                       // headers that the API returned, for this upload
+for header in &ticket.headers {
+    returned.append(HeaderName::from_bytes(header.name.as_bytes())?, HeaderValue::from_str(&header.value)?);
+}
+concord::transfer::at(uploads.send(bytes), &ticket.url)?
+    .edit_request(move |request| request.headers_mut().extend(returned.clone()))
+    .await?;
+```
+
+| | |
+|---|---|
+| `concord::transfer::at(call, url)` | It checks the text of the URL, then returns `call.at_url(url)`: the same call, with the path and the query of that URL. It sends nothing. It returns a `TransferError`, which never holds the URL, for a URL that would not be sent as it is written: a relative URL, a scheme other than HTTP or HTTPS, user information, a fragment, a lone `?` or a query made only of `&`, a spelling that parsing would change, or more than 65,534 bytes. An accepted URL reaches the transport with its path and its query byte for byte, a signature included, for a second description with no `Secret` query entry: the engine adds such an entry again to a URL given to `at_url`. |
+| The origin | The URL must be at the origin of the second description's `base`. A URL at another origin is a Build error, and nothing is sent, as with any `at_url` ([a pager of your own](pages.md#a-pager-of-your-own)). |
+| What travels with it | Only what the second description says. Nothing of the API's client: no key, no header, no middleware. |
+| Headers that the API returned | They are known only at run time, so `edit_request` adds them. `HeaderMap::extend` replaces each name that it is given, and keeps several values of one name. These headers are your code's: send only the ones that you trust and that agree with the body. |
+| The rest of the call | It is a generated call like any other: its retry policy, its timeouts, its reader, and the rule that a body that is a stream is sent once. To send such a body again, your own loop builds the call again, with a new stream ([a body that is a stream](retries.md#a-body-that-is-a-stream)). |
+| Not done | No redirect is followed (Concord's own client follows none), and no upload session protocol is run: a large upload in several requests, or a download that resumes, is a loop in your own code. |
+
+## A documented download redirect
+
+Concord follows no redirect: a `3xx` is the response, with its `Location`. When a provider documents a GET that returns a download URL, read that response with `send_raw()`, check the documented status, and make an explicit second call through a description with no credential or middleware. For a fixed download host, choose that description's base independently of the returned URL.
+
+Some providers choose a download host for each object. Then the origin may come from `Location`, but only after your own allowlist and only for a description with no credential and no middleware. This example expects one absolute HTTPS URL under the provider's download domain, on the default HTTPS port. Replace that domain with the provider's documented hosts:
+
+```rust
+concord::api! {
+    pub client Archives(token: concord::Secret) {
+        base "https://api.example.com";
+        headers { "authorization" = "Bearer {token}"; }
+        GET download(id: u64) { path "archives/{id}"; }
+    }
+}
+concord::api! {
+    pub client Downloads(origin: concord::Base) {
+        base origin;
+        GET fetch() -> concord::ByteStream { read concord::read::Stream; }
+    }
+}
+
+async fn download(api: &Archives, id: u64)
+    -> Result<concord::ByteStream, Box<dyn std::error::Error + Send + Sync>>
+{
+    let response = api.download(id).send_raw().await?;
+    if response.status() != concord::http::StatusCode::FOUND {
+        return Err("the archive did not return its documented 302".into());
+    }
+    let location = response.headers().get("location")
+        .ok_or("the download Location is missing")?.to_str()?.to_owned();
+    let url = concord::reqwest::Url::parse(&location)?;
+    if url.scheme() != "https" || url.port_or_known_default() != Some(443)
+        || !url.host_str().is_some_and(|host| host.ends_with(".downloads.example.com"))
+    {
+        return Err("the download host is not allowed".into());
+    }
+    let origin: concord::Base = url.origin().ascii_serialization().parse()?;
+    drop(response);
+    let downloads = Downloads::new(origin);
+    Ok(concord::transfer::at(downloads.fetch(), &location)?.await?)
+}
+```
+
+`transfer::at` validates the original URL spelling; the engine checks its origin against the download call's base before sending. The recipe copies none of the API client's credentials, headers or middleware. It does not replace the URL with an unchecked request edit. A relative Location needs an explicit resolution policy from the author. This function follows one Location: another redirect is returned as the second call's error, and the author decides whether another call is appropriate. Each call keeps its own retry and timeout policy; the downloaded bytes are streamed without buffering the whole file.
 
 ## The raw response: `send_raw`
 

@@ -1,0 +1,9 @@
+{
+  "id": "M163",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "Charge a bucket while inspecting it, before the other buckets are known to have room",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                        Some(account) => account.inspect(selected.cost, now, &mut wait)?,",
+  "replace": "                        Some(account) => {\n                            account.inspect(selected.cost, now, &mut wait)?;\n                            for window in &mut account.windows {\n                                window.debit(selected.cost, now);\n                            }\n                        }"
+}

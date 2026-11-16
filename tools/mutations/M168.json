@@ -1,0 +1,9 @@
+{
+  "id": "M168",
+  "area": "limit",
+  "contract": "C11.6",
+  "description": "Refuse a key of exactly 512 bytes",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "if key.len() > MAX_KEY_BYTES {",
+  "replace": "if key.len() >= MAX_KEY_BYTES {"
+}

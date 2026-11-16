@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Verify whole descriptions from the guide, overview, README, and API examples."""
+"""Verify whole descriptions from the guide, overview, README, and API examples.
+
+For docs/examples/<api>.md, the first whole description uses src/<api>/description.rs
+in tests/real-apis; later ones use description_002.rs, description_003.rs, etc., in
+page order. Each needs its own fenced block, copied word for word, and must be
+included by the API's module and expose its client there.
+"""
 import argparse
 import json
 from pathlib import Path
@@ -103,7 +109,11 @@ def expected():
         count = 0
         blocks = re.findall(r'^```[^\n]*\n(.*?)^```', page.read_text(), re.M | re.S)
         for block_number, block in enumerate(blocks, 1):
-            for source in descriptions(block):
+            roots = list(descriptions(block))
+            if relative.startswith('docs/examples/') and len(roots) > 1:
+                raise ValueError(f'{relative}: block {block_number}: '
+                                 'whole descriptions need separate fenced blocks')
+            for source in roots:
                 count += 1
                 name = f'{prefix}_{count:03}'
                 client = re.search(r'\bclient\s+(\w+)', mask(source))[1]
@@ -111,9 +121,8 @@ def expected():
                 contents[fixture] = source
                 if relative.startswith('docs/examples/'):
                     api = page.stem
-                    compiled = f'tests/real-apis/src/{api}/description.rs'
-                    if compiled in contents:
-                        raise ValueError(f'{relative}: another whole description needs its own compilation module')
+                    module = 'description' if count == 1 else f'description_{count:03}'
+                    compiled = f'tests/real-apis/src/{api}/{module}.rs'
                     contents[compiled] = block.strip() + '\n'
                     types.append(f'::std::any::type_name::<crate::{api}::{client}>()')
                 else:

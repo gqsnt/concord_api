@@ -1,9 +1,7 @@
 concord::api! {
-pub client Vault(key: Secret) {
-    base "https://api.vault.example";
-    read Json;
-    middleware Signed::new(key.clone());        // every request is signed as it leaves
-
-    GET balance() -> Balance { path "balance"; }
-}
+pub client Vault(origin: Base, key: Secret) {
+        base origin;
+        middleware Proof::new(origin.clone(), key.clone());
+        GET balance() -> String { path "balance"; read concord::Text; }
+    }
 }

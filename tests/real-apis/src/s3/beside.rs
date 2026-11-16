@@ -1,17 +1,11 @@
 use concord::http::{HeaderName, HeaderValue};
 use concord::page::{Call, Slot};
-use concord::{reqwest, Answer, Fail, Secret};
+use concord::{reqwest, Answer, Fail};
 use serde::Deserialize;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// The keys that sign: given by the caller, never fetched or renewed here.
-#[derive(Clone, Debug)]
-pub struct Credentials {
-    pub access_key_id: String,
-    pub secret_access_key: Secret,
-    pub session_token: Option<Secret>,
-}
+pub use concord::sign::Credentials;
 
 /// A copy, or the completion of an upload, can fail inside a `200`: the root of the XML says which.
 #[derive(Debug, Deserialize)]

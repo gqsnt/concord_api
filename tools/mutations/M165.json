@@ -1,0 +1,9 @@
+{
+  "id": "M165",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "What a response shows can raise the remaining units of a fixed window above what the limit counted",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "self.remaining = previous.min(target).min(new.capacity);",
+  "replace": "self.remaining = target.min(new.capacity);"
+}

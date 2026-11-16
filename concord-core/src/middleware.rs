@@ -53,57 +53,45 @@ use std::sync::Arc;
 /// # }.now_or_never().unwrap().unwrap();
 /// ```
 ///
-/// A token can be renewed after a `401`. Take a copy before the first send; a stream body
-/// cannot be copied, so in that case return the first response. Put this middleware before
-/// a signer so that the second send is signed too:
+/// A middleware layer can also read the response that `next.send` returns. It returns that
+/// response, or a [`TransportError`], and does not send the request a second time to replace
+/// it: a second `next.send` is not an attempt, the retry policy does not decide it, and it
+/// repeats a `POST` that the engine would not repeat. For a token that is renewed, Concord
+/// ships `concord::auth::Renewed`, and the retry rule `concord::auth::after_401` asks the
+/// engine for one more attempt after a `401`. For a limit shared by the calls of a client, it
+/// ships `concord::limit::Limit`.
 ///
 /// ```
 /// # use concord_core as concord;
 /// # use concord::{Middleware, Next};
 /// # use concord::transport::{TransportError, TryInfo};
-/// struct Token { /* shared token and renewal state */ }
-/// impl Middleware for Token {
-///     async fn handle(&self, mut request: concord::reqwest::Request, info: TryInfo, next: Next<'_>)
+/// /// Logs the endpoint, the attempt and the status of each response.
+/// struct Logged;
+///
+/// impl Middleware for Logged {
+///     async fn handle(&self, request: concord::reqwest::Request, info: TryInfo, next: Next<'_>)
 ///         -> Result<concord::reqwest::Response, TransportError>
 ///     {
-///         request.headers_mut().insert("authorization", self.current());
-///         let again = request.try_clone();
-///         let response = next.send(request, info.clone()).await?;
-///         if response.status() == 401 {
-///             if let Some(mut request) = again {
-///                 request.headers_mut().insert("authorization", self.renew().await?);
-///                 return next.send(request, info).await;
-///             }
-///         }
-///         Ok(response)
+///         let (endpoint, number) = (info.endpoint(), info.number());
+///         let response = next.send(request, info).await?;   // the rest of the chain, then the transport
+///         eprintln!("{endpoint} (try {number}): {}", response.status());   // names and numbers only
+///         Ok(response)                                       // the response as it arrived
 ///     }
 /// }
-/// # impl Token {
-/// #     fn current(&self) -> concord::http::HeaderValue { concord::http::HeaderValue::from_static("token") }
-/// #     async fn renew(&self) -> Result<concord::http::HeaderValue, TransportError> { Ok(self.current()) }
-/// # }
 /// # use futures_util::FutureExt;
 /// # async {
-/// let sends = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-/// let count = sends.clone();
-/// let transport = concord::fake(move |request| {
-///     assert_eq!(request.headers().get("authorization").unwrap(), "token");
-///     let status = if count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 { 401 } else { 200 };
-///     Ok(concord::reply(status, ""))
-/// });
+/// let transport = concord::fake(|_| Ok(concord::reply(503, "")));
 /// let request = concord::reqwest::Request::new(concord::reqwest::Method::GET, "https://example.test/".parse()?);
-/// let response = Token {}.handle(request, TryInfo::new("token.get", 1), Next::to(&transport)).await?;
-/// assert_eq!(response.status(), 200);
-/// assert_eq!(sends.load(std::sync::atomic::Ordering::SeqCst), 2);
+/// let response = Logged.handle(request, TryInfo::new("logged.get", 1), Next::to(&transport)).await?;
+/// assert_eq!(response.status(), 503);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// # }.now_or_never().unwrap().unwrap();
 /// ```
 ///
 /// `next.send(request, info)` may be called more than once, or not at all. A middleware layer
 /// that rejects the request before sending returns [`TransportError::blocked`]; the attempts
-/// end there. After a response has arrived, keep that response, or report another failure if
-/// renewal fails. Concord counts the whole chain as one attempt; sends within it do not add
-/// attempts. The call `timeout` includes the time spent in middleware. The idle timeout starts
+/// end there. After a response has arrived, return that response, or another failure. Concord
+/// counts the whole chain as one attempt; sends within it do not add attempts. The call `timeout` includes the time spent in middleware. The idle timeout starts
 /// only when the request is handed to the transport, after middleware; `timeout` is checked
 /// there too, so an expired call is never handed over.
 /// `request()` and `into_request()` return the request before any middleware runs.
@@ -162,9 +150,11 @@ impl<M: Middleware> ErasedMiddleware for M {
 /// The remaining middleware, in order, followed by the transport that actually sends the
 /// request.
 ///
-/// It is a shared view: sending does not consume the chain. A middleware layer can send again
-/// through the same remainder, for example after renewing a token. The idle timeout starts
-/// when the request is handed to the transport, where `timeout` is checked before sending.
+/// It is a shared view: sending does not consume the chain, so a middleware layer can send
+/// again through the same remainder. Such a send is not an attempt, and the retry policy does
+/// not decide it: for another attempt after a `401`, with a new token, use the retry rule
+/// `concord::auth::after_401`. The idle timeout starts when the request is handed to the
+/// transport, where `timeout` is checked before sending.
 #[derive(Clone, Copy)]
 pub struct Next<'a> {
     pub(crate) middlewares: &'a [Arc<dyn ErasedMiddleware>],

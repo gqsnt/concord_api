@@ -1,0 +1,9 @@
+{
+  "id": "M214",
+  "area": "rotating token",
+  "contract": "C12.7",
+  "description": "A renewal that began is abandoned after its mark is saved when every call has been dropped",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "        drop(retired);\n        yield_once().await;\n        let exchange = Exchange {",
+  "replace": "        drop(retired);\n        yield_once().await;\n        if demand.is_some_and(|flight| flight.result.receiver_count() == 0) {\n            return Ok(());\n        }\n        let exchange = Exchange {"
+}

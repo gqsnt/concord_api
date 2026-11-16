@@ -1,0 +1,9 @@
+{
+  "id": "M218",
+  "area": "rotating token",
+  "contract": "C12.8",
+  "description": "The authorization header is not marked sensitive",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "value.set_sensitive(true);",
+  "replace": "value.set_sensitive(false);"
+}

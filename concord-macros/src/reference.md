@@ -279,8 +279,8 @@ shop.photo("The mast", "mast.jpg", jpeg).await?;
 # }
 ```
 
-**`read`** names a reader: `Json`, `Text`, `Binary` or `concord::read::Stream`, or your
-own. There is no default format: a client declares `read Json;` once, and an endpoint
+**`read`** names a reader: `Json`, `Text`, `Binary` or `concord::read::Stream`; for records,
+`concord::read::JsonLines::new(n)` or `concord::read::Sse::new(n)`; or your own. There is no default format: a client declares `read Json;` once, and an endpoint
 that differs declares its own.
 
 ```rust
@@ -346,8 +346,9 @@ POST order(key: String) -> String { headers { "idempotency-key" = key; } idempot
 ```
 
 **`middleware`** declares a value that implements `concord::Middleware`, such as a signer
-or a token that is renewed. It appears on the client, as often as needed, and each value is
-built once, in `new`, from the client's required inputs.
+of your own, or `concord::auth::Renewed` for a token that is renewed. It appears on the
+client, as often as needed, and each value is built once, in `new`, from the client's
+required inputs.
 
 ```rust
 # use concord::{Json, Middleware, Next, Secret};

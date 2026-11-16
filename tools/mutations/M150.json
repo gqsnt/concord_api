@@ -1,0 +1,9 @@
+{
+  "id": "M150",
+  "area": "auth",
+  "contract": "C11.1",
+  "description": "Check the origin of the request only after the renewal, so a request to another origin renews first",
+  "file": "concord-extras/src/auth.rs",
+  "find": "        if !self\n            .inner\n            .origin\n            .as_ref()\n            .is_some_and(|base| base.origin() == request.url().origin())\n        {\n            return Err(blocked(RenewalError::WrongOrigin));\n        }\n        let Version {\n            header_name,\n            header,\n            generation,\n            ..\n        } = self.token().await.map_err(blocked)?;\n",
+  "replace": "        let Version {\n            header_name,\n            header,\n            generation,\n            ..\n        } = self.token().await.map_err(blocked)?;\n        if !self\n            .inner\n            .origin\n            .as_ref()\n            .is_some_and(|base| base.origin() == request.url().origin())\n        {\n            return Err(blocked(RenewalError::WrongOrigin));\n        }\n"
+}

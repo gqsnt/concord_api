@@ -1,0 +1,6 @@
+concord::api! {
+pub client Downloads(origin: concord::Base) {
+        base origin;
+        GET fetch() -> concord::ByteStream { read concord::read::Stream; }
+    }
+}

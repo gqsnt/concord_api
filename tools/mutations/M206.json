@@ -1,0 +1,9 @@
+{
+  "id": "M206",
+  "area": "bracketed form",
+  "contract": "C12.5",
+  "description": "A bracket_form serializer failure replaces its format cause with Shape",
+  "file": "concord-extras/src/body/bracket_form.rs",
+  "find": "FormatError::Custom(source) => value.error(source),",
+  "replace": "FormatError::Custom(_) => value.error(BracketFormError::Shape),"
+}

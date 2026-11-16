@@ -1,0 +1,9 @@
+{
+  "id": "M181",
+  "area": "records",
+  "contract": "C11.10",
+  "description": "A RecordStream reports 200 instead of the status of the response",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "        status: body.status(),",
+  "replace": "        status: concord_core::http::StatusCode::OK,"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M174",
+  "area": "records",
+  "contract": "C11.8",
+  "description": "A JSON line one byte over the bound is accepted",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "                if self.line.len() == self.max {",
+  "replace": "                if self.line.len() > self.max {"
+}

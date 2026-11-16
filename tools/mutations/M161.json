@@ -1,0 +1,9 @@
+{
+  "id": "M161",
+  "area": "limit",
+  "contract": "C11.4",
+  "description": "A 429 that holds no bucket holds nothing, instead of every call through the limit",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "        if !any_hit {\n",
+  "replace": "        if any_hit {\n"
+}

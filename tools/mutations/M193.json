@@ -1,0 +1,9 @@
+{
+  "id": "M193",
+  "area": "bracketed form",
+  "contract": "C12.1",
+  "description": "A key that contains a bracket is accepted and written into the nested key",
+  "file": "concord-extras/src/body/bracket_form.rs",
+  "find": "if key.is_empty() || key.contains(['[', ']']) {",
+  "replace": "if key.is_empty() {"
+}

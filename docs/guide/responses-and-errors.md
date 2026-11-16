@@ -38,6 +38,8 @@ A reader is a Rust value with one job: turning the body into a value. The descri
 | `Text` | `String` | The whole body, as UTF-8 text |
 | `Binary` | `bytes::Bytes` | The whole body, unchanged |
 | `Stream` | `concord::ByteStream` | Nothing: it hands you the body to read as it arrives ([below](#a-body-that-is-large-or-that-never-ends)) |
+| `JsonLines::new(max)` | `concord::read::RecordStream<T>`, for any `T` that `serde` can deserialize | One JSON value per line, as the body arrives ([a stream of records](#a-stream-of-records)) |
+| `Sse::new(max)` | `concord::read::RecordStream<SseEvent>` | Server-sent events, as the body arrives ([a stream of records](#a-stream-of-records)) |
 | Your own reader | Whatever it declares | Whatever it needs |
 
 ```rust
@@ -84,7 +86,7 @@ impl<T: serde::de::DeserializeOwned + Send> Reader<T> for Xml {
 | `ReadError` | Applying `?` to the result of `bytes` already produces the right error. `ReadError::not_the_type(bytes)` says that the whole body arrived and does not fit the type. Then, as needed: `.with_details(text)` keeps the decoder's message for `e.details()` (Concord truncates it at 1 KiB); `.at(Place::root().field("items").index(3).field("kind"))` sets the location, a `concord::read::Place` built from parts: a name that your program knows, an index, and `.key()` or `.variant()` for a map key or an enum variant that was read (their text is data, so only `[key]` and `[variant]` are kept). `quick_xml` provides no location, so `Xml` sets none; `.label_was_not_expected()` adds that the content type was not the one the reader expected either. **A reader passes Concord no cause of its own, and no free text that gets printed:** Concord builds `source()` from the parts of the location, so no reader can put a value from the response there. Free text goes in the details. `ReadError::wrong_content_type()` is for a reader that holds the server to its content type. |
 | Testing | A reader is tested on its own, without a client: `let doc: Doc = Xml.read(Incoming::new(concord::reply(200, "<a/>"))).await?;` |
 
-The shipped readers implement this same trait: [`concord-extras/src/read.rs`](../../concord-extras/src/read.rs).
+The shipped readers implement this same trait: [`concord-extras/src/read.rs`](../../concord-extras/src/read.rs), and [`read/records.rs`](../../concord-extras/src/read/records.rs) for the readers of records.
 
 A reader is a value, so an input can choose it. Here, one endpoint responds with JSON, or with a stream of events when the request asked for one:
 
@@ -119,7 +121,493 @@ while let Some(chunk) = pdf.try_next().await? {
 - A failure after the head is reported by `try_next()` as a `concord::read::StreamError`: a Transport error that keeps the status and the headers. `?` converts it into the client's error (`billing::Error`), or into a `ReadError` inside your own reader.
 - Once a stream has been handed to you, it is never retried.
 
-**Records.** Concord does not split a stream into records. Server-sent events, JSON Lines and CSV each have a crate that reads a stream of bytes, and `ByteStream` is such a stream. A record inside the stream that reports an error is yours to handle.
+**Records.** JSON Lines and server-sent events have readers of their own, which split the body into records ([below](#a-stream-of-records)). For another format, such as CSV, a crate that reads a stream of bytes can read a `ByteStream`. A record inside the stream that reports an error is yours to handle.
+
+## A stream of records
+
+Some bodies are a sequence of records that arrive one after another: JSON Lines (one JSON value per line, as in a Kubernetes watch) and server-sent events. Two readers split such a body into records as it arrives, and return a `concord::read::RecordStream`. Both are in `concord::read`: `use concord::read::{JsonLines, RecordStream, Sse, SseEvent};`.
+
+```rust
+GET watch() -> RecordStream<PodEvent> {
+    path "pods";
+    query { "watch" = true; }
+    read JsonLines::new(64 * concord::KIB);        // the longest line that it accepts
+}
+
+GET events() -> RecordStream<SseEvent> {
+    path "events";
+    read Sse::new(16 * concord::KIB);              // the largest event that it accepts
+}
+```
+
+```rust
+async fn follow(cluster: &Cluster) -> Result<(), Box<dyn std::error::Error>> {
+    let mut events = cluster.watch().await?;              // returns when the head has arrived
+    while let Some(event) = events.try_next().await? {    // its error is a `RecordError`
+        match event {
+            PodEvent::Added(pod) => …,
+            PodEvent::Error(status) => break,             // an error record of the API is a record like any other
+        }
+    }
+    Ok(())
+}
+```
+
+| | |
+|---|---|
+| **The bound** | Each reader requires one, and has no default. `JsonLines::new(max_record_bytes)` counts the bytes of a line before its LF, a CR included. `Sse::new(max_event_bytes)` counts each line of an event that is not blank, comments and unknown fields included, plus one byte for its line end. A record over its bound is an error, so a reader holds at most its bound, plus one chunk of the transport, whatever the server sends. |
+| `JsonLines` | One JSON value per line, decoded into `T` with `serde` (feature `json`). LF and CRLF both end a line, and a last line without LF is read. An empty line is an error. |
+| `Sse` | The rules of server-sent events: LF, CRLF or CR ends a line, a byte order mark at the start is skipped, comments are ignored, and the `data` lines of an event are joined with LF. An `SseEvent` has `event` (`message` when none was given), `data`, and the last `id` and `retry` that the server sent. An event that the body ends before its blank line is dropped. `event.json::<T>()` decodes `data` (feature `json`). Event names mean nothing to the reader: an `error` or a `done` event is yours to handle. |
+| The head | The call returns as soon as the head has arrived with a success status, as with `read Stream;`. `status()` and `headers()` on the stream stay readable, also after its end or an error. |
+| **An error** | `try_next()` returns a `concord::read::RecordError`, and the first error ends the stream: `TooLarge` (over the bound), `Utf8` (bytes that are not UTF-8), `Decode` (a record that does not decode, with its line and column, and its record number when it is known), or `Stream`, the failure of the body itself, kept whole as a `StreamError` with the status and the headers. No error holds bytes of the response. A `RecordError` does not convert into the client's error, so a function that uses `?` on the call and on `try_next()` returns an error that holds both: `Box<dyn std::error::Error>`, or an enum of your own. |
+| Timeouts and retries | As with `read Stream;`: both timeouts keep running, and the idle timeout watches the bytes that arrive, comments included, not the records. A stream of records is never retried, and a stream of events is never reconnected. Dropping the stream releases the body. |
+
+## Binary frames
+
+Use `read concord::read::Stream;` for the response, then a codec for the wire format. `tokio_util::io::StreamReader` adapts a `ByteStream` to `AsyncRead`, and `LengthDelimitedCodec` splits length-prefixed frames. The bridge keeps Concord's call and idle timeouts, and a body failure remains a `StreamError` inside an `io::Error`, with its status, headers and attempt number. It sends no new request.
+
+These examples use `tokio-util` with features `codec` and `io`, `futures-util` for `TryStreamExt`, and `crc32fast` for AWS checksums. Their exact source files are [docker_frames.rs](../../tests/real-apis/fixtures/recipes/docker_frames.rs) and [aws_frames.rs](../../tests/real-apis/fixtures/recipes/aws_frames.rs); [stream_recipes.rs](../../tests/real-apis/tests/stream_recipes.rs) includes and runs them, and checks each block against this page word for word.
+
+Docker's non-TTY logs have an eight-byte prefix: a channel, three reserved bytes, and a big-endian payload length. The codec's bound applies to the length field before adjustment, so this permits 64 KiB of payload plus the eight-byte prefix. TTY logs are raw bytes and need no frame codec.
+
+```rust
+use concord::{bytes::Bytes, ByteStream};
+use futures_util::TryStreamExt;
+use std::io;
+use tokio_util::{
+    codec::{FramedRead, LengthDelimitedCodec},
+    io::StreamReader,
+};
+
+concord::api! {
+    pub client Docker(origin: concord::Base) {
+        base origin;
+        GET logs(container: String) -> concord::ByteStream {
+            path "containers/{container}/logs";
+            query { "stdout" = true; "stderr" = true; "follow" = true; }
+            read concord::read::Stream;
+        }
+    }
+}
+
+/// Splits non-TTY Docker logs, allowing at most 64 KiB of payload per frame.
+pub fn docker_frames(
+    body: ByteStream,
+) -> FramedRead<StreamReader<ByteStream, Bytes>, LengthDelimitedCodec> {
+    let codec = LengthDelimitedCodec::builder()
+        .length_field_offset(4)
+        .length_field_type::<u32>()
+        .length_adjustment(8)
+        .num_skip(0)
+        .max_frame_length(64 * concord::KIB)
+        .new_codec();
+    FramedRead::new(StreamReader::new(body), codec)
+}
+
+/// Validates the complete prefix and returns its channel and uninterpreted payload.
+pub fn docker_log(frame: Bytes) -> io::Result<(u8, Bytes)> {
+    if frame.len() < 8 || !matches!(frame[0], 0..=2) || frame[1..4] != [0, 0, 0] {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid Docker log prefix.",
+        ));
+    }
+    Ok((frame[0], frame.slice(8..)))
+}
+
+/// Keeps completed log records until EOF, leaving them available on a later failure.
+pub async fn read_logs(body: ByteStream, logs: &mut Vec<(u8, Bytes)>) -> io::Result<()> {
+    let mut frames = docker_frames(body);
+    while let Some(frame) = frames.try_next().await? {
+        logs.push(docker_log(frame.freeze())?);
+    }
+    Ok(())
+}
+```
+
+`read_logs` pulls complete frames and keeps their channel and payload in caller-owned storage; process or discard records as they arrive if retaining every log would use too much memory. The underlying head remains available through `frames.get_ref().get_ref().status()` and `.headers()`. Dropping a pending frame pull retains the codec's buffered bytes. The bridge polls `ByteStream` as a `Stream`: a pending idle timer includes time between polls, even when an outer pull future is dropped. Drop the whole codec to release the body. These adapters do not promise a fixed amount of work in one poll, and bytes or decoded values retained by the application take additional memory.
+
+AWS event-stream messages carry their total length in the first four bytes. With no bytes skipped, a length adjustment of zero keeps the whole frame, including both checksums. The prelude is checked after the codec has read that bounded frame, not before buffering its payload. This S3 Select consumer keeps completed Records payloads in caller-owned storage and accepts completion only after an End event; EOF between complete frames is still an application error if End never arrived. The authorization input represents a signature for this request; use the API's signing code, as in [the S3 example](../examples/s3.md).
+
+```rust
+use concord::{bytes::Bytes, ByteStream};
+use futures_util::TryStreamExt;
+use std::io;
+use tokio_util::{
+    codec::{FramedRead, LengthDelimitedCodec},
+    io::StreamReader,
+};
+
+concord::api! {
+    pub client S3(origin: concord::Base, authorization: concord::Secret) {
+        base origin;
+        headers { "authorization" = authorization; }
+        POST select(key: String, query: concord::Body) -> concord::ByteStream {
+            path "{*key}";
+            query { "select" = ""; "select-type" = 2; }
+            body query;
+            read concord::read::Stream;
+        }
+    }
+}
+
+/// Splits AWS event-stream messages, including the entire prelude and final CRC.
+pub fn aws_frames(
+    body: ByteStream,
+) -> FramedRead<StreamReader<ByteStream, Bytes>, LengthDelimitedCodec> {
+    let codec = LengthDelimitedCodec::builder()
+        .length_field_type::<u32>()
+        .length_adjustment(0)
+        .num_skip(0)
+        .max_frame_length(concord::MIB)
+        .new_codec();
+    FramedRead::new(StreamReader::new(body), codec)
+}
+
+/// Checks an S3 Select frame and returns its event type and payload.
+pub fn select_event(frame: &[u8]) -> io::Result<(&[u8], &[u8])> {
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "Invalid AWS event frame.");
+    if frame.len() < 16 {
+        return Err(invalid());
+    }
+    let word = |bytes: &[u8]| -> io::Result<usize> {
+        Ok(u32::from_be_bytes(bytes.try_into().map_err(|_| invalid())?) as usize)
+    };
+    let total = word(&frame[..4])?;
+    let headers = word(&frame[4..8])?;
+    if total != frame.len()
+        || headers > total - 16
+        || crc32fast::hash(&frame[..8]) as usize != word(&frame[8..12])?
+        || crc32fast::hash(&frame[..total - 4]) as usize != word(&frame[total - 4..])?
+    {
+        return Err(invalid());
+    }
+    let mut fields = &frame[12..12 + headers];
+    let mut message = None;
+    let mut event = None;
+    while !fields.is_empty() {
+        let name_len = usize::from(fields[0]);
+        let name = fields.get(1..1 + name_len).ok_or_else(invalid)?;
+        let kind = *fields.get(1 + name_len).ok_or_else(invalid)?;
+        fields = fields.get(2 + name_len..).ok_or_else(invalid)?;
+        let size = match kind {
+            0 | 1 => 0,
+            2 => 1,
+            3 => 2,
+            4 => 4,
+            5 | 8 => 8,
+            9 => 16,
+            6 | 7 => {
+                let size = u16::from_be_bytes(
+                    fields
+                        .get(..2)
+                        .ok_or_else(invalid)?
+                        .try_into()
+                        .map_err(|_| invalid())?,
+                ) as usize;
+                fields = &fields[2..];
+                size
+            }
+            _ => return Err(invalid()),
+        };
+        let value = fields.get(..size).ok_or_else(invalid)?;
+        fields = &fields[size..];
+        if name == b":message-type" || name == b":event-type" {
+            if kind != 7 {
+                return Err(invalid());
+            }
+            let slot = if name == b":message-type" {
+                &mut message
+            } else {
+                &mut event
+            };
+            if slot.replace(value).is_some() {
+                return Err(invalid());
+            }
+        }
+    }
+    if message != Some(b"event".as_slice()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "S3 Select returned an error event.",
+        ));
+    }
+    Ok((event.ok_or_else(invalid)?, &frame[12 + headers..total - 4]))
+}
+
+/// Keeps completed Records payloads and requires S3's terminal End event.
+pub async fn read_select(body: ByteStream, records: &mut Vec<Bytes>) -> io::Result<()> {
+    let mut frames = aws_frames(body);
+    while let Some(frame) = frames.try_next().await? {
+        let (event, payload) = select_event(&frame)?;
+        match event {
+            b"Records" => records.push(Bytes::copy_from_slice(payload)),
+            b"End" => return Ok(()),
+            b"Stats" | b"Progress" | b"Cont" => {}
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Unknown S3 Select event.",
+                ))
+            }
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::UnexpectedEof,
+        "S3 Select ended without an End event.",
+    ))
+}
+```
+
+The one-MiB cap is this application's choice, not a service default. Check the API's limits and adjust it. Process Records payloads as they arrive if retaining all of them would use too much memory. An error or unknown event is the application's error; the consumer drops the body rather than reconnecting or resending.
+
+## A multipart response and its batch
+
+For a finite multipart response, use `multer` on the same `ByteStream`. Take the boundary parameter from the response's `content-type`: `multer::parse_boundary` accepts only `multipart/form-data`, whereas a batch usually returns `multipart/mixed`. This example uses the `mime` crate to read that parameter, including a quoted boundary. Save the code as a module named `multipart_response`; the batch below uses it. The tested file is [multipart_response.rs](../../tests/real-apis/fixtures/recipes/multipart_response.rs).
+
+```rust
+use concord::ByteStream;
+use std::io;
+
+/// Application errors from either Concord or the MIME parser.
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// Opens a finite multipart response under a bound on all its wire bytes.
+pub fn parts(body: ByteStream, max_bytes: u64) -> Result<multer::Multipart<'static>, BoxError> {
+    let label: mime::Mime = body
+        .headers()
+        .get("content-type")
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Missing multipart content type.",
+            )
+        })?
+        .parse()?;
+    if label.type_() != mime::MULTIPART {
+        return Err(
+            io::Error::new(io::ErrorKind::InvalidData, "Expected a multipart response.").into(),
+        );
+    }
+    // multer::parse_boundary accepts form-data only; mixed and related need this parameter.
+    let boundary = label
+        .get_param(mime::BOUNDARY)
+        .filter(|value| !value.as_str().is_empty() && value.as_str().len() <= 70)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Missing or invalid MIME boundary.",
+            )
+        })?
+        .as_str()
+        .to_owned();
+    let limits = multer::Constraints::new().size_limit(
+        multer::SizeLimit::new()
+            .whole_stream(max_bytes)
+            .per_field(256 * concord::KIB as u64),
+    );
+    Ok(multer::Multipart::with_constraints(body, boundary, limits))
+}
+```
+
+Choose a limit for the entire response, including MIME headers and delimiters. Multer may buffer all ready input before it checks a field's limit, so `per_field` alone does not protect memory; `whole_stream` is the essential bound here. This recipe does not supply a separate header-memory limit or a fixed amount of work per poll. Multer can reject a body containing a line that starts with the boundary text without being a complete delimiter; this recipe does not promise acceptance of every valid MIME spelling. Parser error messages are the parser's own and may contain response values: decide what your application logs. A parser may stop at the closing MIME delimiter without reading the HTTP body's remaining epilogue. When cancelling a part read, drop the whole consumer; do not assume that a cancelled `Field::bytes()` retains its temporary collection for another pull.
+
+A batch has two layers of results. Its outer 200 says nothing about the statuses of its embedded HTTP responses. This example builds trusted GET targets with the shipped `multipart_mixed` writer (feature `multipart`), retains inner statuses and duplicate headers, and keeps completed replies in the caller's vector if a later MIME or HTTP part fails. It uses `httparse` for the embedded HTTP head, allows at most 16 KiB and 64 fields there, and refuses transfer-coded replies. The full tested file is [multipart_batch.rs](../../tests/real-apis/fixtures/recipes/multipart_batch.rs).
+
+```rust
+use crate::multipart_response::{parts, BoxError};
+use concord::{
+    bytes::Bytes,
+    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
+    Answer, Body, ByteStream,
+};
+use std::io;
+
+concord::api! {
+    pub client Gmail(authorization: concord::Secret) {
+        base "https://gmail.googleapis.com";
+        headers { "authorization" = authorization; }
+        POST batch(request: concord::Body) -> concord::ByteStream {
+            path "batch/gmail/v1"; body request; read concord::read::Stream;
+        }
+    }
+}
+concord::api! {
+    pub client SharePoint(site: concord::Base, authorization: concord::Secret) {
+        base site;
+        headers { "authorization" = authorization; }
+        POST batch(request: concord::Body) -> concord::ByteStream {
+            path "_api/$batch"; body request; read concord::read::Stream;
+        }
+    }
+}
+
+/// Builds a read-only batch from trusted content IDs and GET request targets.
+pub fn get_batch(targets: &[(&str, &str)]) -> Result<Body, BoxError> {
+    let mut requests = Vec::new();
+    for (id, target) in targets {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", HeaderValue::from_static("application/http"));
+        headers.insert("content-id", HeaderValue::from_str(id)?);
+        headers.insert(
+            "content-transfer-encoding",
+            HeaderValue::from_static("binary"),
+        );
+        let request = Body::new(
+            format!("GET {target} HTTP/1.1\r\nAccept: application/json\r\n\r\n"),
+            "application/http",
+        );
+        requests.push((headers, request));
+    }
+    Ok(concord::multipart_mixed(requests)?)
+}
+
+/// A MIME content ID, when present, and a complete embedded HTTP response.
+pub type BatchReply = (Option<String>, Answer<Bytes>);
+
+/// Decodes one buffered HTTP response; transfer-coded responses are refused.
+pub fn http_response(bytes: Bytes, method: &Method) -> Result<Answer<Bytes>, BoxError> {
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "Invalid batch HTTP response.");
+    let end = bytes
+        .windows(4)
+        .position(|part| part == b"\r\n\r\n")
+        .map(|offset| offset + 4)
+        .ok_or_else(invalid)?;
+    if end > 16 * concord::KIB {
+        return Err(invalid().into());
+    }
+    let mut fields = [httparse::EMPTY_HEADER; 64];
+    let mut response = httparse::Response::new(&mut fields);
+    let httparse::Status::Complete(offset) = response.parse(&bytes)? else {
+        return Err(invalid().into());
+    };
+    let status = StatusCode::from_u16(response.code.ok_or_else(invalid)?)?;
+    if status.is_informational() {
+        return Err(invalid().into());
+    }
+    let mut headers = HeaderMap::new();
+    for header in response.headers.iter() {
+        headers.append(
+            HeaderName::from_bytes(header.name.as_bytes())?,
+            HeaderValue::from_bytes(header.value)?,
+        );
+    }
+    if headers.contains_key("transfer-encoding") {
+        return Err(invalid().into());
+    }
+    let payload = bytes.slice(offset..);
+    let no_body = method == Method::HEAD
+        || status == StatusCode::NO_CONTENT
+        || status == StatusCode::NOT_MODIFIED;
+    if no_body {
+        if !payload.is_empty() {
+            return Err(invalid().into());
+        }
+    } else if headers.contains_key("content-length") {
+        let mut lengths = headers.get_all("content-length").iter();
+        let length: usize = lengths.next().ok_or_else(invalid)?.to_str()?.parse()?;
+        if lengths.next().is_some() || length != payload.len() {
+            return Err(invalid().into());
+        }
+    }
+    Ok(Answer::new(status, headers.into(), payload))
+}
+
+/// Appends completed GET replies; a later MIME or HTTP failure leaves them available.
+pub async fn read_batch(
+    body: ByteStream,
+    completed: &mut Vec<BatchReply>,
+    max_bytes: u64,
+) -> Result<(), BoxError> {
+    let mut response = parts(body, max_bytes)?;
+    while let Some(part) = response.next_field().await? {
+        if part.content_type().map(mime::Mime::essence_str) != Some("application/http") {
+            return Err(
+                io::Error::new(io::ErrorKind::InvalidData, "Expected an HTTP batch part.").into(),
+            );
+        }
+        let id = part
+            .headers()
+            .get("content-id")
+            .map(|value| value.to_str().map(str::to_owned))
+            .transpose()?;
+        let reply = http_response(part.bytes().await?, &Method::GET)?;
+        completed.push((id, reply));
+    }
+    Ok(())
+}
+
+/// Reads two Gmail messages, keeping content IDs for correlation even on failure.
+pub async fn gmail_batch(api: &Gmail, completed: &mut Vec<BatchReply>) -> Result<(), BoxError> {
+    let start = completed.len();
+    let request = get_batch(&[
+        ("<one>", "/gmail/v1/users/me/messages/one"),
+        ("<two>", "/gmail/v1/users/me/messages/two"),
+    ])?;
+    let body = api
+        .batch(request)
+        .with_retry(concord::Retry::none())
+        .await?;
+    read_batch(body, completed, 4 * concord::MIB as u64).await?;
+    let replies = &completed[start..];
+    if replies.len() != 2
+        || ["response-one", "response-two"].iter().any(|expected| {
+            replies
+                .iter()
+                .filter(|reply| {
+                    reply
+                        .0
+                        .as_deref()
+                        .is_some_and(|id| id.trim_matches(['<', '>']) == *expected)
+                })
+                .count()
+                != 1
+        })
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Missing or duplicate Gmail reply ID.",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Reads this SharePoint site's lists and title, keeping the service's reply order.
+pub async fn sharepoint_batch(
+    api: &SharePoint,
+    completed: &mut Vec<BatchReply>,
+) -> Result<(), BoxError> {
+    let start = completed.len();
+    let request = get_batch(&[
+        (
+            "1",
+            "https://tenant.sharepoint.com/sites/demo/_api/web/lists",
+        ),
+        (
+            "2",
+            "https://tenant.sharepoint.com/sites/demo/_api/web/title",
+        ),
+    ])?;
+    let body = api
+        .batch(request)
+        .with_retry(concord::Retry::none())
+        .await?;
+    read_batch(body, completed, 4 * concord::MIB as u64).await?;
+    if completed.len() - start != 2 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Unexpected SharePoint reply count.",
+        )
+        .into());
+    }
+    Ok(())
+}
+```
+
+Gmail replies can arrive out of order: correlate each `response-` content ID with the request ID, and require each expected result once. The SharePoint example uses the request order of this read-only batch and an explicit site; adapt its targets and reply rules to your OData service. A nested changeset needs its own MIME decoding and the provider's transaction rules. The helper above does not decode one. A failure to read the rest of a response does not authorize sending completed operations again. The example disables engine retries for the outer POST; replaying a batch is a separate decision about every operation it contains.
+
+A JSON array is read whole into `Vec<T>` with `read Json.limit(…)`; the limit bounds the complete body, and Concord has no incremental JSON reader.
 
 ## When a status means something
 
@@ -374,6 +862,25 @@ pub fn photo_form(chat_id: &ChatId, photo: &Body, caption: &Option<String>) -> R
 }
 ```
 
+**Parts with their own headers: `multipart_mixed` and `multipart_related`.** For a body other than a form, `multipart_mixed(parts)` and `multipart_related(parts)` (feature `multipart`) take pairs of a `HeaderMap` and a `Body` held in memory, in order. Each part has exactly one valid content type, and the first related part is the root, whose type the writer puts in the `type` parameter of the body's content type. The writer makes no `Content-ID` and rewrites no reference: they are yours, in the headers and in the root's bytes:
+
+```rust
+use concord::{multipart_related, Body};
+use concord::http::{HeaderMap, HeaderValue};
+
+// plain Rust, beside the macro: `body message(root, attachment);`
+fn message(root: &Body, attachment: &Body) -> Result<Body, concord::MimeWriteError> {
+    let mut json = HeaderMap::new();
+    json.insert("content-type", HeaderValue::from_static("application/json"));
+    let mut image = HeaderMap::new();
+    image.insert("content-type", HeaderValue::from_static("image/png"));
+    image.insert("content-id", HeaderValue::from_static("<image-1>"));
+    multipart_related([(json, root.clone()), (image, attachment.clone())])
+}
+```
+
+A part that is a stream or without one valid content type is refused with its one-based position, and so is a list with no part; the call then ends with a Build error, and nothing is sent. The rustdoc of `multipart_related` has the whole example, with its description and a call.
+
 **For a body in either form:**
 
 | | |
@@ -382,7 +889,7 @@ pub fn photo_form(chat_id: &ChatId, photo: &Body, caption: &Option<String>) -> R
 | The content type travels with the bytes | A `Body` carries its `Content-Type`. A `content-type` header that applies to the endpoint takes precedence: `headers { "content-type" = "application/merge-patch+json"; }` with `body json(patch);`. |
 | A body that cannot be serialized | The expression may return a `Result`, with any error that converts into `Box<dyn Error + Send + Sync>`. An `Err` is a Build error: nothing is sent, and your writer's error is `e.source()`. |
 | One body per endpoint | A body is not inherited from a node above: each endpoint declares how its own body is built. (A part that it names may add entries.) |
-| `form` is flat | It writes pairs of strings. A nested form (`metadata[key]=value`) is a convention of one particular API: write your own function that returns a `Body`. |
+| `form` is flat | It writes pairs of strings. For a nested form (`metadata[key]=value`), `bracket_form` (feature `form`) writes `a[b]` for a map and `a[0]` for every list. An API with another convention (Rack and Rails read `a[0]` as a map key) needs your own function that returns a `Body`. |
 | `null` or absent | **With `body json(x)`, the body follows its type, not the rule for entries.** In an entry, a `None` sends nothing; in a path placeholder it is rejected. In a body built by an expression, a `None` is whatever the type serializes it as: `json!({ "cursor": cursor })` sends `null`, and a struct leaves it out with `#[serde(skip_serializing_if = "Option::is_none")]`. A body of entries is the shorter way. |
 | Retries | On a retry, bytes are sent again unchanged. **A body that is a stream is sent once:** a call that has one gets one attempt, whatever the retry setting says. A clone of the call shares the stream of an input, and the first send consumes it: a second send of that same `Body`, through a clone or for the next page of a paginated call, is a Build error, and nothing is sent. (An expression that creates a new stream each time it runs gives each send its own stream.) A large upload that must survive a failure needs a loop in the caller's code. |
 | A stream has no length | When the server needs one, the description sets it: `headers { "content-length" = size; }`. For a stream, it is sent as written. For a body in memory, it must equal the length of the body, or the request is rejected when it is built. |

@@ -12,6 +12,11 @@ mod wire {
 }
 #[cfg(test)]
 pub use wire::*;
+mod signing {
+    use super::*;
+    include!("signing.rs");
+}
+pub use signing::Signed;
 include!("description.rs");
 
 mod beside {

@@ -1,0 +1,9 @@
+{
+  "id": "M172",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "MaxHold forgets the Retry-After that caused the wait",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                    retry_after: wait.retry_after,\n",
+  "replace": "                    retry_after: None,\n"
+}

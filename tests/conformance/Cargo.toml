@@ -6,7 +6,7 @@ publish = false
 description = "Concord contract conformance tests. Never published."
 
 [dev-dependencies]
-concord = { package = "concord-api", path = "../../concord-api", features = ["tower", "multipart"] }
+concord = { package = "concord-api", path = "../../concord-api", features = ["tower", "multipart", "auth", "limit", "gzip-body", "rotating", "sign"] }
 concord-testkit = { path = "../../concord-testkit" }
 tour = { path = "../tour" }
 # `net`: a port that is bound and refuses connections (`common::engine::refusing_port`).
@@ -24,6 +24,12 @@ log = "0.4"
 
 # Make compressed response fixtures without allocating their expanded bodies.
 flate2 = "1"
+
+# `c12_sign.rs`: an independent computation of AWS Signature Version 4, the judge of every
+# signed request. The three crates are already in the lock.
+hmac = "0.13"
+sha2 = "0.11"
+hex = "0.4"
 
 [features]
 gzip = ["concord/gzip"]

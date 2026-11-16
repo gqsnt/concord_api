@@ -1,0 +1,9 @@
+{
+  "id": "M207",
+  "area": "gzip body",
+  "contract": "C12.5",
+  "description": "The gzip body is one-shot, so the engine cannot send it again",
+  "file": "concord-extras/src/body/gzip.rs",
+  "find": "    let mut output = Body::from(encoded);",
+  "replace": "    let mut output = Body::from(encoded).map_stream(|stream| stream);"
+}

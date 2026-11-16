@@ -1,0 +1,9 @@
+{
+  "id": "M177",
+  "area": "records",
+  "contract": "C11.9",
+  "description": "A lone CR does not end an SSE line",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "if byte == b'\\n' || (self.sse && byte == b'\\r') {",
+  "replace": "if byte == b'\\n' {"
+}

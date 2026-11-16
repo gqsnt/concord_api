@@ -1,0 +1,9 @@
+{
+  "id": "M160",
+  "area": "limit",
+  "contract": "C11.4",
+  "description": "A hit_when that panics counts as false, so its bucket is not held",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "panicked = true;\n                                true",
+  "replace": "panicked = true;\n                                false"
+}

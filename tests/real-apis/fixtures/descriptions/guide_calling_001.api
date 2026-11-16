@@ -1,0 +1,9 @@
+pub client Algolia(origin: concord::Base, application: String, key: concord::Secret) {
+        base origin;
+        headers { "x-algolia-application-id" = application; "x-algolia-api-key" = key; }
+        POST search() -> serde_json::Value {
+            path "1/indexes/books/query";
+            body concord::json(serde_json::json!({"query": "rust"}));
+            idempotent; read concord::Json;
+        }
+    }

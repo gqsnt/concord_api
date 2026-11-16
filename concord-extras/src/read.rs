@@ -1,4 +1,14 @@
-//! Four readers, each a value that implements `concord_core::Reader`.
+//! Whole-body readers and bounded record readers, each implementing `concord_core::Reader`.
+//!
+//! [`JsonLines`] (feature `json`) reads JSON values separated by lines. [`Sse`]
+//! reads server-sent events. Both return a [`RecordStream`] after the response head;
+//! errors during the body are stream items. See their type examples for complete
+//! descriptions and calls.
+
+mod records;
+#[cfg(feature = "json")]
+pub use records::JsonLines;
+pub use records::{RecordError, RecordStream, Sse, SseEvent};
 
 use concord_core::read::{Incoming, ReadError, Reader};
 use concord_core::{ByteStream, MIB};

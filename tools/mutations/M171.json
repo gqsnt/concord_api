@@ -1,0 +1,9 @@
+{
+  "id": "M171",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "A wait known to be longer than max_hold is waited for until max_hold ends instead of failing at once",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "let excessive = known > deadline.saturating_duration_since(now);",
+  "replace": "let excessive = false && known > deadline.saturating_duration_since(now);"
+}

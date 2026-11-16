@@ -1,0 +1,9 @@
+{
+  "id": "M190",
+  "area": "bracketed form",
+  "contract": "C12.1",
+  "description": "A list is written without its index, as a[] for every element",
+  "file": "concord-extras/src/body/bracket_form.rs",
+  "find": "let key = format!(\"{}[{}]\", self.key, self.index);",
+  "replace": "let key = format!(\"{}[]\", self.key);"
+}

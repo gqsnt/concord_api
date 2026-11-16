@@ -1,0 +1,9 @@
+{
+  "id": "M151",
+  "area": "auth",
+  "contract": "C11.1",
+  "description": "Compare the origin without the port, so the token goes to another port of the same host",
+  "file": "concord-extras/src/auth.rs",
+  "find": ".is_some_and(|base| base.origin() == request.url().origin())",
+  "replace": ".is_some_and(|base| base.scheme() == request.url().scheme() && base.host_str() == request.url().host_str())"
+}

@@ -1,9 +1,23 @@
 concord::api! {
-pub client Vault(key: Secret) {
-    base "https://api.vault.example";
+pub client Stripe(key: Secret) {
+    base "https://api.stripe.com";
+    headers { "authorization" = "Bearer {key}"; }
     read Json;
-    middleware Signed::new(key.clone());        // every request is signed as it leaves
+    problem StripeProblem;
 
-    GET balance() -> Balance { path "balance"; }
+    part page(limit?: u32, starting_after?: String) {
+        query { limit; starting_after; }
+        paginate by_cursor(starting_after, List::next_cursor);
+    }
+    part keyed(idempotency_key: String) {
+        headers { "idempotency-key" = idempotency_key; }
+        idempotent;
+    }
+
+    scope customers {
+        path "v1/customers";
+        GET list(email?: String, ..page) -> List<Customer> { query { email; } }
+        POST create(customer: NewCustomer, ..keyed) -> Customer { body form(customer); }
+    }
 }
 }

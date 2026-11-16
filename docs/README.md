@@ -11,9 +11,15 @@ These pages are for anyone who uses Concord or is considering it. Find the page 
 | try it | [Concord in ten minutes](guide/tour.md): describe, call and test, code first. |
 | describe an API | [Describe an API](guide/describing-an-api.md): every statement, with its rules; first, [How Concord sees an API](guide/model.md). |
 | call it and handle the result | [Call a client](guide/calling.md), then [Read responses and errors, send bodies](guide/responses-and-errors.md). |
-| send a key, a token or a signature | [Credentials and middleware](guide/credentials.md). |
-| retry after a failure | [Retries](guide/retries.md). |
+| send a key, a token or a signature, or renew a token that expires | [Credentials and middleware](guide/credentials.md); for a token that expires, [a token that is renewed](guide/credentials.md#a-token-that-is-renewed); for a refresh token that the server replaces at each exchange, [a refresh token that rotates](guide/credentials.md#a-refresh-token-that-rotates). |
+| retry after a failure, or limit the calls to an API | [Retries](guide/retries.md); for a limit, [limits shared by the calls of a client](guide/retries.md#limits-shared-by-the-calls-of-a-client). |
 | fetch a paginated list | [Pages](guide/pages.md). |
+| read JSON Lines or server-sent events | [Read responses and errors, send bodies](guide/responses-and-errors.md#a-stream-of-records): a stream of records. |
+| read binary frames or a multipart response | [Read responses and errors, send bodies](guide/responses-and-errors.md#binary-frames): binary frames, and a multipart response and its batch. |
+| send a nested form, a gzip body, MIME parts or JSON Lines | [When Concord does not cover what you need](guide/extending.md#extension-points-and-escape-hatches): the shipped writers, and your own. |
+| send to a URL that the API returned | [When Concord does not cover what you need](guide/extending.md#a-url-that-the-api-returned): a URL that the API returned. |
+| follow a redirect that the API documents | [When Concord does not cover what you need](guide/extending.md#a-documented-download-redirect): a documented download redirect. |
+| send the same read to several hosts | [Call a client](guide/calling.md#several-hosts): several hosts, one client for each. |
 | set a timeout | [Call a client](guide/calling.md#timeouts): the idle timeout and the call timeout. |
 | decompress responses, use a SOCKS proxy, choose TLS | [Call a client](guide/calling.md#compression-proxies-and-tls): the features of `concord-api`. |
 | write tests | [Testing a client](guide/testing.md): a fake transport, a scripted transport on virtual time, a local server. |
@@ -33,13 +39,13 @@ These pages are for anyone who uses Concord or is considering it. Find the page 
 2. [How Concord sees an API](guide/model.md): the request and the response, the tree of nodes, placement and behaviour.
 3. [Describe an API](guide/describing-an-api.md): signatures, blocks, parts, middleware, and the details.
 4. [Call a client](guide/calling.md): arguments, options, settings, return values and errors, timeouts.
-5. [Read responses and errors, send bodies](guide/responses-and-errors.md): readers, status arms, the API's own error, request bodies.
-6. [Credentials and middleware](guide/credentials.md): secrets, where they are placed, why a secret stays with its base, signatures.
-7. [Retries](guide/retries.md): when a request is retried, policies, your own rules.
+5. [Read responses and errors, send bodies](guide/responses-and-errors.md): readers, records, binary frames, multipart responses, status arms, the API's own error, request bodies.
+6. [Credentials and middleware](guide/credentials.md): secrets, where they are placed, why a secret stays with its base, signatures, a token that is renewed, a refresh token that rotates.
+7. [Retries](guide/retries.md): when a request is retried, a key made for one write, policies, your own rules, a body that is a stream, limits shared by the calls.
 8. [Pages](guide/pages.md): `paginate`, the shipped pagers, your own pager.
 9. [Testing a client](guide/testing.md): a fake transport, a scripted transport on virtual time, a local server.
 10. [What Concord promises](guide/promises.md): the promises, the safe defaults, logging, the limits.
-11. [When Concord does not cover what you need](guide/extending.md): extension points (body writers, readers, pagers, middleware, transports) and the raw escape hatches.
+11. [When Concord does not cover what you need](guide/extending.md): extension points (body writers, readers, pagers, middleware, transports), a URL that the API returned, and the raw escape hatches.
 12. [Troubleshooting](guide/troubleshooting.md): the first stop when a description does not compile or a call fails.
 
 **[reference/](reference)**: for looking things up.

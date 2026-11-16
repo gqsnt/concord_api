@@ -1,0 +1,9 @@
+{
+  "id": "M185",
+  "area": "transfer",
+  "contract": "C11.11",
+  "description": "Accept a lone ? that at_url would drop",
+  "file": "concord-extras/src/transfer.rs",
+  "find": ".is_some_and(|query| query.split('&').all(str::is_empty))",
+  "replace": ".is_some_and(|query| !query.is_empty() && query.split('&').all(str::is_empty))"
+}

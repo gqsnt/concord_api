@@ -1,0 +1,9 @@
+{
+  "id": "M227",
+  "area": "request signing",
+  "contract": "C12.9",
+  "description": "A stale Authorization header is included in the next signature.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "        let (canonical_headers, signed_headers) = canonical_headers(&headers)?;",
+  "replace": "        let (mut canonical_headers, mut signed_headers) = canonical_headers(&headers)?;\n        if let Some(stale) = request.headers().get(\"authorization\") {\n            canonical_headers = format!(\"authorization:{}\\n{canonical_headers}\", stale.to_str()?);\n            signed_headers = format!(\"authorization;{signed_headers}\");\n        }"
+}

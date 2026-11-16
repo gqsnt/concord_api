@@ -1,0 +1,9 @@
+{
+  "id": "M213",
+  "area": "rotating token",
+  "contract": "C12.7",
+  "description": "NotPolled is decided by whether the driver was ever polled, so a poll after the deadline changes the diagnosis",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": ".is_none_or(|polled| *polled >= deadline)",
+  "replace": ".is_none()"
+}

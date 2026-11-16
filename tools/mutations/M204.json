@@ -1,0 +1,9 @@
+{
+  "id": "M204",
+  "area": "JSON lines body",
+  "contract": "C12.4",
+  "description": "The content type is application/json instead of application/x-ndjson",
+  "file": "concord-extras/src/body/json_lines.rs",
+  "find": "Body::new(output.bytes, \"application/x-ndjson\")",
+  "replace": "Body::new(output.bytes, \"application/json\")"
+}

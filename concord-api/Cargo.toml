@@ -33,13 +33,23 @@ concord-extras = { path = "../concord-extras", version = "=5.0.0-rc.1", default-
 
 [features]
 default = ["json", "form", "rustls", "http2", "system-proxy"]
-# `json(x)` and `Json`.
+# Shared expiring credentials.
+auth = ["concord-extras/auth"]
+# Single-use refresh tokens and an application-polled renewal future.
+rotating = ["auth", "concord-extras/rotating"]
+# Request-signing helpers and Signature Version 4 middleware.
+sign = ["concord-extras/sign"]
+# Shared Retry-After gates, concurrency and keyed budgets.
+limit = ["concord-extras/limit"]
+# `json(x)`, `json_lines(records, bound)` and `Json`.
 json = ["concord-extras/json"]
-# `form(x)`.
+# `form(x)`, `bracket_form(x)` and `bracket_pairs(x)`.
 form = ["concord-extras/form"]
 # A `tower` service as a transport: `concord::tower::Tower`.
 tower = ["concord-extras/tower"]
 multipart = ["concord-extras/multipart"]
+# Gzip request bodies, independently of response decompression.
+gzip-body = ["concord-extras/gzip-body"]
 # The TLS stack is the application's choice.
 rustls = ["concord-core/rustls"]
 http2 = ["concord-core/http2"]

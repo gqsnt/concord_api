@@ -11,9 +11,9 @@
         read Json;
         problem RiotProblem;
         /// Riot's limits, per host and per method, shared by every call of this client.
-        /// It waits before a request that the last responses say is over a limit, and
-        /// holds the host or the method for `Retry-After` after a `429`.
-        middleware Quota::new();
+        /// A request waits until both of its buckets have room, and a `429` holds the
+        /// bucket that it names for `Retry-After`.
+        middleware quota();
 
         /// A platform and its host: `euw1` in `https://euw1.api.riotgames.com`.
         part platform(route: Platform) {

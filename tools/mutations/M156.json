@@ -1,0 +1,9 @@
+{
+  "id": "M156",
+  "area": "auth",
+  "contract": "C11.3",
+  "description": "A second waiting call starts its own renewal instead of sharing the one in flight",
+  "file": "concord-extras/src/auth.rs",
+  "find": "                    .and_then(WeakShared::upgrade)\n",
+  "replace": "                    .and_then(|_| None)\n"
+}

@@ -1,4 +1,50 @@
-//! JSON and form writers, and an optional multipart writer, producing a `concord_core::Body`.
+//! Request body writers producing a [`concord_core::Body`].
+//!
+//! In tests, `concord_testkit::Script` records sent requests as
+//! `concord_testkit::script::Request`.
+//!
+#[cfg(feature = "form")]
+#[path = "body/bracket_form.rs"]
+mod bracket_form_writer;
+#[cfg(feature = "form")]
+pub use bracket_form_writer::{bracket_form, bracket_pairs, BracketFormError};
+
+#[cfg(feature = "gzip-body")]
+#[path = "body/gzip.rs"]
+mod gzip_writer;
+#[cfg(feature = "gzip-body")]
+pub use gzip_writer::{gzip, GzipError};
+
+#[cfg(feature = "json")]
+#[path = "body/json_lines.rs"]
+mod json_lines_writer;
+#[cfg(feature = "json")]
+pub use json_lines_writer::{json_lines, JsonLinesError};
+
+#[cfg(feature = "multipart")]
+#[path = "body/mime.rs"]
+mod mime_writer;
+#[cfg(feature = "multipart")]
+pub use mime_writer::{multipart_mixed, multipart_related, MimeWriteError};
+
+#[cfg(any(
+    feature = "json",
+    feature = "form",
+    feature = "multipart",
+    feature = "gzip-body"
+))]
+fn find_error<'a, T: std::error::Error + 'static>(
+    error: &'a (dyn std::error::Error + 'static),
+) -> Option<&'a T> {
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if let Some(found) = error.downcast_ref::<T>() {
+            return Some(found);
+        }
+        current = error.source();
+    }
+    None
+}
 
 #[cfg(any(feature = "json", feature = "form"))]
 use concord_core::Body;
@@ -35,7 +81,7 @@ pub fn json<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::W
 ///
 /// A form is flat: pairs of strings. An inner `None` omits the pair too, because forms have no
 /// `null`. A list or a struct as an entry value is an error.
-/// A nested form is the convention of a particular API, and calls for your own writer.
+/// For nested maps and indexed lists, use [`bracket_form`].
 ///
 /// # Errors
 ///
@@ -120,7 +166,7 @@ mod tests {
 
     #[cfg(feature = "json")]
     #[test]
-    fn none_presence_probe_must_not_format_collect_str_values() {
+    fn checking_none_presence_does_not_format_collect_str_values() {
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,

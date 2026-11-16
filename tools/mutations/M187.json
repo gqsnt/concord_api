@@ -1,0 +1,9 @@
+{
+  "id": "M187",
+  "area": "transfer",
+  "contract": "C11.11",
+  "description": "Compare spellings without ASCII case, so a URL that would be sent lowercased is accepted",
+  "file": "concord-extras/src/transfer.rs",
+  "find": "    if parsed.as_str() != url {\n        return Err(TransferError::ChangedUrl);\n    }\n    // at_url resolves through Url::join, even for an absolute URL. Check that\n    // spelling as well; the literal authority makes it independent of the base.\n    let joined = parsed\n        .join(url)\n        .map_err(|source| TransferError::InvalidUrl(Arc::new(source)))?;\n    if joined.as_str() != url {\n        return Err(TransferError::ChangedUrl);\n    }",
+  "replace": "    if !parsed.as_str().eq_ignore_ascii_case(url) {\n        return Err(TransferError::ChangedUrl);\n    }\n    // at_url resolves through Url::join, even for an absolute URL. Check that\n    // spelling as well; the literal authority makes it independent of the base.\n    let joined = parsed\n        .join(url)\n        .map_err(|source| TransferError::InvalidUrl(Arc::new(source)))?;\n    if !joined.as_str().eq_ignore_ascii_case(url) {\n        return Err(TransferError::ChangedUrl);\n    }"
+}

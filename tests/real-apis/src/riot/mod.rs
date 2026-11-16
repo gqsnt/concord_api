@@ -3,13 +3,9 @@
 #![allow(missing_docs, dead_code, clippy::print_stdout, clippy::print_stderr)]
 
 include!("stand_ins.rs");
-#[cfg(not(test))]
-include!("stand_in_quota.rs");
-#[cfg(test)]
 mod quota {
     include!("quota.rs");
 }
-#[cfg(test)]
 pub use quota::*;
 include!("description.rs");
 

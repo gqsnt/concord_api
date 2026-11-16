@@ -1,0 +1,9 @@
+{
+  "id": "M179",
+  "area": "records",
+  "contract": "C11.9",
+  "description": "A line cut across two chunks loses its first part",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "                Poll::Ready(Some(Ok(chunk))) => self.chunk = chunk,",
+  "replace": "                Poll::Ready(Some(Ok(chunk))) => {\n                    self.chunk = chunk;\n                    self.line.clear();\n                }"
+}

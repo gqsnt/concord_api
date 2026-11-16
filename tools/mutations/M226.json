@@ -1,0 +1,9 @@
+{
+  "id": "M226",
+  "area": "request signing",
+  "contract": "C12.9",
+  "description": "A signature reads its secret from a later credential set than its access key and token.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "format!(\"AWS4{}\", credentials.secret).as_bytes(),",
+  "replace": "format!(\"AWS4{}\", self.credentials.snapshot().secret).as_bytes(),"
+}

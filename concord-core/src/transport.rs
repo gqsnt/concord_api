@@ -10,8 +10,9 @@ use std::sync::Arc;
 /// A client has one transport, set with `with_transport(yours)`; the last call wins.
 /// Every attempt and every page goes through the client's middleware first, in order,
 /// and reaches the transport with a [`TryInfo`] that names the endpoint and the attempt.
-/// For a signature, a token that is renewed, or a shared quota, write a
-/// [`Middleware`](crate::Middleware).
+/// A signature, a token that is renewed and a limit shared by the calls of a client are each a
+/// [`Middleware`](crate::Middleware), not a transport: Concord ships `concord::auth::Renewed`,
+/// `concord::auth::Rotating`, `concord::sign::SigV4` and `concord::limit::Limit`.
 ///
 /// Concord counts each trip through the chain as one attempt. Any resend that the HTTP
 /// library makes internally is below that count and follows the library's settings.
@@ -137,7 +138,7 @@ impl TransportError {
     /// Creates the error for a middleware layer or transport that rejects the request before
     /// sending. The attempts end here, and this blocked error is the result.
     ///
-    /// After a response has arrived (for example a `401` before token renewal), return that
+    /// After a response has arrived (for example a `401`), return that
     /// response or another failure instead.
     pub fn blocked() -> TransportError {
         TransportError::new(Class::Blocked)

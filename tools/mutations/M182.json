@@ -1,0 +1,9 @@
+{
+  "id": "M182",
+  "area": "records",
+  "contract": "C11.10",
+  "description": "A dropped try_next leaves the idle timer running",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "        drop(self.lines.input.try_next());",
+  "replace": "        let _ = &self.lines;"
+}

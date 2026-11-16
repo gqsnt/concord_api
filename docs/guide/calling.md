@@ -69,7 +69,7 @@ Every client has six more methods. Each returns the client with the change appli
 | `with_timeout(duration)` | The maximum duration of a whole call. No limit until this is called ([timeouts](#timeouts)). |
 | `with_idle_timeout(duration)` | How long a call may wait with no data moving. 30 seconds until this is called ([timeouts](#timeouts)). |
 | `with_base("http://localhost:8080")` | Every request goes there, whatever the `base` statements say: a local test server, a gateway, another deployment. It may include a path prefix (`"https://example.com/gitlab"`). Every entry follows it, secrets included, because the caller chose it explicitly. |
-| `with_middleware(m)` | One more middleware layer that every request passes through, before the description's middleware: logging, a limit of your own ([a middleware](extending.md#a-middleware)). |
+| `with_middleware(m)` | One more middleware layer that every request passes through, before the description's middleware: logging, a token that is renewed ([`concord::auth::Renewed`](credentials.md#a-token-that-is-renewed)), a shared limit ([`concord::limit::Limit`](retries.md#limits-shared-by-the-calls-of-a-client)), or a layer of your own ([a middleware](extending.md#a-middleware)). |
 | `with_transport(t)` | The transport that sends the requests, beneath the middleware: `concord::Http` with your own settings, your own `reqwest::Client`, a fake for tests, or another HTTP library ([testing a client](testing.md), [a transport](extending.md#a-transport)). |
 
 **The names that Concord reserves.** A child or an optional input becomes a method, so it may not take the name of a method that its receiver already has. These names are matched exactly. On a call, they are Concord's own methods (`send`, `send_raw`, `request`, `pages`, …) and `at_url`, which pagers use. On a client or a handle: `call` (reserved for future use) and `clone`; on a client, also `new`. One prefix is reserved, `with_`, and no other: Telegram's `send_message` is a name like any other. Concord adds no new name to a call, a handle or a client in a minor version, unless it starts with `with_`. A required input is an argument, so its name is free. A scope or an endpoint may not generate a type named `Error`, `Result` or `Retry` in the module of its client. See [contracts](../reference/contracts.md) C1.6 for the full table. Finally, names that begin with `__` are reserved for Concord: in a module that contains `concord::api!`, declare no item (a `const`, a `static`, a function, a type) whose name begins with `__`.
@@ -90,6 +90,102 @@ let other   = Other::new(token).with_transport(http);          // two clients sh
 Concord applies its defaults before your closure, and "no redirects" after it, so nothing in the closure can make this client follow a redirect.
 
 **A `reqwest::Client` that you bring** is used as it is, and you are responsible for what it does on its own, such as following redirects or keeping cookies. Promise [G3](promises.md#three-promises) is stated for a client that follows no redirects. [The timeouts](#timeouts) are Concord's own, and apply with any client.
+
+### Several hosts
+
+Use a separate client for each origin you trust, with credentials declared for that client. `with_base` moves every entry, secrets included, by the caller's explicit choice; `at_url` cannot move a call to another origin. A transport that rewrites a host can bypass credential checks or invalidate a signature. Concord supplies no pool, host discovery or automatic failover.
+
+The application's loop decides which reads may be repeated, which failures justify the next host and the order of those hosts. Disable engine retries on each call and put one timeout around the whole loop: a second call otherwise starts its attempt count and call timeout again. This example repeats an Algolia search or an Elasticsearch search, never a document write. It tries only separately constructed clients after a failed connection or a 502, 503 or 504; an authentication failure stops the loop. A response lost after a write does not establish that the write was not applied.
+
+```rust
+use concord::{error::Class, Retry};
+use std::{io, time::Duration};
+
+concord::api! {
+    pub client Algolia(origin: concord::Base, application: String, key: concord::Secret) {
+        base origin;
+        headers { "x-algolia-application-id" = application; "x-algolia-api-key" = key; }
+        POST search() -> serde_json::Value {
+            path "1/indexes/books/query";
+            body concord::json(serde_json::json!({"query": "rust"}));
+            idempotent; read concord::Json;
+        }
+    }
+}
+concord::api! {
+    pub client Elasticsearch(origin: concord::Base, authorization: concord::Secret) {
+        base origin;
+        headers { "authorization" = authorization; }
+        GET search() -> serde_json::Value { path "books/_search"; read concord::Json; }
+    }
+}
+
+/// Application errors retain the last call failure or the overall timeout.
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+fn next_host(error: &concord::Error) -> bool {
+    error.class() == Some(Class::Connect)
+        || matches!(
+            error.status().map(|status| status.as_u16()),
+            Some(502..=504)
+        )
+}
+
+/// Repeats this read over separately authorized clients, within one overall timeout.
+pub async fn algolia(clients: &[Algolia], budget: Duration) -> Result<serde_json::Value, BoxError> {
+    tokio::time::timeout(budget, async {
+        let mut last: BoxError = io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "No Algolia host was configured.",
+        )
+        .into();
+        for host in clients {
+            match host.search().with_retry(Retry::none()).await {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    let again = next_host(&error);
+                    last = error.into();
+                    if !again {
+                        break;
+                    }
+                }
+            }
+        }
+        Err(last)
+    })
+    .await?
+}
+
+/// Repeats an Elasticsearch search; it does not accept a document write.
+pub async fn elasticsearch(
+    clients: &[Elasticsearch],
+    budget: Duration,
+) -> Result<serde_json::Value, BoxError> {
+    tokio::time::timeout(budget, async {
+        let mut last: BoxError = io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "No Elasticsearch host was configured.",
+        )
+        .into();
+        for host in clients {
+            match host.search().with_retry(Retry::none()).await {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    let again = next_host(&error);
+                    last = error.into();
+                    if !again {
+                        break;
+                    }
+                }
+            }
+        }
+        Err(last)
+    })
+    .await?
+}
+```
+
+Construct the clients with each trusted base and its authorized credential before calling the loop. An Algolia application's read hosts and an Elasticsearch deployment's node addresses are provider and deployment choices; do not turn an untrusted discovered address into a destination for an existing key. The exact code is [several_hosts.rs](../../tests/real-apis/fixtures/recipes/several_hosts.rs), included and tested word for word by [stream_recipes.rs](../../tests/real-apis/tests/stream_recipes.rs).
 
 ### Compression, proxies and TLS
 

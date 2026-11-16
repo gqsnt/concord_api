@@ -1,5 +1,5 @@
 use concord::bytes::Bytes;
-use concord::Secret;
+use concord::{Body, Secret};
 use std::time::Duration;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -44,7 +44,8 @@ pub async fn post(slack: &Slack) -> slack::Result<()> {
 /// An upload in three steps: request a URL, send the bytes there, then share the file.
 pub async fn upload(slack: &Slack, name: &str, bytes: Bytes) -> Result<(), BoxError> {
     let ticket = slack.files().get_upload_url_external(name, bytes.len() as u64).await?;
-    upload_bytes(&ticket.upload_url, bytes).await?;
+    let bytes = Body::new(bytes, "application/octet-stream");
+    concord::transfer::at(SlackUploads::new().upload(bytes), &ticket.upload_url)?.await?;
     let file = UploadedFile { id: ticket.file_id, title: Some(name.to_owned()) };
     slack.files().complete_upload_external([file]).channel_id("C123").await?;
     Ok(())

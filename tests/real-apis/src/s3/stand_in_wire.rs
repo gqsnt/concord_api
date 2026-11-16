@@ -1,4 +1,4 @@
-// Library builds use these placeholders; tests compile `wire.rs` with `quick-xml` and `aws-sigv4`.
+// Library builds use these placeholders; tests compile `wire.rs` with `quick-xml`.
 
 /// Stand-in for the page's XML reader: it reads JSON.
 #[derive(Clone, Copy, Debug)]
@@ -16,21 +16,4 @@ pub fn create_bucket_body(
     value: &Option<CreateBucketConfiguration>,
 ) -> Result<concord::Body, concord::body::WriteError> {
     concord::json(value)
-}
-/// Stand-in for the page's signer: it signs nothing.
-pub struct Signed;
-impl Signed {
-    pub fn new(_: Credentials, _: String) -> Self {
-        Signed
-    }
-}
-impl concord::Middleware for Signed {
-    async fn handle(
-        &self,
-        request: concord::reqwest::Request,
-        info: concord::transport::TryInfo,
-        next: concord::Next<'_>,
-    ) -> Result<concord::reqwest::Response, concord::transport::TransportError> {
-        next.send(request, info).await
-    }
 }

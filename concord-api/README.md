@@ -70,6 +70,10 @@ Without `with_transport`, the client sends requests through `concord::Http`, Con
 - **Problems.** `problem E;` reads the API's own error body into your type `E`; `error.problem()` returns it.
 - **Retries.** Retries are off until you turn them on with `with_retry`. `Retry::standard()` makes at most 3 attempts, and it retries a request only when its method (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`) or `idempotent;` says that it may be repeated.
 - **Pagination.** `paginate by_offset(start);` on an endpoint adds `.pages()` and `.pages().items()` to its call. If the next page would be the same request as the one just sent, the pages end with an error.
+- **Records.** `read JsonLines::new(n);` and `read Sse::new(n);` read a stream as records, each at most `n` bytes.
+- **A token that is renewed, and limits.** `auth::Renewed` (feature `auth`) and `limit::Limit` (feature `limit`) are middleware: one renews an expiring token for all the calls that wait for it, the other holds calls after a `429` that has a `Retry-After`, and keeps budgets. Neither sends a request twice.
+- **A refresh token that rotates, and signing.** `auth::Rotating` (feature `rotating`) is for a refresh token that the server replaces at each exchange: it saves each new pair before either token is used, and the application polls its `RotationDriver`, since Concord starts no task. `sign::SigV4` (feature `sign`) signs each attempt with AWS Signature Version 4.
+- **Body writers.** Besides `json` and `form`: `bracket_form` for nested keys, `gzip`, `multipart_mixed`, `multipart_related` and `json_lines`. Each builds its body before the request is sent.
 - **Secrets.** An input of type `Secret` is sent on the wire. `Debug` and the printed error show names, never values.
 - **Timeouts.** A call ends after 30 seconds of silence from the server (`idle_timeout`). `with_timeout` bounds the whole call.
 - **Redirects.** Concord's own client follows no redirects: a `3xx` is the response.
@@ -86,8 +90,8 @@ invalid header.
 
 | Feature | What it turns on | Default |
 |---|---|---|
-| `json` | `json(x)` to write a body, `Json` to read one | on |
-| `form` | `form(x)` to write a form body | on |
+| `json` | `json(x)`, `json_lines(records, max_bytes)`, `Json`, `read::JsonLines`, `read::SseEvent::json` | on |
+| `form` | `form(x)`, `bracket_form(value)` and `bracket_pairs(value)` for forms and nested keys | on |
 | `rustls` | TLS for `concord::Http`, through `reqwest/rustls` | on |
 | `http2` | HTTP/2 for `concord::Http`, through `reqwest/http2` | on |
 | `system-proxy` | The system's proxy settings (macOS, Windows), as `reqwest` reads them | on |
@@ -95,7 +99,20 @@ invalid header.
 | `deflate` | The deflate decoder of `reqwest`, for `builder.deflate(true)` in `concord::Http::with` | off |
 | `socks` | SOCKS proxies, configured with `reqwest::Proxy` in `concord::Http::with` | off |
 | `tower` | A `tower` service as a transport: `concord::tower::Tower` | off |
-| `multipart` | `multipart()` to write a `multipart/form-data` body | off |
+| `multipart` | `multipart()`, `multipart_mixed(parts)`, `multipart_related(parts)` to write multipart bodies | off |
+| `gzip-body` | `gzip(body)` to compress a buffered request body and keep its content type | off |
+| `auth` | `auth::Renewed`, a token that expires and is renewed, and the retry rule `auth::after_401` | off |
+| `rotating` | `auth::Rotating`, a refresh token that the server replaces at each exchange, with its `RotationDriver`; turns on `auth` | off |
+| `sign` | `sign::SigV4`, AWS Signature Version 4, and `sign::body_bytes` and `sign::check_origin` for a provider's own proof | off |
+| `limit` | `limit::Limit`, limits shared by the calls of a client: a wait after a `429` that has a `Retry-After`, a cap on the calls in flight, buckets | off |
+
+`read::Sse`, `read::RecordStream` and `transfer` need no feature. A reader of records takes the
+bound of one record as its argument, with no default, and its first error ends the stream. For a
+URL that the API returned, describe that host on its own, with none of the API's credentials, and
+send its call with `transfer::at(uploads.send(bytes), &ticket.url)?`: it refuses a URL that would
+not be sent as it is written, and the engine refuses one at another origin than the base of that
+call before anything is sent. The rustdoc of each of these modules has a whole description and a call;
+for the readers of records, it is on `JsonLines` and `Sse`.
 
 The TLS stack is the application's choice. Turn `rustls` off with `default-features = false` (then list again
 the defaults you still need, such as `json`, `form`, `http2` and `system-proxy`), and give
@@ -133,7 +150,7 @@ on docs.rs once Concord is published; until then, run `cargo doc -p concord-api 
 | `concord-api` | This crate, used as `concord`. Depend on it, and on `serde`. |
 | `concord-core` | The traits and the engine. |
 | `concord-macros` | `api!`. |
-| `concord-extras` | `json`, `form`, `multipart`, the readers, the pagers, `basic`, `tower`. |
+| `concord-extras` | The body writers (`json`, `form`, `multipart` and the others), the readers, the pagers, `basic`, `auth`, `sign`, `limit`, `transfer`, `tower`. |
 | `concord-testkit` | For your tests: a scripted local server, and a transport with virtual time. |
 
 ## Minimum Rust version

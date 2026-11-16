@@ -1,0 +1,9 @@
+{
+  "id": "M212",
+  "area": "rotating token",
+  "contract": "C12.7",
+  "description": "After the owners are gone and the final save fails, the pair is dropped instead of handed back as Unsaved",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "                if let Some(error) = inner.hand_back(cause) {\n                    return Err(error);\n                }\n                return retry;",
+  "replace": "                drop(inner.hand_back(cause));\n                return retry;"
+}

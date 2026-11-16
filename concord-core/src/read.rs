@@ -13,8 +13,9 @@ use std::task::{Context, Poll};
 /// Turns the body of a response into the value. One statement of the description names a
 /// reader: `read x;`.
 ///
-/// The core has no format of its own. `concord`'s `Json`, `Text`, `Binary` and `Stream` are
-/// four readers built with this trait, and your own reader is used in the same way.
+/// The core has no format of its own. `concord`'s readers (`Json`, `Text`, `Binary`, `Stream`,
+/// and `JsonLines` and `Sse` for records) are built with this trait, and your own reader is
+/// used in the same way.
 ///
 /// ```
 /// # use concord_core as concord;

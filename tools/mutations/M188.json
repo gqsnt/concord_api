@@ -1,0 +1,9 @@
+{
+  "id": "M188",
+  "area": "transfer",
+  "contract": "C11.12",
+  "description": "Compare the origin of a returned URL without the port",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "if replacement.origin() != request.url().origin() {",
+  "replace": "if replacement.scheme() != request.url().scheme() || replacement.host_str() != request.url().host_str() {"
+}

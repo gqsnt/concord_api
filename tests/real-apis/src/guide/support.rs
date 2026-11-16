@@ -101,3 +101,6 @@ impl concord::read::Reader<ChatReply> for ChatRead {
     }
 }
 pub use concord::multipart;
+
+pub use crate::credential_signing::Proof;
+pub use concord::Base;

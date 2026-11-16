@@ -1,0 +1,9 @@
+{
+  "id": "M155",
+  "area": "auth",
+  "contract": "C11.2",
+  "description": "after_401 asks for another attempt after any client error, not only a 401",
+  "file": "concord-extras/src/auth.rs",
+  "find": "tried.status().is_some_and(|status| status == 401)",
+  "replace": "tried.status().is_some_and(|status| status.is_client_error())"
+}

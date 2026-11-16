@@ -9,13 +9,13 @@ pub mod t {
     pub fn unpack(v: Option<u64>) -> u64 {
         v.unwrap_or(0)
     }
-    pub struct Limit;
-    impl Limit {
+    pub struct PerSecond;
+    impl PerSecond {
         pub fn new(_: &u32) -> Self {
-            Limit
+            PerSecond
         }
     }
-    impl concord::Middleware for Limit {
+    impl concord::Middleware for PerSecond {
         async fn handle(
             &self,
             request: concord::reqwest::Request,
@@ -119,7 +119,7 @@ pub mod a36 {
 // 40: declare `per_second: u32`, without `?`
 pub mod a40 {
     use super::t::*;
-    concord::api! { client Tasks(per_second: u32) { base "https://a.example"; middleware Limit::new(per_second); GET get(); } }
+    concord::api! { client Tasks(per_second: u32) { base "https://a.example"; middleware PerSecond::new(per_second); GET get(); } }
 }
 // 41: write `"user-agent" = user_agent;`
 pub mod a41 {
@@ -145,10 +145,10 @@ pub mod a14 {
     use super::t::*;
     concord::api! { client Tasks { base "https://a.example"; part p(a?: u32) { query { a; } } #[cfg(test)] GET get(..p); } }
 }
-// 20 (middleware): move `middleware Limit::new(per_second);` into the client block
+// 20 (middleware): move `middleware PerSecond::new(per_second);` into the client block
 pub mod a20 {
     use super::t::*;
-    concord::api! { client Tasks(per_second: u32) { base "https://a.example"; middleware Limit::new(per_second); scope s { GET get(); } } }
+    concord::api! { client Tasks(per_second: u32) { base "https://a.example"; middleware PerSecond::new(per_second); scope s { GET get(); } } }
 }
 
 #[test]

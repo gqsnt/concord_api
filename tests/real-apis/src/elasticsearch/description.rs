@@ -78,7 +78,7 @@ concord::api! {
         /// Many writes in one request: a line of action, then a line of document, for each one.
         POST bulk(lines: Vec<Value>, ..output, ..write_options) -> BulkReply {
             path "_bulk";
-            body ndjson(lines);
+            body concord::json_lines(lines, 10 * concord::MIB);
         }
 
         /// A search in a point in time, page after page. No index in the URL: the point in time

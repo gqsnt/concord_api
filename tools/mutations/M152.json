@@ -1,0 +1,9 @@
+{
+  "id": "M152",
+  "area": "auth",
+  "contract": "C11.1",
+  "description": "Leave the credential header unmarked as sensitive",
+  "file": "concord-extras/src/auth.rs",
+  "find": "header.set_sensitive(true);",
+  "replace": "header.set_sensitive(false);"
+}

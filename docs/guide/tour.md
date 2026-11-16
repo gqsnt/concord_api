@@ -234,7 +234,7 @@ What makes it a credential is its type. A `Secret` goes on the wire and nowhere 
 headers { remove "x-riot-token"; "authorization" = "Bearer {access_token}"; }
 ```
 
-Some credentials are not a value but a process: a signature computed from each request as it is sent, or a token that your code renews. That is a middleware layer, declared on the client with `middleware`, and every request passes through it.
+Some credentials are not a value but a process: a signature computed from each request as it is sent, or a token that expires and is renewed. That is a middleware layer, and every request passes through it. The author declares one on the client with `middleware`; for a token that is renewed, Concord ships one, `concord::auth::Renewed` ([a token that is renewed](credentials.md#a-token-that-is-renewed)).
 
 ```rust
 pub client Vault(key: Secret) {
@@ -282,7 +282,8 @@ When Concord does not fit, you can go down one layer, and every layer below is p
 | You need | You write |
 |---|---|
 | Another way to read a response, write a body, or paginate | Your own value or function, named in the description. The shipped items (`Json`, `json`, `by_cursor`) are written the same way, in a crate of their own. |
-| A signature, a token that is renewed, a rate limit | A middleware layer: the author's in the description, or the caller's with `with_middleware(…)` |
+| A signature | `concord::sign::SigV4` for AWS Signature Version 4, or your own middleware layer |
+| A token that is renewed or rotates, a rate limit | The middleware layers that Concord ships: `concord::auth::Renewed`, `concord::auth::Rotating` and `concord::limit::Limit` |
 | To change one request by hand | `.edit_request(\|request\| …)` on the call |
 | The raw response | `.send_raw()` |
 | Your own HTTP settings for the transport (a certificate, a proxy) | `with_transport(concord::Http::with(\|b\| b.add_root_certificate(cert))?)` |

@@ -1,0 +1,9 @@
+{
+  "id": "M219",
+  "area": "rotating token",
+  "contract": "C12.8",
+  "description": "Debug of a TokenPair prints the refresh token",
+  "file": "concord-extras/src/auth/rotating.rs",
+  "find": "f.write_str(\"TokenPair(..)\")",
+  "replace": "write!(f, \"TokenPair({})\", self.refresh)"
+}

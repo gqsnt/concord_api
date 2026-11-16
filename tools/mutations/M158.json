@@ -1,0 +1,9 @@
+{
+  "id": "M158",
+  "area": "auth",
+  "contract": "C11.3",
+  "description": "with_token refuses a seed inside the early margin, depending on the order of the builder calls",
+  "file": "concord-extras/src/auth.rs",
+  "find": "        if first.remaining().is_zero() {\n            return Err(RenewalError::Expired);",
+  "replace": "        if first.remaining() <= self.inner.lock().policy.margin {\n            return Err(RenewalError::Expired);"
+}

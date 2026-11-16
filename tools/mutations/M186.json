@@ -1,0 +1,9 @@
+{
+  "id": "M186",
+  "area": "transfer",
+  "contract": "C11.11",
+  "description": "Refuse a URL of exactly 65,534 bytes",
+  "file": "concord-extras/src/transfer.rs",
+  "find": "if url.len() > 65_534 {",
+  "replace": "if url.len() >= 65_534 {"
+}

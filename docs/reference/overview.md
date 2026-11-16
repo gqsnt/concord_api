@@ -143,6 +143,29 @@ Each client has one error type, with four kinds. **Build**: nothing was sent. **
 
 An error keeps the status, the headers and at most 64 KiB of the body; `e.problem()` returns the API's own error in your type. It also has `e.is_status(404)`, `e.class()`, `e.tries()`, `e.retry_after()` and `e.details()`.
 
+### What ships beside the macro
+
+The macro knows none of these: each is an ordinary item of `concord`, used in a description or on a client like your own would be.
+
+| Item | What it does |
+|---|---|
+| `json(x)`, `form(x)`, `multipart()` (feature `multipart`) | Write a body. |
+| `bracket_form(value)`, `bracket_pairs(value)` (feature `form`) | Write nested maps and indexed lists as a form or unencoded query pairs. |
+| `gzip(body)` (feature `gzip-body`) | Compress buffered bytes, keeping their content type; the description sets Content-Encoding. |
+| `multipart_mixed(parts)`, `multipart_related(parts)` (feature `multipart`) | Write ordered buffered parts with their own headers; the first related part is the root. |
+| `json_lines(records, max_bytes)` (feature `json`) | Write compact JSON and LF after every record, within a whole-body byte bound. |
+| `Json`, `Text`, `Binary`, `read::Stream` | Read a body: whole, at most 10 MiB, or as a `ByteStream`. |
+| `read::JsonLines::new(n)` (feature `json`), `read::Sse::new(n)` | Read a body as records, each at most `n` bytes, into a `RecordStream`: JSON Lines, or server-sent events. |
+| `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` | Fetch the next page. |
+| `basic(user, password)` | The value of an `Authorization` header for HTTP Basic. |
+| `auth::Renewed`, `auth::after_401` (feature `auth`) | A middleware: a token that expires, renewed once for all the calls that wait for it, and sent only to the origin of its base. A retry rule for one more attempt after a `401`. |
+| `auth::Rotating` (feature `rotating`) | A middleware: a refresh token that the server replaces at each exchange. Each new pair is saved before either token is used; the application polls its `RotationDriver`. |
+| `sign::SigV4` (feature `sign`) | A middleware: AWS Signature Version 4 for each attempt, after a check of the origin; `SigV4::sign` signs one request. `sign::body_bytes` and `sign::check_origin` serve a provider's own proof. |
+| `limit::Limit` (feature `limit`) | A middleware: limits shared by the calls of a client. It waits after a `429` with `Retry-After`; it can cap the calls in flight, and keep buckets with windows known in advance or learned from the headers of responses. |
+| `transfer::at(call, url)` | A call of a second description, sent to a URL that the API returned, once the URL is checked. |
+
+Other formats use the same extension points. [Binary frames](../guide/responses-and-errors.md#binary-frames) use `LengthDelimitedCodec` on a `ByteStream`; provider checks and terminal events remain the application's responsibility. [Multipart responses and batches](../guide/responses-and-errors.md#a-multipart-response-and-its-batch) use `multer` under a whole-response bound and `multipart_mixed` for the request, keeping completed replies when a later part fails. A JSON array is read whole with `Json.limit(…)` into `Vec<T>`; Concord has no incremental JSON reader. [Several hosts](../guide/calling.md#several-hosts) use separate clients and an application loop with engine retries off and one overall timeout; Concord supplies no host pool.
+
 → [The rules](rules.md), rules 2, 11, 12, 15, 17, 20, 21, 24; [what a generated client has](crates.md#what-a-generated-client-has), in the crates; [the contracts](contracts.md), C5, C6, C8.8.
 
 ## What Concord promises
@@ -198,17 +221,17 @@ A fact of the API that every caller shares belongs in the description; state tha
 
 | Concord does not | The escape hatch |
 |---|---|
-| Sign requests, renew or obtain a token (OAuth2), limit the request rate, or share a quota | A middleware that you write. |
+| Obtain a token (OAuth2 and the like), sign with a protocol other than AWS Signature Version 4, or share a limit between processes | A middleware that you write. A token that is renewed, a refresh token that rotates, AWS Signature Version 4, and limits shared by the calls of one process ship: `concord::auth`, `concord::sign`, `concord::limit`. |
 | Retry by default | `with_retry(Retry::standard())`. |
 | Follow a redirect | An arm for the `3xx` and a second request; or your own `reqwest::Client` that follows them, outside G3. |
-| Send a stream body twice | Your own loop. |
+| Send a stream body twice | Your own loop ([a body that is a stream](../guide/retries.md#a-body-that-is-a-stream)). |
 | Follow pages to another host, or poll by repeating a request | Your own loop. |
-| Send to a full URL that the server returns | Same origin: `call.at_url(url)`. Another origin: a plain `reqwest` client, which holds none of your keys. |
+| Send a call of the API to another origin that the server returns | Same origin: `call.at_url(url)`. Another origin: a second description of that host, with none of your keys, and `concord::transfer::at(call, url)`. |
 | Send a header whose name the caller chooses (`x-amz-meta-*`) | Your own method on the call, using `.edit_request(…)`. |
 | Put a `middleware` on a scope | A middleware on the client that looks at `info.endpoint()`. |
 | Make a raw call on a handle | An endpoint, or your own method beside the generated ones. |
 | Decompress a response by default | The feature `gzip` or `deflate`, then `builder.gzip(true)` or `builder.deflate(true)` in `concord::Http::with(…)` ([compression, proxies and TLS](../guide/calling.md#compression-proxies-and-tls)); or your own reader. |
-| Split a stream into records (JSON Lines, SSE) | `read Stream;` yields the bytes, and another crate splits them into records. |
+| Read CSV records, or reconnect a stream of server-sent events | `read Stream;` yields the bytes, and another crate splits them into records; a loop of your own reconnects. |
 | Offer a blocking API | A blocking program runs it on its own Tokio runtime. |
 
 → [Scope and limits](../design/scope.md).
