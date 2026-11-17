@@ -44,6 +44,7 @@ fn hand() -> Request {
     Request::new(Method::GET, url)
 }
 fn main() {
+    c12_14_plain_stream_materialization_uses_only_legacy_claim_allocations();
     let mut c = support::criterion();
     let record = Riot::new("bench-key");
     let get_record = || {
@@ -134,4 +135,39 @@ fn main() {
         );
     }
     c.final_summary();
+}
+
+
+// Count both phases and their total so allocations cannot move outside the
+// measurement window. Ordinary materialization allocates the source list,
+// lock guards and claimed-source table; construction has its own budget.
+fn c12_14_plain_stream_materialization_uses_only_legacy_claim_allocations() {
+    struct Empty;
+    impl futures_core::Stream for Empty {
+        type Item = Result<concord::bytes::Bytes, std::io::Error>;
+        fn poll_next(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Self::Item>> {
+            std::task::Poll::Ready(None)
+        }
+    }
+    let count = support::allocations(
+        "stream/materialize/concord",
+        || concord::Body::stream(Empty),
+        |body| body.into_stream().unwrap(),
+    );
+    assert!(count <= 3, "ordinary stream materialization allocated {count} times; legacy claim machinery needs 3");
+    let built = support::allocations(
+        "stream/build/concord",
+        || (),
+        |()| concord::Body::stream(Empty),
+    );
+    let complete = support::allocations(
+        "stream/build-and-materialize/concord",
+        || (),
+        |()| concord::Body::stream(Empty).into_stream().unwrap(),
+    );
+    assert!(built <= 2, "ordinary stream construction allocated {built} times; legacy construction needs 2");
+    assert!(complete <= 5, "ordinary stream construction and materialization allocated {complete} times; legacy total is 5");
 }

@@ -18,7 +18,8 @@ use std::task::{Context, Poll};
 /// Pin the first finished request's origin after `edit_request`, before middleware;
 /// check later finished requests against it before request comparison. The separate
 /// `at_url` check runs during construction, before edits, against the origin the call
-/// builds from its base (or `with_base`). Stream bodies never compare as the same request.
+/// builds from its base (or `with_base`). One-shot stream bodies never compare as the same request.
+/// Repeatable bodies compare source identities and buffered parts without opening.
 /// On the next call returned by the pager, calls [`Call::answered_from`] with the
 /// URL of the answer the pager saw, before that call's preparation. This supplies
 /// the base for a relative `at_url` before its origin check and caller edits.
@@ -44,6 +45,7 @@ struct Sent {
     // A streaming body cannot be cloned or compared. Its absence here always
     // means different, without inspecting or consuming any of its bytes.
     request: Option<reqwest::Request>,
+    body: Option<crate::Body>,
     secrets: RequestSecrets,
 }
 
@@ -112,8 +114,10 @@ where
                     }
                     self.origin
                         .get_or_insert_with(|| prepared.request.url().clone());
+                    let (request, body) = prepared.request.comparison();
                     let sent = Sent {
-                        request: prepared.request.try_clone(),
+                        request,
+                        body,
                         secrets: prepared.secrets.clone(),
                     };
                     if let Some(last) = &self.last {
@@ -126,14 +130,21 @@ where
                                 .chain(&sent.secrets.query)
                                 .copied()
                                 .collect();
-                            if same_page_request(
-                                left,
-                                right,
-                                &query,
-                                &[],
-                                last.sent.secrets.url.as_ref(),
-                                sent.secrets.url.as_ref(),
-                            ) {
+                            let same_body = match (&last.sent.body, &sent.body) {
+                                (Some(left), Some(right)) => left.same_sources(right),
+                                (None, None) => true,
+                                _ => false,
+                            };
+                            if same_body
+                                && same_page_request(
+                                    left,
+                                    right,
+                                    &query,
+                                    &[],
+                                    last.sent.secrets.url.as_ref(),
+                                    sent.secrets.url.as_ref(),
+                                )
+                            {
                                 let error = Error::mismatch(
                                     endpoint,
                                     last.tries,
@@ -236,6 +247,7 @@ pub struct SecretUrl {
 /// including secret query pairs, are no longer known. Compare that URL as it is,
 /// without its fragment, independently of whether the other request kept its marks.
 /// Stream bodies cannot be compared as bytes and are never treated as equal here.
+/// The page machine compares repeatable source plans separately, using bodyless heads.
 pub fn same_page_request(
     left: &reqwest::Request,
     right: &reqwest::Request,

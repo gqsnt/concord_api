@@ -10,7 +10,7 @@ This page is for a developer who changes Concord. It lists the rules that the co
 |---|---|
 | `concord-core` | The traits and the engine. No format, no authentication scheme, no pager. |
 | `concord-macros` | `api!`. |
-| `concord-extras` | What ships with Concord: `json`, `form`, `multipart` and the other body writers, the readers (with `JsonLines` and `Sse` for records), the pagers, `basic`, `auth`, `sign`, `limit`, `transfer`, `tower`. Written with the public traits and helpers of the core; two items also use a hidden helper of the core: the `tower` adapter, for the URL of a response, and `gzip`, for the content type of the body it compresses. |
+| `concord-extras` | What ships with Concord: `json`, `form`, `multipart` and the other body writers, the readers (with `JsonLines` and `Sse` for records), the pagers, `basic`, `auth`, `sign`, `limit`, `transfer`, `tower`. Uses the public traits and helpers of the core. Only the `tower` adapter uses a hidden helper of the core, for the response URL. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods. |
 | `concord-api` | The facade that people depend on (package `concord-api`, library `concord`). |
 | `concord-testkit` | For tests: a scripted local server, and a scripted transport with virtual time. |
 | `tests/tour` | The test clients, written by hand as the macro would generate them: `Tasks` and `Riot` of [the tour](../guide/tour.md), and `Files`, `Feed`, `Shapes`. |
@@ -95,7 +95,7 @@ Every `Debug` of Concord's own types prints names and no value. `Debug` of an er
 |---|---|
 | A required input is forgotten | It is an argument: the call does not compile. |
 | A call is built and never sent | A warning: calls and what they return are `#[must_use]`. |
-| A call is sent twice | It does not compile: sending consumes the call. `clone()` first, on purpose. A body that is a stream is shared by the clones: the second send is a Build error, and nothing is sent ([C2.15](../reference/contracts.md)). |
+| A call is sent twice | It does not compile: sending consumes the call. `clone()` first, on purpose. A body made by `Body::stream` is shared by the clones: the second send is a Build error, and nothing is sent ([C2.15](../reference/contracts.md)). A `Body::repeatable` is opened again for each send. |
 | A secret is printed with `{:?}` | It prints `Secret(…)`. It has no `Display`. |
 | An argument of a type that is merely similar | The set of accepted arguments is sealed (`concord::arg::Arg`): a type from outside cannot add one. |
 | An arm returns a type other than the arrow's | It does not compile: an arm is a closure with the arrow's type. |
@@ -176,7 +176,7 @@ Each published crate says `rust-version = "1.96"`.
 
 ### A feature adds, and changes nothing else
 
-`json` and `form` (on by default) bring in `serde_json` and `serde_urlencoded`; `json` also gives `json_lines`, and `form` gives `bracket_form` and `bracket_pairs`; `tower` adds an adapter, `multipart` three body writers, `gzip-body` a gzip writer and `flate2`, `auth` a token that is renewed, `rotating` a refresh token that rotates (it turns on `auth`), `sign` AWS Signature Version 4 and its crates of cryptography, and `limit` limits shared by the calls of a client. The TLS stack is a feature too: the application chooses it, not the library.
+`json` and `form` (on by default) bring in `serde_json` and `serde_urlencoded`; `json` also gives `json_lines`, and `form` gives `bracket_form` and `bracket_pairs`; `tower` adds an adapter, `multipart` three body writers, `gzip-body` a gzip writer and `flate2`, `auth` a token that is renewed, `rotating` a refresh token that rotates (it turns on `auth`), `sign` AWS Signature Version 4 and its crates of cryptography, and `limit` rate limits. The TLS stack is a feature too: the application chooses it, not the library.
 
 **Why.** Two crates in one program may turn on different features of Concord. Cargo unifies them, and neither may break.
 
@@ -194,7 +194,7 @@ Each published crate says `rust-version = "1.96"`.
 |---|---|
 | One call, built | The inputs are moved in. A reference passed as an argument is cloned once. |
 | One request, built | One `reqwest::Request`. Nothing in the tree is looked up: what an endpoint inherits was worked out when the macro ran. |
-| One attempt | One copy of the request (`try_clone`), one boxed future for the transport. |
+| One attempt | One copy of the request (`try_clone`), one boxed future for the transport. With a repeatable body, one copy of the head, and one call of the function that opens the stream. |
 | One page | One clone of the call. |
 | An error | One allocation; a `Result` that holds it is one pointer wider than its value. |
 | Generated code for one endpoint | Its size and its compile time: [size and compile time](macro.md#size-and-compile-time). The methods that are the same for every call come from one macro of the core (`call_methods!`). |

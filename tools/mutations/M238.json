@@ -1,0 +1,9 @@
+{
+  "id": "M238",
+  "area": "cooperative composition",
+  "contract": "tools/mutations/README.md#c1212",
+  "description": "One poll can open every immediately empty source in a composition.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "    fn step(&self, cx: &Context<'_>) -> bool {\n        let before = self.0.load(Ordering::Relaxed);\n        if before.checked_sub(1).is_some_and(|after| {\n            self.0\n                .compare_exchange(before, after, Ordering::Relaxed, Ordering::Relaxed)\n                .is_ok()\n        }) {\n            true\n        } else {\n            cx.waker().wake_by_ref();\n            false\n        }\n    }",
+  "replace": "    fn step(&self, _cx: &Context<'_>) -> bool { true }"
+}

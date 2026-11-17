@@ -1,0 +1,9 @@
+{
+  "id": "M232",
+  "area": "body error precedence",
+  "contract": "tools/mutations/README.md#c1213",
+  "description": "A transport can hide the original upload error with its own result.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "        source.map(|source| crate::transport::TransportError::upload(SharedFailure(source)))",
+  "replace": "        source.and_then(|_| None)"
+}

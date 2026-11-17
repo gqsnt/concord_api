@@ -1,7 +1,6 @@
 concord::api! {
-pub client Archives(token: concord::Secret) {
-        base "https://api.example.com";
-        headers { "authorization" = "Bearer {token}"; }
-        GET download(id: u64) { path "archives/{id}"; }
+pub client Downloads(origin: concord::Base) {
+        base origin;
+        GET fetch() -> concord::ByteStream { read concord::read::Stream; }
     }
 }

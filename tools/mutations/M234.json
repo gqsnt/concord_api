@@ -1,0 +1,9 @@
+{
+  "id": "M234",
+  "area": "length lookahead",
+  "contract": "tools/mutations/README.md#c1213",
+  "description": "The final declared-length chunk is released without checking for excess bytes.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "                    if this.length == Some(count) {",
+  "replace": "                    if false {"
+}

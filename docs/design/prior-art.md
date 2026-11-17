@@ -63,7 +63,7 @@ All of them were read in the source of `reqwest` 0.13.5.
 | It adds `Referer` by default, and keeps no cookies by default. | `async_impl/client.rs` | Concord's own client switches `Referer` off. |
 | It sends `Accept: */*` when the request has no `Accept`. | `async_impl/client.rs` | Concord adds no `Accept` of its own (see [Describe an API](../guide/describing-an-api.md)). |
 | By default, its own retry resends only what the protocol says was not processed, at most twice. | `retry.rs`, the default builder | Left as it is. It happens below what Concord counts. |
-| `Request::try_clone` returns `None` when the body is a stream. | `async_impl/request.rs` | That is the test behind "a stream body is never sent twice". |
+| `Request::try_clone` returns `None` when the body is a stream. | `async_impl/request.rs` | That is the test behind "a `Body::stream` is never sent twice". |
 | It marks an error as a failed connection by looking for a connector's mark in the chain of causes. | `error.rs`, `is_connect` | The mark is not proven for every platform and TLS backend, so Concord infers nothing from it: a failed connection does not mean that nothing was sent. |
 | `reqwest::Url` is the `url` crate's type. | `lib.rs` | — |
 

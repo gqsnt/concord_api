@@ -1,0 +1,9 @@
+{
+  "id": "M241",
+  "area": "public stream mapping",
+  "contract": "tools/mutations/README.md#c1212",
+  "description": "A repeatable map runs while an unopened stream is materialized instead of on first polling.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "    Box::pin(futures_util::stream::once(async move { map(stream) }).flatten())",
+  "replace": "    map(stream)"
+}

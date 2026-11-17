@@ -14,9 +14,10 @@ categories = ["web-programming::http-client"]
 include = ["/src/**", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
 autobenches = false # The opt-in tools/measure package owns the allocator harness.
 
-# docs.rs builds the pages with every feature on: `cargo doc --all-features`.
+# docs.rs builds the pages with every feature on, and `--cfg docsrs` marks each item with the feature it needs.
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true

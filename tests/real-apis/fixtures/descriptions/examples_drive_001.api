@@ -1,0 +1,43 @@
+/// Google Drive API v3: files listed, read, uploaded with their metadata, changed, deleted.
+    pub client Drive(token: Secret) {
+        base "https://www.googleapis.com";
+        headers { "authorization" = "Bearer {token}"; }
+        read Json;
+        problem DriveProblem;
+
+        part listing(q?: String, page_size?: u32, page_token?: String, fields?: String) {
+            query { q; "pageSize" = page_size; "pageToken" = page_token; fields; }
+            paginate by_cursor(page_token, FileList::next_page_token);
+        }
+
+        GET list(..listing) -> FileList { path "drive/v3/files"; }
+
+        GET get(file_id: String, fields?: String) -> File {
+            path "drive/v3/files/{file_id}";
+            query { fields; }
+        }
+
+        /// The bytes of a file that is not a Google document (those are exported instead).
+        GET download(file_id: String) -> ByteStream {
+            path "drive/v3/files/{file_id}";
+            query { "alt" = "media"; }
+            read Stream;
+        }
+
+        /// The metadata and the content in one request, `multipart/related`: metadata first.
+        POST upload(metadata: NewFile, content: Body) -> File {
+            path "upload/drive/v3/files";
+            query { "uploadType" = "multipart"; }
+            body related(metadata, content);
+        }
+
+        PATCH update(file_id: String, changes: NewFile) -> File {
+            path "drive/v3/files/{file_id}";
+            body json(changes);
+        }
+
+        DELETE delete(file_id: String) {
+            path "drive/v3/files/{file_id}";
+            idempotent false;
+        }
+    }

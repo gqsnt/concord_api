@@ -7,7 +7,8 @@ use std::{error::Error, fmt};
 /// Serializes nested maps and lists as an `application/x-www-form-urlencoded` body.
 ///
 /// Maps use `a[b]`; every list uses `a[0]`, `a[1]`, including lists of scalars.
-/// Original indices survive omissions. Unit enum variants use their Serde names,
+/// An omitted element does not renumber the others: each keeps its index in the input.
+/// Unit enum variants use their Serde names,
 /// including renames; variants carrying data are rejected.
 /// Rack and Rails read `a[0]=x` as a map with the key `"0"`, so those APIs need
 /// their own writer. Keys must serialize as nonempty strings without brackets.
@@ -101,8 +102,8 @@ pub fn bracket_pairs<T: Serialize>(value: T) -> Result<Vec<(String, String)>, Wr
 
 /// A shape that bracketed form keys cannot represent.
 ///
-/// There is no lower cause. Formatting prints no key, value or Serde type name.
-/// A serializer's own failure instead remains the format cause of `WriteError`.
+/// It has no lower-level cause. Formatting prints no key, value or Serde type name.
+/// A failure of the serializer itself remains instead the format cause of `WriteError`.
 ///
 /// ```no_run
 /// fn inspect(error: &concord::Error) {
@@ -118,7 +119,7 @@ pub enum BracketFormError {
     Shape,
 }
 impl BracketFormError {
-    /// Finds this error by following the given error and its source chain.
+    /// Finds a `BracketFormError` in this error or its chain of sources.
     ///
     /// ```no_run
     /// fn inspect(error: &concord::Error) {

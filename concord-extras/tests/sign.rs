@@ -631,6 +631,11 @@ fn c12_10_credentials_and_diagnostics_hide_values_and_retain_causes() {
     assert_eq!(format!("{cause:?}"), "Failed(..)");
     assert_eq!(cause.to_string(), "The request proof failed.");
     assert_eq!(cause.source().unwrap().to_string(), "private-cause");
+    // Like the other errors of the extras, a SignError can be cloned; the clone shares the cause.
+    fn cloneable<T: Clone + Send + Sync + 'static>() {}
+    cloneable::<SignError>();
+    let copy = cause.clone();
+    assert_eq!(copy.source().unwrap().to_string(), "private-cause");
     let mut request = Request::new(Method::GET, "https://s3.test".parse().unwrap());
     *request.body_mut() = Some("bytes".into());
     let borrowed = body_bytes(&request).unwrap();

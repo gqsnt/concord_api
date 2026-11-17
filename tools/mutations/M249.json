@@ -1,0 +1,9 @@
+{
+  "id": "M249",
+  "area": "multipart stream failure documentation",
+  "contract": "tools/mutations/README.md#c1213",
+  "description": "Omit the boundary scanner failure text from the multipart stream documentation.",
+  "file": "concord-extras/src/multipart.rs",
+  "find": "    /// text `multipart boundary occurred in a stream part`. For a repeatable body,",
+  "replace": "    /// text identifying the boundary collision. For a repeatable body,"
+}

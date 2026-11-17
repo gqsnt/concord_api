@@ -301,8 +301,8 @@ When Concord does not fit, you can go down one layer, and every layer below is p
 - [How Concord sees an API](model.md): the few ideas behind the language.
 - [Describe an API](describing-an-api.md): every statement, with its rules.
 - [Call a client](calling.md): arguments, options, the client's settings, timeouts.
-- [Read responses and errors, send bodies](responses-and-errors.md).
-- [Credentials and middleware](credentials.md), [retries](retries.md), [pages](pages.md).
+- [Read responses and errors](responses-and-errors.md), [send a body](bodies.md).
+- [Credentials](credentials.md), [middleware](middleware.md), [retries](retries.md), [rate limits](limits.md), [pages](pages.md).
 - [Testing a client](testing.md).
-- [What Concord promises](promises.md), [When Concord does not cover what you need](extending.md), and [troubleshooting](troubleshooting.md).
+- [What Concord promises](promises.md), [When Concord does not cover what you need](extending.md), [recipes](recipes.md), and [troubleshooting](troubleshooting.md).
 - Why it is this way: [why Concord](../design/why.md).

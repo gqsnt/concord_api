@@ -843,6 +843,23 @@ fn c2_16_a_content_type_that_is_not_a_legal_header_value_is_the_error_of_finish(
 }
 
 #[test]
+fn c2_16_the_error_of_finish_is_found_in_a_build_error_with_its_cause() {
+    let mut draft = post();
+    draft.body(multipart().file("f", "a.bin", "a\nb", vec![0u8]).finish());
+    let error = finish(draft, "tasks.create").expect_err("a Build error");
+    assert_eq!(error.kind(), concord::error::Kind::Build);
+    let found = MultipartError::find(&error).expect("the writer's error is in the chain");
+    assert!(matches!(found, MultipartError::ContentType(_)), "{found:?}");
+    let cause = std::error::Error::source(found).expect("the header error is the source");
+    assert!(cause
+        .downcast_ref::<concord::http::header::InvalidHeaderValue>()
+        .is_some());
+    // The other causes keep no lower-level error.
+    assert!(std::error::Error::source(&MultipartError::Name).is_none());
+    assert!(std::error::Error::source(&MultipartError::Randomness).is_none());
+}
+
+#[test]
 fn c2_16_in_memory_the_same_inputs_give_the_same_bytes() {
     let make = || {
         multipart()

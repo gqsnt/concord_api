@@ -1,0 +1,9 @@
+{
+  "id": "M243",
+  "area": "outer cancellation ordering",
+  "contract": "tools/mutations/README.md#c1214",
+  "description": "Author cleanup runs before outer cancellation when the root body is retained elsewhere.",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "            let mut attempt = std::pin::pin!(attempt);\n            let cancel = observed.cancel_on_drop();",
+  "replace": "            let cancel = observed.cancel_on_drop();\n            let mut attempt = std::pin::pin!(attempt);"
+}

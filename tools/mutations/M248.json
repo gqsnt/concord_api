@@ -1,0 +1,9 @@
+{
+  "id": "M248",
+  "area": "idle timeout handover tie",
+  "contract": "tools/mutations/README.md#c1214",
+  "description": "An empty repeatable opener ready at its idle deadline is handed to the transport after validation.",
+  "file": "concord-core/src/middleware.rs",
+  "find": "                let last = *progress\n                    .lock()\n                    .unwrap_or_else(std::sync::PoisonError::into_inner);\n                if last\n                    .checked_add(run.idle())\n                    .is_some_and(|end| Instant::now() >= end)\n                {\n                    return Err(TransportError::clock(run.idle_timeout()));\n                }\n",
+  "replace": ""
+}

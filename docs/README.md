@@ -10,23 +10,28 @@ These pages are for anyone who uses Concord or is considering it. Find the page 
 |---|---|
 | try it | [Concord in ten minutes](guide/tour.md): describe, call and test, code first. |
 | describe an API | [Describe an API](guide/describing-an-api.md): every statement, with its rules; first, [How Concord sees an API](guide/model.md). |
-| call it and handle the result | [Call a client](guide/calling.md), then [Read responses and errors, send bodies](guide/responses-and-errors.md). |
-| send a key, a token or a signature, or renew a token that expires | [Credentials and middleware](guide/credentials.md); for a token that expires, [a token that is renewed](guide/credentials.md#a-token-that-is-renewed); for a refresh token that the server replaces at each exchange, [a refresh token that rotates](guide/credentials.md#a-refresh-token-that-rotates). |
-| retry after a failure, or limit the calls to an API | [Retries](guide/retries.md); for a limit, [limits shared by the calls of a client](guide/retries.md#limits-shared-by-the-calls-of-a-client). |
+| call it and handle the result | [Call a client](guide/calling.md), then [Read responses and errors](guide/responses-and-errors.md). |
+| send a key, a token or a signature, or renew a token that expires | [Credentials](guide/credentials.md); for a token that expires, [a token that is renewed](guide/credentials.md#a-token-that-is-renewed); for a refresh token that the server replaces at each exchange, [a refresh token that rotates](guide/credentials.md#a-refresh-token-that-rotates). |
+| sign each request: AWS Signature Version 4, or a provider's own HMAC proof | [Credentials](guide/credentials.md#a-signature): a signature. |
+| add a layer that every request passes through, or know in which order the layers run | [Middleware](guide/middleware.md): the rules of every layer, and their order. |
+| retry after a failure, or limit the calls to an API | [Retries](guide/retries.md); for a limit, [Rate limits](guide/limits.md). |
 | fetch a paginated list | [Pages](guide/pages.md). |
-| read JSON Lines or server-sent events | [Read responses and errors, send bodies](guide/responses-and-errors.md#a-stream-of-records): a stream of records. |
-| read binary frames or a multipart response | [Read responses and errors, send bodies](guide/responses-and-errors.md#binary-frames): binary frames, and a multipart response and its batch. |
-| send a nested form, a gzip body, MIME parts or JSON Lines | [When Concord does not cover what you need](guide/extending.md#extension-points-and-escape-hatches): the shipped writers, and your own. |
+| read JSON Lines or server-sent events | [Read responses and errors](guide/responses-and-errors.md#a-stream-of-records): a stream of records. |
+| read binary frames or a multipart response | [Recipes](guide/recipes.md#binary-frames): binary frames, and a multipart response and its batch. |
+| upload a large file, and send it again after a failure | [Send a body](guide/bodies.md#a-body-that-is-opened-again-for-each-attempt): a body that is opened again for each attempt, or [a body that is a stream](guide/bodies.md#a-body-that-is-a-stream), sent again by a loop of your own. To an upload URL that the API returned: [a URL that the API returned](guide/extending.md#a-url-that-the-api-returned). |
+| send a nested form, a gzip body, MIME parts or JSON Lines | [Send a body](guide/bodies.md#the-shipped-writers): the shipped writers; for your own, [a writer of bodies](guide/extending.md#a-writer-of-bodies). |
 | send to a URL that the API returned | [When Concord does not cover what you need](guide/extending.md#a-url-that-the-api-returned): a URL that the API returned. |
 | follow a redirect that the API documents | [When Concord does not cover what you need](guide/extending.md#a-documented-download-redirect): a documented download redirect. |
-| send the same read to several hosts | [Call a client](guide/calling.md#several-hosts): several hosts, one client for each. |
+| send the same read to several hosts | [Recipes](guide/recipes.md#several-hosts): several hosts, one client for each. |
 | set a timeout | [Call a client](guide/calling.md#timeouts): the idle timeout and the call timeout. |
 | decompress responses, use a SOCKS proxy, choose TLS | [Call a client](guide/calling.md#compression-proxies-and-tls): the features of `concord-api`. |
 | write tests | [Testing a client](guide/testing.md): a fake transport, a scripted transport on virtual time, a local server. |
 | fix "it does not compile" or "the call failed" | [Troubleshooting](guide/troubleshooting.md), then [The messages](reference/messages.md). |
+| see what ships beside the macro, and when to use which | [What ships beside the macro](guide/extending.md#what-ships-beside-the-macro): each item, the feature that turns it on, and when to use it. |
+| copy a complete recipe | [Recipes](guide/recipes.md): the seven recipes, with the crates that each one needs and the test that runs it. |
 | do something Concord does not cover | [When Concord does not cover what you need](guide/extending.md): every extension point and escape hatch, with code. |
 | look up a rule, a message or a status case | [The rules](reference/rules.md), [The messages](reference/messages.md), [The cases](reference/cases.md), [The grammar](reference/grammar.md). |
-| see a real API | [Real APIs](examples/README.md): GitHub, Riot, S3, Stripe, Kubernetes, Slack, Telegram, Elasticsearch. |
+| see a real API | [Real APIs](examples/README.md): GitHub, Riot, S3, Stripe, Kubernetes, Slack, Telegram, Elasticsearch, Anthropic, Google Drive. |
 | know exactly how it works inside | [The engine](internals/engine.md), [The macro](internals/macro.md): how one call runs, and how the code is generated. |
 | know why it is designed this way | [Why Concord](design/why.md), [Alternatives](design/alternatives.md), [Scope and limits](design/scope.md), [Prior art](design/prior-art.md). |
 | know what Concord guarantees | [What Concord promises](guide/promises.md): what Concord guarantees, and where each guarantee stops. |
@@ -38,15 +43,19 @@ These pages are for anyone who uses Concord or is considering it. Find the page 
 1. [Concord in ten minutes](guide/tour.md): the whole library, one idea at a time, code first.
 2. [How Concord sees an API](guide/model.md): the request and the response, the tree of nodes, placement and behaviour.
 3. [Describe an API](guide/describing-an-api.md): signatures, blocks, parts, middleware, and the details.
-4. [Call a client](guide/calling.md): arguments, options, settings, return values and errors, timeouts.
-5. [Read responses and errors, send bodies](guide/responses-and-errors.md): readers, records, binary frames, multipart responses, status arms, the API's own error, request bodies.
-6. [Credentials and middleware](guide/credentials.md): secrets, where they are placed, why a secret stays with its base, signatures, a token that is renewed, a refresh token that rotates.
-7. [Retries](guide/retries.md): when a request is retried, a key made for one write, policies, your own rules, a body that is a stream, limits shared by the calls.
-8. [Pages](guide/pages.md): `paginate`, the shipped pagers, your own pager.
-9. [Testing a client](guide/testing.md): a fake transport, a scripted transport on virtual time, a local server.
-10. [What Concord promises](guide/promises.md): the promises, the safe defaults, logging, the limits.
-11. [When Concord does not cover what you need](guide/extending.md): extension points (body writers, readers, pagers, middleware, transports), a URL that the API returned, and the raw escape hatches.
-12. [Troubleshooting](guide/troubleshooting.md): the first stop when a description does not compile or a call fails.
+4. [Call a client](guide/calling.md): arguments, options, settings, return values and errors, timeouts, a call that is dropped.
+5. [Read responses and errors](guide/responses-and-errors.md): readers, records, status arms, the API's own error.
+6. [Send a body](guide/bodies.md): the two forms of `body`, the shipped writers, a body that is opened again for each attempt, a body that is a stream.
+7. [Credentials](guide/credentials.md): secrets, where they are placed, why a secret stays with its base, signatures, a token that is renewed, a refresh token that rotates.
+8. [Middleware](guide/middleware.md): what every request passes through, the rules of every layer and their order, what the shipped layers have in common, middleware or transport.
+9. [Retries](guide/retries.md): when a request is retried, a key made for one write, policies, your own rules.
+10. [Rate limits](guide/limits.md): a wait after a `429`, a cap on the requests in flight, buckets, who shares a limit.
+11. [Pages](guide/pages.md): `paginate`, the shipped pagers, your own pager.
+12. [Testing a client](guide/testing.md): a fake transport, a scripted transport on virtual time, a local server.
+13. [What Concord promises](guide/promises.md): the promises, the safe defaults, logging, the limits.
+14. [When Concord does not cover what you need](guide/extending.md): what ships beside the macro and when to use which, extension points (body writers, readers, pagers, middleware, transports), a URL that the API returned, and the raw escape hatches.
+15. [Recipes](guide/recipes.md): the index of every recipe; binary frames, a multipart response and its batch, several hosts.
+16. [Troubleshooting](guide/troubleshooting.md): the first stop when a description does not compile or a call fails.
 
 **[reference/](reference)**: for looking things up.
 
@@ -60,7 +69,7 @@ These pages are for anyone who uses Concord or is considering it. Find the page 
 
 **[examples/](examples)**: real APIs, described in the language.
 
-- [Real APIs](examples/README.md), and one page for each: [GitHub](examples/github.md), [Riot Games](examples/riot.md), [an object store like Amazon S3](examples/s3.md), [Stripe](examples/stripe.md), [Kubernetes](examples/kubernetes.md), [Slack](examples/slack.md), [Telegram](examples/telegram.md), [Elasticsearch](examples/elasticsearch.md).
+- [Real APIs](examples/README.md), and one page for each: [GitHub](examples/github.md), [Riot Games](examples/riot.md), [an object store like Amazon S3](examples/s3.md), [Stripe](examples/stripe.md), [Kubernetes](examples/kubernetes.md), [Slack](examples/slack.md), [Telegram](examples/telegram.md), [Elasticsearch](examples/elasticsearch.md), [Anthropic](examples/anthropic.md), [Google Drive](examples/drive.md).
 
 **[internals/](internals)**: how Concord works inside, for when you need the exact details or want to change it.
 

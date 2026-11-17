@@ -1,8 +1,13 @@
-//! Process-local limits shared by the calls of a client (feature `limit`).
+//! Limits shared by the calls of a client: [`Limit`], a middleware layer (feature `limit`).
 //!
-//! Configure it fully, then clone; clones share one admission state. Start with
-//! [`Limit::new`] to hold later calls after a 429 with `Retry-After`. No local rate
-//! or concurrency cap is guessed, and the response is returned unchanged.
+//! A `Limit` decides when a request may leave. It never sends a request twice and
+//! never changes a response. [`Limit::new`] alone makes the requests after a `429`
+//! wait until its `Retry-After` has passed; it guesses no rate and no cap of its own.
+//! [`max_in_flight`](Limit::max_in_flight) caps the requests in progress. A [`Bucket`]
+//! adds one budget of the API, with windows known in advance or read from each response.
+//!
+//! Clones of a `Limit` share one state: configure it fully, then give a clone to each
+//! client that spends the same budget. The state lives in one process.
 //!
 //! ```no_run
 //! use concord::limit::Limit;
@@ -17,28 +22,39 @@
 //! }
 //! ```
 //!
-//! `Retry-After` is read with [`concord_core::Headers::retry_after`]: seconds or an
-//! HTTP date; zero, a past date or unreadable text holds nothing. The middleware
-//! never resends. An attempt repeated by the engine waits behind the same gates
-//! and is charged like any other call.
+//! # After a `429`
 //!
-//! Add a concurrency cap when needed. Its permit lasts until response-body EOF,
-//! error or drop, including time when the body is unread:
+//! `Retry-After` is read with [`concord_core::Headers::retry_after`]: seconds or an
+//! HTTP date. Zero or a past date makes no request wait. A missing or unreadable value
+//! makes requests wait for the time set with [`Limit::without_retry_after`], or not at
+//! all when none is set. The limit
+//! never resends a request. When the engine retries a call, the new attempt waits for
+//! the same limits and is counted like any other request.
+//!
+//! # A cap on concurrency
+//!
+//! Add a cap when you need one. A request keeps its place until its response body has
+//! been read to the end, fails or is dropped, so the place stays taken while the body is unread:
 //!
 //! ```no_run
 //! let limit = concord::limit::Limit::new().max_in_flight(4);
 //! ```
 //!
-//! Admission waits last at most 60 seconds by default. Change that allowance with
-//! `max_hold`; the call timeout remains an independent bound:
+//! # The longest wait
+//!
+//! A request waits at most 60 seconds by default before it may leave. Change that limit
+//! with `max_hold`; the call timeout still applies on its own:
 //!
 //! ```no_run
 //! let limit = concord::limit::Limit::new()
 //!     .max_hold(std::time::Duration::from_secs(10));
 //! ```
 //!
-//! To enforce a known local rate, add a bucket with a rolling window. The key
-//! function puts each call in an allowance; returning `None` skips the bucket:
+//! # Buckets
+//!
+//! To enforce a rate known in advance, add a bucket with a rolling window. The key
+//! function assigns each request to a budget; returning `None` leaves the request out
+//! of the bucket:
 //!
 //! ```no_run
 //! use concord::limit::{Bucket, Limit, Window};
@@ -47,9 +63,10 @@
 //!     .window(Window::rolling(10, Duration::from_secs(1))));
 //! ```
 //!
-//! When the server announces its budget, add a learner instead. [`counts`] reads
-//! paired capacity/count headers; [`remaining`] reads a capacity, units left and
-//! a Unix reset date. Each bucket can also set its own cost (one by default).
+//! When the server announces its budget, have the bucket learn it from each response
+//! instead. [`counts`] reads paired headers of capacities and counts; [`remaining`] reads
+//! a capacity, the units left and a reset date in Unix seconds. Each bucket can also set
+//! its own cost (one by default).
 //!
 //! ```no_run
 //! use concord::limit::{Bucket, Limit, counts};
@@ -57,10 +74,10 @@
 //!     .learn(counts("x-limit", "x-count")));
 //! ```
 //!
-//! Several allowances can apply to one call. Here application and method buckets
-//! on each host learn two windows each from four headers. Each definition owns its
-//! key, windows, learning, cost and 429 selector; equal key text in different
-//! definitions still identifies separate allowances.
+//! Several budgets can apply to one request. Here, an application bucket and a method
+//! bucket on each host learn two windows each, from four headers. Each bucket owns its
+//! key, windows, `learn` function, cost and `hit_when` function; the same key string
+//! returned by two different buckets still names two separate budgets.
 //!
 //! ```no_run
 //! use concord::limit::{Bucket, Limit, counts};
@@ -89,44 +106,59 @@
 //! }
 //! ```
 //!
-//! A 429 with `Retry-After` holds every selected bucket without `hit_when` and
-//! every selected bucket whose `hit_when` returns true. If it holds no bucket,
-//! every call through the limit waits behind a global gate.
+//! A `429` with `Retry-After` makes requests wait on each bucket that counted the
+//! request and has no `hit_when`, and on each such bucket whose `hit_when` returns true.
+//! If the `429` is about none of these buckets, every request through the limit waits.
 //!
-//! All selected windows reserve their bucket's cost atomically or none do. No
-//! dispatched cost is refunded after a failure or cancellation. A bucket with no
-//! known window admits one discovery call at a time, releasing the next after
-//! learning from the response head, or on failure or drop before that; it does not
-//! wait for the body. The first discovery cannot be proved to fit an unseen budget.
-//! A fixed window refills once to its whole capacity at the stated reset and stays
-//! known; it does not return to discovery or invent another reset.
+//! # What holds for every bucket
+//!
+//! A request reserves its cost in all the windows of its buckets at once, or in none.
+//! Cost spent by a request that was sent is not given back after a failure or a
+//! cancellation. For each key of a bucket with no known window, one request at a time
+//! may leave to learn the windows. The next request of that key may leave once the
+//! response head has been learned from, or once the first request fails or is dropped
+//! before that, and only if the other limits allow it. It does not wait for the body.
+//! Nothing can prove that this first request fits a budget not yet seen. A fixed window
+//! refills once to its whole capacity at the stated reset; it invents no other reset.
+//! Once a learned fixed window's refill cannot pay a request within its capacity, and no
+//! request awaiting its head reports a newer reset, that window is no longer known.
+//! Its key returns to one learning request at a time; other windows still apply. A fixed
+//! window set in advance stays known and needs another reset from a response before it
+//! can send again.
 //!
 //! Missing or unreadable headers teach nothing. Learning never turns a received
-//! response into a failed call: spent quota stays spent and valid `Retry-After`
-//! still gates. Key and cost panics unwind before admission without changing shared
-//! state. If any learner or selector panics, nothing from that response is learned;
-//! a panicking 429 selector counts as a hit. Callbacks run outside the state lock,
-//! so a panic never strands other calls or makes the limit unusable. No panic
-//! payload enters diagnostics; the author's panic hook still runs. No task is started.
+//! response into a failed call: spent quota stays spent, and a valid `Retry-After`
+//! still makes requests wait. A panic in a key or cost function unwinds before the
+//! request is let through, without changing the shared state. If any `learn` or
+//! `hit_when` function panics, nothing from that response is learned; a panicking
+//! `hit_when` counts as a match. These functions run outside the lock on the state, so a
+//! panic never blocks other calls or makes the limit unusable. No panic payload enters
+//! diagnostics; the author's panic hook still runs. The limit starts no task.
 //!
-//! Retained state defaults to 1024 bucket-definition/key pairs across all buckets,
-//! bounded by `max_keys`. When room is needed, a key holding no unexpired quota
-//! debt, no active 429 hold and no call in flight (through body end, including
-//! discovery awaiting its first response) is forgotten. Learned windows are then
-//! rediscovered; configured windows still apply. Other bounds are constants:
-//! 8 windows per bucket, 512 UTF-8 bytes per key, 4096 history entries per window.
-//! On 64-bit Linux, one key's retained payload is at most 1,049,984 bytes:
+//! # Memory
+//!
+//! By default the limit keeps state for at most 1024 pairs of bucket and key, across
+//! all buckets; `max_keys` sets that bound. When it needs room, it forgets a key that
+//! holds no unexpired quota debt, no active wait after a `429` and no request in progress
+//! (until the end of its body, including a first request still awaiting its response).
+//! Learned windows are then learned again; configured windows still apply. Other bounds
+//! are constants: 8 windows per bucket, 512 UTF-8 bytes per key, 4096 history entries
+//! per window. On 64-bit Linux, one key's retained payload is at most 1,049,984 bytes:
 //! 512 key bytes + 128 bytes for the map entry + 8 × (96 window bytes +
-//! 4096 × 32 debit bytes). Hash-table spare slots, allocator metadata, shared
-//! policy and caller-owned calls/bodies are additional to this payload bound.
-//! Full histories merge their two oldest entries at the later expiry, conservatively, and never fail calls.
-//! A static policy violation takes precedence over exceeding `max_keys`. Invalid
-//! learned windows teach nothing. Callbacks bound their own temporary allocations.
+//! 4096 × 32 debit bytes). Spare slots of the hash table, allocator metadata, the shared
+//! settings and the calls and bodies owned by the caller come on top of this bound.
+//! A full history merges its two oldest entries at the later expiry, which errs on the
+//! safe side and never fails a call. A configuration that breaks a rule takes precedence
+//! over exceeding `max_keys`. Invalid learned windows teach nothing. The `learn`,
+//! `hit_when`, key and cost functions bound their own temporary allocations.
 //!
-//! Share one limit for the same local allowance. Other processes and independent
-//! values are not coordinated, and body-only budgets are unseen. The Tower adapter
-//! can also enforce a local rate; its readiness wait counts as transport idle time,
-//! and its usual concurrency layer ends at the response head.
+//! # What a limit does not cover
+//!
+//! Share one limit across all clients that spend the same budget: a limit does not
+//! coordinate with other processes or with separate `Limit` values, and it cannot see a
+//! budget that the server reports only in the body. The Tower adapter can also enforce a
+//! rate on your side; its wait for readiness counts as idle time of the transport, and
+//! Tower's usual concurrency layer releases its place at the response head.
 
 use concord_core::http::{HeaderMap, StatusCode};
 use concord_core::reqwest::{Request, Response};
@@ -146,7 +178,9 @@ type Cost = dyn Fn(&RequestInfo<'_>) -> u64 + Send + Sync;
 type Learn = dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync;
 type Hit = dyn Fn(&Seen<'_>) -> bool + Send + Sync;
 
-/// Request context for key and cost functions, with room for additional inputs.
+/// What a key or cost function receives: the built request and its endpoint.
+///
+/// More inputs may be added later.
 ///
 /// ```no_run
 /// fn endpoint(call: &concord::limit::RequestInfo<'_>) -> &'static str { call.info().endpoint() }
@@ -157,7 +191,7 @@ pub struct RequestInfo<'a> {
 }
 
 impl RequestInfo<'_> {
-    /// Borrows the built request; the callback cannot edit it.
+    /// Returns the built request, read-only: the function cannot change it.
     ///
     /// ```no_run
     /// fn host(call: &concord::limit::RequestInfo<'_>) -> Option<String> {
@@ -168,7 +202,7 @@ impl RequestInfo<'_> {
         self.request
     }
 
-    /// Borrows the endpoint identity and attempt number.
+    /// Returns the endpoint's identity and the number of this attempt.
     ///
     /// ```no_run
     /// fn attempt(call: &concord::limit::RequestInfo<'_>) -> u32 { call.info().number() }
@@ -184,12 +218,19 @@ impl fmt::Debug for RequestInfo<'_> {
     }
 }
 
-/// Configure it fully, then clone; clones share one bucket definition.
+/// Describes a budget for each key: which requests it counts, its windows, and which `429` is about it.
 ///
-/// A definition combines its key, initial windows, learning, cost and 429 selector.
-/// Admission state belongs to its containing `Limit`. The same text returned by
-/// different definitions identifies separate allowances. `None` or a zero cost
-/// skips this bucket entirely, including discovery and per-bucket gating.
+/// A bucket combines its key function, the windows known in advance, its `learn`
+/// function, its cost and its `hit_when` function. A key of `None` or a cost of zero
+/// leaves the request out of this bucket entirely: the request neither waits for the
+/// first response of the bucket nor waits after a `429` about the bucket. Each pair of
+/// a bucket and a key has its own budget, so the same key string returned by two
+/// different buckets names two separate budgets, and [`Limit::max_keys`] counts these
+/// pairs.
+///
+/// A clone is independent: it copies the windows and shares only the key, cost, `learn`
+/// and `hit_when` functions, which cannot change, so configuring a clone never changes
+/// another. What a bucket has spent and learned belongs to the `Limit` it is added to.
 ///
 /// ```no_run
 /// use concord::limit::{Bucket, Window};
@@ -208,12 +249,15 @@ pub struct Bucket {
 }
 
 impl Bucket {
-    /// Selects a request's key; `None` means this bucket does not charge it.
-    /// Default cost is one, initial windows are unknown, and every 429 selects it.
-    /// A key or cost panic unwinds this call before changing admission state;
-    /// other calls can continue using the limit.
-    /// With no known window, the next discovery starts after the response head
-    /// has been learned, or after an earlier failure or drop, without waiting for its body.
+    /// A bucket whose function names the budget of each request; `None` leaves the request out.
+    ///
+    /// By default the cost is one, no window is known, and every `429` is about this
+    /// bucket. A panic in the key or cost function unwinds that call before the state
+    /// of the limit changes; other calls can go on using the limit. While a key has no
+    /// known window, one request of that key at a time may leave: the next one may leave
+    /// once the response head has been learned from, or once the earlier request has
+    /// failed or been dropped, and only if the other limits allow it. It does not wait for
+    /// the body.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|call| Some(call.info().endpoint().into()));
@@ -229,7 +273,7 @@ impl Bucket {
         }
     }
 
-    /// Adds an initial window; repeated calls add more, up to eight.
+    /// Adds a window known in advance; call it again to add more, up to eight.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|_| Some("requests".into()))
@@ -241,19 +285,29 @@ impl Bucket {
         self
     }
 
-    /// Interprets a response for this bucket. An empty result teaches nothing.
+    /// Sets the function that reads the windows from each response.
     ///
-    /// Results describe a complete ordered set of windows; stable positions identify
-    /// windows across responses and initial configuration. Header helpers preserve
-    /// that order by sorting rolling periods. Incompatible, oversized or invalid
-    /// results are ignored as a whole. Learned availability can only tighten an
-    /// active window, accounting for other in-flight costs; older resets are ignored.
-    /// No learning result fails the responding call or permanently blocks a key.
-    /// Without `remaining`, the responding call's cost is counted against capacity.
-    /// If any learner or selector panics, all learning from that response is
-    /// discarded, the response is returned, and other calls can continue.
-    /// Discovery is released after learning the head, without waiting for its body;
-    /// failure or drop before the head also releases it. The author's panic hook still runs.
+    /// By default a bucket learns nothing. An empty list teaches nothing.
+    ///
+    /// The list describes every window of the bucket, in order: a window's position
+    /// identifies it across responses and the windows set with [`window`](Self::window).
+    /// The header helpers keep that order by sorting rolling periods. A list that is
+    /// incompatible, too large or invalid is ignored as a whole. What is learned can
+    /// only tighten an active window, taking into account the cost of other requests in
+    /// progress; an older reset is ignored. No result fails the request that received
+    /// the response. A learned fixed window whose refill cannot pay a request within
+    /// its capacity and has no newer reset becomes unknown again once the outstanding
+    /// heads have arrived, or their requests failed or were dropped; its key returns to
+    /// one learning request at a time (see [`Window`]).
+    /// For a window without `remaining`,
+    /// the cost of the request that received the response is counted against the capacity.
+    ///
+    /// If any `learn` or `hit_when` function panics, everything learned from that
+    /// response is discarded, the response is still returned, and other calls go on.
+    /// The author's panic hook still runs. While a key has no known window, the next
+    /// request of that key may leave once the head has been learned from, without waiting
+    /// for the body, or after a failure or drop before the head; the other limits still
+    /// apply.
     ///
     /// ```no_run
     /// use concord::limit::{Bucket, Window};
@@ -270,9 +324,12 @@ impl Bucket {
         }
     }
 
-    /// Computes this bucket's cost; zero skips the bucket, and the default is one.
-    /// Different buckets can count the same call as points and requests respectively.
-    /// A cost panic unwinds this call before admission without stranding other calls.
+    /// Sets the function that computes this bucket's cost for a request.
+    ///
+    /// The cost is one by default; a cost of zero leaves the request out of the bucket.
+    /// Two buckets can count the same request differently, one in points and the other
+    /// in requests. A panic in the function unwinds that call before the request is let
+    /// through, without blocking other calls.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|_| Some("points".into())).cost(|call| {
@@ -287,10 +344,14 @@ impl Bucket {
         }
     }
 
-    /// Selects this bucket for a 429/`Retry-After` hold. With no selector it is selected.
-    /// If no selected bucket is hit, the limit applies a global hold instead.
-    /// A selector panic conservatively counts as a hit, discards all learning
-    /// from that response, and still returns the response; other calls can continue.
+    /// Says which `429` is about this bucket; without it, every `429` is.
+    ///
+    /// The wait that a `429` imposes (its `Retry-After`, or the wait set by
+    /// [`Limit::without_retry_after`]) applies to this bucket when the function returns
+    /// true. If the `429` is about none of the buckets that counted the request, every
+    /// request through the limit waits instead. A panic in the function counts as a
+    /// match, to be safe; it discards everything learned from that response, and the
+    /// response is still returned. Other calls go on.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|_| Some("application".into()))
@@ -311,17 +372,25 @@ impl fmt::Debug for Bucket {
     }
 }
 
-/// Configure it fully, then clone; clones share this window's policy.
+/// One window of a budget: at most a number of units in a period, rolling or fixed.
 ///
-/// A rolling window retains every local or observed debit for a full period. A
-/// fixed window refills once to its whole capacity at its stated reset and stays
-/// known, with no invented repeating period or return to serial discovery.
-/// If that refilled budget is spent before another reset is learned, its wait is
-/// unknown and bounded by `max_hold`.
-/// `Debug` prints no settings. Initial invalid windows fail before dispatch;
-/// invalid windows returned by learning teach nothing.
+/// A rolling window keeps every unit spent, counted here or reported by the server,
+/// for a full period. A fixed window refills once to its whole capacity at its stated
+/// reset; it invents no repeating period. A learned fixed window becomes unknown again
+/// once its refill cannot pay a request within its capacity and no outstanding head
+/// reports a newer reset.
+/// Its key returns to one learning request at a time, under the other windows, and can
+/// be forgotten when it holds nothing. A fixed window set with [`Bucket::window`] stays
+/// known: once its refill is spent, it needs another reset from a response. Without one,
+/// each further request fails with `MaxHold` after waiting `max_hold`.
 ///
-/// A known fixed rate needs no response-header reader:
+/// An invalid window added with [`Bucket::window`] fails the request before it is sent;
+/// an invalid window returned by `learn` teaches nothing. `Debug` prints no settings.
+///
+/// A clone is independent: it copies the window's settings, so configuring a clone
+/// never changes the original.
+///
+/// A rate known in advance needs no function to read the response headers:
 ///
 /// ```no_run
 /// use concord::limit::{Bucket, Limit, Window};
@@ -353,7 +422,7 @@ enum Kind {
 }
 
 impl Window {
-    /// Allows at most `capacity` units in any `period`. Both must be positive.
+    /// A rolling window: at most `capacity` units in any `period`. Both must be positive.
     ///
     /// ```no_run
     /// let window = concord::limit::Window::rolling(10, std::time::Duration::from_secs(1));
@@ -367,11 +436,13 @@ impl Window {
         }
     }
 
-    /// Describes a fixed budget that refills once, `resets_in` from now.
-    /// At that reset the whole capacity is available again and the window stays
-    /// known. No further reset is invented; once that budget is spent, the next
-    /// wait is unknown until a response teaches another reset. Capacity must be
-    /// positive; a zero reset time refills immediately.
+    /// A fixed window: a budget of `capacity` units that refills once, `resets_in` from now.
+    ///
+    /// At that reset the whole capacity is available again. No further reset is invented.
+    /// A learned window becomes unknown again once that refill cannot pay a request within
+    /// its capacity and no outstanding head reports a newer reset; a window set with
+    /// [`Bucket::window`] stays known and needs another reset from a response (see
+    /// [`Window`]). The capacity must be positive; a `resets_in` of zero refills at once.
     ///
     /// ```no_run
     /// let window = concord::limit::Window::fixed(5000, std::time::Duration::from_secs(60));
@@ -385,8 +456,11 @@ impl Window {
         }
     }
 
-    /// Sets the server's remaining units after the responding call; values above
-    /// capacity are invalid, and an observation never refunds spent units.
+    /// Sets the units that the server reports as left after the request that received
+    /// the response.
+    ///
+    /// A value above the capacity is invalid, and a reported value never gives back
+    /// units already spent.
     ///
     /// ```no_run
     /// let window = concord::limit::Window::fixed(5000, std::time::Duration::from_secs(60)).remaining(4200);
@@ -406,9 +480,11 @@ impl fmt::Debug for Window {
     }
 }
 
-/// One response seen by one selected bucket, with room for more context.
+/// What a `learn` or `hit_when` function receives: the status and headers of one response.
 ///
-/// Accessors return values deliberately; `Debug` omits key and header values.
+/// Each bucket that counted the request receives its own `Seen`. More context may be
+/// added later. Only the methods return the values: `Debug` prints neither the key nor
+/// any header value.
 ///
 /// ```no_run
 /// fn left(seen: &concord::limit::Seen<'_>) -> Option<u64> { seen.header("x-left")?.parse().ok() }
@@ -421,7 +497,7 @@ pub struct Seen<'a> {
 }
 
 impl Seen<'_> {
-    /// Returns the key selected for this bucket.
+    /// Returns the key that this bucket's key function returned for the request.
     ///
     /// ```no_run
     /// fn key(seen: &concord::limit::Seen<'_>) -> String { seen.key().to_owned() }
@@ -430,7 +506,7 @@ impl Seen<'_> {
         self.key
     }
 
-    /// Returns the response status, without consuming its body.
+    /// Returns the response status. The body is not read.
     ///
     /// ```no_run
     /// fn refused(seen: &concord::limit::Seen<'_>) -> bool { seen.status() == 429 }
@@ -439,7 +515,7 @@ impl Seen<'_> {
         self.status
     }
 
-    /// Borrows the response headers.
+    /// Returns the response headers.
     ///
     /// ```no_run
     /// fn names(seen: &concord::limit::Seen<'_>) -> usize { seen.headers().len() }
@@ -448,7 +524,12 @@ impl Seen<'_> {
         self.headers
     }
 
-    /// Returns a single header's text if present and visible ASCII; duplicates teach nothing.
+    /// Returns a header's value if it appears exactly once and holds only visible ASCII,
+    /// spaces and tabs.
+    ///
+    /// A repeated header returns `None`, so it teaches nothing. This differs from
+    /// [`Headers::get`](concord_core::Headers::get), which returns the first value of a
+    /// repeated header.
     ///
     /// ```no_run
     /// fn method(seen: &concord::limit::Seen<'_>) -> bool { seen.header("x-rate-limit-type") == Some("method") }
@@ -462,7 +543,7 @@ impl Seen<'_> {
         value.to_str().ok()
     }
 
-    /// Returns the sampled wall time of this observation.
+    /// Returns the wall-clock time read when the response was received.
     ///
     /// ```no_run
     /// fn now(seen: &concord::limit::Seen<'_>) -> std::time::SystemTime { seen.now() }
@@ -471,8 +552,10 @@ impl Seen<'_> {
         self.now
     }
 
-    /// Returns time until a Unix-second date against `now()`, zero if past, or
-    /// `None` for unrepresentable arithmetic. Waiting uses the internal timer.
+    /// Returns the time from `now()` until a date in Unix seconds.
+    ///
+    /// Returns zero if the date is past, and `None` if the date cannot be represented.
+    /// The limit itself waits on its internal timer, not on the wall clock.
     ///
     /// ```no_run
     /// fn reset(seen: &concord::limit::Seen<'_>) -> Option<std::time::Duration> {
@@ -491,12 +574,13 @@ impl fmt::Debug for Seen<'_> {
     }
 }
 
-/// An admission failure before sending, with no request, key or header text.
+/// Why a `Limit` refused to send a request.
 ///
-/// These policy/scheduling reasons have no lower-level cause, so `source()` is
-/// `None`. The middleware preserves the typed error as the call error's source;
-/// `MaxHold` does not populate the engine's response-derived `retry_after()`.
-/// No learning or header-parse failure is returned after receiving a response.
+/// It carries no request, key or header text. Each reason comes from the settings or
+/// from the waits, with no lower-level cause, so `source()` is `None`. The middleware
+/// keeps this typed error as the source of the call's error. `MaxHold` does not set the
+/// engine's `retry_after()`, which comes from a response. Once a response is received,
+/// a `Limit` returns no error for learning or for reading headers.
 ///
 /// ```no_run
 /// use concord::limit::LimitError;
@@ -510,16 +594,19 @@ impl fmt::Debug for Seen<'_> {
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum LimitError {
-    /// Invalid static bounds, key size, window or policy, including a zero concurrency cap.
-    /// Takes precedence when the call would also exceed `max_keys`.
-    InvalidPolicy,
-    /// The selected keys exceed `max_keys` even after forgetting keys that hold nothing.
-    TooManyKeys,
-    /// This bucket's cost exceeds at least one known window's capacity.
-    CostExceedsCapacity,
-    /// Admission would exceed the call's maximum hold.
+    /// The configuration is invalid: a bound, a key size, a window or a setting,
+    /// including a cap of zero on concurrency.
     ///
-    /// For a repeatable operation, wait the remaining known delay and make a new call:
+    /// It takes precedence when the request would also exceed `max_keys`.
+    InvalidPolicy,
+    /// The request's keys exceed `max_keys`, even after forgetting the keys that hold nothing.
+    TooManyKeys,
+    /// The bucket's cost is larger than the capacity of at least one known window.
+    CostExceedsCapacity,
+    /// The request would wait longer than `max_hold` before it could leave.
+    ///
+    /// For an operation that is safe to repeat, wait for the known delay still needed,
+    /// then call again:
     ///
     /// ```no_run
     /// use concord::limit::LimitError;
@@ -545,18 +632,20 @@ pub enum LimitError {
     /// ```
     #[non_exhaustive]
     MaxHold {
-        /// Delay still required at rejection, not the original delay; `None` if unknown.
+        /// The wait still needed when the request was refused, not the original wait;
+        /// `None` if unknown.
         required: Option<Duration>,
-        /// Original server-given `Retry-After` for a 429 gate contributing to this wait.
+        /// The original `Retry-After` from the server, for a `429` that contributed to this wait.
         retry_after: Option<Duration>,
-        /// Time already spent waiting for admission.
+        /// The time already spent waiting before the request was refused.
         waited: Duration,
     },
 }
 
 impl LimitError {
-    /// Finds a limit failure in this error or its `source()` chain.
-    /// A cyclic source chain without a limit error returns `None`.
+    /// Finds a `LimitError` in this error or its `source()` chain.
+    ///
+    /// Returns `None` when there is none, also when the chain is cyclic.
     ///
     /// ```no_run
     /// fn inspect(error: &concord::Error) {
@@ -619,10 +708,14 @@ impl std::error::Error for LimitError {
     }
 }
 
-/// Configure it fully, then clone; clones share one admission state.
+/// A middleware layer that makes requests wait for the limits of an API.
 ///
-/// Reactive gating is the default; each explicitly added bucket describes its
-/// entire policy. The [module example](self) shows four-header application/method limits.
+/// By default it only makes requests wait after a `429`; each bucket you add describes
+/// the budget of each key that its key function returns. The [module example](self) shows an application
+/// limit and a method limit read from four headers.
+///
+/// Clones share one state and one configuration: a setter called on any clone changes
+/// every clone. Configure it fully, then clone.
 ///
 /// ```no_run
 /// let limit = concord::limit::Limit::new().max_in_flight(4).max_keys(64);
@@ -635,11 +728,15 @@ pub struct Limit {
 }
 
 impl Limit {
-    /// Creates only a shared reactive gate. Defaults: no concurrency cap, 60 second
-    /// maximum hold, 1024 keys across all buckets, no proactive or guessed allowance.
-    /// Reads `Retry-After` as `Headers::retry_after()` does: seconds or an HTTP date;
-    /// zero, a past date or unreadable text holds nothing. An engine retry waits
-    /// behind the same gates and is charged like any other call.
+    /// A limit with no bucket and no cap: after a `429` with `Retry-After`, the next requests wait.
+    ///
+    /// Defaults: no cap on concurrency, a longest wait of 60 seconds, 1024 keys across
+    /// all buckets, and no budget set or guessed in advance. It reads `Retry-After` as
+    /// `Headers::retry_after()` does: seconds or an HTTP date; zero or a past date makes
+    /// no request wait, and so does a missing or unreadable value unless
+    /// [`without_retry_after`](Self::without_retry_after) is set. When the engine retries
+    /// a call, the new attempt waits for the same limits and is counted like any other
+    /// request.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new();
@@ -651,10 +748,12 @@ impl Limit {
         }
     }
 
-    /// Sets the hold for a 429 with no readable `Retry-After`; the default adds no hold.
-    /// Uses the same bucket selectors and global fallback as a readable header.
-    /// A readable zero or past date still holds nothing. `MaxHold.retry_after`
-    /// remains `None` for this configured fallback; `required` reports the wait.
+    /// Sets the wait after a `429` with no readable `Retry-After`; by default there is none.
+    ///
+    /// The wait applies to buckets through the same `hit_when` functions as a readable
+    /// header, and to every request when the `429` is about no bucket. A readable zero
+    /// or past date still makes no request wait. For this configured wait,
+    /// `MaxHold.retry_after` stays `None`; `required` reports the wait.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new()
@@ -666,7 +765,10 @@ impl Limit {
         self
     }
 
-    /// Adds a body-held concurrency cap. Zero fails the first call with `InvalidPolicy`.
+    /// Allows at most `n` requests at once; a request keeps its place until its response
+    /// body is read to the end, fails or is dropped.
+    ///
+    /// By default there is no cap. A cap of zero fails the first call with `InvalidPolicy`.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new().max_in_flight(4);
@@ -677,10 +779,13 @@ impl Limit {
         self
     }
 
-    /// Sets the total admission allowance. Known excessive waits fail immediately;
-    /// unknown waits expire at the allowance. Zero permits only immediate admission.
-    /// `MaxHold.required` is the delay still needed at rejection;
-    /// `retry_after` keeps the server's original value for a contributing 429 gate.
+    /// Sets the longest total wait of a request: 60 seconds by default.
+    ///
+    /// A request whose known wait is longer fails at once; a request whose wait is
+    /// unknown fails when this limit is reached. Zero lets a request leave only if it
+    /// needs no wait. The error is `MaxHold`: `required` is the wait still needed when
+    /// the request was refused, and `retry_after` keeps the server's original value for
+    /// a `429` that contributed to the wait.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new().max_hold(std::time::Duration::from_secs(10));
@@ -691,12 +796,14 @@ impl Limit {
         self
     }
 
-    /// Bounds the total retained bucket-definition/key pairs across all buckets.
-    /// Default: 1024. Zero is `InvalidPolicy`. When room is needed, a key is forgotten
-    /// only if it has no unexpired quota debt, active 429 hold or call in flight,
-    /// including a first response or unread body. Otherwise `TooManyKeys` is returned.
-    /// If a call also breaks a static policy rule, `InvalidPolicy` takes precedence.
-    /// The [module documentation](self) computes the maximum retained payload per key.
+    /// Bounds the pairs of bucket and key kept in memory, across all buckets: 1024 by default.
+    ///
+    /// Zero is `InvalidPolicy`. When room is needed, a key is forgotten only if it holds
+    /// no unexpired quota debt, no active wait after a `429` and no request in progress,
+    /// including one awaiting its first response or with an unread body. Otherwise the
+    /// request fails with `TooManyKeys`. If the request also breaks a rule of the
+    /// configuration, `InvalidPolicy` takes precedence. The [module documentation](self)
+    /// computes the most memory kept for each key.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new().max_keys(64);
@@ -707,7 +814,7 @@ impl Limit {
         self
     }
 
-    /// Adds a complete bucket definition. May be called more than once.
+    /// Adds a bucket with its whole definition; call it again to add more.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new()
@@ -758,14 +865,15 @@ impl Middleware for Limit {
     }
 }
 
-/// Supplies a learner for paired `capacity:seconds` and `used:seconds` headers.
+/// Returns a `learn` function for paired headers that list `capacity:seconds` and `used:seconds`.
 ///
-/// Each input header is limited to 4096 bytes. Parses up to eight windows,
-/// sorted by period for stable ordering. Both lists
-/// must have the same distinct positive periods and positive capacities; missing,
-/// malformed, unmatched or oversized input teaches nothing. Remaining is capacity
-/// minus used, saturating at zero. All debt lasts a full period because phase is unknown.
-/// The [module example](self) attaches two of these learners for four headers.
+/// Each header may be at most 4096 bytes. It reads up to eight windows, sorted by
+/// period so that their order is stable. Both lists must have the same distinct
+/// positive periods, and the capacities must be positive; missing, malformed,
+/// unmatched or oversized input teaches nothing. The units left are the capacity minus
+/// the units used, saturating at zero. Every unit used is counted for a full period,
+/// because the phase of the window is unknown. The [module example](self) attaches two
+/// of these functions, for four headers.
 ///
 /// ```no_run
 /// let bucket = concord::limit::Bucket::new(|_| Some("application".into()))
@@ -781,14 +889,13 @@ pub fn counts(
     headers::counts(limits.into(), counts.into())
 }
 
-/// Supplies a learner for capacity, remaining units and a Unix-second reset.
+/// Returns a `learn` function for headers of a capacity, the units left and a reset in Unix seconds.
 ///
-/// Each input header is limited to 4096 bytes. All three must be readable
-/// nonnegative integers; capacity must be
-/// positive, remaining must not exceed it, and reset must be representable and
-/// future. Otherwise nothing is learned. It describes one current fixed window,
-/// with one full-capacity refill at that reset, not a guessed repeating period
-/// or continuous replenishment rate.
+/// Each header may be at most 4096 bytes. All three must be readable nonnegative
+/// integers; the capacity must be positive, the units left must not exceed it, and the
+/// reset must be representable and in the future. Otherwise nothing is learned. The
+/// result is one current fixed window that refills once, to its whole capacity, at that
+/// reset: not a guessed repeating period, nor a continuous rate of refill.
 ///
 /// ```no_run
 /// use concord::limit::{Bucket, Limit, remaining};

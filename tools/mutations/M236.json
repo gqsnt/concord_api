@@ -1,0 +1,9 @@
+{
+  "id": "M236",
+  "area": "request edits",
+  "contract": "tools/mutations/README.md#c1214",
+  "description": "Replacing or removing the unreadable placeholder is silently accepted.",
+  "file": "concord-core/src/__private/client.rs",
+  "find": "            if !crate::body::repeatable::placeholder_intact(request, replaced) {",
+  "replace": "            if false {"
+}

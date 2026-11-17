@@ -1,0 +1,9 @@
+{
+  "id": "M233",
+  "area": "terminal body errors",
+  "contract": "tools/mutations/README.md#c1213",
+  "description": "A materialization yields errors again instead of ending after its first failure.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "        let cleanup = dispose(self.stream.take());",
+  "replace": "        let cleanup: Result<(), BoxError> = Ok(());"
+}

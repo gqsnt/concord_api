@@ -12,9 +12,12 @@ use std::{error::Error, fmt, io::Read};
 /// No stream is collected or polled, and no request or task is started.
 ///
 /// The description sets `Content-Encoding: gzip`: a writer returns a `Body`,
-/// which carries no request header except its content type. The `gzip-body`
-/// feature is independent of response decompression (the `gzip` feature).
+/// which carries no request header except its content type.
 /// A description's `content-type` header takes precedence.
+///
+/// This writer needs the feature `gzip-body`. The feature `gzip` is response
+/// decompression, in `reqwest`; it does not provide this writer. The example below
+/// needs the features `gzip-body` and `json`.
 ///
 /// ```no_run
 /// concord::api! {
@@ -51,8 +54,7 @@ pub fn gzip(body: impl Into<Body>) -> Result<Body, GzipError> {
         encoded = stored_member(bytes);
     }
     let mut output = Body::from(encoded);
-    // The public compatibility getter is the core's only content-type accessor.
-    if let Some(content_type) = body.__content_type() {
+    if let Some(content_type) = body.get_content_type() {
         output = output.content_type(content_type.to_owned());
     }
     Ok(output)
@@ -60,7 +62,7 @@ pub fn gzip(body: impl Into<Body>) -> Result<Body, GzipError> {
 
 /// A request body that cannot be compressed without consuming a stream.
 ///
-/// Formatting includes no bytes or content type. Semantic refusal has no cause.
+/// Formatting includes no bytes and no content type. It has no lower-level cause.
 ///
 /// ```no_run
 /// fn inspect(error: &concord::Error) {
@@ -76,7 +78,7 @@ pub enum GzipError {
     Stream,
 }
 impl GzipError {
-    /// Finds this error by following the given error and its source chain.
+    /// Finds a `GzipError` in this error or its chain of sources.
     ///
     /// ```no_run
     /// fn inspect(error: &concord::Error) {

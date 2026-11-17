@@ -1,0 +1,9 @@
+{
+  "id": "M230",
+  "area": "multipart repeatability",
+  "contract": "tools/mutations/README.md#c1212",
+  "description": "Mapping a repeatable source incorrectly makes multipart single-attempt.",
+  "file": "concord-core/src/body.rs",
+  "find": "            Data::Map(body, _) => body.can_repeat(),",
+  "replace": "            Data::Map(_, _) => false,"
+}

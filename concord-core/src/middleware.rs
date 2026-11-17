@@ -92,8 +92,8 @@ use std::sync::Arc;
 /// that rejects the request before sending returns [`TransportError::blocked`]; the attempts
 /// end there. After a response has arrived, return that response, or another failure. Concord
 /// counts the whole chain as one attempt; sends within it do not add attempts. The call `timeout` includes the time spent in middleware. The idle timeout starts
-/// only when the request is handed to the transport, after middleware; `timeout` is checked
-/// there too, so an expired call is never handed over.
+/// at the final middleware handoff, including validation of a repeatable body declared
+/// empty. Both deadlines are checked before the validated request reaches the transport.
 /// `request()` and `into_request()` return the request before any middleware runs.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a middleware",
@@ -153,8 +153,9 @@ impl<M: Middleware> ErasedMiddleware for M {
 /// It is a shared view: sending does not consume the chain, so a middleware layer can send
 /// again through the same remainder. Such a send is not an attempt, and the retry policy does
 /// not decide it: for another attempt after a `401`, with a new token, use the retry rule
-/// `concord::auth::after_401`. The idle timeout starts when the request is handed to the
-/// transport, where `timeout` is checked before sending.
+/// `concord::auth::after_401`. The idle timeout starts at the final middleware handoff,
+/// including validation of a repeatable body declared empty. Both deadlines are checked
+/// before that validated request reaches the transport.
 #[derive(Clone, Copy)]
 pub struct Next<'a> {
     pub(crate) middlewares: &'a [Arc<dyn ErasedMiddleware>],
@@ -211,7 +212,50 @@ impl<'a> Next<'a> {
                 *request.body_mut() = Some(reqwest::Body::wrap_stream(stream));
             }
         }
-        let work = std::pin::pin!(self.transport.send(request, info));
+        let zero_length = info.repeatable_body
+            && request
+                .headers()
+                .get(http::header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                == Some(0);
+        let work = std::pin::pin!(if zero_length {
+            futures_util::future::Either::Left(async {
+                // HTTP/1 never polls a body declared empty. Validate factory output
+                // after middleware admission, under the transport clocks.
+                if let Some(body) = request.body_mut().take() {
+                    let stream = reqwest::Response::from(http::Response::new(body)).bytes_stream();
+                    let mut stream = std::pin::pin!(stream);
+                    while let Some(piece) = stream.next().await {
+                        let piece = piece.map_err(TransportError::from)?;
+                        if !piece.is_empty() {
+                            return Err(TransportError::upload(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "the content-length does not match the body length",
+                            )));
+                        }
+                    }
+                    // PANIC-SAFETY: This is a dereference assignment, not integer multiplication.
+                    *request.body_mut() = Some(bytes::Bytes::new().into());
+                }
+                if run.expired() {
+                    return Err(TransportError::clock(run.total_timeout()));
+                }
+                let last = *progress
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if last
+                    .checked_add(run.idle())
+                    .is_some_and(|end| Instant::now() >= end)
+                {
+                    return Err(TransportError::clock(run.idle_timeout()));
+                }
+                self.transport.send(request, info).await
+            })
+        } else {
+            // Keep construction and ownership of ordinary transport work unchanged.
+            futures_util::future::Either::Right(self.transport.send(request, info))
+        });
         let mut work = work;
         let mut timer = started
             .checked_add(run.idle())

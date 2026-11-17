@@ -1,6 +1,6 @@
-# Credentials and middleware
+# Credentials
 
-*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [Read responses and errors, send bodies](responses-and-errors.md) · next: [Retries](retries.md)*
+*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [Send a body](bodies.md) · next: [Middleware](middleware.md)*
 
 This page shows how a client sends credentials. A key or a token is a value, placed like any other value; a signature, or a token that must be renewed, is middleware.
 
@@ -17,9 +17,9 @@ The work is split as it is for [retries](retries.md) and [pages](pages.md): the 
 | HTTP Basic | `headers { "authorization" = basic(user, password); }` |
 | A key in the query | `query { "api_key" = key; }` |
 | A token in the URL itself (Telegram: `https://api.telegram.org/bot<token>/`) | `base "https://api.telegram.org/bot{token}";`: a `Secret` in a placeholder of the `base` ([Telegram](../examples/telegram.md)). |
-| A secret in the body (a token endpoint) | `body form { grant_type; client_id; client_secret; }`: a `Secret` may be an entry of a body, and is sent as its string ([a body that is sent](responses-and-errors.md#a-body-that-is-sent)). |
+| A secret in the body (a token endpoint) | `body form { grant_type; client_id; client_secret; }`: a `Secret` may be an entry of a body, and is sent as its string ([a body that is sent](bodies.md#a-body-that-is-sent)). |
 | A client certificate | Nothing. It belongs to the connection: set it on the HTTP client, with `concord::Http::with(…)` ([the client](calling.md#the-client)). |
-| A signature | `middleware Signed::new(key.clone());` ([a middleware](#a-middleware)). |
+| A signature | `middleware Signed::new(key.clone());` ([a signature](#a-signature)). |
 | A token that expires and must be renewed | Nothing in the description: `concord::auth::Renewed`, a middleware layer that Concord ships, added with `with_middleware(…)` ([a token that is renewed](#a-token-that-is-renewed)). |
 
 **Its type is what makes it a credential.** The input is a `concord::Secret`, and a value that holds a `Secret` stays secret wherever it is placed:
@@ -59,9 +59,9 @@ The error is a `rustc` message in Concord's words: `a secret does not follow a c
 
 A caller's `with_base(…)` moves everything, secrets included: that is the caller's explicit choice. It also replaces the whole `base` ([C2.10](../reference/contracts.md#c2-building-a-request)), including any secret written in it. See [rule 16](../reference/rules.md) for the rule, and C8.9 of [the contracts](../reference/contracts.md) for the contract.
 
-## A middleware
+## A signature
 
-**A signature, a token that must be renewed, a quota: each is a middleware layer.** Each runs on every request as it is sent. The description names its layers on the client with `middleware` ([rules](../reference/rules.md), rule 26). Concord ships `sign::SigV4` (feature `sign`), as well as layers for [renewing a token](#a-token-that-is-renewed) and [sharing a rate limit](retries.md#limits-shared-by-the-calls-of-a-client).
+A signature is computed from each request as it is sent, so it is a middleware layer, written last in the description ([the order of layers](middleware.md#the-order-of-layers)). Concord ships one signer, `concord::sign::SigV4` (feature `sign`), and two helpers for a provider's own proof.
 
 For AWS Signature Version 4, supply the credentials, origin, region, service and path convention explicitly:
 
@@ -74,7 +74,7 @@ let signer = SigV4::new(&origin, credentials, "us-east-1", "iam",
     CanonicalPath::NormalizeAndEncode);
 ```
 
-Pass `signer` as a required input of the client and write `middleware signer.clone();` last; the rustdoc of `concord::sign` has the whole example, with its description. It checks the origin before using a key and signs every attempt anew; replacing the complete set with `Credentials::replace` reaches every clone. A stream is refused without being polled unless `allow_unsigned_payload()` was explicitly enabled for S3 over HTTPS; other services still refuse streams. For S3, use `CanonicalPath::Preserve` with an AWS-encoded path; the [S3 example](../examples/s3.md) shows an adapter with configured bucket origins and a region chosen per endpoint using `SigV4::sign`. `SigV4` does no chunk signing, makes no presigned URL and discovers no credentials: it signs each request with the credentials that it was given.
+Pass `signer` as a required input of the client and write `middleware signer.clone();` last; the rustdoc of `concord::sign` has the whole example, with its description. It checks the origin before using a key and signs every attempt anew; replacing the complete set with `Credentials::replace` reaches every clone ([what a clone shares](middleware.md#what-a-clone-shares)). A stream is refused without being polled unless `allow_unsigned_payload()` was explicitly enabled for S3 over HTTPS; other services still refuse streams. For S3, use `CanonicalPath::Preserve` with an AWS-encoded path; the [S3 example](../examples/s3.md) shows an adapter with configured bucket origins and a region chosen per endpoint using `SigV4::sign`. `SigV4` does no chunk signing, makes no presigned URL and discovers no credentials: it signs each request with the credentials that it was given.
 
 Use Concord's own client, `Http::new()` or `Http::with(…)`, which follows no redirects. A supplied transport that follows redirects may forward `x-amz-security-token` to the next host: the HTTP library removes `Authorization`, but keeps the session-token header even though it is sensitive.
 
@@ -156,25 +156,11 @@ concord::api! {
 }
 ```
 
+Tested: [`credential_signing.rs`](../../tests/real-apis/src/credential_signing.rs), run by [`signing.rs`](../../tests/real-apis/tests/signing.rs), which compares this block with the file.
+
 `Vault::new(origin, key)` always installs the proof; a transport supplied with `with_transport` receives the signed request. `sign::body_bytes` borrows a buffered body or refuses a stream, and `sign::check_origin` checks scheme, host and effective port before the key is read. The HMAC recipe hashes synchronously, so a large buffered body occupies the calling thread until hashing finishes.
 
 OAuth 1 is not shipped: its parameter normalization, nonce, HMAC-SHA1 encoding and authorization flow require a substantial adapter. Signed HTTP messages are not shipped either: a fixed HMAC profile can be a small recipe, but general RFC 9421 component selection, structured fields, keys and trailers need a separate implementation.
-
-| | |
-|---|---|
-| Where it goes | On the client, any number of times. |
-| **The order** | A request goes first through the middleware that a caller added, then through the description's middleware layers, in the order written, then to the transport. The response comes back the same way. So the author's layers are the last before the wire, and **the author writes the signing middleware last**: nothing changes a request after it was signed. A transport must not change it either. |
-| When it is created | Once, in `new`. Every handle and every call of that client shares it, so it can hold shared state: a quota, a token that is renewed. Its expression can use the required inputs of the client, as references, and nothing else: the macro rejects an optional input named there. `new` cannot fail, so the expression has no `?`: whatever can fail is done in `handle`. |
-| Reading its state from the caller | A quota that the middleware tracks is passed in as a required input of the client, and the caller keeps a clone. |
-| When it runs | On **every** attempt and every page, on the request as it is sent: a request that is retried is signed again. |
-| What it receives | The request, a `TryInfo`, and `next`. `info.number()` is the attempt number. `info.endpoint()` is the name of the endpoint, and its format is guaranteed: the names in the tree joined with `.` (`riot.matches.ids`), the same text as in a printed error. `next.send(request, info)` passes the request on. It may be called more than once, or not at all. |
-| A middleware that waits | Its wait does not count as silence: the idle timeout watches the transport and a body while it is read, not middleware ([timeouts](calling.md#timeouts)). A quota that holds a request back, or a token being fetched, does not trigger it. Only the call timeout, `timeout`, bounds a middleware. Without a `timeout`, a middleware may wait forever: that is its author's responsibility. |
-| The text of a secret | `self.key.expose()` returns the current text, as a value that dereferences to `&str` (`&*text`, `text.to_string()`). Read it in `handle`, on each attempt, so that a `replace` reaches the next attempt. Do not print it or put it in an error: the `&str` is plain text (the value itself prints only `Exposed(..)`). |
-| When it cannot sign | It returns `TransportError::blocked()`, with its cause as the source, and does not call `next`. No more attempts are made, and the result is that blocked error. Your cause is in `e.source()`, and is never printed. |
-| Nothing removes it | Neither a node below nor a caller can remove it. An API whose public endpoints must not be signed needs a middleware that inspects the request, or `info.endpoint()`. |
-| What it changes | That is up to its author. The pagination checks (the origin, "the same request") and the retry check (the method) look at the request as it was built, before any middleware. A middleware that sends a request elsewhere is like `.edit_request(…)`: allowed, and its author's responsibility. |
-| A caller's own middleware | `with_middleware(…)` on a client: a log, a `concord::limit::Limit` ([limits shared by the calls of a client](retries.md#limits-shared-by-the-calls-of-a-client)), a layer of the caller's own ([a middleware](extending.md#a-middleware), with code). It runs before every middleware layer of the description, so it cannot change a request after it was signed. |
-| `request()` | `request()` and `into_request()` return the request before any middleware, because a signature belongs to one attempt. |
 
 ## A token that is renewed
 
@@ -213,21 +199,21 @@ concord-api = { git = "https://github.com/gqsnt/concord_api", features = ["auth"
 | Where the token goes | `Authorization: Bearer <token>`, in a header marked sensitive. For another header or scheme, `.header(name, \|token\| HeaderValue::from_str(&token.expose()))` sets the whole value; it is marked sensitive too. |
 | Where it is sent | Only to the origin (the scheme, the host and the port) of the `base` given to `Renewed::new`. A path prefix in that `base` does not narrow or widen this. A request to another origin is blocked before any renewal, so a `Renewed` belongs to a client whose requests all go to that origin. |
 | When it is renewed | When there is no token yet, and when the token has expired or has no more than `early_by` left (zero by default). The function takes no argument and returns a `Result<AccessToken, RenewalError>`: `AccessToken::expires_in(value, lifetime)`, and `?` on the token client's error. It must use a client without this `Renewed`. |
-| One renewal at a time | The calls that need a token at the same moment share one renewal, and its token or its failure. Clones of a `Renewed` share one token and one renewal: configure it fully, then clone it. Concord starts no task: a call that is dropped while it waits leaves the renewal to the others, and when the last one is dropped, the renewal is dropped with it. |
-| How long a renewal may take | `renewal_timeout`, 30 seconds by default (zero is refused). After that, the calls that wait fail with `RenewalError::TimedOut`. A renewal is a wait in a middleware: the idle timeout does not count it, and the call timeout, `timeout`, does. |
+| One renewal at a time | The calls that need a token at the same moment share one renewal, and its token or its failure. Clones of a `Renewed` share one token and one renewal: configure it fully, then clone it ([what a clone shares](middleware.md#what-a-clone-shares)). Concord starts no task: a call that is dropped while it waits leaves the renewal to the others, and when the last one is dropped, the renewal is dropped with it. |
+| How long a renewal may take | `renewal_timeout`, 30 seconds by default (zero is refused). After that, the calls that wait fail with `RenewalError::TimedOut`. A renewal is a wait in a middleware: the idle timeout does not count it, and the call timeout, `timeout`, does ([a layer that waits](middleware.md#a-layer-that-waits)). |
 | A `401` | It is returned as it is, and the request is sent once. The token that the request carried is marked as rejected, so the next request gets a new one. |
 | When a renewal fails | The call is a Transport error of class blocked, and nothing is sent. Its `source()` is a `concord::auth::RenewalError`, which `RenewalError::find(&e)` returns from the error of the call; for `RenewalError::Failed`, the `source()` of that is your function's error, such as the token client's `concord::Error`. A panic in your function is `RenewalError::Panicked` for every call that waits. The next call tries again. |
 | A token that you already hold | `with_token(token)` starts with it, for example a token saved by an earlier run. It returns `Err(RenewalError::Expired)` for a token that has expired. |
 | Saving a new token | `on_renewed(\|token\| …)` is called once for each new token, before any request uses it. It must return promptly. `token.value()` and `token.remaining()` are what to save. |
 | Printing | A token is never printed: not in `Debug`, not in an error. What your own function puts in its own error is yours. |
 
-**`Renewed` never sends a request twice.** To try again after a `401`, add the rule `after_401` to the client's retry policy. It asks for one more attempt after a `401` on the first attempt, and the engine then decides as it does for every retry ([three questions decide a retry](retries.md#three-questions-decide-a-retry)): a `POST` that is not marked `idempotent;`, and a body that is a stream, are not sent again. The new attempt goes through every middleware layer, so it carries the new token and a signer signs it again. `Retry::none().tries(2).when(after_401)` adds this one attempt and no other retry. `.not_applied_on(401)` lets an unmarked `POST` go again too: write it only when the API guarantees that a request rejected with `401` did nothing.
+**`Renewed` never sends a request twice.** To try again after a `401`, add the rule `after_401` to the client's retry policy. It asks for one more attempt after a `401` on the first attempt, and the engine then decides as it does for every retry ([three questions decide a retry](retries.md#three-questions-decide-a-retry)): a `POST` that is not marked `idempotent;`, and a `Body::stream`, are not sent again. The new attempt goes through every middleware layer, so it carries the new token and a signer signs it again. `Retry::none().tries(2).when(after_401)` adds this one attempt and no other retry. `.not_applied_on(401)` lets an unmarked `POST` go again too: write it only when the API guarantees that a request rejected with `401` did nothing.
 
 This is what distinguishes it from a middleware of your own that sends the request again after a `401` (`next.send` a second time, on a copy). Such a second send is not an attempt: the retry policy does not decide it, `e.tries()` does not count it, and it repeats a `POST` that is not marked. With `Renewed` and `after_401`, every send is an attempt of the engine, under the same rules as any other retry.
 
-Added with `with_middleware`, `Renewed` runs before every middleware layer of the description, so a signer written there signs each request with its token in place. The signing middleware is still written last.
+Added with `with_middleware`, `Renewed` runs before every middleware layer of the description, so a signer written there signs each request with its token in place ([the order of layers](middleware.md#the-order-of-layers)).
 
-**What it leaves to you.** Concord implements no flow that obtains a token (OAuth2 and the like): the function given to `Renewed::new` is where that flow goes, written with a client of its own for the token endpoint (a token endpoint takes its secrets as a body of entries: [a body that is sent](responses-and-errors.md#a-body-that-is-sent)). `Renewed` keeps only the current access token. If the server replaces the refresh token after each exchange, use `Rotating` ([below](#a-refresh-token-that-rotates)).
+**What it leaves to you.** Concord implements no flow that obtains a token (OAuth2 and the like): the function given to `Renewed::new` is where that flow goes, written with a client of its own for the token endpoint (a token endpoint takes its secrets as a body of entries: [a body that is sent](bodies.md#a-body-that-is-sent)). `Renewed` keeps only the current access token. If the server replaces the refresh token after each exchange, use `Rotating` ([below](#a-refresh-token-that-rotates)).
 
 ## A refresh token that rotates
 
@@ -281,8 +267,8 @@ The rustdoc of `concord::auth::Rotating` has the whole example: the token endpoi
 | The wait | `renewal_timeout`, 30 seconds by default, bounds each resource call's wait. If the first driver poll after the call began waiting is at or after its deadline, or never happens, the call fails with `RotationError::NotPolled`; another expired wait has `RenewalError::TimedOut` as its cause. A begun renewal goes on; its replacement is saved or returned to the driver’s owner as `Unsaved`. The same name on `Renewed` bounds its shared renewal future instead: cancelling that renewal does not consume a single-use refresh token. |
 | Dropping | Renewal begins when saving its marker begins. Dropping the last waiting call during the first load leaves nothing begun; after the marker save begins, dropping calls leaves the driver working. Dropping the driver stops the credential and wakes waiters with `RotationError::Stopped` unless their deadline has already passed; it cannot finish saving after it has been dropped. Dropping the last credential owner lets a polled driver drain its begun work, try a pending save once more, then finish. If recovery fails, it returns the pair in `Unsaved`. A hung store or exchange can prevent that drain. |
 | Ownership and failure | One value and its clones own the account; another process needs an application-owned lease. A store panic stops the credential with `Stopped`, but an existing call whose deadline has passed still reports its timeout; the driver returns `Unsaved` with a known replacement, or `Stopped` when it has none. Before a new owner can use the account after a panic or cancellation, the application must establish that old store operations can have no later effects. |
-| Headers, origin and retry | These work as for `Renewed`: a sensitive Bearer header by default, `header` for another scheme, the origin checked before any store access, a 401 returned unchanged and rejecting only its generation. `after_401` asks the engine for another attempt under its usual repeatability rules. The middleware never resends a resource request itself. Configure before cloning: as with `Renewed`, changing the header, early margin or wait allowance on a clone changes the shared settings for every clone. |
-| Errors | `RotationError::find(&error)` follows the call error's sources. `Load`, `Save`, and `Renewal` retain a `RenewalError` and its original cause. `Unsaved { pair, cause, .. }` gives the application the exact replacement for its own recovery path; establish store quiescence after a panic before saving it. Concord’s own error formatting and `Debug` print no token, URL, cause text or panic payload. What an author puts in a store error is the author’s responsibility; traversing its sources can print that text. |
+| Headers, origin and retry | These work as for `Renewed`: a sensitive Bearer header by default, `header` for another scheme, the origin checked before any store access, a `401` returned unchanged, which rejects only the access token that the request carried. `after_401` asks the engine for another attempt under its usual repeatability rules. The middleware never resends a resource request itself. Configure it fully, then clone it: as with `Renewed`, a change of `header`, `early_by` or `renewal_timeout` on a clone changes the settings that every clone shares ([what a clone shares](middleware.md#what-a-clone-shares)). |
+| Errors | `RotationError::find(&error)` follows the call error's sources. `Load`, `Save`, and `Renewal` retain a `RenewalError` and its original cause. `Unsaved { pair, cause, .. }` gives the application the exact replacement for its own recovery path; after a panic, first make sure that no earlier store operation can still take effect, then save it. Concord’s own error formatting and `Debug` print no token, URL, cause text or panic payload. What an author puts in a store error is the author’s responsibility; traversing its sources can print that text. |
 
 Completing a renewal wakes all its waiting calls, so notification work grows with the number of waiters.
 
@@ -290,22 +276,11 @@ The promise to save or return a replacement begins when the exchange future yiel
 
 **What it cannot promise.** A process can die after the provider issued a replacement and before the local save. No client can make those two systems commit atomically. On restart the marker prevents reuse of the uncertain old token, but cannot recover the lost replacement; the account may need reauthorization. The application still supplies the initial grant, the token protocol, durable storage, exclusive account ownership and any provider recovery. Concord starts no task, and an unpolled or dropped driver cannot finish a renewal.
 
-## Middleware or transport
-
-They are two separate layers, each with one job.
-
-| | Its job | How it is set |
-|---|---|---|
-| A middleware | What a request passes through as it is sent: a signature, a renewed token, a quota, a log. | `middleware m;` in the description; `with_middleware(…)` by a caller. |
-| A transport | The layer that sends the request: `concord::Http`, your own `reqwest::Client`, a fake. The timeouts measure what it does ([timeouts](calling.md#timeouts)). | `with_transport(…)` replaces it, **beneath** the middleware. |
-
-So a client whose HTTP client has your own settings (a client certificate, a proxy) is still signed: `with_transport(concord::Http::with(…)?)` changes only what sits beneath the middleware ([the client](calling.md#the-client)). A `reqwest::Client` that you pass in is a transport too, and keeps its own settings. If it follows redirects, it sends the second request itself beneath the middleware: the signature no longer covers that request, and `x-amz-security-token` may be forwarded to another host even when `Authorization` is removed. See [Concord's own HTTP client](../reference/crates.md#concords-own-http-client) for what `concord::Http` sets up.
-
 ## What Concord does not ship
 
 | Not shipped | Why | The escape hatch |
 |---|---|---|
-| Provider-specific signatures, OAuth 1 and signed HTTP messages | Their canonicalization and protocol differ; the shipped signer implements AWS Signature Version 4. | A middleware layer using `sign::body_bytes`, `sign::check_origin` and the protocol's cryptographic crates ([above](#a-middleware)). |
+| Provider-specific signatures, OAuth 1 and signed HTTP messages | Their canonicalization and protocol differ; the shipped signer implements AWS Signature Version 4. | A middleware layer using `sign::body_bytes`, `sign::check_origin` and the protocol's cryptographic crates ([above](#a-signature)). |
 | The flows that obtain a token (OAuth2 and similar), durable account stores and provider recovery | They depend on the provider and the application. `Rotating` coordinates exchange and saving, but cannot atomically commit remote issuance and local storage. | Supply the exchange to `Renewed::new` or `Rotating::new`, and a `CredentialStore` for [a refresh token that rotates](#a-refresh-token-that-rotates). |
 
 See [scope and limits](../design/scope.md) for why these are left out, and what else is.

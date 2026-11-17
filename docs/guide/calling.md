@@ -1,6 +1,6 @@
 # Call a client
 
-*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [Describe an API](describing-an-api.md) · next: [Read responses and errors, send bodies](responses-and-errors.md)*
+*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [Describe an API](describing-an-api.md) · next: [Read responses and errors](responses-and-errors.md)*
 
 This page is for the caller of a generated client. It shows how to build the client and call it, what a call returns, and how long a call waits.
 
@@ -69,7 +69,7 @@ Every client has six more methods. Each returns the client with the change appli
 | `with_timeout(duration)` | The maximum duration of a whole call. No limit until this is called ([timeouts](#timeouts)). |
 | `with_idle_timeout(duration)` | How long a call may wait with no data moving. 30 seconds until this is called ([timeouts](#timeouts)). |
 | `with_base("http://localhost:8080")` | Every request goes there, whatever the `base` statements say: a local test server, a gateway, another deployment. It may include a path prefix (`"https://example.com/gitlab"`). Every entry follows it, secrets included, because the caller chose it explicitly. |
-| `with_middleware(m)` | One more middleware layer that every request passes through, before the description's middleware: logging, a token that is renewed ([`concord::auth::Renewed`](credentials.md#a-token-that-is-renewed)), a shared limit ([`concord::limit::Limit`](retries.md#limits-shared-by-the-calls-of-a-client)), or a layer of your own ([a middleware](extending.md#a-middleware)). |
+| `with_middleware(m)` | One more middleware layer that every request passes through, before the description's middleware: logging, a token that is renewed ([`concord::auth::Renewed`](credentials.md#a-token-that-is-renewed)), a shared limit ([`concord::limit::Limit`](limits.md)), or a layer of your own ([a middleware](extending.md#a-middleware)). |
 | `with_transport(t)` | The transport that sends the requests, beneath the middleware: `concord::Http` with your own settings, your own `reqwest::Client`, a fake for tests, or another HTTP library ([testing a client](testing.md), [a transport](extending.md#a-transport)). |
 
 **The names that Concord reserves.** A child or an optional input becomes a method, so it may not take the name of a method that its receiver already has. These names are matched exactly. On a call, they are Concord's own methods (`send`, `send_raw`, `request`, `pages`, …) and `at_url`, which pagers use. On a client or a handle: `call` (reserved for future use) and `clone`; on a client, also `new`. One prefix is reserved, `with_`, and no other: Telegram's `send_message` is a name like any other. Concord adds no new name to a call, a handle or a client in a minor version, unless it starts with `with_`. A required input is an argument, so its name is free. A scope or an endpoint may not generate a type named `Error`, `Result` or `Retry` in the module of its client. See [contracts](../reference/contracts.md) C1.6 for the full table. Finally, names that begin with `__` are reserved for Concord: in a module that contains `concord::api!`, declare no item (a `const`, a `static`, a function, a type) whose name begins with `__`.
@@ -90,102 +90,6 @@ let other   = Other::new(token).with_transport(http);          // two clients sh
 Concord applies its defaults before your closure, and "no redirects" after it, so nothing in the closure can make this client follow a redirect.
 
 **A `reqwest::Client` that you bring** is used as it is, and you are responsible for what it does on its own, such as following redirects or keeping cookies. Promise [G3](promises.md#three-promises) is stated for a client that follows no redirects. [The timeouts](#timeouts) are Concord's own, and apply with any client.
-
-### Several hosts
-
-Use a separate client for each origin you trust, with credentials declared for that client. `with_base` moves every entry, secrets included, by the caller's explicit choice; `at_url` cannot move a call to another origin. A transport that rewrites a host can bypass credential checks or invalidate a signature. Concord supplies no pool, host discovery or automatic failover.
-
-The application's loop decides which reads may be repeated, which failures justify the next host and the order of those hosts. Disable engine retries on each call and put one timeout around the whole loop: a second call otherwise starts its attempt count and call timeout again. This example repeats an Algolia search or an Elasticsearch search, never a document write. It tries only separately constructed clients after a failed connection or a 502, 503 or 504; an authentication failure stops the loop. A response lost after a write does not establish that the write was not applied.
-
-```rust
-use concord::{error::Class, Retry};
-use std::{io, time::Duration};
-
-concord::api! {
-    pub client Algolia(origin: concord::Base, application: String, key: concord::Secret) {
-        base origin;
-        headers { "x-algolia-application-id" = application; "x-algolia-api-key" = key; }
-        POST search() -> serde_json::Value {
-            path "1/indexes/books/query";
-            body concord::json(serde_json::json!({"query": "rust"}));
-            idempotent; read concord::Json;
-        }
-    }
-}
-concord::api! {
-    pub client Elasticsearch(origin: concord::Base, authorization: concord::Secret) {
-        base origin;
-        headers { "authorization" = authorization; }
-        GET search() -> serde_json::Value { path "books/_search"; read concord::Json; }
-    }
-}
-
-/// Application errors retain the last call failure or the overall timeout.
-pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
-
-fn next_host(error: &concord::Error) -> bool {
-    error.class() == Some(Class::Connect)
-        || matches!(
-            error.status().map(|status| status.as_u16()),
-            Some(502..=504)
-        )
-}
-
-/// Repeats this read over separately authorized clients, within one overall timeout.
-pub async fn algolia(clients: &[Algolia], budget: Duration) -> Result<serde_json::Value, BoxError> {
-    tokio::time::timeout(budget, async {
-        let mut last: BoxError = io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "No Algolia host was configured.",
-        )
-        .into();
-        for host in clients {
-            match host.search().with_retry(Retry::none()).await {
-                Ok(value) => return Ok(value),
-                Err(error) => {
-                    let again = next_host(&error);
-                    last = error.into();
-                    if !again {
-                        break;
-                    }
-                }
-            }
-        }
-        Err(last)
-    })
-    .await?
-}
-
-/// Repeats an Elasticsearch search; it does not accept a document write.
-pub async fn elasticsearch(
-    clients: &[Elasticsearch],
-    budget: Duration,
-) -> Result<serde_json::Value, BoxError> {
-    tokio::time::timeout(budget, async {
-        let mut last: BoxError = io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "No Elasticsearch host was configured.",
-        )
-        .into();
-        for host in clients {
-            match host.search().with_retry(Retry::none()).await {
-                Ok(value) => return Ok(value),
-                Err(error) => {
-                    let again = next_host(&error);
-                    last = error.into();
-                    if !again {
-                        break;
-                    }
-                }
-            }
-        }
-        Err(last)
-    })
-    .await?
-}
-```
-
-Construct the clients with each trusted base and its authorized credential before calling the loop. An Algolia application's read hosts and an Elasticsearch deployment's node addresses are provider and deployment choices; do not turn an untrusted discovered address into a destination for an existing key. The exact code is [several_hosts.rs](../../tests/real-apis/fixtures/recipes/several_hosts.rs), included and tested word for word by [stream_recipes.rs](../../tests/real-apis/tests/stream_recipes.rs).
 
 ### Compression, proxies and TLS
 
@@ -221,9 +125,9 @@ let request = riot.matches(Europe).ids(&puuid).count(5).request()?;          // 
 assert_eq!(request.url().as_str(), "https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/p-1/ids?count=5");
 ```
 
-It is the request as the description builds it, with every value that the description places, including a key or a token that is a `Secret`, in a header marked sensitive. It does not include what middleware adds as the request is sent: `request()` returns the request before any middleware runs, and a signature belongs to a single attempt ([a middleware](credentials.md#a-middleware)). To see exactly what is sent, put a fake in place of the transport: it receives the request as sent ([a fake transport](testing.md#a-fake-transport)).
+It is the request as the description builds it, with every value that the description places, including a key or a token that is a `Secret`, in a header marked sensitive. It does not include what middleware adds as the request is sent: `request()` returns the request before any middleware runs, and a signature belongs to a single attempt ([how a middleware layer works](middleware.md#how-a-middleware-layer-works)). To see exactly what is sent, put a fake in place of the transport: it receives the request as sent ([a fake transport](testing.md#a-fake-transport)).
 
-`request()` only inspects: the call is intact afterwards, and can still be sent. (A call whose body is a stream cannot show its request without consuming the stream, so `request()` returns an error for it; use a fake transport to inspect such a call.) `into_request()` consumes the call and returns the request. To send it yourself and still get the typed result, use `read_response`, described in [send a request yourself](extending.md#send-a-request-yourself-request-and-read_response).
+`request()` only inspects: the call is intact afterwards, and can still be sent. (A call whose body is a `Body::stream` cannot show its request without consuming the stream, so `request()` returns an error for it; use a fake transport to inspect such a call. A `Body::repeatable` is not opened: `request()` returns the request, with a body that opens when it is read.) `into_request()` consumes the call and returns the request. To send it yourself and still get the typed result, use `read_response`, described in [send a request yourself](extending.md#send-a-request-yourself-request-and-read_response).
 
 ## What a call returns
 
@@ -296,7 +200,7 @@ Concord has two timeouts, each with one job: the *idle timeout* limits silence (
 
 | | What it limits | Default | How to set it |
 |---|---|---|---|
-| The idle timeout, `idle_timeout` | Silence. It watches two things: the transport, from the moment it receives the request until the response head arrives; and a body while it is being read. Each chunk sent or received resets it. | 30 seconds. | `with_idle_timeout(…)`, on the client or on a call. An author sets it in the description for the calls that need a different value (`idle_timeout`). |
+| The idle timeout, `idle_timeout` | Silence. It watches two things: the transport, from the final middleware handoff until the response head arrives, including validation of a repeatable body declared empty; and a body while it is being read. Each chunk sent or received resets it. | 30 seconds. | `with_idle_timeout(…)`, on the client or on a call. An author sets it in the description for the calls that need a different value (`idle_timeout`). |
 | The call timeout, `timeout` | The whole call: every attempt, every wait between attempts, and reading the body. Once it has expired, no further request is handed to the transport. | No limit. | `with_timeout(…)`, on the client or on a call. |
 
 Setting one never changes the other.
@@ -314,7 +218,7 @@ In the first call, `.timeout(50)` is Telegram's own parameter. The idle timeout 
 
 **An endpoint that is idle on purpose declares it.** A long poll, or a stream that is quiet for minutes, is a fact about the endpoint, and its callers should not have to know about it. `idle_timeout <expression>;` may be placed on an endpoint, a scope or the client (a part may hold it too), and the nearest one applies. The expression is Rust, with the inputs as variables, and evaluates to a `std::time::Duration`; see Telegram's `get_updates` in [the block](describing-an-api.md#the-block).
 
-**The idle timeout watches two things, and nothing else.** First, the transport, from the moment it receives the request until the response head arrives: each chunk of a streamed request body that is sent resets the timer. Second, a body while it is being read: each chunk resets it. Time spent in a middleware, before or after the transport, and a reader's own waits never count as silence: only the call timeout, `timeout`, bounds them. The idle timeout is Concord's own, so it applies with any HTTP client.
+**The idle timeout watches two things, and nothing else.** First, the transport, from the final middleware handoff until the response head arrives, including validation of a repeatable body declared empty: each chunk of a streamed request body that is sent resets the timer. Second, a body while it is being read: each chunk resets it. Time spent in a middleware, before or after the transport, and a reader's own waits never count as silence: only the call timeout, `timeout`, bounds them ([a layer that waits](middleware.md#a-layer-that-waits)). The idle timeout is Concord's own, so it applies with any HTTP client.
 
 | | |
 |---|---|
@@ -324,14 +228,16 @@ In the first call, `.timeout(50)` is Telegram's own parameter. The idle timeout 
 | A stream handed to the caller | The call timeout, `timeout`, keeps running until the stream ends. The idle timeout runs while a `try_next()` is waiting, not between two calls to it. |
 | Your own code | A timeout ends a wait; it cannot interrupt code that does not `.await`. |
 | After `send_raw()` | Concord's work ends at the response head: the `reqwest::Response` is yours, and so is the time spent reading it. Neither timeout applies to it. |
-| A dropped call | A call that is dropped stops, and Concord starts no further attempt. What the HTTP library does with the connection is up to the library, and the request may already have reached the server. |
+| A dropped call | It stops, and Concord starts no further attempt ([a call that is dropped](#a-call-that-is-dropped)). |
 
-### The steps of one call
+See [the engine page](../internals/engine.md) for how the engine implements the two timeouts.
+
+## The steps of one call
 
 | Step | What happens | If it fails |
 |---|---|---|
 | 1 | The expressions of the description run: `idle_timeout`, then `idempotent`; then the request is built from the inputs, kind by kind (the base, the paths, the query, the headers, the body). Then the caller's `.edit_request(…)` modifies it. This happens once per send, and each page is one send. | Build error. Nothing was sent. |
-| 2 | For each attempt, a copy passes through the middleware: the caller's layers, then the description's in the order written (for example, one adds a token and the last one signs). Then it is handed to the transport, which sends it. | No response: the attempt has failed. A middleware layer or a transport that refuses to send: no further attempt, and the result is that blocked error. |
+| 2 | For each attempt, a copy passes through the middleware: the caller's layers, then the description's in the order written (for example, one adds a token and the last one signs; [the order of layers](middleware.md#the-order-of-layers)). Then it is handed to the transport, which sends it. | No response: the attempt has failed. A middleware layer or a transport that refuses to send: no further attempt, and the result is that blocked error. |
 | 3 | The response head arrives. The status selects an arm ([how a response is read](responses-and-errors.md#how-a-response-is-read-status-reader-arm)), the reader reads the body if the arm binds it, and the arm produces the result. | A Refused error (also when an arm for a status that is not a 2xx binds a `body` that fails to read), a Mismatch, or a failed attempt if the body broke off. |
 | 4 | The retry policy looks at how the attempt ended ([retries](retries.md)). | Another attempt from step 2, or the result. |
 
@@ -339,7 +245,9 @@ The other expressions run at their own time: `read` for each response, the expre
 
 The reading step alone is `call.read_response(response)`: the endpoint's arms, reader and problem type, applied to a response that you obtained yourself with `call.request()?` ([send a request yourself](extending.md#send-a-request-yourself-request-and-read_response)). It has no retry, no timeout and no pagination, and it takes `&self`, so a call can read several responses.
 
-See [the engine page](../internals/engine.md) for how the engine implements the two timeouts.
+## A call that is dropped
+
+A call that is dropped stops, and Concord starts no further attempt. What the call held is released: its place under the `max_in_flight` of a `Limit`, and its turn in the renewal of a `Renewed`, which goes on for the calls that still wait for it (when the last of them is dropped, the renewal is dropped too). A stream or a body handed to you is released when you drop it. What the call already did stays done: the request may already have reached the server, what the HTTP library does with the connection is up to the library, and a cost already charged to a limit is not given back. A `Rotating` has rules of its own: a renewal that has begun goes on in its driver ([a refresh token that rotates](credentials.md#a-refresh-token-that-rotates)).
 
 ## When you need more control
 

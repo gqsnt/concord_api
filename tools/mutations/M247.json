@@ -1,0 +1,9 @@
+{
+  "id": "M247",
+  "area": "streaming MIME framing",
+  "contract": "C12.3",
+  "description": "Repeatable MIME attempts consistently omit their closing boundary.",
+  "file": "concord-extras/src/body/mime.rs",
+  "find": "        framed.push(Body::from(format!(\"--{boundary}--\\r\\n\")));",
+  "replace": "        framed.push(Body::from(\"\"));"
+}

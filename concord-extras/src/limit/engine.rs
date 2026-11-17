@@ -92,7 +92,7 @@ impl Account {
         Self {
             windows: windows
                 .iter()
-                .map(|window| History::new(window, now))
+                .map(|window| History::new(window, now, true))
                 .collect(),
             in_flight: 0,
             in_use: 0,
@@ -100,19 +100,40 @@ impl Account {
         }
     }
 
+    fn forget_spent(&mut self, now: Instant, cost: u64) {
+        if self.in_flight != 0 {
+            return;
+        }
+        for window in &mut self.windows {
+            if !window.configured
+                && (window.available(now) == 0
+                    || (window.remaining < cost && cost <= window.capacity))
+                && window.refilled
+            {
+                // Keep the slot for reconciliation with other windows in the snapshot.
+                window.kind = Kind::Fixed(None);
+            }
+        }
+        if self.windows.iter().all(History::unknown) {
+            self.windows.clear();
+        }
+    }
+
     // A key holds nothing exactly when it has no head/discovery or body still
     // in flight, no unexpired 429 gate, and no spent units in any window.
     fn holds_nothing(&mut self, now: Instant) -> bool {
+        self.forget_spent(now, 0);
         self.in_flight == 0
             && self.in_use == 0
             && self.gate.remaining(now).is_zero()
             && self
                 .windows
                 .iter_mut()
-                .all(|window| window.available(now) == window.capacity)
+                .all(|window| window.unknown() || window.available(now) == window.capacity)
     }
 
     fn inspect(&mut self, cost: u64, now: Instant, wait: &mut Wait) -> Result<(), LimitError> {
+        self.forget_spent(now, cost);
         self.in_use
             .checked_add(1)
             .ok_or(LimitError::InvalidPolicy)?;
@@ -121,6 +142,10 @@ impl Account {
             .checked_add(u128::from(cost))
             .ok_or(LimitError::InvalidPolicy)?;
         for window in &mut self.windows {
+            if window.unknown() {
+                wait.unknown |= self.in_flight != 0;
+                continue;
+            }
             if cost > window.capacity {
                 return Err(LimitError::CostExceedsCapacity);
             }
@@ -157,10 +182,13 @@ impl Account {
         if self.windows.is_empty() {
             self.windows = windows
                 .iter()
-                .map(|window| History::new(window, now))
+                .map(|window| History::new(window, now, false))
                 .collect();
         }
         for (old, new) in self.windows.iter_mut().zip(windows) {
+            if old.unknown() {
+                *old = History::new(new, now, false);
+            }
             old.observe(new, cost, others, now);
         }
     }
@@ -171,17 +199,19 @@ struct History {
     kind: Kind,
     remaining: u64,
     refilled: bool,
+    configured: bool,
     events: VecDeque<(Instant, u128)>,
     used: u128,
 }
 
 impl History {
-    fn new(window: &Window, now: Instant) -> Self {
+    fn new(window: &Window, now: Instant, configured: bool) -> Self {
         let mut history = Self {
             capacity: window.capacity,
             kind: window.kind.clone(),
             remaining: window.remaining.unwrap_or(window.capacity),
             refilled: false,
+            configured,
             events: VecDeque::new(),
             used: 0,
         };
@@ -196,8 +226,14 @@ impl History {
         history
     }
 
+    fn unknown(&self) -> bool {
+        // Public window settings reject this value; here it marks a forgotten slot.
+        matches!(self.kind, Kind::Fixed(None))
+    }
+
     fn compatible(&self, new: &Window) -> bool {
         match (&self.kind, &new.kind) {
+            (Kind::Fixed(None), _) => true,
             (Kind::Rolling(old), Kind::Rolling(new)) => old == new,
             (Kind::Fixed(_), Kind::Fixed(_)) => true,
             _ => false,
@@ -266,7 +302,8 @@ impl History {
                     self.append(end, u128::from(cost));
                 }
             }
-            Kind::Fixed(_) => self.remaining = self.remaining.saturating_sub(cost),
+            Kind::Fixed(Some(_)) => self.remaining = self.remaining.saturating_sub(cost),
+            Kind::Fixed(None) => {}
         }
     }
 

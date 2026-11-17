@@ -1,18 +1,57 @@
 # When Concord does not cover what you need
 
-*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [What Concord promises](promises.md) · next: [Troubleshooting](troubleshooting.md)*
+*[Concord](../../README.md) · [docs](../README.md) · guide · previous: [What Concord promises](promises.md) · next: [Recipes](recipes.md)*
 
-This page is for the author or the caller of a client who needs something that the description cannot express: another format, another way to paginate, a signature, another HTTP library, one request changed by hand. Every layer has extension points (public traits and functions that you implement) and escape hatches (ways to step around Concord's usual path), all in plain Rust. This page shows each one, with code to copy.
+This page is for the author or the caller of a client who needs something that the description cannot express: another format, another way to paginate, a signature, another HTTP library, one request changed by hand. Every layer has extension points (public traits and functions that you implement) and escape hatches (ways to step around Concord's usual path), all in plain Rust. This page shows each one, with code to copy, after what Concord ships and when to use which.
+
+## What ships beside the macro
+
+Before you write your own, check what Concord ships. The macro knows none of these items: each is an ordinary item of `concord`, from the crate `concord-extras`, used in a description or on a client as your own would be. [Concord on one page](../reference/overview.md#what-ships-beside-the-macro) says what each one does; this table says when to use it, and which feature of `concord-api` turns it on.
+
+| Item | Feature | Use it when |
+|---|---|---|
+| `json(x)`, `Json` | `json` (on by default) | The API sends and receives JSON. |
+| `form(x)` | `form` (on by default) | The API takes a flat form, `application/x-www-form-urlencoded`. |
+| `bracket_form(x)`, `bracket_pairs(x)` | `form` (on by default) | The API reads nested keys, `a[b]` and `a[0]` ([the shipped writers](bodies.md#the-shipped-writers)). |
+| `multipart()` | `multipart` | The API takes a form with files ([a body that is sent](bodies.md#a-body-that-is-sent)). |
+| `multipart_mixed(parts)`, `multipart_related(parts)` | `multipart` | The API takes parts with headers of their own: a batch, a document with its attachments. |
+| `gzip(body)` | `gzip-body` | The API accepts a compressed request body. |
+| `json_lines(records, max_bytes)` | `json` (on by default) | A bulk endpoint takes one JSON value per line. |
+| `Text`, `Binary`, `read::Stream` | none | The body is text, raw bytes, or too large to hold in memory ([reading a success](responses-and-errors.md#reading-a-success)). |
+| `read::JsonLines`, `read::Sse` | `json` for `JsonLines` | The body is a sequence of records: JSON Lines, or server-sent events ([a stream of records](responses-and-errors.md#a-stream-of-records)). |
+| `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` | none | A list arrives over several responses ([the shipped pagers](pages.md#the-shipped-pagers)). |
+| `basic(user, password)` | none | The API uses HTTP Basic. |
+| `auth::Renewed`, `auth::after_401` | `auth` | A token expires, and a renewal that was cancelled can simply be started again ([a token that is renewed](credentials.md#a-token-that-is-renewed)). |
+| `auth::Rotating` | `rotating` (turns on `auth`) | Each exchange consumes the refresh token and returns its replacement ([a refresh token that rotates](credentials.md#a-refresh-token-that-rotates)). |
+| `sign::SigV4`, `sign::body_bytes`, `sign::check_origin` | `sign` | The API uses AWS Signature Version 4; the two helpers serve a provider's own proof ([a signature](credentials.md#a-signature)). |
+| `limit::Limit` | `limit` | The API limits the rate of calls, and requests should wait before the server refuses them ([rate limits](limits.md)). |
+| `transfer::at(call, url)` | none | The API returned a URL on another host ([below](#a-url-that-the-api-returned)). |
+| `tower::Tower` | `tower` | You already send requests through a stack of `tower` layers ([a transport](#a-transport)). |
+
+The optional features are off by default. Turn on the ones that you use:
+
+```toml
+[dependencies]
+concord-api = { git = "https://github.com/gqsnt/concord_api", features = ["auth", "rotating", "sign", "limit", "multipart", "gzip-body", "tower"] }
+```
+
+The features that concern Concord's own HTTP client (`gzip`, `deflate`, `socks` and the others) are in [compression, proxies and TLS](calling.md#compression-proxies-and-tls).
+
+**`Renewed` or `Rotating`.** Use `Renewed` when a renewal that was cancelled can simply be started again. Use `Rotating` when each exchange consumes the refresh token and returns its replacement: reusing a consumed refresh token can lose access to the account, so `Rotating` saves each new pair before either token is used, and it needs a store and a driver that the application polls.
+
+**`Limit`, a `tower` layer or a `when` rule.** They wait at different places:
+
+- `Limit` waits before a request leaves, for every call that shares it: after a `429` with `Retry-After`, under a cap on the requests in flight, or within buckets known in advance or learned from the headers of responses. It waits above the transport, so the idle timeout does not count its wait, and a place under its `max_in_flight` lasts until the body has been read.
+- A rate limit or a concurrency limit of `tower`, through `tower::Tower`, waits inside the transport: the idle timeout counts its wait as silence, and a concurrency limit there ends at the response head.
+- A `when` rule reacts to one response: it asks for another attempt of that call, after a wait, for example a wait that the API puts in the body (Telegram, [your own retry rules](retries.md#your-own-retry-rules)). It holds no other call back.
+
+A `Limit` keeps a budget that every call spends; a `when` rule follows a wait that one response asks for. The two work together.
 
 ## Extension points and escape hatches
 
 | Layer | The usual way | Extension point or escape hatch |
 |---|---|---|
 | The description | The placement statements | Your own Rust value after `body`, `read`, `paginate`, `middleware` or in an arm. Your own methods beside the generated ones. |
-| Nested forms | `body concord::bracket_form { a; b; }` (feature `form`) | One indexed-key convention; `bracket_pairs` supplies the unencoded pairs for a runtime query. |
-| Gzip bodies | `body concord::gzip(concord::json(events)?);` (feature `gzip-body`) | Buffered bodies only; the description sets `content-encoding`. |
-| MIME multipart bodies | `multipart_mixed(parts)`, `multipart_related(parts)` (feature `multipart`) | Ordered buffered parts with their own `HeaderMap`; the first related part is the root. |
-| JSON records | `body concord::json_lines(records, max_bytes);` (feature `json`) | One JSON value per line, including the last LF; the bound covers the whole body. |
 | An endpoint that is not described | — | Add it to the description, or write your own method beside the generated ones. (There is no raw call on a handle; the name `call` is reserved for one.) |
 | One call | `.await` | `.edit_request(\|request\| …)` changes the built `reqwest::Request` before it is handed to the transport. `.with_retry(…)`, `.with_timeout(…)` and `.with_idle_timeout(…)` apply to this call only. `request()` lets you inspect the request. |
 | A request that you send yourself | — | `request()`, then `read_response(response)`. |
@@ -21,7 +60,7 @@ This page is for the author or the caller of a client who needs something that t
 | A URL that the API returned, on another host | — | A second description with its own `base`, and `concord::transfer::at(call, url)` ([below](#a-url-that-the-api-returned)). |
 | Below | — | Plain `reqwest`: `Request`, `Response`, `Client`. |
 
-These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset`, the readers of records, `auth::Renewed`, `limit::Limit`, `transfer::at` and the others are in a crate of their own, `concord-extras`, and every file in it except `tower.rs` is an example worth reading. (Two items also use a hidden helper of the core: the `tower` adapter, for the URL of a response, and `gzip`, for the content type of the body it compresses. Those helpers are not public extension points.)
+These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset`, the readers of records, `auth::Renewed`, `limit::Limit`, `transfer::at` and the others are in a crate of their own, `concord-extras`, and every file in it except `tower.rs` is an example worth reading. Only the `tower` adapter uses a hidden helper of the core, for the response URL. That helper is not a public extension point. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods.
 
 ## A writer of bodies
 
@@ -48,23 +87,7 @@ pub fn xml<T: serde::Serialize>(value: T) -> Result<concord::Body, WriteError> {
 }
 ```
 
-`value.error(e)` takes the `Bounded` by value, so the input's name goes into only one error. To combine bodies, `Body::concat(parts)` returns one body made of several, in order; `body.as_bytes()` returns the bytes of a body held in memory; and `body.into_stream()` turns any body into a stream. See [a body that is sent](responses-and-errors.md#a-body-that-is-sent) for what a body expression may return and how a body is resent. The shipped writers are in [`concord-extras/src/body.rs`](../../concord-extras/src/body.rs) (`json` is three lines), [`multipart.rs`](../../concord-extras/src/multipart.rs) and [`body/`](../../concord-extras/src/body).
-
-For a compressed request, compose the writers and declare the encoding header:
-
-```rust
-concord::api! {
-    pub client Logs {
-        base "https://logs.example.com";
-        POST write(events: Vec<String>) {
-            headers { "content-encoding" = "gzip"; }
-            body concord::gzip(concord::json(events)?);
-        }
-    }
-}
-```
-
-`gzip` keeps the input body's content type and produces repeatable compressed bytes with no timestamp in their header. It refuses a stream without polling it. The description sets `Content-Encoding` because a writer returns a `Body`, which carries no request header except its content type. The transport can determine the compressed body's length; do not copy a `Content-Length` from the uncompressed input. The `gzip-body` feature writes requests independently of the `gzip` feature for response decompression.
+`value.error(e)` takes the `Bounded` by value, so the input's name goes into only one error. To combine bodies, `Body::concat(parts)` returns one body made of several, in order; `body.as_bytes()` returns the bytes of a body held in memory; `body.into_stream()` turns any body into a stream; and `body.get_content_type()` returns the content type of a body that your writer wraps ([a writer that wraps another body](bodies.md#the-shipped-writers)). See [a body that is sent](bodies.md#a-body-that-is-sent) for what a body expression may return and how a body is resent. The shipped writers are in [`concord-extras/src/body.rs`](../../concord-extras/src/body.rs) (`json` is three lines), [`multipart.rs`](../../concord-extras/src/multipart.rs) and [`body/`](../../concord-extras/src/body).
 
 ## A reader
 
@@ -119,7 +142,7 @@ A pager returns `Some(next call)`, or `None` at the end. A pager that can reject
 
 ## A middleware
 
-A middleware layer is something that every request passes through as it is sent: a signature, a token that is renewed, a quota, a counter. It is a type that implements `concord::Middleware`. Concord ships four: `concord::auth::Renewed` for a token that is renewed ([a token that is renewed](credentials.md#a-token-that-is-renewed)), `concord::auth::Rotating` for a refresh token that rotates ([a refresh token that rotates](credentials.md#a-refresh-token-that-rotates)), `concord::sign::SigV4` for AWS Signature Version 4 ([a middleware](credentials.md#a-middleware)), and `concord::limit::Limit` for a rate limit ([limits shared by the calls of a client](retries.md#limits-shared-by-the-calls-of-a-client)). For anything else, you write your own. The author of a client names it in the description (`middleware Signed::new(key.clone());`, written out in [a middleware](credentials.md#a-middleware)). A caller adds their own with `with_middleware`:
+A middleware layer is something that every request passes through as it is sent: a signature, a token that is renewed, a quota, a counter. It is a type that implements `concord::Middleware`. Concord ships four: `concord::auth::Renewed` for a token that is renewed ([a token that is renewed](credentials.md#a-token-that-is-renewed)), `concord::auth::Rotating` for a refresh token that rotates ([a refresh token that rotates](credentials.md#a-refresh-token-that-rotates)), `concord::sign::SigV4` for AWS Signature Version 4 ([a signature](credentials.md#a-signature)), and `concord::limit::Limit` for a rate limit ([rate limits](limits.md)). For anything else, you write your own. The author of a client names it in the description (`middleware Signed::new(key.clone());`, written out in [a signature](credentials.md#a-signature)). A caller adds their own with `with_middleware`:
 
 ```rust
 use concord::transport::{TransportError, TryInfo};
@@ -146,7 +169,7 @@ let count = Count::default();
 let riot = Riot::new(key).with_middleware(count.clone());     // `count` still sees every request
 ```
 
-A caller's middleware runs before the description's middleware, so it cannot change a request after it was signed. `info.endpoint()` is the name of the endpoint (`riot.matches.ids`), and `info.number()` is the attempt number. `next.send(request, info)` may be called more than once, or not at all: a middleware that will not send returns `TransportError::blocked()`, and no more attempts are made. See [a middleware](credentials.md#a-middleware) for the full set of rules: when it is created, when it runs, what the timeouts measure.
+A caller's middleware runs before the description's middleware, so it cannot change a request after it was signed ([the order of layers](middleware.md#the-order-of-layers)). `info.endpoint()` is the name of the endpoint (`riot.matches.ids`), and `info.number()` is the attempt number. `next.send(request, info)` may be called more than once, or not at all: a middleware that will not send returns `TransportError::blocked()`, and no more attempts are made. See [how a middleware layer works](middleware.md#how-a-middleware-layer-works) for the full set of rules: when it is created, when it runs, what the timeouts measure.
 
 ## A transport
 
@@ -174,7 +197,7 @@ impl Transport for Logged {
 let riot = Riot::new(key).with_transport(Logged { http: Client::new() });
 ```
 
-`with_transport` replaces only the transport: every middleware layer still runs above it. `TransportError::from` removes the URL from a `reqwest::Error`. A transport must not change what the last middleware signed. With the `tower` feature, a `tower` service is a transport, `concord::tower::Tower::new(stack)`, and its layers (a rate limit, a limit on concurrent requests) sit beneath the client. A `tower` layer waits inside the transport, so the idle timeout counts its wait as silence, and a limit on concurrent requests there ends at the response head; `concord::limit::Limit` waits above the transport, and its `max_in_flight` holds a place until the body has been read ([limits shared by the calls of a client](retries.md#limits-shared-by-the-calls-of-a-client)).
+`with_transport` replaces only the transport: every middleware layer still runs above it. `TransportError::from` removes the URL from a `reqwest::Error`. A transport must not change what the last middleware signed. With the `tower` feature, a `tower` service is a transport, `concord::tower::Tower::new(stack)`, and its layers (a rate limit, a limit on concurrent requests) sit beneath the client. A `tower` layer waits inside the transport, so the idle timeout counts its wait as silence, and a limit on concurrent requests there ends at the response head; `concord::limit::Limit` waits above the transport, and its `max_in_flight` holds a place until the body has been read ([rate limits](limits.md)).
 
 **A setting of the HTTP client** (a certificate, a proxy) needs no transport of your own: `concord::Http::with(|builder| …)` returns Concord's client with your setting, and you pass it to `with_transport` ([the client](calling.md#the-client)).
 
@@ -234,7 +257,7 @@ concord::transfer::at(uploads.send(bytes), &ticket.url)?
 | The origin | The URL must be at the origin of the second description's `base`. A URL at another origin is a Build error, and nothing is sent, as with any `at_url` ([a pager of your own](pages.md#a-pager-of-your-own)). |
 | What travels with it | Only what the second description says. Nothing of the API's client: no key, no header, no middleware. |
 | Headers that the API returned | They are known only at run time, so `edit_request` adds them. `HeaderMap::extend` replaces each name that it is given, and keeps several values of one name. These headers are your code's: send only the ones that you trust and that agree with the body. |
-| The rest of the call | It is a generated call like any other: its retry policy, its timeouts, its reader, and the rule that a body that is a stream is sent once. To send such a body again, your own loop builds the call again, with a new stream ([a body that is a stream](retries.md#a-body-that-is-a-stream)). |
+| The rest of the call | It is a generated call like any other: its retry policy, its timeouts, its reader, and the rules of its body: a `Body::stream` is sent once, and a `Body::repeatable` is opened again for each attempt that the rules of retry allow ([a body that is opened again](bodies.md#a-body-that-is-opened-again-for-each-attempt)). The headers that `edit_request` adds are kept for every attempt. To send a `Body::stream` again, your own loop builds the call again, with a new stream ([a body that is a stream](bodies.md#a-body-that-is-a-stream)). |
 | Not done | No redirect is followed (Concord's own client follows none), and no upload session protocol is run: a large upload in several requests, or a download that resumes, is a loop in your own code. |
 
 ## A documented download redirect
@@ -280,6 +303,8 @@ async fn download(api: &Archives, id: u64)
 }
 ```
 
+Tested: [`redirect.rs`](../../tests/real-apis/fixtures/recipes/redirect.rs), run by [`writer_recipes.rs`](../../tests/real-apis/tests/writer_recipes.rs), which compares this block with the file.
+
 `transfer::at` validates the original URL spelling; the engine checks its origin against the download call's base before sending. The recipe copies none of the API client's credentials, headers or middleware. It does not replace the URL with an unchecked request edit. A relative Location needs an explicit resolution policy from the author. This function follows one Location: another redirect is returned as the second call's error, and the author decides whether another call is appropriate. Each call keeps its own retry and timeout policy; the downloaded bytes are streamed without buffering the whole file.
 
 ## The raw response: `send_raw`
@@ -301,7 +326,7 @@ let response = my_client.execute(call.request()?).await?;
 let game = call.read_response(response).await?;          // the same value that `call.await?` returns
 ```
 
-`request()` only inspects: the call is still intact afterwards. `into_request()` consumes the call and returns the request; a call whose body is a stream can be taken only this way ([looking without sending](calling.md#looking-without-sending)).
+`request()` only inspects: the call is still intact afterwards. `into_request()` consumes the call and returns the request; a call whose body is a `Body::stream` can be taken only this way ([looking without sending](calling.md#looking-without-sending)). Both take a `Body::repeatable` without opening it: it opens when the body of the request is read, and a request that you send yourself gets none of Concord's retries.
 
 ## Your own methods beside the generated ones
 

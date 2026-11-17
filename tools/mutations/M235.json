@@ -1,0 +1,9 @@
+{
+  "id": "M235",
+  "area": "short request body",
+  "contract": "tools/mutations/README.md#c1213",
+  "description": "EOF before the declared length is silently accepted.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "                    if this.length.is_some_and(|length| length != this.count) {",
+  "replace": "                    if false {"
+}

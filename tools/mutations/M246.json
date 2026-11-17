@@ -1,0 +1,9 @@
+{
+  "id": "M246",
+  "area": "composed poll progress",
+  "contract": "tools/mutations/README.md#c1212",
+  "description": "Composed polling charges descent again and never reaches a deeper ready leaf.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "        while let Some(stream) = this.parts.front_mut() {\n            match stream.as_mut().poll_next(cx) {\n                Poll::Ready(None) => {\n                    this.parts.pop_front();\n                    if !this.budget.step(cx) {\n                        return Poll::Pending;\n                    }\n                }",
+  "replace": "        while let Some(stream) = this.parts.front_mut() {\n            if !this.budget.step(cx) { return Poll::Pending; }\n            match stream.as_mut().poll_next(cx) {\n                Poll::Ready(None) => {\n                    this.parts.pop_front();\n                }"
+}

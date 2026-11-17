@@ -152,7 +152,7 @@ The macro knows none of these: each is an ordinary item of `concord`, used in a 
 | `json(x)`, `form(x)`, `multipart()` (feature `multipart`) | Write a body. |
 | `bracket_form(value)`, `bracket_pairs(value)` (feature `form`) | Write nested maps and indexed lists as a form or unencoded query pairs. |
 | `gzip(body)` (feature `gzip-body`) | Compress buffered bytes, keeping their content type; the description sets Content-Encoding. |
-| `multipart_mixed(parts)`, `multipart_related(parts)` (feature `multipart`) | Write ordered buffered parts with their own headers; the first related part is the root. |
+| `multipart_mixed(parts)`, `multipart_related(parts)` (feature `multipart`) | Write ordered buffered or repeatable parts with their own headers; the first related part is the root. |
 | `json_lines(records, max_bytes)` (feature `json`) | Write compact JSON and LF after every record, within a whole-body byte bound. |
 | `Json`, `Text`, `Binary`, `read::Stream` | Read a body: whole, at most 10 MiB, or as a `ByteStream`. |
 | `read::JsonLines::new(n)` (feature `json`), `read::Sse::new(n)` | Read a body as records, each at most `n` bytes, into a `RecordStream`: JSON Lines, or server-sent events. |
@@ -161,10 +161,10 @@ The macro knows none of these: each is an ordinary item of `concord`, used in a 
 | `auth::Renewed`, `auth::after_401` (feature `auth`) | A middleware: a token that expires, renewed once for all the calls that wait for it, and sent only to the origin of its base. A retry rule for one more attempt after a `401`. |
 | `auth::Rotating` (feature `rotating`) | A middleware: a refresh token that the server replaces at each exchange. Each new pair is saved before either token is used; the application polls its `RotationDriver`. |
 | `sign::SigV4` (feature `sign`) | A middleware: AWS Signature Version 4 for each attempt, after a check of the origin; `SigV4::sign` signs one request. `sign::body_bytes` and `sign::check_origin` serve a provider's own proof. |
-| `limit::Limit` (feature `limit`) | A middleware: limits shared by the calls of a client. It waits after a `429` with `Retry-After`; it can cap the calls in flight, and keep buckets with windows known in advance or learned from the headers of responses. |
+| `limit::Limit` (feature `limit`) | A middleware for rate limits. It waits after a `429` with `Retry-After`; it can cap the calls in flight, and keep buckets with windows known in advance or learned from the headers of responses. |
 | `transfer::at(call, url)` | A call of a second description, sent to a URL that the API returned, once the URL is checked. |
 
-Other formats use the same extension points. [Binary frames](../guide/responses-and-errors.md#binary-frames) use `LengthDelimitedCodec` on a `ByteStream`; provider checks and terminal events remain the application's responsibility. [Multipart responses and batches](../guide/responses-and-errors.md#a-multipart-response-and-its-batch) use `multer` under a whole-response bound and `multipart_mixed` for the request, keeping completed replies when a later part fails. A JSON array is read whole with `Json.limit(…)` into `Vec<T>`; Concord has no incremental JSON reader. [Several hosts](../guide/calling.md#several-hosts) use separate clients and an application loop with engine retries off and one overall timeout; Concord supplies no host pool.
+Other formats use the same extension points. [Binary frames](../guide/recipes.md#binary-frames) use `LengthDelimitedCodec` on a `ByteStream`; provider checks and terminal events remain the application's responsibility. [Multipart responses and batches](../guide/recipes.md#a-multipart-response-and-its-batch) use `multer` under a whole-response bound and `multipart_mixed` for the request, keeping completed replies when a later part fails. A JSON array is read whole with `Json.limit(…)` into `Vec<T>`; Concord has no incremental JSON reader. [Several hosts](../guide/recipes.md#several-hosts) use separate clients and an application loop with engine retries off and one overall timeout; Concord supplies no host pool.
 
 → [The rules](rules.md), rules 2, 11, 12, 15, 17, 20, 21, 24; [what a generated client has](crates.md#what-a-generated-client-has), in the crates; [the contracts](contracts.md), C5, C6, C8.8.
 
@@ -179,7 +179,7 @@ The promises cover the requests that the description builds.
 | G3 | Nothing declared goes to another origin; a secret does not follow a change of `base`. | Concord's own client, which follows no redirects. Your own client that follows them is outside the promise. |
 | G4 | The body of an error response is never read as the success type. | None of your arms saying otherwise. |
 | G5 | A body read whole stops at 10 MiB, and what an error keeps is bounded. | A body read whole. A stream has no limit. |
-| G6 | Same inputs, same request: no hidden state, clock or randomness. | Your own code doing the same: a middleware can compute anything. |
+| G6 | The request is built once. Buffered multipart boundaries are deterministic; streaming form-data chooses one random boundary per body and reuses it for every attempt. | Your own code doing the same: a middleware can compute anything. |
 | G7 | No call waits forever on a silent server: 30 seconds of silence at most. | Silence of the transport, or of a body being read. A middleware's or a reader's own wait is bounded only by the call timeout, `timeout`. |
 | G8 | A request is retried only when you asked for it, and only when repeating it has no further effect. | What Concord itself passes down. What a middleware or `reqwest` sends again happens below it. |
 | G9 | With no arrow, the status alone is the result. | No arm that applies reads a body; otherwise it does not compile. |
@@ -224,7 +224,7 @@ A fact of the API that every caller shares belongs in the description; state tha
 | Obtain a token (OAuth2 and the like), sign with a protocol other than AWS Signature Version 4, or share a limit between processes | A middleware that you write. A token that is renewed, a refresh token that rotates, AWS Signature Version 4, and limits shared by the calls of one process ship: `concord::auth`, `concord::sign`, `concord::limit`. |
 | Retry by default | `with_retry(Retry::standard())`. |
 | Follow a redirect | An arm for the `3xx` and a second request; or your own `reqwest::Client` that follows them, outside G3. |
-| Send a stream body twice | Your own loop ([a body that is a stream](../guide/retries.md#a-body-that-is-a-stream)). |
+| Send a `Body::stream` twice | `Body::repeatable`, when the source can be opened again ([a body that is opened again](../guide/bodies.md#a-body-that-is-opened-again-for-each-attempt)); otherwise your own loop ([a body that is a stream](../guide/bodies.md#a-body-that-is-a-stream)). |
 | Follow pages to another host, or poll by repeating a request | Your own loop. |
 | Send a call of the API to another origin that the server returns | Same origin: `call.at_url(url)`. Another origin: a second description of that host, with none of your keys, and `concord::transfer::at(call, url)`. |
 | Send a header whose name the caller chooses (`x-amz-meta-*`) | Your own method on the call, using `.edit_request(…)`. |

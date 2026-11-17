@@ -85,6 +85,10 @@ impl std::fmt::Debug for Headers {
 
 impl Headers {
     /// Returns the value of a header, if it is present and is valid text.
+    ///
+    /// A repeated header returns its first value. The `header` method of
+    /// `concord::limit::Seen`, which a rate limit reads, differs: it returns a value only
+    /// when the header appears exactly once.
     pub fn get(&self, name: &str) -> Option<&str> {
         self.0.get(name).and_then(|v| v.to_str().ok())
     }

@@ -1,0 +1,9 @@
+{
+  "id": "M240",
+  "area": "public stream mapping",
+  "contract": "tools/mutations/README.md#c1212",
+  "description": "A map is skipped for repeatable input, losing the author's framing or transformation.",
+  "file": "concord-core/src/body.rs",
+  "find": "                        repeatable::mapped(stream, map)",
+  "replace": "                        stream"
+}

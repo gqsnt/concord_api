@@ -97,8 +97,9 @@ impl<T: Send> IntoItems for Vec<T> {
 /// path, query pairs and header values. Sensitive header values are left out too, including
 /// those marked by `edit_request`. Body bytes are compared as they are, so when a secret in
 /// the body is replaced, the next request differs in its bytes and one repeat goes
-/// undetected. A request with a streamed body never counts as a
-/// repeat: it has no bytes to compare. After an `edit_request` that changes the URL,
+/// undetected. A one-shot stream body never counts as a repeat: it has no bytes
+/// to compare. Repeatable bodies compare the flattened sequence of bytes, factories
+/// and map identities, without opening any source. After an `edit_request` that changes the URL,
 /// its secret marks are no longer known and the URL is compared as it is, without
 /// its fragment. A changed continuation header advances the page; a replaced key
 /// whose marks are known does not.

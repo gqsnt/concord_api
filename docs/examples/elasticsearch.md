@@ -1,8 +1,8 @@
 # Elasticsearch
 
-*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Telegram](telegram.md) · next: [Real APIs](README.md)*
+*[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Telegram](telegram.md) · next: [Anthropic](anthropic.md)*
 
-This page is for a Rust developer who calls Elasticsearch. It gives a client with 15 endpoints that you can copy, and shows a `GET` with a body, a body of many JSON lines, a search walked page by page within a point in time, and a response whose format is an option.
+This page is for a Rust developer who calls Elasticsearch. It gives a client with 16 endpoints that you can copy, and shows a `GET` with a body, a body of many JSON lines, compressed with gzip or not, a search walked page by page within a point in time, and a response whose format is an option.
 
 Here is Elasticsearch as Concord sees it. The server is the deployment's own: `base url;`, an input of type `Base`. Authentication is a complete `authorization` header, a `Secret` (`concord::basic(user, password)`, or `ApiKey …`). The first segment of the path is an index, or several (`logs-*,metrics-*`) kept in one segment, so the tree has two handles: `index(name)` for one index, `indices(targets)` for a search over many. A search is a `GET` with a JSON body. A bulk write is many JSON lines, and its `200` holds a result for each line, including failures. A search over many pages walks a point in time, using the sort values of the last hit. Elasticsearch rejects a request with `{"error": {"type", "reason"}, "status"}`, read into `EsProblem`; a missing document is a `404` that is a normal response (`"found": false`). Elastic's own reference is [elastic.co/docs/api/doc/elasticsearch](https://www.elastic.co/docs/api/doc/elasticsearch). `(unsure)` marks a detail about Elasticsearch that has not been checked.
 
@@ -91,6 +91,12 @@ concord::api! {
             path "_bulk";
             body concord::json_lines(lines, 10 * concord::MIB);
         }
+        /// The same writes in a body compressed with gzip, for a large batch.
+        POST bulk_gzip(lines: Vec<Value>, ..output, ..write_options) -> BulkReply {
+            path "_bulk";
+            headers { "content-encoding" = "gzip"; }
+            body concord::gzip(concord::json_lines(lines, 10 * concord::MIB)?);
+        }
 
         /// A search in a point in time, page after page. No index in the URL: the point in time
         /// has them. No `filter_path` either: the pager needs every field it reads.
@@ -121,6 +127,8 @@ concord::api! {
 ```
 
 The bulk writer's 10 MiB limit is this example's policy for the complete encoded request, including line feeds. A larger batch fails before sending; split it or change that bound for the deployment. The writer supplies no action/document pairs and does not interpret item errors.
+
+`bulk_gzip` sends the same lines compressed with `concord::gzip`. The writer returns a body, which carries no header but its content type (`application/x-ndjson` here), so the description sets `content-encoding: gzip` itself. Elasticsearch decompresses a request body sent with that header, as its own clients do with their compression option (unsure: a proxy in front of the cluster may not accept it). The 10 MiB bound applies to the lines before compression.
 
 A document, a query and the settings of an index are `serde_json::Value`, because each deployment has its own mappings. Four writes declare `idempotent false;`, because a second attempt is not the same as the first: `put` and `delete_document` give the document a new version each time, and an index created or deleted twice gets an error the second time (`400`: it exists; `404`: it is gone), which hides the fact that the first attempt succeeded.
 

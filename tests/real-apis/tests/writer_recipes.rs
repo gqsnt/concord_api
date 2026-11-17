@@ -76,7 +76,7 @@ fn c1_20_writer_recipe_blocks_match_the_guide_word_for_word() {
             include_str!("../fixtures/recipes/query.rs"),
         ),
         (
-            include_str!("../../../docs/guide/extending.md"),
+            include_str!("../../../docs/guide/bodies.md"),
             include_str!("../fixtures/recipes/gzip.rs"),
         ),
     ] {

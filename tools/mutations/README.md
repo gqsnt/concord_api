@@ -44,3 +44,40 @@ and compiler-test binaries. Logs and selections remain in
 `target/mutants/last-run.txt` and `target/mutants/last-run.json`.
 
 Run runner regressions with `python3 -B -m unittest discover -s tools/mutations`.
+
+## Core body mutation contracts
+
+The catalogue entries for repeatable request bodies link to the headings below. Each
+states the clause in the form a mutation needs; the full text of each clause is in
+`docs/reference/contracts.md`. The Rust tests carry the clause numbers.
+
+### C12.12
+
+A `Body::repeatable` is opened once for each attempt, and each attempt sends it
+from its first byte. Nothing is opened when a call is built, cloned, inspected
+or dropped. Whether a request may be sent again is still decided by the rules
+of retry (the method, `idempotent`, `not_applied_on`): a repeatable body makes it
+possible, not allowed. A multipart body with repeatable parts is repeatable.
+Composition cooperates with the executor instead of opening an unbounded number
+of immediately empty sources in one poll. Public `Body::map_stream` runs a fresh
+map per opening: it may validate, frame or transform, but its output bytes must
+be the same for the same input bytes, independent of attempts and input chunking.
+A map cannot hide an observed factory-containing source failure. Mapping buffered
+bytes still makes them one-shot.
+
+### C12.13
+
+A failure of the body is the attempt's failure. An error while opening or reading
+ends the attempt as Other with the error as its source, whatever the transport
+reports; a source that gives more or less than the declared length fails; after
+its first error the body ends and opens nothing more.
+
+### C12.14
+
+An edit runs once and sees a placeholder that cannot be read. It must leave the
+body alone: detected removal or replacement by a different kind is a Build error;
+wrappers and look-alikes cannot always be detected, and the declared repeatable
+body is sent regardless. Middleware and a signer see each attempt's own stream.
+`request()` succeeds without opening anything. Two pages with the same head and
+the same sources are the same request. A dropped call opens nothing more; the
+timeouts cover opening and reading at the transport.

@@ -18,9 +18,14 @@ A workspace crate, never published. Descriptions compile, and recipe tests send 
   check each block against its page word for word. The latter covers Docker/AWS frames,
   multipart responses and batches, separate service hosts, and the caller's upload loop.
   These files use dev-dependencies and are not library implementations.
+- `fixtures/examples/` holds a block of an example page that needs a dev-dependency (the
+  token store of the GitHub page uses `tokio::fs`). `tests/example_values.rs` includes it,
+  checks the blocks of the Anthropic and Google Drive pages and that one word for word, and
+  runs the streamed reply, the rotating token, the `multipart/related` upload and the
+  compressed bulk write against scripted responses.
 - `src/regressions/`: earlier descriptions retained as independent compilation and request tests.
 - `tests/pages.rs` checks every whole description against its page and its compiled source,
-  and checks the helper and calling blocks of all eight example pages word for word.
+  and checks the helper and calling blocks of the first eight example pages word for word.
   Refresh candidates with `python3 -B tools/doc_examples.py` under `target/doc-examples/`;
   review and copy them to the paths shown there. `--check` reports drift without writing.
 - `tests/helps_compile.rs`: each help of the macro's messages, applied as written, compiles.

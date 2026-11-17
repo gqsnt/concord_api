@@ -1,0 +1,9 @@
+{
+  "id": "M239",
+  "area": "repeatable page identity",
+  "contract": "tools/mutations/README.md#c1214",
+  "description": "Different factories with identical page heads are incorrectly treated as the same request.",
+  "file": "concord-core/src/body.rs",
+  "find": "                    (Self::Source(Data::Repeatable(a)), Self::Source(Data::Repeatable(b))) => {\n                        Arc::ptr_eq(a, b)\n                    }",
+  "replace": "                    (Self::Source(Data::Repeatable(_)), Self::Source(Data::Repeatable(_))) => true,"
+}

@@ -52,3 +52,5 @@ socks = ["reqwest/socks"]
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 concord-testkit = { path = "../concord-testkit" }
 concord-core = { path = "." }
+# Compile the custom body-writer rustdoc example only.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

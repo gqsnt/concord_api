@@ -92,23 +92,21 @@ fn batch_wire(boundary: &str, replies: &[(&str, u16, &str)]) -> Vec<u8> {
 
 #[test]
 fn c1_20_stream_recipe_blocks_match_the_guide_word_for_word() {
-    let responses = include_str!("../../../docs/guide/responses-and-errors.md");
+    let recipes = include_str!("../../../docs/guide/recipes.md");
     for code in [
         include_str!("../fixtures/recipes/docker_frames.rs"),
         include_str!("../fixtures/recipes/aws_frames.rs"),
         include_str!("../fixtures/recipes/multipart_response.rs"),
         include_str!("../fixtures/recipes/multipart_batch.rs"),
     ] {
-        assert!(responses.contains(&format!("```rust\n{}\n```", code.trim())));
+        assert!(recipes.contains(&format!("```rust\n{}\n```", code.trim())));
     }
+    assert!(recipes.contains(&format!(
+        "```rust\n{}\n```",
+        include_str!("../fixtures/recipes/several_hosts.rs").trim()
+    )));
     assert!(
-        include_str!("../../../docs/guide/calling.md").contains(&format!(
-            "```rust\n{}\n```",
-            include_str!("../fixtures/recipes/several_hosts.rs").trim()
-        ))
-    );
-    assert!(
-        include_str!("../../../docs/guide/retries.md").contains(&format!(
+        include_str!("../../../docs/guide/bodies.md").contains(&format!(
             "```rust\n{}\n```",
             include_str!("../fixtures/recipes/upload_stream.rs").trim()
         ))

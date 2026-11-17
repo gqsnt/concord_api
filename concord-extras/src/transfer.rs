@@ -1,28 +1,28 @@
-//! A URL that the API returned.
+//! Calls to a URL that the API returned, such as an upload URL: [`at`].
 //!
-//! Declare the upload host separately, with its own base and no API credentials
-//! or middleware. [`at`] validates the original URL text, then calls the public
-//! [`Call::at_url`]. The engine checks the origin against the upload call's base
-//! when it builds the request, before any transport send. This helper creates no
-//! new call type, reader, retry loop or engine state.
+//! Describe the upload host separately, with its own base and without the API's
+//! credentials or middleware. [`at`] checks the URL text as it was returned, then calls
+//! the public [`Call::at_url`]. The engine checks the origin against the base of the
+//! upload call when it builds the request, before the transport sends anything. This
+//! helper adds no call type, reader, retry loop or engine state.
 //!
-//! Only an absolute HTTP(S) URL with identical parsed and HTTP-URI spelling is
-//! accepted. Fragments, a lone `?` or a query containing only `&` separators are
-//! refused because `at_url` discards them. User information is also refused:
-//! `at_url` can retain it, and it is not part of the engine's origin comparison.
-//! Other query spelling, escape case, ordering and repeated keys are preserved
-//! for a credential-free call. This function cannot inspect an opaque call's
-//! secret query entries, middleware, custom transport or later edits; use the
-//! separate description below and keep edits confined to returned headers.
+//! Only an absolute HTTP(S) URL whose spelling stays the same once parsed as a URL and
+//! as an HTTP URI is accepted. Fragments, a lone `?` and a query made only of `&`
+//! separators are refused, because `at_url` discards them. User information is refused
+//! too: `at_url` can keep it, and the engine's comparison of origins ignores it. Any
+//! other spelling of the query, the case of escapes, the order and repeated keys are
+//! kept for a call without credentials. This function cannot inspect the secret query
+//! entries, middleware, custom transport or later edits of an opaque call; use a
+//! separate description, as below, and limit your edits to the headers the API returned.
 //!
 //! Give the second description a [`Body`](concord_core::Body) input and write
 //! `body bytes;`, as below. Inputs are borrowed inside a description: construct
 //! a `Body` from your bytes before passing it to the call, rather than passing a
 //! `Bytes` input to `Body::new` inside the description.
 //!
-//! This upload uses a ticket from the API, the independently chosen upload base,
-//! and header names and values returned at run time. The ticket reader enables `json`;
-//! transfer itself needs no feature.
+//! This upload uses a ticket from the API, an upload base chosen separately, and the
+//! header names and values returned at run time. Reading the ticket needs the feature
+//! `json`; this module itself needs no feature.
 //!
 //! ```no_run
 //! use concord::{Base, Body, Json, Secret};
@@ -62,27 +62,28 @@
 //! }
 //! ```
 //!
-//! Concord's default HTTP client follows no redirects. The generated upload call
-//! retains ordinary timeout, retry, reader and one-shot-body rules. Returned headers
-//! must be trusted and consistent with the actual body; raw `edit_request` is the
-//! author's responsibility and runs after core validation. No upload-session
-//! protocol, reconnect or download resumption is performed.
+//! Concord's default HTTP client follows no redirects. The generated upload call keeps
+//! the usual rules for timeouts, retries, readers and bodies that can be sent only
+//! once. The returned headers must be trusted and must match the actual body; a raw
+//! `edit_request` is the author's responsibility and runs after the core's checks. This
+//! module implements no upload-session protocol, no reconnection and no resumption of
+//! downloads.
 
 use concord_core::page::Call;
 use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
 
-/// A URL-text validation error containing no URL or other request value.
+/// Why [`at`] refused a URL; the error holds no URL and no other value of the request.
 ///
-/// Parser failures retain their original, value-free cause in `source()`.
-/// Semantic rejection reasons have no lower cause. `Display` and `Debug` omit
-/// causes. Errors from `at` are returned immediately, before there is a call error;
-/// an origin mismatch instead arrives as the engine's `concord::Error` at send time.
+/// Parser errors keep their original cause, which holds no value, in `source()`; the
+/// other variants have no lower-level cause. `Display` and `Debug` omit causes. Errors
+/// from `at` are returned at once, before there is a call error; an origin that does
+/// not match arrives instead as the engine's `concord::Error`, when the call is sent.
 ///
-/// Handle the `Result` of [`at`] directly: this error is never installed inside
-/// a `concord::Error` by `at`. A later generated-call error follows the core's
-/// source contract. See [`at`] for the two-line form that handles both error types.
+/// Handle the `Result` of [`at`] directly: `at` never puts this error inside a
+/// `concord::Error`. An error of the generated call, later, follows the core's rules
+/// for sources. See [`at`] for the two-line form that handles both error types.
 ///
 /// Checks run in this order: the byte bound; the literal authority form; written
 /// user information and fragments; URL parsing; the scheme and parsed authority;
@@ -204,11 +205,11 @@ impl StdError for TransferError {
     }
 }
 
-/// Checks the URL text and returns `call.at_url(url)` through the public Call trait.
+/// Checks the URL text, then returns `call.at_url(url)`, through the public `Call` trait.
 ///
 /// No request is built or sent here. The helper cannot inspect the call's base or
-/// strip its secrets; origin rejection is performed by the engine before sending.
-/// Use a separate credential-free description, and do not change its target later.
+/// remove its secrets; the engine rejects another origin before sending. Use a separate
+/// description without credentials, and do not change its target later.
 ///
 /// The accepted URL's path and query reach the transport byte for byte for a
 /// description with no [`Secret`](concord_core::Secret) query entry. The engine
@@ -217,11 +218,13 @@ impl StdError for TransferError {
 /// cannot detect those entries in an opaque call. Raw edits, middleware and custom
 /// transports that change the target also remain the author's responsibility.
 ///
-/// `at(call, url)?.await?` involves two error types: [`TransferError`] from `at`,
-/// then `concord::Error` from sending, including a Build error for another origin.
-/// For a typed application error, use the two-line form below to handle each step.
-/// Give the upload description a [`Body`](concord_core::Body) input; construct
-/// that body before passing it to the call, since description inputs are borrowed.
+/// # Errors
+///
+/// `at(call, url)?.await?` involves two error types: [`TransferError`] from `at`, then
+/// `concord::Error` from sending, including a Build error for another origin. For a
+/// typed error of your application, use the two-line form below to handle each step.
+/// Give the upload description a [`Body`](concord_core::Body) input, and build that
+/// body before passing it to the call, because the inputs of a description are borrowed.
 ///
 /// ```no_run
 /// use concord::{Body, transfer::TransferError};

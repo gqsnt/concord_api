@@ -1,0 +1,9 @@
+{
+  "id": "M229",
+  "area": "body repeatability",
+  "contract": "tools/mutations/README.md#c1212",
+  "description": "A repeatable source loses its reconstruction capability.",
+  "file": "concord-core/src/body.rs",
+  "find": "            Data::Bytes(_) | Data::Repeatable(_) => true,",
+  "replace": "            Data::Bytes(_) => true,\n            Data::Repeatable(_) => false,"
+}

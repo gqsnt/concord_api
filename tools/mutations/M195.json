@@ -4,6 +4,6 @@
   "contract": "C12.2",
   "description": "The compressed body loses the content type of the input body",
   "file": "concord-extras/src/body/gzip.rs",
-  "find": "    if let Some(content_type) = body.__content_type() {\n        output = output.content_type(content_type.to_owned());\n    }\n",
+  "find": "    if let Some(content_type) = body.get_content_type() {\n        output = output.content_type(content_type.to_owned());\n    }\n",
   "replace": ""
 }

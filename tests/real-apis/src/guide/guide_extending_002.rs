@@ -1,7 +1,7 @@
 concord::api! {
-pub client Uploads(origin: concord::Base) {
-    // the host that receives the bytes: its own base, nothing of the API's client
-    base origin;
-    POST send(bytes: concord::Body) { body bytes; }
-}
+pub client Archives(token: concord::Secret) {
+        base "https://api.example.com";
+        headers { "authorization" = "Bearer {token}"; }
+        GET download(id: u64) { path "archives/{id}"; }
+    }
 }

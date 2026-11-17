@@ -9,7 +9,7 @@
 //! |---|---|
 //! | `concord-macros` | [`api!`]. It knows the tree, the statements and the inputs, but nothing about the expressions on their right-hand side. |
 //! | `concord-core` | The values and traits of a call: [`Secret`], [`Base`], [`Body`], [`Reader`], [`Retry`], [`Error`], [`Pages`], [`Middleware`], [`Transport`], [`Http`]; [`fake`] and [`reply`] for tests. |
-//! | `concord-extras` | The shipped implementations: [`json`], [`form`], [`bracket_form`], [`bracket_pairs`], [`json_lines`], optional `gzip`, `multipart`, `multipart_mixed` and `multipart_related`; [`struct@Json`], [`struct@Text`], [`struct@Binary`], [`read::Stream`], [`read::JsonLines`], [`read::Sse`]; [`by_offset`], [`by_offset_limit`], [`by_page`], [`by_cursor`], [`by_link`], [`by_next_url`]; [`basic`]; optional `auth` (with rotating credentials under `rotating`), `sign` and `limit`; [`transfer`]. These use public traits and helpers. The Tower adapter also uses a hidden helper for the URL of a response, and `gzip` uses one to read the content type of the body that it compresses. |
+//! | `concord-extras` | The shipped implementations: [`json`], [`form`], [`bracket_form`], [`bracket_pairs`], [`json_lines`], optional `gzip`, `multipart`, `multipart_mixed` and `multipart_related`; [`struct@Json`], [`struct@Text`], [`struct@Binary`], [`read::Stream`], [`read::JsonLines`], [`read::Sse`]; [`by_offset`], [`by_offset_limit`], [`by_page`], [`by_cursor`], [`by_link`], [`by_next_url`]; [`basic`]; optional `auth` (with rotating credentials under `rotating`), `sign` and `limit`; [`transfer`]. These use public traits and helpers, including [`Body::get_content_type`] for `gzip`. Only the Tower adapter also uses a hidden helper for the URL of a response. |
 //!
 //! The reader `Stream` is named through its module, [`read::Stream`]: at the root, its name would
 //! clash with the `Stream` trait that most async code imports.
@@ -74,6 +74,7 @@
 //!   [`Error::details`], which you call to see what the server sent, may echo one back.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 // The page `sample` is written by the macro, whose code names `::concord`.
 #[cfg(doc)]
@@ -88,35 +89,86 @@ pub use concord_macros::api;
 #[doc(hidden)]
 pub use concord_core::__private;
 
+/// A request body, including a file reopened at each authorized attempt.
+///
+/// ```no_run
+/// use concord::{Body, Retry};
+/// use std::{io, path::PathBuf};
+/// use tokio_util::io::ReaderStream;
+///
+/// concord::api! {
+///     client Uploads {
+///         base "https://uploads.example.test";
+///         PUT put(file: Body, size: u64) {
+///             path "snapshot";
+///             headers { "content-length" = size; }
+///             body file;
+///         }
+///     }
+/// }
+///
+/// async fn upload_snapshot(
+///     snapshot: PathBuf,
+///     returned_headers: concord::http::HeaderMap,
+/// ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+///     let size = tokio::fs::metadata(&snapshot).await?.len();
+///     let body = Body::repeatable(move || {
+///         let snapshot = snapshot.clone();
+///         async move {
+///             let file = tokio::fs::File::open(snapshot).await?;
+///             Ok::<_, io::Error>(ReaderStream::new(file))
+///         }
+///     }).content_type("application/octet-stream");
+///
+///     Uploads::new()
+///         .put(body, size)
+///         .edit_request(move |request| {
+///             request.headers_mut().extend(returned_headers.clone());
+///         })
+///         .with_retry(Retry::standard())
+///         .await?;
+///     Ok(())
+/// }
+/// ```
+#[doc(inline)]
+pub use concord_core::Body;
 #[doc = include_str!("retry.md")]
 pub use concord_core::Retry;
 pub use concord_core::{bytes, http, reqwest};
 pub use concord_core::{fake, reply, reply_with};
 pub use concord_core::{
-    mismatch, Answer, Base, Body, ByteStream, Error, Fail, Headers, Http, Items, Middleware, Next,
-    Pages, Reader, Secret, Sending, Transport,
+    mismatch, Answer, Base, ByteStream, Error, Fail, Headers, Http, Items, Middleware, Next, Pages,
+    Reader, Secret, Sending, Transport,
 };
 pub use concord_core::{KIB, MIB};
 
 pub use concord_extras::basic;
 #[cfg(feature = "form")]
+#[cfg_attr(docsrs, doc(cfg(feature = "form")))]
 pub use concord_extras::body::form;
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub use concord_extras::body::json;
 #[cfg(feature = "form")]
+#[cfg_attr(docsrs, doc(cfg(feature = "form")))]
 pub use concord_extras::body::{bracket_form, bracket_pairs, BracketFormError};
 #[cfg(feature = "gzip-body")]
+#[cfg_attr(docsrs, doc(cfg(feature = "gzip-body")))]
 pub use concord_extras::body::{gzip, GzipError};
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub use concord_extras::body::{json_lines, JsonLinesError};
 #[cfg(feature = "multipart")]
+#[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use concord_extras::body::{multipart, Multipart, MultipartError};
 #[cfg(feature = "multipart")]
+#[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use concord_extras::body::{multipart_mixed, multipart_related, MimeWriteError};
 pub use concord_extras::page::{
     by_cursor, by_link, by_next_url, by_offset, by_offset_limit, by_page,
 };
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub use concord_extras::read::Json;
 pub use concord_extras::read::{Binary, Text};
 
@@ -133,12 +185,10 @@ pub mod base {
 /// The body of a request as a value, and the optional request body writers.
 pub mod body {
     pub use concord_core::body::*;
-    #[cfg(any(
-        feature = "json",
-        feature = "form",
-        feature = "multipart",
-        feature = "gzip-body"
-    ))]
+    // Without a writer feature this import is empty. It has no condition of its own,
+    // so that docs.rs shows only the feature of each writer.
+    // PANIC-SAFETY: No panic lint is relaxed; an empty import is allowed.
+    #[allow(unused_imports)]
     pub use concord_extras::body::*;
 }
 
@@ -202,14 +252,17 @@ pub mod transport {
 }
 
 #[cfg(feature = "auth")]
+#[cfg_attr(docsrs, doc(cfg(feature = "auth")))]
 #[doc(inline)]
 pub use concord_extras::auth;
 
 #[cfg(feature = "sign")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sign")))]
 #[doc(inline)]
 pub use concord_extras::sign;
 
 #[cfg(feature = "limit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "limit")))]
 #[doc(inline)]
 pub use concord_extras::limit;
 
@@ -224,6 +277,7 @@ pub mod arg {
 
 /// A `tower` service used as a transport.
 #[cfg(feature = "tower")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tower")))]
 pub mod tower {
     pub use concord_extras::tower::*;
 }

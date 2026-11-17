@@ -1,9 +1,9 @@
-//! Request signing (feature `sign`).
+//! Request signing: [`SigV4`], a middleware layer for AWS Signature Version 4 (feature `sign`).
 //!
-//! Put the signer last in the description's middleware: it sees the method,
-//! URL, headers and body after `edit_request` and preceding middleware. Every
-//! attempt and page is signed again. `request()` and `into_request()` return
-//! the request before middleware. A transport must preserve signed fields.
+//! Put the signer last in the description's middleware: it sees the method, URL,
+//! headers and body after `edit_request` and after the middleware before it. Every
+//! attempt and every page is signed again. `request()` and `into_request()` return the
+//! request as it is before middleware. A transport must keep the signed fields unchanged.
 //!
 //! ```no_run
 //! use concord::{Base, Body};
@@ -23,11 +23,11 @@
 //! }
 //! ```
 //!
-//! Streams are refused without being polled, unless S3 unsigned payloads over
-//! HTTPS are explicitly allowed. This does not make a stream repeatable. There is no
-//! chunk signing, presigned URL, credential discovery, OAuth flow or HTTP message
-//! signature implementation. Use `hmac` and `sha2` for a provider's own proof,
-//! with [`body_bytes`] and [`check_origin`] for the request checks.
+//! A stream body is refused without being polled, unless unsigned payloads are
+//! explicitly allowed, for S3 over HTTPS. Allowing them does not make a stream
+//! repeatable. The module implements no chunk signing, presigned URLs, lookup of
+//! credentials, OAuth flow or HTTP message signatures. For a provider's own proof, use
+//! `hmac` and `sha2`, with [`body_bytes`] and [`check_origin`] to check the request.
 
 use concord_core::http::header::{HeaderName, HeaderValue, InvalidHeaderValue, ToStrError};
 use concord_core::http::HeaderMap;
@@ -47,10 +47,14 @@ const HEAD_LIMIT: usize = 64 * 1024;
 // PANIC-SAFETY: 16 KiB fits usize on every supported target.
 const FIELD_LIMIT: usize = 16 * 1024;
 
-/// Borrows the body bytes, or empty bytes when the request has no body.
+/// Returns the body bytes, or empty bytes when the request has no body.
 ///
-/// A stream is refused without being polled, even when the caller has set a
-/// `Content-Length` header on the request; that header does not make its bytes available.
+/// # Errors
+///
+/// A stream body is refused with `SignError::StreamingBody`, without being polled, even
+/// when the caller has set a `Content-Length` header on the request; that header does
+/// not make its bytes available.
+///
 /// ```
 /// let request = concord::reqwest::Request::new(concord::http::Method::GET,
 ///     "https://example.test".parse()?);
@@ -64,9 +68,14 @@ pub fn body_bytes(request: &Request) -> Result<&[u8], SignError> {
     }
 }
 
-/// Checks scheme, host and effective port against a base before a key is used.
+/// Checks the scheme, host and effective port of a request against a base, before a key is used.
 ///
 /// A path prefix in the base does not affect the check.
+///
+/// # Errors
+///
+/// Returns `SignError::WrongOrigin` when the origins differ.
+///
 /// ```
 /// let base = "https://example.test/v1".parse()?;
 /// let request = concord::reqwest::Request::new(concord::http::Method::GET,
@@ -89,7 +98,7 @@ fn same_origin(url: &Url, base: &Url) -> bool {
         && url.port_or_known_default() == base.port_or_known_default()
 }
 
-/// A signing refusal that retains its underlying cause without printing it.
+/// Why a request could not be signed; the underlying cause is kept but never printed.
 ///
 /// ```no_run
 /// fn inspect(error: &concord::Error) {
@@ -98,6 +107,7 @@ fn same_origin(url: &Url, base: &Url) -> bool {
 ///     }
 /// }
 /// ```
+#[derive(Clone)]
 #[non_exhaustive]
 pub enum SignError {
     /// A stream cannot be hashed without consuming it. Unsigned payload is only
@@ -127,7 +137,8 @@ pub enum SignError {
 }
 
 impl SignError {
-    /// Finds this error in a source chain, stopping at a cycle.
+    /// Finds a `SignError` in this error or its chain of sources, stopping at a cycle.
+    ///
     /// ```no_run
     /// # fn inspect(error: &concord::Error) {
     /// let signing = concord::sign::SignError::find(error);
@@ -155,7 +166,8 @@ impl SignError {
         None
     }
 
-    /// Retains an application's error without formatting it.
+    /// Wraps an error of the application as `Failed`, kept without being formatted.
+    ///
     /// ```
     /// let error = concord::sign::SignError::failed(std::io::Error::other("private cause"));
     /// assert_eq!(error.to_string(), "The request proof failed.");
@@ -224,11 +236,16 @@ struct CredentialSet {
     token: Option<String>,
 }
 
-/// An atomically replaceable set of AWS credentials, shared by its clones.
+/// A set of AWS credentials, shared by its clones and replaced atomically as a whole.
 ///
-/// Inputs are snapshotted: changing an input `Secret` later has no effect.
-/// Use [`Credentials::replace`] to publish a complete new set. No credential
-/// lookup or renewal is performed. Debug hides every field.
+/// A copy of each input is taken: changing an input `Secret` later has no effect. Use
+/// [`Credentials::replace`] to install a complete new set. This type never looks up or
+/// renews credentials. `Debug` hides every field.
+///
+/// Clones share one set: [`replace`](Self::replace) and
+/// [`session_token`](Self::session_token), called on any clone, change every clone.
+/// Configure the credentials fully, then clone.
+///
 /// ```
 /// let credentials = concord::sign::Credentials::new("access", "secret").session_token("token");
 /// credentials.replace(concord::sign::Credentials::new("next-access", "next-secret"));
@@ -239,8 +256,10 @@ pub struct Credentials {
     inner: Arc<Mutex<Arc<CredentialSet>>>,
 }
 impl Credentials {
-    /// Snapshots an access key identifier and secret key; each field is at most 16 KiB.
-    /// Validation occurs when signing.
+    /// Credentials from an access key ID and a secret key, each copied now and at most 16 KiB.
+    ///
+    /// They are checked when a request is signed.
+    ///
     /// ```
     /// let credentials = concord::sign::Credentials::new("access", "secret");
     /// ```
@@ -255,8 +274,10 @@ impl Credentials {
         }
     }
 
-    /// Adds a session token, snapshotted now and limited to 16 KiB on use.
-    /// Configure credentials fully before cloning them.
+    /// Adds a session token, copied now; its limit of 16 KiB is checked when it is used.
+    ///
+    /// Configure the credentials fully before cloning them.
+    ///
     /// ```
     /// let credentials = concord::sign::Credentials::new("access", "secret").session_token("token");
     /// ```
@@ -268,7 +289,8 @@ impl Credentials {
         self
     }
 
-    /// Replaces the whole set for every clone; one signature uses exactly one set.
+    /// Replaces the whole set for every clone; each signature uses exactly one set.
+    ///
     /// ```
     /// let credentials = concord::sign::Credentials::new("access", "secret");
     /// let shared = credentials.clone();
@@ -297,7 +319,7 @@ impl fmt::Debug for Credentials {
     }
 }
 
-/// The explicit path convention required by the service.
+/// How the service expects the path to be written in the canonical request; you choose it explicitly.
 ///
 /// Neither convention rewrites the URL. S3 preserves existing escapes; other
 /// services encode them again in the canonical request.
@@ -325,7 +347,8 @@ struct Clock {
     tick: tokio::time::Instant,
 }
 
-/// AWS Signature Version 4 middleware for one origin, service and region.
+/// A middleware layer that signs requests with AWS Signature Version 4, for one origin,
+/// service and region.
 ///
 /// Put it last in the description. The origin is checked before credentials are
 /// read. Host comes from the URL; a conflicting Host is refused. S3 receives
@@ -333,7 +356,7 @@ struct Clock {
 /// Session tokens and Authorization are sensitive. Stale signing fields are
 /// replaced, and a stale session token is removed when none is configured.
 ///
-/// Signs all installed headers except Authorization, Connection, Expect,
+/// Signs every header on the request except Authorization, Connection, Expect,
 /// Transfer-Encoding, User-Agent, X-Amzn-Trace-Id, Keep-Alive, Proxy-Connection,
 /// TE, Trailer, Upgrade, Proxy-Authorization, Proxy-Authenticate and fields named
 /// by Connection. A Connection option naming Authorization, Host or an
@@ -353,14 +376,19 @@ struct Clock {
 /// Request heads are limited to 64 KiB before and after signing (method, full URL,
 /// and every header name and value). Credential fields are at most 16 KiB, region
 /// and service 256 bytes each; a longer region or service returns
-/// [`SignError::TooLarge`]. Canonical text grows with the bounded request head; body bytes are
-/// borrowed. Middleware hashes at most 64 KiB of payload per poll and yields
-/// between chunks. No task is started; only the engine retries a request.
+/// [`SignError::TooLarge`]. The canonical text grows with the bounded request head; body
+/// bytes are borrowed. The middleware hashes at most 64 KiB of payload per poll and
+/// yields between chunks. It starts no task and never resends; only the engine retries
+/// a request.
 ///
 /// Time is anchored to the wall clock on the first valid use and advances with
-/// Tokio's clock, including paused time in tests. Clones share credentials and
-/// the time anchor; each attempt and each page reads the time and signs anew.
-/// Configure, then clone.
+/// Tokio's clock, including paused time in tests. Each attempt and each page reads
+/// the time and is signed again.
+///
+/// Clones share the credentials and the time anchor; the origin, region, service, path
+/// convention and unsigned-payload flag are copied, so `allow_unsigned_payload` changes
+/// only the value it is called on, not its clones.
+///
 /// ```no_run
 /// use concord::sign::{CanonicalPath, Credentials, SigV4};
 /// let base = "https://iam.amazonaws.com".parse()?;
@@ -380,8 +408,10 @@ pub struct SigV4 {
     clock: Arc<OnceLock<Clock>>,
 }
 impl SigV4 {
-    /// Selects the origin, credentials, region, service and path convention.
-    /// Construction is infallible; validation occurs before sending.
+    /// A signer for the origin of `base`, with its credentials, region, service and path convention.
+    ///
+    /// It cannot fail here; the settings are checked before sending.
+    ///
     /// ```no_run
     /// # use concord::sign::{CanonicalPath, Credentials, SigV4};
     /// let base = "https://example.test".parse()?;
@@ -407,10 +437,13 @@ impl SigV4 {
         }
     }
 
-    /// Permits unsigned S3 streams over HTTPS. Other services still refuse a
-    /// stream with `SignError::StreamingBody`; HTTP S3 requests return
-    /// `SignError::InsecureUnsignedPayload`. Buffered bodies are still hashed.
-    /// Streams remain single-attempt bodies.
+    /// Allows stream bodies to be sent as unsigned payloads, for S3 over HTTPS only.
+    ///
+    /// Other services still refuse a stream with `SignError::StreamingBody`; S3 requests
+    /// over plain HTTP return `SignError::InsecureUnsignedPayload`. Buffered bodies are
+    /// still hashed. `Body::stream` is sent once; a repeatable stream is signed again, as
+    /// an unsigned payload, at each attempt.
+    ///
     /// ```no_run
     /// # fn configure(signer: concord::sign::SigV4) {
     /// let signer = signer.allow_unsigned_payload();
@@ -422,13 +455,13 @@ impl SigV4 {
         self
     }
 
-    /// Signs the supplied request for an explicit region, without checking its
-    /// origin. The adapter must check the origin first with [`check_origin`] or
-    /// its own configured list of allowed hosts; only the middleware checks the
-    /// origin against this signer's base.
+    /// Signs the request for the given region, without checking its origin.
     ///
-    /// This synchronous form hashes the complete buffered body before returning;
-    /// the middleware form yields between chunks. Changes headers only on success.
+    /// The adapter must check the origin first, with [`check_origin`] or its own list of
+    /// allowed hosts; only the middleware checks the origin against this signer's base.
+    /// This synchronous form hashes the whole buffered body before it returns; the
+    /// middleware yields between chunks. The headers change only on success.
+    ///
     /// ```no_run
     /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request,
     /// #     bucket: &concord::Base) -> Result<(), concord::sign::SignError> {

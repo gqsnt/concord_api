@@ -31,6 +31,9 @@ struct Part {
 
 /// The reason a multipart body could not be built.
 ///
+/// Formatting prints only fixed words. `ContentType` keeps the header error as its
+/// `source()`; the other causes have no lower-level error.
+///
 /// Match failures with a fallback arm, so that future causes remain compatible.
 ///
 /// ```compile_fail
@@ -62,7 +65,28 @@ impl fmt::Display for MultipartError {
         })
     }
 }
-impl std::error::Error for MultipartError {}
+impl MultipartError {
+    /// Finds a `MultipartError` in this error or its chain of sources.
+    ///
+    /// ```no_run
+    /// fn inspect(error: &concord::Error) {
+    ///     if let Some(concord::MultipartError::ContentType(_)) = concord::MultipartError::find(error) {
+    ///         // A content type given to `file` is not a valid header value.
+    ///     }
+    /// }
+    /// ```
+    pub fn find<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a Self> {
+        super::find_error(error)
+    }
+}
+impl std::error::Error for MultipartError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ContentType(cause) => Some(cause),
+            Self::Name | Self::Randomness => None,
+        }
+    }
+}
 impl fmt::Debug for Multipart {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Multipart")
@@ -129,12 +153,19 @@ impl Multipart {
         }
     }
 
-    /// Produces bytes if every part is in memory, otherwise a one-shot stream.
+    /// Produces bytes if every part is in memory, otherwise a stream. A body whose
+    /// parts are all repeatable can be sent again with the same boundary; a
+    /// [`Body::stream`] part keeps the whole body single-attempt.
     /// Buffered inputs use the first boundary that does not occur in them, from the fixed sequence
     /// `concord-00000000000000000000000000000000`, `concord-00000000000000000000000000000001`, ….
-    /// Streaming inputs use 128 random bits. A boundary inside a stream is an error,
-    /// detected across chunks before the colliding bytes are yielded.
-    /// All underlying streams are claimed together when the result is taken.
+    /// A body containing streams chooses one boundary with 128 random bits at
+    /// `finish`, then reuses it for every opening. No part is opened to choose it.
+    /// A boundary inside a stream is detected across chunks before the colliding
+    /// bytes are yielded. Reading then fails with `io::ErrorKind::Other` and the
+    /// text `multipart boundary occurred in a stream part`. For a repeatable body,
+    /// this error is the failed attempt's direct source.
+    /// All one-shot parts are claimed together when the result is taken;
+    /// repeatable parts open only when read.
     ///
     /// # Errors
     /// A control character in a field or file name, an invalid content type, or
@@ -207,9 +238,12 @@ fn contains(bytes: &[u8], boundary: &[u8]) -> bool {
     bytes.windows(boundary.len()).any(|b| b == boundary)
 }
 fn checked(stream: BodyStream, boundary: Vec<u8>) -> BodyStream {
+    checked_as(stream, boundary, io::ErrorKind::Other)
+}
+pub(crate) fn checked_as(stream: BodyStream, boundary: Vec<u8>, kind: io::ErrorKind) -> BodyStream {
     Box::pin(futures_util::stream::try_unfold(
         (stream, Vec::new(), boundary, false),
-        |(mut stream, mut kept, boundary, mut ended)| async move {
+        move |(mut stream, mut kept, boundary, mut ended)| async move {
             loop {
                 if ended {
                     return Ok::<_, BoxError>((!kept.is_empty()).then(|| {
@@ -223,7 +257,8 @@ fn checked(stream: BodyStream, boundary: Vec<u8>) -> BodyStream {
                     Some(chunk) => {
                         kept.extend_from_slice(&chunk?);
                         if contains(&kept, &boundary) {
-                            return Err(io::Error::other(
+                            return Err(io::Error::new(
+                                kind,
                                 "multipart boundary occurred in a stream part",
                             )
                             .into());

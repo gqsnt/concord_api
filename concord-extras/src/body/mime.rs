@@ -1,9 +1,9 @@
-//! Buffered multipart/mixed and multipart/related request bodies.
+//! Multipart/mixed and multipart/related request bodies.
 
 use concord_core::{http::HeaderMap, Body};
 use std::{error::Error, fmt};
 
-/// Writes ordered, buffered parts as a `multipart/mixed` body.
+/// Writes ordered, repeatable parts as a `multipart/mixed` body.
 ///
 /// Each part is `(HeaderMap, Body)`. The map supplies the complete MIME headers,
 /// including exactly one valid `Content-Type`; body content-type metadata is
@@ -19,10 +19,17 @@ use std::{error::Error, fmt};
 /// The boundary is the first candidate in the deterministic sequence
 /// `concord-00000000000000000000000000000000`,
 /// `concord-00000000000000000000000000000001`, and so on, absent from every
-/// part and header. No randomness or clock is used. Header values are written
-/// as their bytes. All parts must be buffered; a stream is refused without
-/// claiming or polling any source. Memory holds the parts, emitted headers
-/// and output, proportional to the author's input. No task or request is started.
+/// buffered part and header. No randomness or clock is used. Repeatable streams
+/// are not opened to choose it: the boundary is fixed once, then checked in each
+/// stream on every opening; a collision fails with `io::ErrorKind::InvalidData`
+/// before colliding bytes are yielded, with the text
+/// `multipart boundary occurred in a stream part`. This error is the failed
+/// attempt's direct source. Header values are written as their bytes.
+/// One-shot parts are refused without claiming or polling any source. Memory holds
+/// buffered parts, headers and framing plus the active stream, a chunk and
+/// boundary-sized lookbehind; it does not collect repeatable input. Chunk size
+/// and source buffering are the author's responsibility. Buffered-only output is held
+/// in memory as before. No task or request is started.
 ///
 /// The result is repeatable and carries the multipart content type and boundary.
 /// The function does not implement a batch protocol, inspect subresponses, choose
@@ -59,7 +66,7 @@ use std::{error::Error, fmt};
 ///
 /// # Errors
 ///
-/// Returns [`MimeWriteError`] for no parts, a stream part or an invalid/missing
+/// Returns [`MimeWriteError`] for no parts, a one-shot part or an invalid/missing
 /// part content type. Part errors carry their one-based position.
 /// Parts are validated in input order, so the first invalid part determines
 /// the error.
@@ -70,9 +77,9 @@ where
     write_parts(parts, false)
 }
 
-/// Writes ordered, buffered parts as a `multipart/related` body, with the first as root.
+/// Writes ordered, repeatable parts as a `multipart/related` body, with the first as root.
 ///
-/// Part and header ordering, boundary selection and stream rejection follow
+/// Part and header ordering, boundary selection and one-shot rejection follow
 /// [`multipart_mixed`].
 /// As with [`multipart_mixed`], there is no preamble or epilogue, headers use
 /// `name: value\r\n`, the closing delimiter is `--boundary--\r\n`, and the
@@ -126,10 +133,10 @@ where
     write_parts(parts, true)
 }
 
-/// A buffered MIME multipart request body's validation failure.
+/// Why a MIME multipart request body was refused.
 ///
-/// Formatting prints only names and one-based part positions, never headers or
-/// part bytes. These semantic errors have no lower cause.
+/// Formatting prints only names and one-based part positions, never headers or part
+/// bytes. These errors have no lower-level cause.
 ///
 /// ```no_run
 /// fn inspect(error: &concord::Error) {
@@ -145,7 +152,7 @@ where
 pub enum MimeWriteError {
     /// The iterator contained no parts.
     Empty,
-    /// A part is a stream. No source was claimed or polled.
+    /// A part is a one-shot stream. No source was claimed or polled.
     #[non_exhaustive]
     Stream {
         /// The part's one-based position.
@@ -159,7 +166,7 @@ pub enum MimeWriteError {
     },
 }
 impl MimeWriteError {
-    /// Finds this error by following the given error and its source chain.
+    /// Finds a `MimeWriteError` in this error or its chain of sources.
     ///
     /// ```no_run
     /// fn inspect(error: &concord::Error) {
@@ -174,7 +181,9 @@ impl fmt::Display for MimeWriteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Empty => f.write_str("the MIME body has no parts"),
-            Self::Stream { part } => write!(f, "MIME part {part} must be buffered"),
+            Self::Stream { part } => {
+                write!(f, "MIME part {part} is a stream that can be sent only once")
+            }
             Self::ContentType { part } => {
                 write!(f, "MIME part {part} needs one valid content type")
             }
@@ -195,7 +204,7 @@ where
     let mut root_type = None;
     for (index, (headers, body)) in parts.into_iter().enumerate() {
         let part = index.saturating_add(1);
-        if body.as_bytes().is_none() {
+        if body.as_bytes().is_none() && !body.is_repeatable() {
             return Err(MimeWriteError::Stream { part });
         }
         let mut types = headers.get_all("content-type").iter();
@@ -232,13 +241,42 @@ where
                 && part
                     .body
                     .as_bytes()
-                    .is_some_and(|bytes| !contains(bytes, candidate.as_bytes()))
+                    .is_none_or(|bytes| !contains(bytes, candidate.as_bytes()))
         }) {
             break candidate;
         }
         // PANIC-SAFETY: Each rejected candidate needs a distinct stored substring; addressable input has fewer than u128::MAX such substrings.
         index += 1;
     };
+    let content_type = if related {
+        format!("multipart/related; type=\"{root_type}\"; boundary={boundary}")
+    } else {
+        format!("multipart/mixed; boundary={boundary}")
+    };
+    if prepared.iter().any(|part| part.body.as_bytes().is_none()) {
+        let mut framed = Vec::new();
+        for part in prepared {
+            let mut header = format!("--{boundary}\r\n").into_bytes();
+            header.extend_from_slice(&part.headers);
+            header.extend_from_slice(b"\r\n");
+            framed.push(Body::from(header));
+            framed.push(if part.body.as_bytes().is_some() {
+                part.body
+            } else {
+                let boundary = boundary.as_bytes().to_vec();
+                part.body.map_stream(move |input| {
+                    super::multipart_writer::checked_as(
+                        input,
+                        boundary.clone(),
+                        std::io::ErrorKind::InvalidData,
+                    )
+                })
+            });
+            framed.push(Body::from("\r\n"));
+        }
+        framed.push(Body::from(format!("--{boundary}--\r\n")));
+        return Ok(Body::concat(framed).content_type(content_type));
+    }
     let mut bytes = Vec::new();
     for part in prepared {
         bytes.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
@@ -251,11 +289,7 @@ where
         bytes.extend_from_slice(b"\r\n");
     }
     bytes.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-    let content_type = if related {
-        format!("multipart/related; type=\"{root_type}\"; boundary={boundary}")
-    } else {
-        format!("multipart/mixed; boundary={boundary}")
-    };
+
     Ok(Body::new(bytes, content_type))
 }
 fn contains(bytes: &[u8], boundary: &[u8]) -> bool {

@@ -306,6 +306,23 @@ impl<P> Options<P> {
         }
         changed
     }
+
+    pub(super) fn edit_repeatable(
+        &self,
+        request: &mut reqwest::Request,
+        replaced: &std::sync::atomic::AtomicBool,
+    ) -> Result<bool, crate::error::BuildFailure> {
+        let mut changed = false;
+        for edit in &self.edits {
+            let before = request.url().clone();
+            edit(request);
+            if !crate::body::repeatable::placeholder_intact(request, replaced) {
+                return Err(crate::error::BuildFailure::RepeatableEdit);
+            }
+            changed |= request.url() != &before;
+        }
+        Ok(changed)
+    }
 }
 
 #[cfg(test)]

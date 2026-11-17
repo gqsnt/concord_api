@@ -4,8 +4,8 @@
 //! shipped implementations. This crate knows **no format, no scheme and no pager**: it provides the
 //! traits they are built with. What `concord` ships (`json`, `Json`, `by_offset`, …) lives in
 //! `concord-extras` and uses public extension traits and helpers. The Tower adapter also uses a
-//! hidden helper of the engine for the URL of a response, and `gzip` one for the content type
-//! of the body that it compresses.
+//! hidden helper of the engine for the URL of a response; `gzip` reads the body's content
+//! type through the public [`Body::get_content_type`] accessor.
 //!
 //! The engine builds requests, sends them through middleware and a transport, applies
 //! retry policies and the call's timeouts, reads responses, and walks pages. Readers, transports,

@@ -1,0 +1,9 @@
+{
+  "id": "M237",
+  "area": "drop cancellation",
+  "contract": "tools/mutations/README.md#c1214",
+  "description": "A transport can open a retained request after the call was dropped.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "        self.0.cancel();\n        self.0.failure.waker.take();",
+  "replace": "        self.0.failure.waker.take();"
+}

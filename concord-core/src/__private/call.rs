@@ -6,10 +6,46 @@ use crate::error::Error;
 use crate::transport::TryInfo;
 use crate::Sending;
 
+/// A finished request paired with its private repeatable body plan.
+/// Only immutable access to the ordinary request is exposed, so edits cannot
+/// leave a reconstruction plan attached to a different body.
+pub struct PreparedRequest {
+    pub(super) request: reqwest::Request,
+    pub(super) repeat: Option<(reqwest::Request, crate::Body, Option<u64>)>,
+    pub(super) control: Option<crate::body::repeatable::Control>,
+}
+impl std::ops::Deref for PreparedRequest {
+    type Target = reqwest::Request;
+    fn deref(&self) -> &Self::Target {
+        &self.request
+    }
+}
+impl fmt::Debug for PreparedRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedRequest").finish_non_exhaustive()
+    }
+}
+impl PreparedRequest {
+    pub(super) fn plain(request: reqwest::Request) -> Self {
+        Self {
+            request,
+            repeat: None,
+            control: None,
+        }
+    }
+    pub(super) fn comparison(&self) -> (Option<reqwest::Request>, Option<crate::Body>) {
+        match &self.repeat {
+            Some((head, body, _)) => (head.try_clone(), Some(body.clone())),
+            None => (self.request.try_clone(), None),
+        }
+    }
+}
+
 /// What every generated call is, for the engine. The public part is [`crate::page::Call`].
 pub trait Call: crate::page::Call {
     /// The request as the description builds it. The call is still whole.
-    /// Refuses a one-shot body without taking it. No Run or description clock/mark
+    /// A wholly repeatable body stays unopened; a one-shot body is refused without
+    /// taking it. No Run or description clock/mark
     /// expression is evaluated.
     fn request(&self) -> Result<reqwest::Request, Error<Self::Problem>>;
 
@@ -37,6 +73,9 @@ pub trait Call: crate::page::Call {
     /// Changes each request after it is built and before it enters the middleware chain.
     /// Header values this edit marks sensitive are omitted from page request comparison.
     /// Changing the URL discards its secret marks; its URL is then compared as it is.
+    /// A body containing repeatable sources is represented by an unreadable
+    /// placeholder during edits. Edits must leave it alone; detected removal or
+    /// replacement by a different kind of body is a Build error (see [`crate::Body::repeatable`]).
     fn edit_request(self, edit: impl Fn(&mut reqwest::Request) + Send + Sync + 'static) -> Self;
 }
 
@@ -46,7 +85,7 @@ pub struct Prepared<T, P> {
     /// The clocks started before description expressions and request construction.
     pub run: Run,
     /// The request finished for sending, before middleware.
-    pub request: reqwest::Request,
+    pub request: PreparedRequest,
     /// What secrets wrote, retained for page comparison after the origin check.
     pub secrets: RequestSecrets,
     /// The description's mark, evaluated before building the request.
@@ -69,7 +108,7 @@ impl<T: Send + 'static, P: Send + Sync + 'static> Prepared<T, P> {
     /// Gives the same answer as [`Call::send_full`], without building again.
     pub fn send(self) -> Sending<Answer<T>, P> {
         Sending::new(async move {
-            super::exchange(
+            super::run::exchange_prepared(
                 self.run,
                 &self.core,
                 &self.options,
@@ -122,7 +161,7 @@ impl<T: Send + 'static, P: Send + Sync + 'static> Prepared<T, P> {
     /// Nothing is rebuilt and no caller edit runs again.
     pub fn send_raw(self) -> Sending<reqwest::Response, P> {
         Sending::new(async move {
-            super::exchange_raw(
+            super::run::exchange_raw_prepared(
                 self.run,
                 &self.core,
                 &self.options,
@@ -296,7 +335,7 @@ macro_rules! call_methods {
             $crate::call_methods!(@doc request, [$($doc_method { $($doc_attrs)* })*], {
             /// The [`reqwest::Request`](https://docs.rs/reqwest/0.13.5/reqwest/struct.Request.html) that this call would send.
             /// The call can still be sent. This is the request before any middleware (such as a signer).
-            /// Refuses a one-shot body without taking it. The call timeout does not start, and neither the endpoint's `idle_timeout` nor its `idempotent` runs.
+            /// Refuses a one-shot body without taking it; a wholly repeatable body stays unopened. The call timeout does not start, and neither the endpoint's `idle_timeout` nor its `idempotent` runs.
             pub fn request(&self) -> $($result)::+<$crate::reqwest::Request> {
                 self.__build_request(false)
             }
@@ -307,6 +346,7 @@ macro_rules! call_methods {
             ///
             /// Needed when the body is a stream that can be read only once.
             /// Takes that one-shot body. This is the request before any middleware.
+            /// A repeatable body is exported as one lazy stream, without its Concord retry plan.
             /// The call timeout does not start, and neither `idle_timeout` nor `idempotent`
             /// from the endpoint runs.
             pub fn into_request(self) -> $($result)::+<$crate::reqwest::Request> {
@@ -317,6 +357,10 @@ macro_rules! call_methods {
             /// Change the built request before it enters the middleware chain.
             ///
             /// The changed request is used on every attempt. Several changes run in the order added.
+            /// When the body contains a `Body::repeatable` source, an edit sees an unreadable placeholder;
+            /// Reading it, removing it or a detected replacement is a Build error.
+            /// Wrappers and look-alikes cannot always be detected; edits must leave the body alone.
+            /// If building succeeds, each attempt receives the declared repeatable body as a fresh stream.
             /// A header value marked sensitive is left out of the same-request comparison
             /// for pages, including when this edit sets that flag.
             /// If an edit changes the URL, its secret marks are no longer known;

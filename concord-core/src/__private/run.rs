@@ -240,6 +240,31 @@ where
     F: Fn(reqwest::Response, TryInfo) -> Fut + Send + Sync + 'a,
     Fut: Future<Output = Result<Answer<T>, Error<P>>> + Send + 'a,
 {
+    exchange_prepared(
+        run,
+        core,
+        options,
+        idempotent,
+        super::call::PreparedRequest::plain(request),
+        one_try,
+    )
+    .await
+}
+
+pub(super) async fn exchange_prepared<'a, P, T, F, Fut>(
+    run: Run,
+    core: &'a Core<P>,
+    options: &'a Options<P>,
+    idempotent: Idempotent,
+    request: super::call::PreparedRequest,
+    one_try: F,
+) -> Result<Answer<T>, Error<P>>
+where
+    P: Send + Sync + 'a,
+    T: Send + 'a,
+    F: Fn(reqwest::Response, TryInfo) -> Fut + Send + Sync + 'a,
+    Fut: Future<Output = Result<Answer<T>, Error<P>>> + Send + 'a,
+{
     exchange_with(
         run,
         core,
@@ -267,6 +292,26 @@ pub async fn exchange_raw<'a, P>(
     options: &'a Options<P>,
     idempotent: Idempotent,
     request: reqwest::Request,
+) -> Result<reqwest::Response, Error<P>>
+where
+    P: Send + Sync + 'a,
+{
+    exchange_raw_prepared(
+        run,
+        core,
+        options,
+        idempotent,
+        super::call::PreparedRequest::plain(request),
+    )
+    .await
+}
+
+pub(super) async fn exchange_raw_prepared<'a, P>(
+    run: Run,
+    core: &'a Core<P>,
+    options: &'a Options<P>,
+    idempotent: Idempotent,
+    request: super::call::PreparedRequest,
 ) -> Result<reqwest::Response, Error<P>>
 where
     P: Send + Sync + 'a,
@@ -326,7 +371,7 @@ async fn exchange_with<P, T, F, Fut>(
     core: &Core<P>,
     options: &Options<P>,
     idempotent: Idempotent,
-    request: reqwest::Request,
+    request: super::call::PreparedRequest,
     read: F,
 ) -> Result<T, Error<P>>
 where
@@ -335,7 +380,7 @@ where
     F: Fn(reqwest::Response, TryInfo) -> Fut + Send + Sync,
     Fut: Future<Output = Attempt<T, P>> + Send,
 {
-    exchange_with_random(
+    exchange_loop(
         run,
         core,
         options,
@@ -347,6 +392,7 @@ where
     .await
 }
 
+#[cfg(test)]
 async fn exchange_with_random<P, T, F, Fut, R>(
     run: Run,
     core: &Core<P>,
@@ -363,16 +409,59 @@ where
     Fut: Future<Output = Attempt<T, P>> + Send,
     R: BuildHasher + Send + Sync,
 {
+    exchange_loop(
+        run,
+        core,
+        options,
+        idempotent,
+        super::call::PreparedRequest::plain(request),
+        read,
+        random_state,
+    )
+    .await
+}
+
+async fn exchange_loop<P, T, F, Fut, R>(
+    run: Run,
+    core: &Core<P>,
+    options: &Options<P>,
+    idempotent: Idempotent,
+    request: super::call::PreparedRequest,
+    read: F,
+    random_state: R,
+) -> Result<T, Error<P>>
+where
+    P: Send + Sync,
+    T: Send,
+    F: Fn(reqwest::Response, TryInfo) -> Fut + Send + Sync,
+    Fut: Future<Output = Attempt<T, P>> + Send,
+    R: BuildHasher + Send + Sync,
+{
     let method = request.method().clone();
-    let repeat = request.try_clone();
-    let mut request = Some(request);
+    let copy = request.request.try_clone();
+    let repeat = request.repeat;
+    let mut control = request.control;
+    let mut request = Some(request.request);
     let none = Retry::none();
     let policy = options.retry(core).unwrap_or(&none);
     let mut n = 0u32;
     loop {
-        let this = request
-            .take()
-            .or_else(|| repeat.as_ref().and_then(reqwest::Request::try_clone));
+        let this = if let Some(request) = request.take() {
+            Some(request)
+        } else if let Some((head, body, length)) = &repeat {
+            let next = crate::body::repeatable::Control::default();
+            let stream = body
+                .clone()
+                .materialize(*length, next.clone())
+                .map_err(|_| Error::build(run.endpoint, crate::error::BuildFailure::SpentStream))?;
+            control = Some(next);
+            head.try_clone().map(|mut request| {
+                *request.body_mut() = Some(reqwest::Body::wrap_stream(stream));
+                request
+            })
+        } else {
+            copy.as_ref().and_then(reqwest::Request::try_clone)
+        };
         let Some(this) = this else {
             return Err(run.timeout_error(n));
         };
@@ -381,15 +470,62 @@ where
         n = n.saturating_add(1);
         run.clear();
         let info = TryInfo::for_run(run.clone(), n);
-        let attempt = async {
-            match next.send(this, info.clone()).await {
-                Ok(response) => read(crate::transport::__response_at(response, url), info).await,
-                Err(failure) => Attempt::Failed(Error::transport(run.endpoint, n, failure)),
+        let result = if let Some(observed) = &control {
+            let mut info = info;
+            info.repeatable_body = true;
+            // Own the attempt in this scope. Cancellation must be marked before
+            // its future (and any author-owned streams) is destroyed.
+            let attempt = async {
+                let response = next.send(this, info.clone()).await;
+                if let Some(failure) = observed.failure() {
+                    return Attempt::Failed(Error::transport(run.endpoint, n, failure));
+                }
+                match response {
+                    Ok(response) => {
+                        read(crate::transport::__response_at(response, url), info).await
+                    }
+                    Err(failure) => Attempt::Failed(Error::transport(run.endpoint, n, failure)),
+                }
+            };
+            let mut attempt = std::pin::pin!(attempt);
+            let cancel = observed.cancel_on_drop();
+            let checked = std::future::poll_fn(|cx| {
+                observed.register(cx);
+                let result = attempt.as_mut().poll(cx);
+                if let Some(failure) = observed.failure() {
+                    return Poll::Ready(Attempt::Failed(Error::transport(
+                        run.endpoint,
+                        n,
+                        failure,
+                    )));
+                }
+                result
+            });
+            let mut result = match run.bounded(checked).await {
+                Ok(result) => result,
+                Err(()) => Attempt::Failed(run.timeout_error(n)),
+            };
+            if let Some(failure) = std::future::poll_fn(|cx| observed.poll_close(cx)).await {
+                result = Attempt::Failed(Error::transport(run.endpoint, n, failure));
             }
-        };
-        let result = match run.bounded(attempt).await {
-            Ok(result) => result,
-            Err(()) => Attempt::Failed(run.timeout_error(n)),
+            drop(cancel);
+            result
+        } else {
+            // Ordinary attempts retain the original ownership and polling path.
+            match run
+                .bounded(async {
+                    match next.send(this, info.clone()).await {
+                        Ok(response) => {
+                            read(crate::transport::__response_at(response, url), info).await
+                        }
+                        Err(failure) => Attempt::Failed(Error::transport(run.endpoint, n, failure)),
+                    }
+                })
+                .await
+            {
+                Ok(result) => result,
+                Err(()) => Attempt::Failed(run.timeout_error(n)),
+            }
         };
         let Some(outcome) = result.outcome() else {
             return result.finish(Decision {
@@ -405,7 +541,7 @@ where
             n,
             &method,
             idempotent,
-            repeat.is_some(),
+            repeat.is_some() || copy.is_some(),
             None,
             SystemTime::now(),
             random(&random_state, n),

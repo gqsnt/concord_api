@@ -1,0 +1,43 @@
+use concord::read::{RecordStream, Sse, SseEvent};
+use concord::{by_cursor, json, Json, Secret};
+use std::time::Duration;
+
+concord::api! {
+    /// The Anthropic API: a message, whole or streamed as server-sent events; tokens; models.
+    pub client Anthropic(api_key: Secret) {
+        base "https://api.anthropic.com/v1";
+        headers {
+            "x-api-key" = api_key;
+            "anthropic-version" = "2023-06-01";
+        }
+        read Json;
+        problem ApiProblem;
+
+        part request(model: String, max_tokens: u32, messages: Vec<Turn>, system?: String) {
+            body json { model; max_tokens; messages; system; }
+        }
+
+        /// The whole reply in one response.
+        POST create(..request) -> Message { path "messages"; }
+
+        /// The same request with `"stream": true`: the reply arrives as events, read one by one.
+        POST stream(..request) -> RecordStream<SseEvent> {
+            path "messages";
+            body json { "stream" = true; }
+            read Sse::new(64 * concord::KIB);
+            idle_timeout Duration::from_secs(120);
+        }
+
+        POST count_tokens(model: String, messages: Vec<Turn>, system?: String) -> TokenCount {
+            path "messages/count_tokens";
+            body json { model; messages; system; }
+        }
+
+        GET models(limit?: u32, after_id?: String) -> ModelPage {
+            path "models";
+            query { limit; after_id; }
+            paginate by_cursor(after_id, ModelPage::next);
+        }
+        GET model(model_id: String) -> ModelInfo { path "models/{model_id}"; }
+    }
+}

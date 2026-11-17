@@ -5,8 +5,10 @@ What Concord ships alongside its core. Concord is the crate `concord-api`, used 
 Everything here is built on the core's public traits and helpers: the writers use `body::Bounded`,
 the `Json` reader `read::details`, the pagers `page::fragmentless`, the credentials, the signer and the limit
 `Middleware`, and `transfer` the `page::Call` trait. Your own reader, writer, pager or middleware
-uses the same items. Two items also use a hidden helper of the core: the `tower` adapter, for the URL of a
-response, and `gzip`, for the content type of the body it compresses.
+uses the same items, and `gzip` keeps the content type of the body it compresses with
+`Body::get_content_type`. Only the `tower` adapter also uses a hidden helper of the core, for the
+URL of a response; `multipart` checks its boundary inside a stream part with the public
+`Body::map_stream`.
 
 | What | Items |
 |---|---|
@@ -21,7 +23,7 @@ response, and `gzip`, for the content type of the body it compresses.
 | A token that is renewed | `auth::Renewed`, `auth::after_401` (feature `auth`) |
 | A refresh token that rotates | `auth::Rotating`, `auth::RotationDriver`, `auth::CredentialStore`, `auth::TokenPair` (feature `rotating`) |
 | Signing | `sign::SigV4`, `sign::Credentials`, `sign::body_bytes`, `sign::check_origin` (feature `sign`) |
-| Limits shared by the calls | `limit::Limit` (feature `limit`) |
+| Rate limits | `limit::Limit` (feature `limit`) |
 | A URL that the API returned | `transfer::at(call, url)`, on the call of a second description |
 | A transport | `tower::Tower`, a `tower` service as a transport (feature `tower`) |
 
@@ -32,7 +34,7 @@ these features through its own (`json`, `form`, `multipart`, `gzip-body`, `tower
 `sign`, `limit`).
 
 Read its source when you write your own reader, writer, pager or middleware. Apart from the
-hidden helpers of the `tower` adapter and `gzip`, these use public traits and helpers. The guide covers them, with code
+hidden helper that the `tower` adapter uses, these use public traits and helpers. The guide covers them, with code
 to copy, in [When Concord does not cover what you need](https://github.com/gqsnt/concord_api/blob/main/docs/guide/extending.md).
 
 | Feature | What it turns on | Default |
@@ -40,7 +42,7 @@ to copy, in [When Concord does not cover what you need](https://github.com/gqsnt
 | `json` | `json(x)`, `json_lines(records, max_bytes)`, `Json`, `JsonLines`, `SseEvent::json` | on |
 | `form` | `form(x)`, `bracket_form(value)`, `bracket_pairs(value)` | on |
 | `multipart` | `multipart()`, `multipart_mixed(parts)`, `multipart_related(parts)` | off |
-| `gzip-body` | `gzip(body)` to compress a buffered request body and keep its content type | off |
+| `gzip-body` | `gzip(body)` to compress a buffered request body and keep its content type. Response decompression is the feature `gzip` of `concord-api` | off |
 | `tower` | `tower::Tower` | off |
 | `auth` | `auth::Renewed`, `AccessToken`, `RenewalError`, `after_401` | off |
 | `rotating` | `auth::Rotating`, `RotationDriver`, `CredentialStore`, `Stored`, `TokenPair`, `Exchange`, `RotationError`; turns on `auth` | off |
@@ -65,7 +67,7 @@ The token is sent only to the origin of the base (a path prefix does not narrow 
 `Authorization: Bearer <token>` or the header that `header(name, format)` sets, always marked
 sensitive. A `401` is returned as it is, and the next call renews. `Retry::standard().when(after_401)`
 asks the engine for one more attempt after a `401` on the first attempt; the engine still refuses to
-repeat an unmarked `POST` or a body that is a stream. The flows that obtain a token (OAuth2 and the
+repeat an unmarked `POST` or a `Body::stream`. The flows that obtain a token (OAuth2 and the
 like) are the application's. For a refresh token that the server replaces at each use, see
 `auth::Rotating`, below.
 
@@ -95,13 +97,14 @@ are known only per call; that adapter checks the origin itself, with `check_orig
 of hosts. `CanonicalPath::Preserve` is the convention of S3 for the path, `NormalizeAndEncode` that
 of the other services. `Credentials::replace` replaces the whole set for every clone, and one
 signature uses one set. A body that is a stream is refused without being polled, unless
-`allow_unsigned_payload` is set for S3 over HTTPS. No key, token or signature is printed. For a
+`allow_unsigned_payload` is set for S3 over HTTPS; a `Body::repeatable` is then signed again, as an
+unsigned payload, at each attempt. No key, token or signature is printed. For a
 provider's own HMAC proof, `body_bytes` borrows a buffered body (a stream is refused) and
 `check_origin` compares the scheme, the host and the port; the hashing is done with `hmac` and
 `sha2`. There is no chunk signing, presigned URL, credential discovery, OAuth flow or HTTP message
 signature.
 
-## Limits shared by the calls of a client
+## Rate limits
 
 `limit::Limit::new()` is a middleware that holds the calls after a `429` with `Retry-After`;
 `without_retry_after(wait)` holds them for `wait` after a `429` without one.

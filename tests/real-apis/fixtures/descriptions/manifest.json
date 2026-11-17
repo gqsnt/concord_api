@@ -21,18 +21,11 @@
     "client": "Tasks"
   },
   {
-    "page": "docs/guide/calling.md",
-    "block": 4,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_calling_001.api",
-    "compiled": "tests/real-apis/src/guide/guide_calling_001.rs",
-    "client": "Algolia"
-  },
-  {
-    "page": "docs/guide/calling.md",
-    "block": 4,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_calling_002.api",
-    "compiled": "tests/real-apis/src/guide/guide_calling_002.rs",
-    "client": "Elasticsearch"
+    "page": "docs/guide/bodies.md",
+    "block": 7,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_bodies_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_bodies_001.rs",
+    "client": "Logs"
   },
   {
     "page": "docs/guide/credentials.md",
@@ -71,59 +64,66 @@
   },
   {
     "page": "docs/guide/extending.md",
-    "block": 3,
+    "block": 12,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_001.api",
     "compiled": "tests/real-apis/src/guide/guide_extending_001.rs",
-    "client": "Logs"
+    "client": "Uploads"
   },
   {
     "page": "docs/guide/extending.md",
-    "block": 12,
+    "block": 14,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_002.api",
     "compiled": "tests/real-apis/src/guide/guide_extending_002.rs",
-    "client": "Uploads"
+    "client": "Archives"
   },
   {
     "page": "docs/guide/extending.md",
     "block": 14,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_003.api",
     "compiled": "tests/real-apis/src/guide/guide_extending_003.rs",
-    "client": "Archives"
-  },
-  {
-    "page": "docs/guide/extending.md",
-    "block": 14,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_extending_004.api",
-    "compiled": "tests/real-apis/src/guide/guide_extending_004.rs",
     "client": "Downloads"
   },
   {
-    "page": "docs/guide/responses-and-errors.md",
-    "block": 8,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_001.api",
-    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_001.rs",
+    "page": "docs/guide/recipes.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_recipes_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_recipes_001.rs",
     "client": "Docker"
   },
   {
-    "page": "docs/guide/responses-and-errors.md",
-    "block": 9,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_002.api",
-    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_002.rs",
+    "page": "docs/guide/recipes.md",
+    "block": 2,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_recipes_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_recipes_002.rs",
     "client": "S3"
   },
   {
-    "page": "docs/guide/responses-and-errors.md",
-    "block": 11,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_003.api",
-    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_003.rs",
+    "page": "docs/guide/recipes.md",
+    "block": 4,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_recipes_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_recipes_003.rs",
     "client": "Gmail"
   },
   {
-    "page": "docs/guide/responses-and-errors.md",
-    "block": 11,
-    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_004.api",
-    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_004.rs",
+    "page": "docs/guide/recipes.md",
+    "block": 4,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_recipes_004.api",
+    "compiled": "tests/real-apis/src/guide/guide_recipes_004.rs",
     "client": "SharePoint"
+  },
+  {
+    "page": "docs/guide/recipes.md",
+    "block": 5,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_recipes_005.api",
+    "compiled": "tests/real-apis/src/guide/guide_recipes_005.rs",
+    "client": "Algolia"
+  },
+  {
+    "page": "docs/guide/recipes.md",
+    "block": 5,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_recipes_006.api",
+    "compiled": "tests/real-apis/src/guide/guide_recipes_006.rs",
+    "client": "Elasticsearch"
   },
   {
     "page": "docs/guide/retries.md",
@@ -161,6 +161,20 @@
     "client": "Stripe"
   },
   {
+    "page": "docs/examples/anthropic.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_anthropic_001.api",
+    "compiled": "tests/real-apis/src/anthropic/description.rs",
+    "client": "Anthropic"
+  },
+  {
+    "page": "docs/examples/drive.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_drive_001.api",
+    "compiled": "tests/real-apis/src/drive/description.rs",
+    "client": "Drive"
+  },
+  {
     "page": "docs/examples/elasticsearch.md",
     "block": 1,
     "fixture": "tests/real-apis/fixtures/descriptions/examples_elasticsearch_001.api",
@@ -173,6 +187,13 @@
     "fixture": "tests/real-apis/fixtures/descriptions/examples_github_001.api",
     "compiled": "tests/real-apis/src/github/description.rs",
     "client": "Github"
+  },
+  {
+    "page": "docs/examples/github.md",
+    "block": 4,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_github_002.api",
+    "compiled": "tests/real-apis/src/github/description_002.rs",
+    "client": "GithubLogin"
   },
   {
     "page": "docs/examples/kubernetes.md",

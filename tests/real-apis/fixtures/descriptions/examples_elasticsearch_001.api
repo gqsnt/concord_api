@@ -76,6 +76,12 @@
             path "_bulk";
             body concord::json_lines(lines, 10 * concord::MIB);
         }
+        /// The same writes in a body compressed with gzip, for a large batch.
+        POST bulk_gzip(lines: Vec<Value>, ..output, ..write_options) -> BulkReply {
+            path "_bulk";
+            headers { "content-encoding" = "gzip"; }
+            body concord::gzip(concord::json_lines(lines, 10 * concord::MIB)?);
+        }
 
         /// A search in a point in time, page after page. No index in the URL: the point in time
         /// has them. No `filter_path` either: the pager needs every field it reads.

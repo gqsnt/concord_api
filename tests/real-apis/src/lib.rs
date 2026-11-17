@@ -1,6 +1,8 @@
 //! Every whole description in the guide, reference overview, root README, and
-//! eight API example pages is checked against its page and compiled by the macro.
+//! ten API example pages is checked against its page and compiled by the macro.
 
+pub mod anthropic;
+pub mod drive;
 pub mod elasticsearch;
 pub mod github;
 pub mod kubernetes;

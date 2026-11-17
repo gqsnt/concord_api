@@ -4,6 +4,6 @@
   "contract": "C12.3",
   "description": "A stream part is claimed and polled once before it is refused",
   "file": "concord-extras/src/body/mime.rs",
-  "find": "        if body.as_bytes().is_none() {\n            return Err(MimeWriteError::Stream { part });\n        }",
-  "replace": "        if body.as_bytes().is_none() {\n            if let Ok(mut stream) = body.into_stream() {\n                let mut context = std::task::Context::from_waker(std::task::Waker::noop());\n                drop(futures_core::Stream::poll_next(stream.as_mut(), &mut context));\n            }\n            return Err(MimeWriteError::Stream { part });\n        }"
+  "find": "        if body.as_bytes().is_none() && !body.is_repeatable() {\n            return Err(MimeWriteError::Stream { part });\n        }",
+  "replace": "        if body.as_bytes().is_none() && !body.is_repeatable() {\n            if let Ok(mut stream) = body.into_stream() {\n                let mut context = std::task::Context::from_waker(std::task::Waker::noop());\n                drop(futures_core::Stream::poll_next(stream.as_mut(), &mut context));\n            }\n            return Err(MimeWriteError::Stream { part });\n        }"
 }

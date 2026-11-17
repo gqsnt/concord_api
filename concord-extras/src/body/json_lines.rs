@@ -87,7 +87,8 @@ where
     Ok(Body::new(output.bytes, "application/x-ndjson"))
 }
 
-/// A JSON-lines request body's size or record serialization failure.
+/// Why a JSON-lines request body could not be written: it is too large, or a record
+/// failed to serialize.
 ///
 /// `Display` uses a fixed sentence and `Debug` shows only the variant name.
 /// Neither formats record bytes or a cause. A serialization failure retains
@@ -118,7 +119,7 @@ pub enum JsonLinesError {
 }
 
 impl JsonLinesError {
-    /// Finds this failure by following the given error and its `source()` chain.
+    /// Finds a `JsonLinesError` in this error or its `source()` chain.
     ///
     /// ```no_run
     /// fn inspect(error: &concord::Error) {

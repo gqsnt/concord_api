@@ -152,7 +152,7 @@ A signature has no default values. A filter that the provider documents as optio
 
 | Statement | Says | Position |
 |---|---|---|
-| `body json(task);` | The request body: the value of the expression ([a body that is sent](responses-and-errors.md#a-body-that-is-sent)). | endpoint |
+| `body json(task);` | The request body: the value of the expression ([a body that is sent](bodies.md#a-body-that-is-sent)). | endpoint |
 | `body json { chat_id; text; }` | The request body, made of entries: one key for each (below). | endpoint |
 | `read Json;` | How a response body is read ([reading a success](responses-and-errors.md#reading-a-success)). Written once on the client; an endpoint that differs declares `read Text;`. | any |
 | `paginate by_offset(start);` | This endpoint is paginated ([pages](pages.md)). | endpoint |
@@ -204,6 +204,8 @@ async fn search(filters: std::collections::BTreeMap<String, std::collections::BT
     Ok(())
 }
 ```
+
+Tested: [`query.rs`](../../tests/real-apis/fixtures/recipes/query.rs), run by [`writer_recipes.rs`](../../tests/real-apis/tests/writer_recipes.rs), which compares this block with the file.
 
 Two rules about entries are checked, because a wrong guess would otherwise go unnoticed ([rules](../reference/rules.md)):
 
@@ -419,8 +421,8 @@ let vault = Vault::new(key);                                   // it signs: ther
 let test  = Vault::new("k").with_transport(concord::fake(…));  // the fake gets the signed request
 ```
 
-`middleware` appears on the client only, and may be written several times. A request goes first through the middleware that the caller added, then through the description's middleware layers in the order written, and then to the transport. So the author's layers are the last before the wire, and the author writes the signing layer last, so that nothing changes a request after it is signed. The expression can use the required inputs of the client and nothing else: an optional input is rejected. The value is created once, in `new`, so it can hold state that all calls share, and it runs for every attempt and every page. Nothing below the client can remove it.
+`middleware` appears on the client only, and may be written several times. The description's layers run in the order written, after the caller's layers and before the transport, so the author writes the signing layer last ([the order of layers](middleware.md#the-order-of-layers)). The expression can use the required inputs of the client and nothing else: an optional input is rejected. The value is created once, in `new`, so it can hold state that all calls share, and it runs for every attempt and every page. Nothing below the client can remove it.
 
-See the [grammar](../reference/grammar.md) for the syntax and [rule 26](../reference/rules.md) for what you cannot guess. A complete middleware layer is written out in [a middleware](credentials.md#a-middleware), and [a middleware](extending.md#a-middleware) shows how a caller adds one of their own. Concord ships four: [a token that is renewed](credentials.md#a-token-that-is-renewed), [a refresh token that rotates](credentials.md#a-refresh-token-that-rotates), AWS Signature Version 4 ([a middleware](credentials.md#a-middleware)), and [limits shared by the calls of a client](retries.md#limits-shared-by-the-calls-of-a-client).
+See the [grammar](../reference/grammar.md) for the syntax and [rule 26](../reference/rules.md) for what you cannot guess, and [Middleware](middleware.md) for the rules that every layer follows. A complete middleware layer is written out in [a signature](credentials.md#a-signature), and [a middleware](extending.md#a-middleware) shows how a caller adds one of their own. Concord ships four: [a token that is renewed](credentials.md#a-token-that-is-renewed), [a refresh token that rotates](credentials.md#a-refresh-token-that-rotates), AWS Signature Version 4 ([a signature](credentials.md#a-signature)), and [rate limits](limits.md).
 
-See [the examples](../examples/README.md) for eight real APIs described in this language.
+See [the examples](../examples/README.md) for ten real APIs described in this language.

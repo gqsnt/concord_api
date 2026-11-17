@@ -1,30 +1,34 @@
-//! Request body writers producing a [`concord_core::Body`].
+//! Writers of request bodies, each returning a [`concord_core::Body`].
 //!
-//! In tests, `concord_testkit::Script` records sent requests as
+//! In tests, `concord_testkit::Script` records the requests sent as
 //! `concord_testkit::script::Request`.
 //!
 #[cfg(feature = "form")]
 #[path = "body/bracket_form.rs"]
 mod bracket_form_writer;
 #[cfg(feature = "form")]
+#[cfg_attr(docsrs, doc(cfg(feature = "form")))]
 pub use bracket_form_writer::{bracket_form, bracket_pairs, BracketFormError};
 
 #[cfg(feature = "gzip-body")]
 #[path = "body/gzip.rs"]
 mod gzip_writer;
 #[cfg(feature = "gzip-body")]
+#[cfg_attr(docsrs, doc(cfg(feature = "gzip-body")))]
 pub use gzip_writer::{gzip, GzipError};
 
 #[cfg(feature = "json")]
 #[path = "body/json_lines.rs"]
 mod json_lines_writer;
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub use json_lines_writer::{json_lines, JsonLinesError};
 
 #[cfg(feature = "multipart")]
 #[path = "body/mime.rs"]
 mod mime_writer;
 #[cfg(feature = "multipart")]
+#[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use mime_writer::{multipart_mixed, multipart_related, MimeWriteError};
 
 #[cfg(any(
@@ -70,6 +74,7 @@ use concord_core::Body;
 /// Values nested more than 128 levels deep
 /// are rejected. An entry's depth failure keeps its input name in the Build error.
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub fn json<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::WriteError> {
     let value = concord_core::body::Bounded::new(&value);
     let bytes = serde_json::to_vec(&value).map_err(|error| value.error(error))?;
@@ -89,6 +94,7 @@ pub fn json<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::W
 /// [`concord_core::body::WriteError`] keeps the original form error as its source
 /// and gives an entry's depth failure its input name in the Build error.
 #[cfg(feature = "form")]
+#[cfg_attr(docsrs, doc(cfg(feature = "form")))]
 pub fn form<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::WriteError> {
     let value = concord_core::body::Bounded::new(&value);
     let text = serde_urlencoded::to_string(&value).map_err(|error| value.error(error))?;
@@ -99,6 +105,7 @@ pub fn form<T: serde::Serialize>(value: T) -> Result<Body, concord_core::body::W
 #[path = "multipart.rs"]
 mod multipart_writer;
 #[cfg(feature = "multipart")]
+#[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use multipart_writer::{multipart, Multipart, MultipartError};
 
 #[cfg(test)]

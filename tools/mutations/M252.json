@@ -1,0 +1,9 @@
+{
+  "id": "M252",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A learned fixed refill with some units left cannot return to discovery when the request costs more than those units.",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "(window.remaining < cost && cost <= window.capacity)",
+  "replace": "(window.remaining == 0 && cost <= window.capacity)"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M251",
+  "area": "limit",
+  "contract": "C11.6",
+  "description": "A spent learned fixed refill prevents an otherwise idle key from being forgotten.",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "    fn holds_nothing(&mut self, now: Instant) -> bool {\n        self.forget_spent(now, 0);",
+  "replace": "    fn holds_nothing(&mut self, now: Instant) -> bool {"
+}

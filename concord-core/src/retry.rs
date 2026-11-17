@@ -34,6 +34,10 @@ type Unless<P> = Arc<dyn Fn(&Tried<'_, P>) -> bool + Send + Sync>;
 /// exact when it is at least 2<sup>n-1</sup> seconds and no longer `Retry-After` arrived. A
 /// wait over 60 seconds, or one that would end after the call's `timeout`, means no further
 /// attempt.
+///
+/// A clone is independent: it copies the number of attempts, the table and the
+/// `not_applied_on` statuses, and shares only the `when` and `unless` rules, which cannot
+/// change, so configuring a clone never changes another.
 pub struct Retry<P = ()> {
     tries: u32,
     standard: bool,

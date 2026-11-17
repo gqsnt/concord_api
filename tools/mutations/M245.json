@@ -1,0 +1,12 @@
+{
+  "id": "M245",
+  "area": "stream construction allocations",
+  "contract": "tools/mutations/README.md#c1214",
+  "description": "Two unused control allocations are moved into ordinary stream construction.",
+  "file": "concord-core/src/body.rs",
+  "find": "        Body {\n            content_type: None,\n            data: Data::Stream(Arc::new(Mutex::new(Some(Box::pin(\n                Box::pin(stream).map(|chunk| chunk.map_err(Into::into)),\n            ))))),\n        }",
+  "replace": "        drop(std::hint::black_box(repeatable::Control::default()));\n        Body {\n            content_type: None,\n            data: Data::Stream(Arc::new(Mutex::new(Some(Box::pin(\n                Box::pin(stream).map(|chunk| chunk.map_err(Into::into)),\n            ))))),\n        }",
+  "checks": [
+    "allocations"
+  ]
+}

@@ -68,7 +68,7 @@ Without `with_transport`, the client sends requests through `concord::Http`, Con
 - **Errors.** Every endpoint of a client returns the same error type, `tasks::Error`, which has four kinds: Build, Transport, Refused, Mismatch.
 - **Error responses.** A response that is not a 2xx, and that no arm of `status { }` matches, is a Refused error. It keeps the status, the headers and at most 64 KiB of the body.
 - **Problems.** `problem E;` reads the API's own error body into your type `E`; `error.problem()` returns it.
-- **Retries.** Retries are off until you turn them on with `with_retry`. `Retry::standard()` makes at most 3 attempts, and it retries a request only when its method (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`) or `idempotent;` says that it may be repeated.
+- **Retries.** Retries are off until you turn them on with `with_retry`. `Retry::standard()` makes at most 3 attempts, and it retries a request only when its method (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`), its `idempotent` mark, or a refusal status listed with `not_applied_on` permits repetition, and only when its body can be sent again: bytes, or a `Body::repeatable`, opened again for each attempt; a `Body::stream` is sent once.
 - **Pagination.** `paginate by_offset(start);` on an endpoint adds `.pages()` and `.pages().items()` to its call. If the next page would be the same request as the one just sent, the pages end with an error.
 - **Records.** `read JsonLines::new(n);` and `read Sse::new(n);` read a stream as records, each at most `n` bytes.
 - **A token that is renewed, and limits.** `auth::Renewed` (feature `auth`) and `limit::Limit` (feature `limit`) are middleware: one renews an expiring token for all the calls that wait for it, the other holds calls after a `429` that has a `Retry-After`, and keeps budgets. Neither sends a request twice.
@@ -95,16 +95,16 @@ invalid header.
 | `rustls` | TLS for `concord::Http`, through `reqwest/rustls` | on |
 | `http2` | HTTP/2 for `concord::Http`, through `reqwest/http2` | on |
 | `system-proxy` | The system's proxy settings (macOS, Windows), as `reqwest` reads them | on |
-| `gzip` | The gzip decoder of `reqwest`, for `builder.gzip(true)` in `concord::Http::with` | off |
+| `gzip` | Response decompression: the gzip decoder of `reqwest`, for `builder.gzip(true)` in `concord::Http::with`. The `gzip(body)` writer needs `gzip-body` instead | off |
 | `deflate` | The deflate decoder of `reqwest`, for `builder.deflate(true)` in `concord::Http::with` | off |
 | `socks` | SOCKS proxies, configured with `reqwest::Proxy` in `concord::Http::with` | off |
 | `tower` | A `tower` service as a transport: `concord::tower::Tower` | off |
 | `multipart` | `multipart()`, `multipart_mixed(parts)`, `multipart_related(parts)` to write multipart bodies | off |
-| `gzip-body` | `gzip(body)` to compress a buffered request body and keep its content type | off |
+| `gzip-body` | `gzip(body)` to compress a buffered request body and keep its content type. Response decompression is the feature `gzip` | off |
 | `auth` | `auth::Renewed`, a token that expires and is renewed, and the retry rule `auth::after_401` | off |
 | `rotating` | `auth::Rotating`, a refresh token that the server replaces at each exchange, with its `RotationDriver`; turns on `auth` | off |
 | `sign` | `sign::SigV4`, AWS Signature Version 4, and `sign::body_bytes` and `sign::check_origin` for a provider's own proof | off |
-| `limit` | `limit::Limit`, limits shared by the calls of a client: a wait after a `429` that has a `Retry-After`, a cap on the calls in flight, buckets | off |
+| `limit` | `limit::Limit`, for rate limits: a wait after a `429` that has a `Retry-After`, a cap on the calls in flight, buckets | off |
 
 `read::Sse`, `read::RecordStream` and `transfer` need no feature. A reader of records takes the
 bound of one record as its argument, with no default, and its first error ends the stream. For a

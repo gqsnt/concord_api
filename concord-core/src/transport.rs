@@ -144,6 +144,14 @@ impl TransportError {
         TransportError::new(Class::Blocked)
     }
 
+    pub(crate) fn upload(source: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> Self {
+        Self {
+            request_failure: Some(RequestFailure::Body),
+            source: Some(source.into()),
+            ..Self::new(Class::Other)
+        }
+    }
+
     /// Sets the cause, for the `source()` of the error that the caller receives.
     ///
     /// It is shown as it is: pass a source that holds no URL and no secret. For a
@@ -200,7 +208,9 @@ impl std::fmt::Display for TransportError {
 
 impl std::error::Error for TransportError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_deref().map(|e| e as _)
+        self.source
+            .as_deref()
+            .map(crate::body::repeatable::original_source)
     }
 }
 
@@ -273,6 +283,7 @@ pub struct TryInfo {
     number: u32,
     run: Option<crate::__private::Run>,
     conditional: Option<Arc<std::sync::atomic::AtomicBool>>,
+    pub(crate) repeatable_body: bool,
 }
 
 impl std::fmt::Debug for TryInfo {
@@ -292,6 +303,7 @@ impl TryInfo {
             number,
             run: None,
             conditional: None,
+            repeatable_body: false,
         }
     }
 
@@ -316,6 +328,7 @@ impl TryInfo {
             number,
             run: Some(run),
             conditional: None,
+            repeatable_body: false,
         }
     }
 

@@ -17,17 +17,22 @@ use tokio::time::Instant;
 
 mod engine;
 
-/// An immutable access/refresh pair and an optional access expiry.
+/// An access token and a refresh token, with an optional expiry of the access token.
 ///
-/// Secrets are snapshotted, including when supplied as mutable `Secret` aliases.
-/// Accessors return independent secrets. `None` means access cannot be used; a
-/// valid replacement refresh token is still saved before reporting `Expired`.
+/// A pair cannot be changed. A copy of each secret is taken, even when it is given as a
+/// mutable alias of a `Secret`, and the methods return independent secrets. An expiry
+/// of `None` means the access token cannot be used; a valid replacement refresh token
+/// is still saved before `Expired` is reported.
+///
+/// A clone is independent: a pair cannot be changed, and its methods return new secrets.
 ///
 /// ```no_run
 /// let pair = concord::auth::TokenPair::expires_in("access", "refresh", std::time::Duration::from_secs(300));
 /// let saved_expiry = pair.expires_at();
 /// ```
 #[derive(Clone)]
+#[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 pub struct TokenPair {
     access: Arc<str>,
     refresh: Arc<str>,
@@ -44,7 +49,8 @@ enum Expiry {
 }
 
 impl TokenPair {
-    /// Restores a stored pair; past and absent expiries require renewal before access.
+    /// Restores a stored pair; with a past or absent expiry, `Rotating` renews the pair
+    /// before it uses the access token.
     ///
     /// ```no_run
     /// let pair = concord::auth::TokenPair::new("access", "refresh", None);
@@ -58,11 +64,12 @@ impl TokenPair {
         Self::with_expiry(access.into(), refresh.into(), Expiry::Absolute(expires_at))
     }
 
-    /// Creates an exchange result without failing on zero lifetime or time overflow.
+    /// Creates the result of an exchange: a pair whose access token expires `lifetime` from now.
     ///
-    /// The lifetime uses the renewal timer (including virtual time in tests),
-    /// starts here and includes time spent saving. An unrepresentable
-    /// expiry becomes `None`; the refresh token can still be saved safely.
+    /// It never fails, even on a zero lifetime or a time overflow. The lifetime is
+    /// measured on the renewal timer (including virtual time in tests); it starts here
+    /// and includes the time spent saving. An expiry that cannot be represented becomes
+    /// `None`, and the refresh token can still be saved safely.
     ///
     /// ```no_run
     /// let pair = concord::auth::TokenPair::expires_in("access", "refresh", std::time::Duration::MAX);
@@ -92,7 +99,7 @@ impl TokenPair {
         }
     }
 
-    /// Returns an independent access-token snapshot, without a header scheme.
+    /// Returns an independent copy of the access token, without a scheme such as `Bearer`.
     ///
     /// ```no_run
     /// # let pair = concord::auth::TokenPair::new("access", "refresh", None);
@@ -102,7 +109,7 @@ impl TokenPair {
         Secret::new(self.access.to_string())
     }
 
-    /// Returns an independent refresh-token snapshot.
+    /// Returns an independent copy of the refresh token.
     ///
     /// ```no_run
     /// # let pair = concord::auth::TokenPair::new("access", "refresh", None);
@@ -112,7 +119,8 @@ impl TokenPair {
         Secret::new(self.refresh.to_string())
     }
 
-    /// Returns the wall expiry to persist, or `None` for unusable access.
+    /// Returns the wall-clock expiry to save, or `None` when there is none or it cannot be
+    /// represented. A past expiry is returned as it is.
     ///
     /// ```no_run
     /// # let pair = concord::auth::TokenPair::new("access", "refresh", None);
@@ -148,7 +156,7 @@ impl fmt::Debug for TokenPair {
     }
 }
 
-/// The complete durable state of one account.
+/// The whole durable state of one account.
 ///
 /// This enum is exhaustive on purpose: every store must save every state. Adding
 /// a state requires a major version, so an old store cannot fail unexpectedly
@@ -160,10 +168,13 @@ impl fmt::Debug for TokenPair {
 /// }
 /// ```
 #[derive(Clone)]
+#[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 pub enum Stored {
     /// A saved pair, whose access token may already be unusable.
     Ready(TokenPair),
-    /// Durable intent; there is no known refresh token safe to submit again.
+    /// The intent to exchange, saved before the exchange is sent: its outcome may be
+    /// unknown, so no known refresh token is safe to send again.
     Refreshing,
 }
 
@@ -176,31 +187,34 @@ impl fmt::Debug for Stored {
     }
 }
 
-/// Atomic, durable storage for one exclusively owned account record.
+/// Atomic, durable storage for the record of one account, which it alone owns.
 ///
-/// Success acknowledges durable replacement. After `save` returns, **including
-/// an error**, that operation has no further effects on storage: its outcome can
-/// be unknown, but must be final. Saving the same record again must be safe. A
-/// timed-out HTTP PUT does not in general have this property.
+/// A success means that the record has been replaced durably. After `save` returns,
+/// **including with an error**, that operation has no further effect on storage: its
+/// outcome may be unknown, but it must be final. Saving the same record again must be
+/// safe. A timed-out HTTP PUT does not in general have this property.
 ///
-/// Operations are serialized and never timed out by Concord. A store panic stops
-/// this instance; after a panic or cancellation the application must establish
-/// quiescence before another owner uses the account. No late write may race it.
-/// One `Rotating` and its clones own the account; other processes require an
-/// application-owned lease. This interface supplies no cross-process locking.
-/// Callbacks must yield promptly, bound their own allocations and errors, and
-/// must not wait on a resource call that needs this credential.
+/// Concord runs the operations one at a time and never applies a timeout to them. A
+/// panic in the store stops this instance. After a panic or a cancellation, the
+/// application must make sure that no earlier operation is still running before
+/// another owner uses the account: no late write may race it. One `Rotating` and its
+/// clones own the account; other processes need a lease owned by the application,
+/// because this trait provides no locking across processes. The methods must yield
+/// promptly, bound their own allocations and errors, and must not wait on a call to
+/// the API that needs this credential.
 ///
-/// The [whole example](Rotating) supplies a local store with this finality property.
+/// The [whole example](Rotating) supplies a local store whose saves are final in this way.
+#[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 pub trait CredentialStore: Send + Sync + 'static {
-    /// Loads the last complete record, preserving storage errors as causes.
+    /// Loads the last complete record; a storage error is kept as the cause.
     ///
     /// ```no_run
     /// async fn load(store: &impl concord::auth::CredentialStore)
     ///     -> Result<concord::auth::Stored, concord::auth::RenewalError> { store.load().await }
     /// ```
     fn load(&self) -> impl Future<Output = Result<Stored, RenewalError>> + Send;
-    /// Atomically replaces the whole record and acknowledges durability.
+    /// Replaces the whole record atomically; a success means that it is durable.
     ///
     /// ```no_run
     /// async fn mark(store: &impl concord::auth::CredentialStore)
@@ -209,19 +223,23 @@ pub trait CredentialStore: Send + Sync + 'static {
     fn save(&self, record: Stored) -> impl Future<Output = Result<(), RenewalError>> + Send;
 }
 
-/// The isolated refresh token supplied to one exchange, with room for more inputs.
+/// What one exchange receives: its own copy of the refresh token to send.
 ///
-/// Use a separate token client with retries disabled, including in its transport.
-/// Bound that client's request explicitly: the driver never cancels the exchange.
+/// More inputs may be added later. Use a separate client for the token endpoint, with
+/// retries turned off, also in its transport. Set a timeout on that client's request
+/// yourself: the driver never cancels the exchange.
 ///
 /// ```no_run
 /// fn token(exchange: &concord::auth::Exchange) -> concord::Secret { exchange.refresh().clone() }
 /// ```
+#[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 pub struct Exchange {
     refresh: Secret,
 }
 impl Exchange {
-    /// Borrows the exchange's snapshot; replacing it cannot change retained state.
+    /// Returns this exchange's copy of the refresh token; replacing it cannot change the
+    /// state that the credential keeps.
     ///
     /// ```no_run
     /// fn token(exchange: &concord::auth::Exchange) -> concord::Secret { exchange.refresh().clone() }
@@ -236,14 +254,14 @@ impl fmt::Debug for Exchange {
     }
 }
 
-/// A rotation failure with its underlying cause retained.
+/// Why a `Rotating` credential could not provide an access token; the cause is kept.
 ///
-/// `Display` prints one sentence for its variant; `Debug` prints its name.
-/// Neither prints values, causes or panic payloads.
-/// `source()` deliberately exposes the retained cause; application errors remain
-/// the application's responsibility. Shared renewal conditions have the same
-/// spelling and cause as for `Renewed`. A caught panic discards its payload,
-/// but the application's panic hook still runs; with panic=abort it aborts.
+/// `Display` prints one sentence for each variant, and `Debug` prints its name;
+/// neither prints values, causes or panic payloads. `source()` exposes the kept cause
+/// on purpose; the application's own errors remain the application's responsibility.
+/// The renewal errors shared with `Renewed` have the same text and cause. A caught
+/// panic discards its payload, but the application's panic hook still runs; with
+/// panic=abort the process aborts.
 ///
 /// ```no_run
 /// fn inspect(error: &concord::Error) {
@@ -254,33 +272,44 @@ impl fmt::Debug for Exchange {
 /// ```
 #[non_exhaustive]
 #[derive(Clone)]
+#[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 pub enum RotationError {
-    /// Loading failed, preserving the store's error.
+    /// Loading failed; the store's error is kept.
     Load(RenewalError),
-    /// Saving failed; the final outcome may be unknown and is reloaded.
+    /// Saving failed; the final outcome may be unknown, so the record is loaded again.
     Save(RenewalError),
-    /// Exchange, wait timeout, panic, header, expiry, origin, policy, or overflow failure.
+    /// A failure of the exchange, a wait that timed out, a panic, or an error of the
+    /// header, expiry, origin, settings or time overflow.
     Renewal(RenewalError),
     /// The refresh token is empty, or an exchange returned the token it consumed.
     InvalidRefreshToken,
-    /// A durable intent has no known replacement; provider recovery is required.
+    /// No known refresh token is safe to use and no replacement is known: for example the
+    /// store holds a `Refreshing` marker or an empty refresh token, or an exchange failed
+    /// or returned an invalid one. The application must recover the account with the
+    /// provider.
     NeedsReauthorization,
-    /// The driver was not polled during this call's wait.
+    /// The driver was not polled while this call waited.
     NotPolled,
     /// The driver was dropped, or a storage panic permanently stopped the account.
     Stopped,
-    /// The driver could not durably save a replacement and returns it for recovery.
-    /// Establish store quiescence after a panic before saving it by other means.
+    /// The driver could not save a replacement durably, and returns it so that the
+    /// application can save it.
+    ///
+    /// After a panic in the store, make sure that no earlier store operation is still
+    /// running before saving the pair by other means.
     #[non_exhaustive]
     Unsaved {
-        /// The exact replacement, including an unusable access token or expiry.
+        /// The exact replacement, even when its access token or expiry is unusable.
         pair: TokenPair,
-        /// The final recovery failure, retained as this error's source.
+        /// The failure that ended the last attempt to recover it, kept as this error's
+        /// source: from loading, saving or renewal, a panic included.
         cause: RenewalError,
     },
 }
 impl RotationError {
-    /// Finds this error in a source chain, including a cycle containing this error.
+    /// Finds a `RotationError` in this error or its chain of sources, also when the
+    /// chain is a cycle that contains it.
     ///
     /// ```no_run
     /// fn inspect(error: &concord::Error) { let rotation = concord::auth::RotationError::find(error); }
@@ -348,45 +377,51 @@ impl StdError for RotationError {
     }
 }
 
-/// The future that owns one rotating account's exchanges and saves.
+/// The future that runs the exchanges and saves of one rotating account.
 ///
-/// The application polls or spawns this future; Concord starts no task or thread.
-/// It is `Send` and `Unpin`, not `Sync` or `Clone`. While it remains polled, a
-/// begun renewal finishes with its replacement saved or handed back in
-/// [`RotationError::Unsaved`], even when every resource call is dropped or times
-/// out. Renewal begins when saving its marker begins; dropping the last waiting
-/// call during the initial load leaves no begun renewal. Store operations are
-/// never timed out: the initial load is dropped when its last waiting call is
-/// dropped, but a save is never dropped while the driver remains polled. The
-/// exchange is never timed out by the driver. Dropping the driver cancels its
-/// work and stops the credential; no asynchronous work runs from `Drop`.
+/// The application polls this future or spawns it; Concord starts no task or thread.
+/// It is `Send` and `Unpin`, but neither `Sync` nor `Clone`. As long as it is polled,
+/// dropping every call to the API, or their timing out, does not cancel a renewal that
+/// has begun. A failed exchange yields no replacement; its error goes to the waiting
+/// calls. A valid replacement is saved, or kept pending after a failed save until the
+/// next call that needs a token, or the drop of the last owner, retries the save; a
+/// pair that cannot be saved at the end is handed back in [`RotationError::Unsaved`].
+/// A renewal begins when saving its `Refreshing` marker begins; dropping the last
+/// waiting call during the first load leaves no renewal begun. Store operations never
+/// time out: the first load is dropped when its last waiting call is dropped, but a
+/// save is never dropped while the driver is polled. The driver never applies a
+/// timeout to the exchange either. Dropping the driver cancels its work and stops the
+/// credential; no asynchronous work runs in `Drop`.
 ///
-/// When the last credential owner goes away, it drains begun work, makes one
-/// further recovery attempt for a pending save, then returns success or the
-/// unresolved failure. If that attempt fails, it returns `Unsaved` with the pair.
-/// A store panic stops the credential with `Stopped`; an existing waiter whose
-/// deadline has passed still reports its timeout. The driver returns `Unsaved`
-/// if it holds a replacement, otherwise `Stopped`.
-/// Ordinary failures go to waiting calls and leave the driver available for new
-/// demand. A hung store or exchange prevents draining; resource waits still have
-/// their own deadlines. The first driver poll after a call begins waiting must
-/// precede its deadline, or that call receives `NotPolled`, even if polled late.
+/// When the last owner of the credential is dropped, the driver finishes the work
+/// already begun, makes one more attempt at a pending save, then returns success or
+/// the failure that remains. If that attempt fails, it returns `Unsaved` with the pair.
+/// A panic in the store stops the credential with `Stopped`; a waiting call whose
+/// deadline has passed still reports its timeout. The driver returns `Unsaved` if it
+/// holds a replacement, and `Stopped` otherwise. Ordinary failures go to the waiting
+/// calls and leave the driver ready for the next calls that need a token. A store or
+/// an exchange that hangs keeps the driver from finishing; calls to the API still have
+/// their own deadlines. After a call starts waiting, the driver must be polled before
+/// that call's deadline, or the call receives `NotPolled`, even if the driver is
+/// polled later.
 ///
-/// The saved-or-returned promise begins when the author's exchange future
-/// yields the pair. Concord cannot protect a pair the author's code loses before
-/// yielding it. Concord guards destruction of author-owned values once; a panic
-/// payload that panics again when destroyed is outside what it can contain.
-/// Concord's own formatting never prints a token. An author's store error and
-/// anything printed by traversing its sources remain the author's responsibility.
+/// The promise that a pair is saved or returned begins when the author's exchange
+/// future yields a pair whose refresh token is not empty and differs from the one sent;
+/// any other pair is discarded with `InvalidRefreshToken`. Concord cannot protect a
+/// pair that the author's code loses before yielding it. Concord guards the destruction of the author's values once; a
+/// panic payload that panics again when destroyed is beyond what it can contain.
+/// Concord's own formatting never prints a token. An error of the author's store, and
+/// anything printed by walking its sources, remain the author's responsibility.
 ///
-/// Poll within a Tokio runtime. Completing a renewal wakes every waiting call;
-/// that work grows with the number of waiters. Callbacks and destructors must
-/// return promptly. The [whole example](Rotating) shows an application-owned task.
+/// Poll it within a Tokio runtime. Finishing a renewal wakes every waiting call, so
+/// that work grows with the number of waiting calls. Callbacks and destructors must
+/// return promptly. The [whole example](Rotating) runs the driver in a task owned by
+/// the application.
 ///
-/// The application owns recovery of an unsaved pair. After a store panic, first
-/// establish that previous operations can have no later effects; the recovery
-/// store below must already meet that requirement. If its own save fails, this
-/// example returns the original error, keeping the pair available to its caller.
+/// Saving an unsaved pair is up to the application. After a panic in the store, first
+/// make sure that earlier operations can have no later effect; the recovery store
+/// below must already meet that requirement. If its own save fails, this example
+/// returns the original error, so that its caller still has the pair.
 ///
 /// ```no_run
 /// use concord::auth::{CredentialStore, RotationDriver, RotationError, Stored};
@@ -404,6 +439,8 @@ impl StdError for RotationError {
 /// }
 /// ```
 #[must_use = "poll or explicitly spawn the rotation driver alongside resource calls"]
+#[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 pub struct RotationDriver {
     inner: Option<Arc<engine::Inner>>,
     work: Option<futures_util::future::BoxFuture<'static, Result<(), RotationError>>>,
@@ -493,49 +530,57 @@ impl fmt::Debug for RotationDriver {
     }
 }
 
-/// Middleware that renews access with a single-use refresh token.
+/// A middleware layer that renews the access token with a refresh token that can be used only once.
 ///
-/// Configure it fully, then clone; clones share one account and one renewal.
-/// As with `Renewed`, configuring any clone changes the shared header, early
-/// margin and wait allowance for every clone of that account.
-/// Keep the returned `RotationDriver` polled independently of resource calls.
-/// The origin is checked before store access: a base path prefix neither narrows
-/// nor widens the scheme, host and effective-port comparison.
+/// Keep the `RotationDriver` that [`Rotating::new`] returns polled, apart from the
+/// calls to the API. The origin is checked before the store is accessed: a path prefix
+/// in the base neither narrows nor widens the comparison of scheme, host and effective
+/// port.
 ///
-/// The durable `Refreshing` marker precedes exchange. A replacement is saved
-/// before either token is used, even if access has no usable expiry or cannot
-/// form a header. A failed final save retains the pair; the next demand reloads
-/// the store and retries only saving, never exchanging the old token again.
-/// Even a reload showing the same pair requires another successful save: visibility
-/// is not proof of durability. An empty stored refresh token is refused before
-/// saving a marker; after an exchange returns an empty or unchanged refresh
-/// token, the marker remains and the next call receives `NeedsReauthorization`.
-/// After unusable access was saved (`Expired` or a header that cannot be built),
-/// the next call renews with the saved refresh token and never sends that access.
-/// Uncertain exchange outcomes require reauthorization. No store can atomically
-/// commit remote issuance and local saving: a crash in that gap can lose a token.
+/// The durable `Refreshing` marker is saved before the exchange. A replacement is saved
+/// before either token is used, even if the access token has no usable expiry or
+/// cannot be formatted as a header. If the final save fails, the pair is kept: the next
+/// call that needs a token loads the store again and retries only the save, never
+/// exchanging the old token again. Even a reload that shows the same pair needs another
+/// successful save, because seeing a record is no proof that it is durable. An empty
+/// stored refresh token is refused before a marker is saved; after an exchange returns
+/// an empty or unchanged refresh token, the marker stays and the next call receives
+/// `NeedsReauthorization`. After an unusable access token was saved (`Expired`, or a
+/// header that cannot be built), the next call renews with the saved refresh token and
+/// never sends that access token. When the outcome of an exchange is uncertain, the
+/// account must be authorized again. No store can commit the server's issuance and the
+/// local save atomically: a crash between the two can lose a token.
 ///
-/// A 401 is returned unchanged and rejects only its access generation. Compose
-/// `after_401` with the engine's retry policy; this middleware never resends a
-/// resource request. A resumed waiter rechecks expiry, policy and driver state.
-/// Relative lifetimes include save time; pending-save retries never restart them.
+/// A `401` is returned unchanged and rejects only the access token that the request
+/// carried. Add `after_401` to the engine's retry policy; this middleware never resends
+/// a request. A call that resumes waiting checks the expiry, the settings and the state
+/// of the driver again. Relative lifetimes include the time spent saving; retrying a
+/// pending save never restarts them.
 ///
-/// Retained state is one account record, one pending replacement, one workflow,
-/// and one notification per waiting call; no history or request queue is kept.
-/// Token sizes, callback captures, storage buffers and live call counts belong
-/// to the application. All callbacks, notifications and author-owned drops occur
-/// outside the state lock. No task is started.
+/// The state kept is one account record, one pending replacement, one renewal in
+/// progress, and one notification per waiting call; no history and no queue of
+/// requests. The size of tokens, what callbacks capture, the buffers of the store and
+/// the number of calls in progress are the application's to bound. All callbacks,
+/// notifications and drops of the author's values happen outside the state lock. No
+/// task is started.
+///
+/// Clones share one account, one renewal and one configuration: `header`, `early_by`
+/// or `renewal_timeout` called on any clone changes every clone. Configure it fully,
+/// then clone.
 #[doc = include_str!("rotating/example.md")]
 #[derive(Clone)]
 #[must_use = "configure the credential and attach it as middleware"]
+#[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 pub struct Rotating {
     inner: Arc<engine::Inner>,
     owners: Option<Arc<()>>,
 }
 impl Rotating {
-    /// Creates a credential and its unique driver without loading or sending.
-    /// Defaults: zero early margin, a 30-second caller wait, sensitive Bearer header.
-    /// The store must already contain an initial grant.
+    /// Creates a credential and its one driver, without loading the store or sending a request.
+    ///
+    /// Defaults: no early margin, a wait of 30 seconds for each call, and a sensitive
+    /// `Authorization: Bearer` header. The store must already contain an initial grant.
     ///
     /// ```no_run
     /// # use concord::auth::{CredentialStore, Exchange, RenewalError, Rotating, TokenPair};
@@ -567,8 +612,9 @@ impl Rotating {
         )
     }
 
-    /// Renews access with at most this much lifetime left; default: zero.
-    /// Configuring a clone changes the margin shared by every clone, as in `Renewed`.
+    /// Renews the access token when at most `margin` of its lifetime is left: zero by default.
+    ///
+    /// Configuring a clone changes the margin shared by every clone, as with `Renewed`.
     ///
     /// ```no_run
     /// fn configure(auth: concord::auth::Rotating) -> concord::auth::Rotating {
@@ -581,13 +627,15 @@ impl Rotating {
         self
     }
 
-    /// Bounds how long each call waits, not the exchange; default: 30 seconds.
-    /// Configuring a clone changes the allowance shared by every clone.
-    /// Zero is refused before storage. An unpolled driver produces `NotPolled`;
-    /// another expired wait produces `Renewal(RenewalError::TimedOut)`.
-    /// Unlike `Renewed::renewal_timeout`, this never cancels an exchange: losing
-    /// a sent single-use exchange could lose its replacement. Bound the token
-    /// client's request explicitly. Renewal and saving continue after this wait.
+    /// Sets how long each call waits for a token, not how long the exchange may take:
+    /// 30 seconds by default.
+    ///
+    /// Configuring a clone changes the wait shared by every clone. Zero is refused before
+    /// the store is accessed. A call whose driver was not polled fails with `NotPolled`;
+    /// any other wait that expires fails with `Renewal(RenewalError::TimedOut)`. Unlike
+    /// `Renewed::renewal_timeout`, this never cancels an exchange: cancelling a
+    /// single-use exchange already sent could lose its replacement. Set a timeout on
+    /// the token client's request yourself. Renewal and saving go on after this wait.
     ///
     /// ```no_run
     /// fn configure(auth: concord::auth::Rotating) -> concord::auth::Rotating {
@@ -600,9 +648,12 @@ impl Rotating {
         self
     }
 
-    /// Selects a header and its whole value, always marking it sensitive.
-    /// Formatting or insertion errors retain their causes through `RenewalError`.
-    /// Configuring a clone changes the header shared by every clone, as in `Renewed`.
+    /// Sets the header that carries the access token, and its whole value, always
+    /// marked sensitive.
+    ///
+    /// By default it is `Authorization: Bearer <token>`. An error formatting or inserting
+    /// the header keeps its cause through `RenewalError`. Configuring a clone changes the
+    /// header shared by every clone, as with `Renewed`.
     ///
     /// ```no_run
     /// fn configure(auth: concord::auth::Rotating) -> concord::auth::Rotating {

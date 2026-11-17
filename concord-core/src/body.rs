@@ -1,6 +1,7 @@
 //! The body of a request, as a value.
 
 mod depth;
+pub(crate) mod repeatable;
 
 use futures_util::StreamExt;
 use std::{
@@ -22,6 +23,7 @@ pub type BodyStream = Pin<
 enum Data {
     Bytes(bytes::Bytes),
     Stream(Arc<Mutex<Option<BodyStream>>>),
+    Repeatable(Arc<repeatable::Factory>),
     Concat(Vec<Body>),
     Map(
         Box<Body>,
@@ -31,10 +33,17 @@ enum Data {
 
 /// The bytes of a request body, with their content type.
 ///
-/// Bytes can be sent again; a stream is sent once.
+/// Bytes can be sent again; a [`Body::stream`] is sent once.
 /// Create a body from bytes with [`Body::new(bytes, "application/octet-stream")`](Body::new),
 /// or from a stream of byte chunks with [`Body::stream(stream)`](Body::stream).
 /// Use [`content_type`](Body::content_type) to set the content type of a stream.
+/// [`Body::repeatable`] supplies a fresh stream for each authorized attempt.
+///
+/// Conversions from `String`, `&'static str`, `Vec<u8>` and [`bytes::Bytes`]
+/// carry no content-type label; [`Body::concat`] also clears all part labels.
+/// Set the combined label explicitly with [`Body::content_type`]. An invalid
+/// label is kept as given, but fails request building unless a description header
+/// overrides it.
 ///
 /// A clone of a one-shot stream shares it: sending through any clone uses up every clone,
 /// and a later send of any of them is a Build error.
@@ -80,7 +89,8 @@ impl Body {
 
     /// Joins bodies in order. If all parts are in memory, the result holds bytes.
     /// Otherwise [`into_stream`](Self::into_stream) claims all one-shot parts together,
-    /// before any bytes can be read. Set the combined content type with [`content_type`](Self::content_type).
+    /// before any bytes can be read. The result has no content-type label, including
+    /// an empty or single-part concatenation; set it with [`content_type`](Self::content_type).
     pub fn concat(parts: impl IntoIterator<Item = Body>) -> Body {
         let parts: Vec<_> = parts.into_iter().collect();
         if parts.iter().all(|part| part.as_bytes().is_some()) {
@@ -108,7 +118,7 @@ impl Body {
         }
     }
 
-    /// Compatibility name for generated code.
+    /// Compatibility name kept for existing tests.
     #[doc(hidden)]
     pub fn __bytes(&self) -> Option<&[u8]> {
         self.as_bytes()
@@ -120,14 +130,146 @@ impl Body {
         self.content_type.as_deref()
     }
 
+    /// Returns this body's content type, if its writer set one.
+    ///
+    /// Borrows the whole stored label, including parameters, without validating it,
+    /// claiming a source or polling a stream. A description's `content-type` header still takes precedence;
+    /// this accessor reports the body's label, not the final request header.
+    /// Use [`content_type`](Self::content_type) to set the label.
+    ///
+    /// A compressing writer of your own can keep the original content type:
+    ///
+    /// ```
+    /// # use concord_core as concord;
+    /// use concord::Body;
+    /// use flate2::{write::GzEncoder, Compression};
+    /// use std::io::{self, Write};
+    ///
+    /// fn compressed(body: Body) -> io::Result<Body> {
+    ///     let bytes = body.as_bytes().ok_or_else(||
+    ///         io::Error::new(io::ErrorKind::InvalidInput, "a buffered body is required"))?;
+    ///     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    ///     encoder.write_all(bytes)?;
+    ///     let mut output = Body::from(encoder.finish()?);
+    ///     if let Some(label) = body.get_content_type() {
+    ///         output = output.content_type(label.to_owned());
+    ///     }
+    ///     Ok(output)
+    /// }
+    ///
+    /// let body = compressed(Body::new("a log entry\n", "text/plain"))?;
+    /// assert_eq!(body.get_content_type(), Some("text/plain"));
+    /// # Ok::<(), io::Error>(())
+    /// ```
+    ///
+    /// The description must also set `Content-Encoding: gzip`; the output length
+    /// belongs to the compressed bytes. This writer accepts only buffered bodies.
+    pub fn get_content_type(&self) -> Option<&str> {
+        self.content_type.as_deref()
+    }
+
     /// Takes the body as a stream of chunks. Clones share each one-shot source.
     ///
-    /// Returns an error before yielding any byte if a source was already taken,
-    /// or occurs twice in the body. On failure, no remaining source is taken.
+    /// Returns an error before yielding any byte if a one-shot source was already
+    /// taken or occurs twice in the body. On failure, no remaining source is taken.
+    /// Each occurrence of a repeatable source opens an independent cursor.
     pub fn into_stream(self) -> Result<BodyStream, std::io::Error> {
+        let control = self.has_factory().then(repeatable::Control::default);
+        self.materialize_inner(None, control)
+    }
+
+    pub(crate) fn has_factory(&self) -> bool {
+        match &self.data {
+            Data::Repeatable(_) => true,
+            Data::Concat(parts) => parts.iter().any(Self::has_factory),
+            Data::Map(body, _) => body.has_factory(),
+            _ => false,
+        }
+    }
+
+    /// Whether this body can supply an independent stream for another attempt.
+    ///
+    /// Bytes and repeatable sources return true, as do concatenations made
+    /// entirely from them and maps over repeatable sources.
+    /// A map over buffered bytes is one-shot, even when its output is deterministic.
+    /// A one-shot source returns false, even before it is claimed. This query never claims, opens or polls anything. It reports
+    /// capability; the retry rules still decide whether another attempt is allowed.
+    ///
+    /// ```
+    /// use concord_core::Body;
+    /// assert!(Body::from("bytes").is_repeatable());
+    /// let body = Body::repeatable(|| async {
+    ///     Ok::<_, std::io::Error>(futures_util::stream::empty::<
+    ///         Result<concord_core::bytes::Bytes, std::io::Error>>())
+    /// });
+    /// assert!(body.is_repeatable());
+    /// ```
+    pub fn is_repeatable(&self) -> bool {
+        self.can_repeat()
+    }
+
+    pub(crate) fn can_repeat(&self) -> bool {
+        match &self.data {
+            Data::Bytes(_) | Data::Repeatable(_) => true,
+            Data::Concat(parts) => parts.iter().all(Self::can_repeat),
+            Data::Map(body, _) => body.can_repeat(),
+            Data::Stream(_) => false,
+        }
+    }
+
+    pub(crate) fn same_sources(&self, other: &Self) -> bool {
+        enum Part<'a> {
+            Byte(u8),
+            Source(&'a Data),
+        }
+        impl PartialEq for Part<'_> {
+            fn eq(&self, other: &Self) -> bool {
+                match (self, other) {
+                    (Self::Byte(a), Self::Byte(b)) => a == b,
+                    (Self::Source(Data::Repeatable(a)), Self::Source(Data::Repeatable(b))) => {
+                        Arc::ptr_eq(a, b)
+                    }
+                    (Self::Source(Data::Map(a, am)), Self::Source(Data::Map(b, bm))) => {
+                        Arc::ptr_eq(am, bm) && a.same_sources(b)
+                    }
+                    _ => false,
+                }
+            }
+        }
+        fn flattened(body: &Body) -> impl Iterator<Item = Part<'_>> {
+            let mut pending = vec![body];
+            let mut bytes = [].iter();
+            std::iter::from_fn(move || loop {
+                if let Some(&byte) = bytes.next() {
+                    return Some(Part::Byte(byte));
+                }
+                match &pending.pop()?.data {
+                    Data::Concat(parts) => pending.extend(parts.iter().rev()),
+                    Data::Bytes(value) => bytes = value.iter(),
+                    source => return Some(Part::Source(source)),
+                }
+            })
+        }
+        flattened(self).eq(flattened(other))
+    }
+
+    pub(crate) fn materialize(
+        self,
+        length: Option<u64>,
+        control: repeatable::Control,
+    ) -> Result<BodyStream, std::io::Error> {
+        self.materialize_inner(length, Some(control))
+    }
+
+    fn materialize_inner(
+        self,
+        length: Option<u64>,
+        control: Option<repeatable::Control>,
+    ) -> Result<BodyStream, std::io::Error> {
+        let budget = control.as_ref().map(|_| repeatable::Budget::new());
         fn sources(body: &Body, out: &mut Vec<Arc<Mutex<Option<BodyStream>>>>) {
             match &body.data {
-                Data::Bytes(_) => (),
+                Data::Bytes(_) | Data::Repeatable(_) => (),
                 Data::Stream(source) => out.push(source.clone()),
                 Data::Concat(parts) => parts.iter().for_each(|part| sources(part, out)),
                 Data::Map(body, _) => sources(body, out),
@@ -136,21 +278,62 @@ impl Body {
         fn prepared(
             body: Body,
             claimed: &mut std::collections::HashMap<usize, BodyStream>,
+            budget: &Option<Arc<repeatable::Budget>>,
+            control: &Option<repeatable::Control>,
         ) -> Result<BodyStream, std::io::Error> {
             match body.data {
                 Data::Bytes(bytes) => Ok(Box::pin(futures_util::stream::once(async { Ok(bytes) }))),
+                Data::Repeatable(make) => control
+                    .as_ref()
+                    .map(|control| repeatable::opening(make, budget.clone(), control.clone()))
+                    .ok_or_else(|| std::io::Error::other("a repeatable body needs its control")),
                 Data::Stream(source) => claimed
                     // PANIC-SAFETY: This thin Arc pointer fits usize; it is an identity key, never dereferenced after casting.
                     .remove(&(Arc::as_ptr(&source) as usize))
+                    .map(|stream| match control {
+                        Some(control) => repeatable::monitored(stream, control.clone()),
+                        None => stream,
+                    })
                     .ok_or_else(|| std::io::Error::other("the body stream was already used")),
                 Data::Concat(parts) => {
+                    if let (Some(budget), Some(control)) = (budget, control) {
+                        // Flatten nested concatenations before polling, including empty leaves.
+                        let mut pending: Vec<_> = parts.into_iter().rev().collect();
+                        let mut streams = std::collections::VecDeque::new();
+                        while let Some(part) = pending.pop() {
+                            match part.data {
+                                Data::Concat(parts) => pending.extend(parts.into_iter().rev()),
+                                data => streams.push_back(prepared(
+                                    Body {
+                                        data,
+                                        content_type: part.content_type,
+                                    },
+                                    claimed,
+                                    &Some(budget.clone()),
+                                    &Some(control.clone()),
+                                )?),
+                            }
+                        }
+                        return Ok(repeatable::concatenated(
+                            streams,
+                            budget.clone(),
+                            control.clone(),
+                        ));
+                    }
                     let streams: Vec<_> = parts
                         .into_iter()
-                        .map(|part| prepared(part, claimed))
+                        .map(|part| prepared(part, claimed, budget, control))
                         .collect::<Result<_, _>>()?;
                     Ok(Box::pin(futures_util::stream::iter(streams).flatten()))
                 }
-                Data::Map(body, map) => Ok(map(prepared(*body, claimed)?)),
+                Data::Map(body, map) => {
+                    let stream = prepared(*body, claimed, budget, control)?;
+                    Ok(if budget.is_some() {
+                        repeatable::mapped(stream, map)
+                    } else {
+                        map(stream)
+                    })
+                }
             }
         }
         let mut sources_to_claim = Vec::new();
@@ -190,20 +373,57 @@ impl Body {
             })
             .collect::<Result<_, _>>()?;
         drop(guards);
-        prepared(self, &mut claimed)
+        let stream = prepared(self, &mut claimed, &budget, &control)?;
+        Ok(match (budget, control) {
+            (Some(budget), Some(control)) => repeatable::guarded(stream, length, control, budget),
+            _ => stream,
+        })
     }
 
-    /// Wrap the chunk stream after all of this body's sources have been claimed.
-    /// Body writers can validate chunks without hiding their one-shot sources from
-    /// composition. The wrapper is never called during inspection or a failed claim.
-    /// The result is one-shot even when the source holds only bytes.
-    #[doc(hidden)]
+    /// Wraps this body's stream with a writer or validator of your own.
+    ///
+    /// The map may frame, validate or transform bytes, and change their length and
+    /// chunk boundaries. For repeatable input it must produce the same output bytes
+    /// for the same input bytes, even if input chunk boundaries differ. It must not
+    /// depend on the attempt or hide source failures. A factory-containing body
+    /// still fails on its first observed source error even if the map discards it.
+    /// Any `content-length` must describe the complete mapped output.
+    ///
+    /// All one-shot sources are claimed atomically before any map runs. A failed
+    /// claim runs no map and spends no other source. For repeatable input the map
+    /// runs once per opening, lazily when its output is first polled, with a fresh
+    /// input stream; inspecting or dropping unpolled output runs nothing. A map may
+    /// emit a prefix before it polls (and thus opens) its input. For one-shot input
+    /// the map runs when the stream is claimed, unless the body also contains a
+    /// repeatable source: then every map runs when its output is first polled.
+    /// Mapping buffered bytes makes them
+    /// one-shot too. The content-type label is kept; set a new one if the format changes.
+    ///
+    /// A small writer that frames each record without buffering it:
+    ///
+    /// ```
+    /// use concord_core::{Body, bytes::Bytes};
+    /// use futures_util::{stream, StreamExt};
+    ///
+    /// fn record(body: Body) -> Body {
+    ///     body.map_stream(|input| Box::pin(
+    ///         stream::once(async { Ok(Bytes::from_static(b"record:")) })
+    ///             .chain(input)
+    ///             .chain(stream::once(async { Ok(Bytes::from_static(b"\n")) }))
+    ///     )).content_type("application/octet-stream")
+    /// }
+    /// let input = Body::repeatable(|| async {
+    ///     Ok::<_, std::io::Error>(stream::iter([Ok(Bytes::from_static(b"data"))]))
+    /// });
+    /// let output = record(input);
+    /// assert!(output.is_repeatable());
+    /// ```
     pub fn map_stream(
         mut self,
         map: impl Fn(BodyStream) -> BodyStream + Send + Sync + 'static,
     ) -> Body {
-        // Give buffered input a shared claim too. All other variants already
-        // contain one-shot sources, which the map keeps visible to composition.
+        // Give buffered input a shared claim too. Other variants retain their
+        // sources, keeping claims and reconstruction visible to composition.
         if let Data::Bytes(bytes) = &self.data {
             self.data = Body::stream(futures_util::stream::iter([Ok::<_, std::io::Error>(
                 bytes.clone(),
@@ -214,12 +434,6 @@ impl Body {
             content_type: self.content_type.clone(),
             data: Data::Map(Box::new(self), Arc::new(map)),
         }
-    }
-
-    /// Compatibility name for generated code.
-    #[doc(hidden)]
-    pub fn __into_stream(self) -> Result<BodyStream, std::io::Error> {
-        self.into_stream()
     }
 
     /// Sets the content type of the bytes. A `content-type` header set by the client's author takes precedence.

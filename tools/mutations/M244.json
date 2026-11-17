@@ -1,0 +1,9 @@
+{
+  "id": "M244",
+  "area": "panic cleanup ownership",
+  "contract": "tools/mutations/README.md#c1213",
+  "description": "Panic containment leaks author-owned futures or streams instead of destroying them.",
+  "file": "concord-core/src/body/repeatable.rs",
+  "find": "fn dispose<T>(value: T) -> Result<(), BoxError> {\n    guarded_call(|| drop(value))\n}",
+  "replace": "fn dispose<T>(value: T) -> Result<(), BoxError> {\n    std::mem::forget(value);\n    Ok(())\n}"
+}

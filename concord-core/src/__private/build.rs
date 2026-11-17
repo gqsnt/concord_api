@@ -228,7 +228,7 @@ impl Draft {
         self.finish_marked(core, options, endpoint, false)
             .map(|(request, _)| request)
     }
-    /// Finish for sending, claiming all composed streams before any byte is polled.
+    /// Finish for sending, claiming all composed one-shot streams before any byte is polled.
     /// Relative `at_url` resolution and origin checks precede all caller edits.
     pub fn finish_for_send<P>(
         self,
@@ -247,6 +247,17 @@ impl Draft {
         endpoint: &'static str,
         take_body: bool,
     ) -> Result<(reqwest::Request, RequestSecrets), Error<P>> {
+        self.finish_prepared(core, options, endpoint, take_body)
+            .map(|(request, secrets)| (request.request, secrets))
+    }
+
+    fn finish_prepared<P>(
+        self,
+        core: &Core<P>,
+        options: &Options<P>,
+        endpoint: &'static str,
+        take_body: bool,
+    ) -> Result<(super::call::PreparedRequest, RequestSecrets), Error<P>> {
         let fail = |failure| Error::build(endpoint, failure);
         let BuiltBase {
             mut url,
@@ -395,7 +406,11 @@ impl Draft {
                 }
             }
         }
-        if !take_body && body.as_ref().is_some_and(|body| body.as_bytes().is_none()) {
+        let factory = body.as_ref().is_some_and(Body::has_factory);
+        if factory {
+            crate::body::repeatable::declared_length(request.headers()).map_err(fail)?;
+        }
+        if !take_body && body.as_ref().is_some_and(|body| !body.can_repeat()) {
             return Err(fail(BuildFailure::InspectStream));
         }
         if let Some(mut replacement) = options
@@ -443,7 +458,13 @@ impl Draft {
             // PANIC-SAFETY: This is a dereference assignment, not integer multiplication.
             *request.url_mut() = replacement;
         }
-        if let Some(body) = body {
+        let deferred = factory.then(|| body.clone()).flatten();
+        let mut placeholder = None;
+        if factory {
+            let (body, changed) = crate::body::repeatable::placeholder();
+            *request.body_mut() = Some(body);
+            placeholder = Some(changed);
+        } else if let Some(body) = body {
             let body = match body.as_bytes() {
                 Some(bytes) => reqwest::Body::from(bytes.to_vec()),
                 None => reqwest::Body::wrap_stream(
@@ -462,13 +483,38 @@ impl Draft {
                 )
                 .map_err(|_| fail(BuildFailure::TooManyHeaders))?;
         }
-        if options.edit(&mut request) {
+        let edited = match &placeholder {
+            Some(changed) => options
+                .edit_repeatable(&mut request, changed)
+                .map_err(fail)?,
+            None => options.edit(&mut request),
+        };
+        if edited {
             secrets.url = None;
         }
         if request.url().as_str().len() > MAX_URL_LENGTH {
             return Err(fail(BuildFailure::UrlLength));
         }
-        Ok((request, secrets))
+        let mut finished = super::call::PreparedRequest::plain(request);
+        if let Some(body) = deferred {
+            let length = crate::body::repeatable::declared_length(finished.request.headers())
+                .map_err(fail)?;
+            // The placeholder has survived every edit. Remove it before copying the head.
+            finished.request.body_mut().take();
+            if body.can_repeat() {
+                finished.repeat = finished
+                    .request
+                    .try_clone()
+                    .map(|head| (head, body.clone(), length));
+            }
+            let control = crate::body::repeatable::Control::default();
+            let stream = body
+                .materialize(length, control.clone())
+                .map_err(|_| fail(BuildFailure::SpentStream))?;
+            *finished.request.body_mut() = Some(reqwest::Body::wrap_stream(stream));
+            finished.control = Some(control);
+        }
+        Ok((finished, secrets))
     }
     /// Finish this draft for a send, retaining its secret marks, Run, mark and reader.
     /// Claims one-shot bodies and runs edits once, as [`Self::finish_for_send`] does.
@@ -491,7 +537,7 @@ impl Draft {
     {
         let mut run = run;
         run.finish_options(&core, &options);
-        let (request, secrets) = self.finish_marked(&core, &options, run.endpoint(), true)?;
+        let (request, secrets) = self.finish_prepared(&core, &options, run.endpoint(), true)?;
         Ok(Prepared {
             run,
             request,

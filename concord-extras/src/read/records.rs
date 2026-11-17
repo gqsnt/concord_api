@@ -11,21 +11,23 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-/// A response head and a stream of records, ending after its first error.
+/// The status and headers of a response, and a stream of its records that ends after
+/// the first error.
 ///
-/// `try_next` and `Stream` drive the same parser; either can be used between pulls.
-/// Dropping this stream releases its body and any concurrency permit. A pending
-/// pull retains framing state; dropping a pull never dispatches or reconnects.
+/// `try_next` and `Stream` drive the same parser; you can switch from one to the other
+/// between records. Dropping this stream releases its body and its place in any cap on
+/// concurrency. A pending read keeps the parser's state; dropping it sends no request
+/// and does not reconnect.
 /// Parser storage is O(the configured bound), plus one transport-owned chunk and
 /// the record currently being decoded. The transport's chunk allocation, the
 /// deserializer's allocations and records retained by the caller are additional.
 ///
-/// The call timeout continues while reading, through the underlying byte stream.
-/// It bounds pending body waits, not the emission of records already buffered.
-/// The idle clock watches incoming bytes, including comments, rather than records.
-/// No post-head error causes an engine retry or reconnection.
-/// One poll does bounded framing work (at most 16 KiB of incoming bytes and 64 chunks),
-/// preserving state and yielding when that budget is exhausted.
+/// The call timeout keeps running while you read, through the underlying byte stream.
+/// It bounds the waits for the body, not the return of records already buffered. The
+/// idle timeout watches incoming bytes, including comments, not records. No error after
+/// the response head makes the engine retry or reconnect. One poll frames at most
+/// 16 KiB of incoming bytes and 64 chunks; if that budget runs out before a record is
+/// ready, it keeps its state and yields.
 ///
 /// ```no_run
 /// use concord::read::{Incoming, Reader, RecordStream, Sse, SseEvent};
@@ -47,7 +49,8 @@ pub struct RecordStream<T> {
 }
 
 impl<T> RecordStream<T> {
-    /// Returns the status retained at handoff, including after EOF or a framing error.
+    /// Returns the response status, kept when the stream was created; it stays available
+    /// after the end of the body or a framing error.
     ///
     /// ```no_run
     /// fn status<T>(records: &concord::read::RecordStream<T>) -> concord::http::StatusCode {
@@ -58,7 +61,8 @@ impl<T> RecordStream<T> {
         self.status
     }
 
-    /// Returns the response headers retained at handoff. `Debug` prints names only.
+    /// Returns the response headers, kept when the stream was created. `Debug` prints
+    /// their names only.
     ///
     /// ```no_run
     /// fn content_type<T>(records: &concord::read::RecordStream<T>) -> Option<&str> {
@@ -69,11 +73,12 @@ impl<T> RecordStream<T> {
         &self.headers
     }
 
-    /// Reads one record, `None` at EOF. The first error is returned once and ends the stream.
-    /// A [`RecordError`] is returned directly, never inside a `concord::Error`.
-    /// Dropping this future, even before it is polled, preserves partial framing
-    /// and stops the idle timer, like [`ByteStream::try_next`].
-    /// The call deadline continues to run.
+    /// Reads the next record, or `None` at the end of the body.
+    ///
+    /// The first error is returned once and ends the stream. A [`RecordError`] is
+    /// returned directly, never inside a `concord::Error`. Dropping this future, even
+    /// before it is polled, keeps the partial record and stops the idle timer, like
+    /// [`ByteStream::try_next`]. The call timeout keeps running.
     ///
     /// ```no_run
     /// async fn first<T>(mut records: concord::read::RecordStream<T>)
@@ -111,9 +116,10 @@ impl<T> fmt::Debug for RecordStream<T> {
     }
 }
 
-/// As with [`ByteStream`]'s `Stream` implementation, a pending byte wait's idle
-/// timer includes time between polls. Dropping an outer `next()` future cannot
-/// be observed here; use [`RecordStream::try_next`] to stop that timer on drop.
+/// As with the `Stream` implementation of [`ByteStream`], the idle timeout of a pending
+/// wait for bytes includes the time between polls. This implementation cannot see an
+/// outer `next()` future being dropped; use [`RecordStream::try_next`] when dropping a
+/// read must stop that timer.
 impl<T> Stream for RecordStream<T> {
     type Item = Result<T, RecordError>;
 
@@ -132,19 +138,21 @@ impl<T> Stream for RecordStream<T> {
     }
 }
 
-/// A terminal framing or body error, with no record bytes or decoder message.
+/// An error of the body or of framing that ends a record stream; it holds no record
+/// bytes and no decoder message.
 ///
-/// `Stream` keeps the entire transport failure, including its endpoint, attempt,
-/// status and headers; it is also returned by `source()`. Invalid UTF-8 retains
-/// its value-free standard cause. Decode failures retain only safe coordinates,
-/// following the core's rule that a decoder message must not enter a source chain.
+/// `Stream` keeps the whole transport error, including its endpoint, attempt, status
+/// and headers; `source()` also returns it. `Utf8` keeps the standard error as its
+/// cause, which holds no value. `Decode` keeps only safe positions, following the
+/// core's rule that a decoder message must not enter a chain of sources.
 /// Record positions and line numbers are one-based. [`RecordError::Decode`] has
 /// no `source()`, because the decoder's message can quote the record; its column
 /// is the decoder's column and can be zero at the start of a line.
 ///
 /// `RecordError` is returned directly by [`RecordStream::try_next`] and its
 /// [`Stream`] implementation, never inside a `concord::Error`.
-/// A pre-head call error is separate and keeps its usual core source.
+/// An error of the call before the response head is separate, and keeps its usual
+/// source from the core.
 ///
 /// ```no_run
 /// use concord::read::RecordError;
@@ -166,31 +174,31 @@ impl<T> Stream for RecordStream<T> {
 /// ```
 #[non_exhaustive]
 pub enum RecordError {
-    /// An unchanged error from the underlying clock-carrying byte stream.
+    /// An error of the underlying byte stream, which carries the timeouts, unchanged.
     Stream(StreamError),
     /// A line or complete event block exceeded its configured byte bound.
     #[non_exhaustive]
     TooLarge {
-        /// Configured bound, without retaining any record content.
+        /// The configured bound; no record content is kept.
         limit: usize,
     },
     /// A record contained invalid UTF-8. No lossy replacement is performed.
     #[non_exhaustive]
     Utf8 {
-        /// One-based line record or event block being parsed.
+        /// The one-based position of the line or event block being parsed.
         record: usize,
-        /// Original UTF-8 failure, which contains offsets but no response bytes.
+        /// The original UTF-8 error, which holds offsets but no response bytes.
         source: std::str::Utf8Error,
     },
     /// A JSON value did not decode as the requested type.
     /// Has no `source()`: the decoder's message can quote the record.
     #[non_exhaustive]
     Decode {
-        /// One-based JSON line when known; `None` for a standalone event helper.
+        /// The one-based JSON line when known; `None` from the `SseEvent::json` helper.
         record: Option<usize>,
-        /// One-based line within that record's JSON text.
+        /// The one-based line within that record's JSON text.
         line: usize,
-        /// Decoder column within that JSON line; zero is possible at its start.
+        /// The decoder's column within that line; it can be zero at the start of the line.
         column: usize,
     },
 }
@@ -233,15 +241,15 @@ impl From<StreamError> for RecordError {
     }
 }
 
-/// Reads one bounded JSON value per line (feature `json`).
+/// A reader of one JSON value per line, each line within a byte bound (feature `json`).
 ///
-/// The bound counts bytes before LF, including an optional CR. LF and CRLF are
-/// accepted, as is a final line without LF. An empty LF or CRLF line is a
+/// The bound counts the bytes before LF, including an optional CR. LF and CRLF are
+/// accepted, as is a last line without LF. An empty LF or CRLF line is a
 /// [`RecordError::Decode`] error at every bound, including zero. UTF-8 is checked
-/// before decoding. No content-type requirement or empty-line skipping
-/// is inferred; zero permits no nonempty record. Framing errors are stream items.
+/// before decoding. The reader neither requires a content type nor skips empty lines;
+/// a bound of zero permits no nonempty record. Framing errors are items of the stream.
 ///
-/// A watch can model an API error as an ordinary typed record:
+/// A watch endpoint can describe an error of the API as an ordinary typed record:
 ///
 /// ```no_run
 /// use concord::read::{JsonLines, RecordStream};
@@ -280,6 +288,7 @@ impl From<StreamError> for RecordError {
 /// }
 /// ```
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 #[derive(Clone, Copy)]
 pub struct JsonLines {
     max_record_bytes: usize,
@@ -287,9 +296,10 @@ pub struct JsonLines {
 
 #[cfg(feature = "json")]
 impl JsonLines {
-    /// Sets the maximum bytes of one line; there is no default record bound.
-    /// Choose the largest record the API documents, with a margin.
-    /// Empty LF and CRLF lines are [`RecordError::Decode`] errors even at zero.
+    /// A reader whose lines may be at most `max_record_bytes` long; there is no default bound.
+    ///
+    /// Choose the largest record the API documents, with a margin. Empty LF and CRLF
+    /// lines are [`RecordError::Decode`] errors, even with a bound of zero.
     ///
     /// ```no_run
     /// let reader = concord::read::JsonLines::new(64 * concord::KIB);
@@ -319,12 +329,13 @@ impl<T: serde::de::DeserializeOwned + Send + 'static> Reader<RecordStream<T>> fo
     }
 }
 
-/// A server-sent event, with metadata snapshots and unmodified joined data text.
+/// A server-sent event: its type, its data joined unchanged, and copies of the last ID
+/// and retry delay.
 ///
-/// `event` defaults to `message`. `id` and `retry` persist between events; they are
-/// snapshots at dispatch, not a complete reconnect state when control-only blocks
-/// arrive. All text is absent from `Debug`. The reader interprets no provider event
-/// name or completion marker.
+/// `event` defaults to `message`. `id` and `retry` carry over from one event to the
+/// next; each event holds their values at the time it was dispatched, which is not the
+/// whole reconnection state when blocks with only control fields arrive. `Debug` prints
+/// no text. The reader gives no meaning to a provider's event names or end markers.
 ///
 /// ```no_run
 /// use concord::read::SseEvent;
@@ -342,11 +353,11 @@ pub struct SseEvent {
     pub event: String,
     /// `data` fields joined with LF, with the final appended LF removed.
     pub data: String,
-    /// Last valid event ID, initially empty; an empty `id` resets it.
+    /// The last valid event ID, empty at first; an empty `id` field resets it.
     pub id: String,
-    /// Last valid retry duration (wire milliseconds); no reconnect is performed.
-    /// Fields are ignored if empty, if they contain anything but ASCII digits,
-    /// or if their millisecond value exceeds `u64::MAX`.
+    /// The last valid retry delay (sent in milliseconds); the reader never reconnects.
+    /// A `retry` field is ignored if it is empty, if it contains anything but ASCII
+    /// digits, or if its value in milliseconds exceeds `u64::MAX`.
     pub retry: Option<Duration>,
 }
 
@@ -369,10 +380,13 @@ impl SseEvent {
 
     /// Decodes `data` as JSON (feature `json`), discarding the decoder's message.
     ///
-    /// A helper failure does not itself stop a separately held `RecordStream`;
-    /// propagate it or drop the stream to end an application's typed adapter.
-    /// The record position is `None`: this event does not know its stream ordinal.
-    /// A decode error has no `source()` and keeps the decoder's column, which can be zero.
+    /// # Errors
+    ///
+    /// Returns [`RecordError::Decode`] when `data` does not decode as `T`. Its record
+    /// position is `None`, because an event does not know its position in the stream.
+    /// The error has no `source()` and keeps the decoder's column, which can be zero.
+    /// It does not by itself end a `RecordStream` held separately: return it, or drop
+    /// the stream, to end your own typed adapter.
     ///
     /// ```no_run
     /// use concord::read::SseEvent;
@@ -384,6 +398,7 @@ impl SseEvent {
     /// }
     /// ```
     #[cfg(feature = "json")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
     pub fn json<T: serde::de::DeserializeOwned>(&self) -> Result<T, RecordError> {
         decode(self.data.as_bytes(), None)
     }
@@ -395,7 +410,8 @@ impl fmt::Debug for SseEvent {
     }
 }
 
-/// Reads bounded server-sent events, without reconnecting or interpreting their data.
+/// A reader of server-sent events, each within a byte bound; it never reconnects and
+/// gives no meaning to their data.
 ///
 /// Accepts LF, CRLF and lone CR; an initial UTF-8 BOM is skipped before framing
 /// and does not count toward the bound. A blank line dispatches;
@@ -408,11 +424,11 @@ impl fmt::Debug for SseEvent {
 /// The bound is the sum of each nonblank line's bytes plus one delimiter byte,
 /// including ignored fields and comments. CRLF counts as one delimiter; the blank
 /// dispatch line does not count. The bound is checked as bytes arrive, including
-/// the delimiter allowance for an unfinished nonblank line. Zero
-/// permits no nonblank event block. Storage is bounded as described by `RecordStream`.
+/// the delimiter byte counted for an unfinished nonblank line. A bound of zero permits
+/// no nonblank event block. Storage is bounded as described for `RecordStream`.
 ///
-/// Provider error and completion events belong to the application. The JSON
-/// mapping in this example enables `json`; raw `Sse` needs no feature.
+/// Error and end events of a provider are for the application to handle. The JSON
+/// mapping in this example needs the feature `json`; `Sse` alone needs no feature.
 ///
 /// ```no_run
 /// use concord::read::{Sse, SseEvent, RecordStream};
@@ -457,7 +473,9 @@ pub struct Sse {
 }
 
 impl Sse {
-    /// Sets the maximum normalized wire bytes of one event block, excluding an initial BOM.
+    /// A reader whose event blocks may be at most `max_event_bytes`, counted as above and
+    /// excluding an initial BOM.
+    ///
     /// Choose the largest event the API documents, with a margin.
     ///
     /// ```no_run

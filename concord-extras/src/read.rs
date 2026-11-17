@@ -7,6 +7,7 @@
 
 mod records;
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub use records::JsonLines;
 pub use records::{RecordError, RecordStream, Sse, SseEvent};
 
@@ -29,6 +30,7 @@ const LIMIT: usize = 10 * MIB;
 /// Keys taken from the data are reported as `[key]`. A failed decode also reports
 /// when the response's content type was not JSON.
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 #[derive(Clone, Copy, Default)]
 pub struct Json {
     limit: Option<usize>,
@@ -44,6 +46,7 @@ impl std::fmt::Debug for Json {
 
 /// The `Json` reader as a value, for a description to name: `read Json.limit(50 * concord::MIB);`.
 #[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 // PANIC-SAFETY: The reader value intentionally shares its type name in the DSL; no panic lint is relaxed.
 #[allow(non_upper_case_globals)]
 pub const Json: Json = Json {

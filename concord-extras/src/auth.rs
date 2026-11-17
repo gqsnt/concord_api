@@ -1,20 +1,26 @@
-//! A credential shared by calls to one origin (feature `auth`).
+//! An access token shared by the calls to one origin: [`Renewed`], a middleware layer
+//! (feature `auth`).
 //!
-//! Configure `Renewed` fully, then clone; clones share one cache and renewal future.
-//! Its origin is checked before renewal. Dropping a waiting call leaves renewal
-//! to the other waiters; the last drop ends renewal, and the next call starts another.
-//! No task is started.
-//! A failure also lets the next call try again.
-//! The middleware returns a 401 unchanged, rejecting only the generation it used.
-//! [`after_401`] adds recovery to the engine's retry policy without replacing it.
-//! Use `not_applied_on(401)` only if the API guarantees that a 401 applied nothing;
-//! without it an unmarked POST is not repeated; a body that is a stream never is.
+//! `Renewed` adds the token to each request and renews it when it expires. It never
+//! resends a request. After a `401`, it returns the response unchanged and discards the
+//! cached token only if it is still the one that the request carried; a newer token stays.
+//! No other status discards a token. [`after_401`] adds a retry after that `401` to the
+//! engine's retry policy, without replacing the policy. Use `not_applied_on(401)` only if
+//! the API guarantees that a request rejected with `401` had no effect. Without it, a
+//! POST not marked as safe to repeat is not retried. A stream body that can be sent only
+//! once is never retried; a repeatable stream follows the usual retry rules.
+//!
+//! Clones of a `Renewed` share one cache, one renewal and one configuration: a setter
+//! called on any clone changes every clone, so configure it fully, then clone. The origin of a request is checked before any renewal. If a call waiting for
+//! the renewal is dropped, the renewal goes on for the other waiting calls; when the last
+//! one is dropped, the renewal stops and the next call starts another. A failed renewal
+//! also lets the next call try again. No task is started.
 //!
 //! The author supplies the token endpoint through a client without this middleware.
-//! This example also enables `json` and `form`. Concord implements no OAuth flow
-//! itself. With the separate `rotating` feature, `Rotating` coordinates an
-//! exchange and durable storage through an application-polled renewal future.
-//! The application supplies the token protocol and the store in both cases.
+//! This example also enables the features `json` and `form`. Concord implements no OAuth
+//! flow itself. With the separate feature `rotating`, `Rotating` coordinates an exchange
+//! of tokens and their durable storage, through a renewal future that the application
+//! polls. In both cases the application supplies the token protocol and the store.
 //!
 //! ```no_run
 //! use concord::auth::{AccessToken, Renewed, after_401};
@@ -75,18 +81,24 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 #[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 mod rotating;
 #[cfg(feature = "rotating")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 #[doc(inline)]
 pub use rotating::{
     CredentialStore, Exchange, Rotating, RotationDriver, RotationError, Stored, TokenPair,
 };
 
-/// An access token and a private expiry, snapshotted when installed in a cache.
+/// An access token with its expiry.
 ///
-/// `Debug` hides the value and lifetime. Remaining time follows the same internal
-/// timer as renewal, including virtual time. Saving a token's wall expiry is the
-/// author's choice: `SystemTime::now().checked_add(token.remaining())`.
+/// The expiry is private, and a copy of the token is taken when it is installed in a
+/// cache. `Debug` hides the value and the lifetime. The remaining lifetime follows the
+/// same internal timer as renewal, including virtual time. Saving the expiry as
+/// wall-clock time is the author's choice: `SystemTime::now().checked_add(token.remaining())`.
+///
+/// Clones share the value, a `Secret`: [`Secret::replace`] on the [`value`](Self::value)
+/// of one clone changes every clone. The expiry is copied.
 ///
 /// ```no_run
 /// let token = concord::auth::AccessToken::expires_in("token", std::time::Duration::from_secs(300))?;
@@ -101,7 +113,12 @@ pub struct AccessToken {
 }
 
 impl AccessToken {
-    /// Creates a token with a lifetime from now. Zero is `Expired`; overflow is `TimeOverflow`.
+    /// Creates a token that expires `lifetime` from now.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Expired` if `lifetime` is zero, and `TimeOverflow` if the expiry cannot
+    /// be represented.
     ///
     /// ```no_run
     /// let token = concord::auth::AccessToken::expires_in("token", std::time::Duration::from_secs(300))?;
@@ -121,7 +138,7 @@ impl AccessToken {
         })
     }
 
-    /// Borrows the secret text without a header scheme such as `Bearer`.
+    /// Returns the secret value, without a scheme such as `Bearer`.
     ///
     /// ```no_run
     /// fn save(token: &concord::auth::AccessToken) -> concord::Secret { token.value().clone() }
@@ -130,7 +147,7 @@ impl AccessToken {
         &self.value
     }
 
-    /// Returns the remaining lifetime, saturating at zero after expiry.
+    /// Returns the remaining lifetime, or zero once the token has expired.
     ///
     /// ```no_run
     /// fn expired(token: &concord::auth::AccessToken) -> bool { token.remaining().is_zero() }
@@ -146,19 +163,20 @@ impl fmt::Debug for AccessToken {
     }
 }
 
-/// A typed renewal failure whose `source()` preserves its underlying cause.
+/// Why a token could not be renewed or added to a request; `source()` keeps the cause.
 ///
-/// `Failed` shares the author's error across waiters. Header and timeout failures
-/// retain their causes too; policy and expiry reasons have no lower cause.
-/// A panic while invoking or polling renewal, formatting a header, or notifying
-/// becomes `Panicked` for every waiter. The panic payload is discarded; the
-/// author's panic hook still runs. With panic=abort, a panic aborts the process.
-/// After a panic, the next call can start a fresh renewal.
+/// `Failed` shares the author's error with every waiting call. `InvalidHeader` and
+/// `TimedOut` keep their causes too; the errors of the settings and of expiry have no
+/// lower-level cause. A panic while calling or polling the renewal, formatting the
+/// header or running `on_renewed` becomes `Panicked` for every waiting call. The panic
+/// payload is discarded; the author's panic hook still runs. With panic=abort, a panic
+/// aborts the process. After a panic, the next call can start a new renewal.
+///
 /// Concord's own errors never print a secret; what the author puts in an error of
-/// their own is their responsibility. This type's `Display` and `Debug` omit causes
-/// and panic payloads, while `source()` deliberately exposes the retained cause.
+/// their own is their responsibility. The `Display` and `Debug` of this type omit
+/// causes and panic payloads, but `source()` exposes the kept cause on purpose.
 ///
-/// A resource call exposes this error directly as its transport source:
+/// A call to the API returns this error directly as the source of its transport error:
 ///
 /// ```no_run
 /// use concord::auth::RenewalError;
@@ -173,17 +191,17 @@ impl fmt::Debug for AccessToken {
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum RenewalError {
-    /// Renewal or credential installation failed, preserving the shared cause.
+    /// The renewal, or the installation of the token, failed; the shared cause is kept.
     Failed(Arc<dyn StdError + Send + Sync>),
-    /// The shared renewal deadline elapsed, preserving the timer failure.
+    /// The shared renewal took longer than `renewal_timeout`; the timer's error is kept.
     TimedOut(Arc<dyn StdError + Send + Sync>),
-    /// User code panicked; the value-bearing panic payload is discarded.
+    /// The author's code panicked; the panic payload, which may hold values, is discarded.
     Panicked,
-    /// Formatting the selected header failed.
+    /// The token could not be formatted as the chosen header.
     InvalidHeader(Arc<InvalidHeaderValue>),
-    /// A seed has expired, or a renewed token does not outlast the early margin.
+    /// The initial token has expired, or a renewed token does not outlast `early_by`.
     Expired,
-    /// The request's origin differs from the credential's base origin.
+    /// The request's origin differs from the origin of the credential's base.
     WrongOrigin,
     /// The renewal timeout is zero or the configuration is inconsistent.
     InvalidPolicy,
@@ -192,8 +210,9 @@ pub enum RenewalError {
 }
 
 impl RenewalError {
-    /// Finds this error in the given error or its chain of sources.
-    /// A cyclic source chain without a renewal error returns `None`.
+    /// Finds a `RenewalError` in this error or its chain of sources.
+    ///
+    /// Returns `None` when there is none, also when the chain is cyclic.
     ///
     /// ```no_run
     /// use concord::auth::{RenewalError, Renewed};
@@ -238,7 +257,7 @@ impl RenewalError {
         None
     }
 
-    /// Retains an author's error as a shared cause without printing it.
+    /// Wraps an error of the author's as `Failed`: a shared cause, never printed.
     ///
     /// ```no_run
     /// let error = concord::auth::RenewalError::failed(std::io::Error::other("renewal failed"));
@@ -294,15 +313,19 @@ impl StdError for RenewalError {
     }
 }
 
-/// Configure it fully, then clone; clones share one cache and renewal future.
+/// A middleware layer that adds an access token to each request and renews it when it expires.
 ///
-/// Middleware for one account. A path prefix in the base is accepted and neither
-/// narrows nor widens the origin rule: scheme, host and effective port must match.
-/// The cache keeps one current token and one weak renewal handle. Token sizes and
-/// allocations captured by author callbacks are controlled by the author.
-/// Replacing or rejecting the current token leaves no older token in the cache.
-/// The renewal must use a client without this middleware; a direct recursive
-/// wait is refused with `InvalidPolicy` rather than waiting on its own future.
+/// It serves one account. The scheme, host and effective port of each request must
+/// match those of the base; a path prefix in the base is accepted and neither narrows
+/// nor widens that rule. The cache keeps one current token and a weak handle on the
+/// renewal in progress. The size of tokens, and what the author's functions capture,
+/// are under the author's control. Replacing or discarding the current token leaves no
+/// older token in the cache. The renewal must use a client without this middleware: a
+/// renewal that directly waits for itself fails with `InvalidPolicy` instead of waiting
+/// on its own future.
+///
+/// Clones share one cache, one renewal and one configuration: a setter called on any
+/// clone, `with_token` included, changes every clone. Configure it fully, then clone.
 ///
 /// ```no_run
 /// use concord::auth::{AccessToken, Renewed};
@@ -320,10 +343,12 @@ pub struct Renewed {
 }
 
 impl Renewed {
-    /// Sets a base origin and renewal callback. Defaults: no initial token or early
-    /// margin, 30 second renewal timeout, no notification, and a Bearer authorization header.
-    /// A panic while invoking or polling the callback fails every waiter with
-    /// `RenewalError::Panicked`, discards the payload, and lets the next call renew again.
+    /// A credential for the origin of `base`, renewed by the function `renew`.
+    ///
+    /// Defaults: no initial token, no early margin, a renewal timeout of 30 seconds, no
+    /// `on_renewed` function, and an `Authorization: Bearer` header. A panic while calling
+    /// or polling `renew` fails every waiting call with `RenewalError::Panicked`, discards
+    /// the payload, and lets the next call renew again.
     ///
     /// ```no_run
     /// # use concord::auth::{Renewed, AccessToken};
@@ -362,9 +387,11 @@ impl Renewed {
         }
     }
 
-    /// Renews when the remaining lifetime is at most this margin. Default: zero.
-    /// A seed within the margin is accepted and renewed on the first call; a token
-    /// returned by renewal must outlast the margin or renewal fails with `RenewalError::Expired`.
+    /// Renews the token when its remaining lifetime is at most `margin`: zero by default.
+    ///
+    /// An initial token (from `with_token`) within the margin is accepted and renewed on
+    /// the first call. A token returned by renewal must outlast the margin, or the
+    /// renewal fails with `RenewalError::Expired`.
     ///
     /// ```no_run
     /// fn configure(auth: concord::auth::Renewed) -> concord::auth::Renewed {
@@ -377,7 +404,9 @@ impl Renewed {
         self
     }
 
-    /// Bounds the shared renewal future while calls wait for it. Zero is `InvalidPolicy` before renewal.
+    /// Sets the longest time the shared renewal may take while calls wait for it: 30 seconds by default.
+    ///
+    /// Zero fails with `InvalidPolicy` before any renewal.
     ///
     /// ```no_run
     /// fn configure(auth: concord::auth::Renewed) -> concord::auth::Renewed {
@@ -390,9 +419,15 @@ impl Renewed {
         self
     }
 
-    /// Snapshots an initial token without notifying, refusing only an already expired token.
-    /// A seed within the early margin is accepted regardless of builder order, and
-    /// the first call renews it. Header formatting and policy validation happen on use.
+    /// Sets an initial token, without calling `on_renewed`; a copy of it is taken.
+    ///
+    /// A token within the early margin is accepted, whatever the order of the setters,
+    /// and the first call renews it. The header is formatted and the settings are checked
+    /// when the token is used.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RenewalError::Expired` if the token has already expired; that is the only error.
     ///
     /// ```no_run
     /// fn seed(auth: concord::auth::Renewed, token: concord::auth::AccessToken)
@@ -412,10 +447,12 @@ impl Renewed {
         Ok(self)
     }
 
-    /// Notifies once after validation and before publishing a renewed token.
-    /// The notification must return promptly; durable saving belongs to the author.
-    /// A panic fails the waiters with `RenewalError::Panicked` without publishing
-    /// the token; the next call can renew again.
+    /// Sets a function called once for each renewed token, after it is checked and before
+    /// calls can use it.
+    ///
+    /// The function must return promptly; saving the token durably is up to the author.
+    /// A panic fails the waiting calls with `RenewalError::Panicked` and the token is
+    /// not used; the next call can renew again.
     ///
     /// ```no_run
     /// fn configure(auth: concord::auth::Renewed) -> concord::auth::Renewed {
@@ -430,8 +467,11 @@ impl Renewed {
         self
     }
 
-    /// Selects a header and its entire value. The result is always marked sensitive;
-    /// the standard formatting error is retained as the renewal failure's source.
+    /// Sets the header that carries the token, and its whole value.
+    ///
+    /// By default it is `Authorization: Bearer <token>`. The header value is always
+    /// marked sensitive. If formatting fails, the standard error is kept as the source
+    /// of the renewal error.
     ///
     /// ```no_run
     /// fn configure(auth: concord::auth::Renewed) -> concord::auth::Renewed {
@@ -508,10 +548,11 @@ impl Middleware for Renewed {
     }
 }
 
-/// A composable retry rule: only a first-attempt 401 requests another attempt.
+/// A retry rule to add to a policy: it retries a `401` received on the first attempt, and nothing else.
 ///
-/// The policy's attempt budget, repeatability checks and random wait still apply.
-/// This rule sends nothing itself and does not mark a POST safe to repeat.
+/// The policy's number of attempts, its checks that a request is safe to repeat and its
+/// random wait still apply. This rule sends nothing itself and does not mark a POST as
+/// safe to repeat.
 ///
 /// ```no_run
 /// use concord::{Retry, auth::after_401};

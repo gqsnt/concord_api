@@ -14,9 +14,10 @@ keywords = ["http", "client", "api", "rest", "macro"]
 categories = ["web-programming::http-client", "api-bindings"]
 include = ["/src/**", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
 
-# docs.rs builds the pages with every feature on: `cargo doc --all-features`.
+# docs.rs builds the pages with every feature on, and `--cfg docsrs` marks each item with the feature it needs.
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 name = "concord"
@@ -61,8 +62,11 @@ socks = ["concord-core/socks"]
 [dev-dependencies]
 # The front-page example and `examples/` run against fake(), without a network socket.
 # `test-util`: `examples/bookshop` runs on virtual time (`start_paused`).
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util", "fs"] }
 # `examples/errors.rs` reads the API's problem into a type of its own.
 serde.workspace = true
 # `examples/bookshop` plays the server with `Script`, a transport with virtual time.
 concord-testkit = { path = "../concord-testkit" }
+
+# The file-upload rustdoc opens a new asynchronous file stream on each attempt.
+tokio-util = { version = "0.7", features = ["io"] }

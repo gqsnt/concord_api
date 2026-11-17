@@ -199,6 +199,7 @@ dependencies = [
  "concord-testkit",
  "serde",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -209,6 +210,7 @@ dependencies = [
  "concord-core",
  "concord-testkit",
  "erased-serde",
+ "flate2",
  "futures-core",
  "futures-util",
  "http",

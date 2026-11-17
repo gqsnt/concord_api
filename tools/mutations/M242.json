@@ -1,0 +1,9 @@
+{
+  "id": "M242",
+  "area": "repeatable deadline handover",
+  "contract": "tools/mutations/README.md#c1214",
+  "description": "An empty upload ready at its total deadline is handed to the transport after validation.",
+  "file": "concord-core/src/middleware.rs",
+  "find": "                if run.expired() {\n                    return Err(TransportError::clock(run.total_timeout()));\n                }\n",
+  "replace": ""
+}

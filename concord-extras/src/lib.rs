@@ -9,8 +9,8 @@
 //! Readers share [`concord_core::read::details`]; pagers share
 //! [`concord_core::page::fragmentless`]. Both helpers are public extension points.
 //! The Tower adapter also uses a hidden helper of the engine for the URL of an answer;
-//! that helper is outside the extension API. `gzip` uses another, to read the content
-//! type of the body that it compresses. Returned-URL checks use public `page::Call`.
+//! that helper is outside the extension API. `gzip` reads the content type through
+//! the public `Body::get_content_type` accessor. Returned-URL checks use public `page::Call`.
 //!
 //! Applications depend on the crate `concord-api`, which re-exports this one.
 //!
@@ -46,24 +46,31 @@
 //! # }
 //! ```
 //!
-//! Buffered parts produce deterministic bytes. Streaming parts use a random boundary
-//! and are claimed together before sending.
+//! Buffered parts produce deterministic bytes. A streaming form-data body chooses
+//! one random boundary at `finish()` and keeps it for every opening. Its one-shot
+//! parts are claimed together before sending; repeatable parts open when read.
 
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "auth")]
+#[cfg_attr(docsrs, doc(cfg(feature = "auth")))]
 pub mod auth;
 pub mod body;
 #[cfg(feature = "limit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "limit")))]
 pub mod limit;
 #[cfg(feature = "multipart")]
+#[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use body::{multipart, Multipart, MultipartError};
 pub mod page;
 pub mod read;
 #[cfg(feature = "sign")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sign")))]
 pub mod sign;
 #[cfg(feature = "tower")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tower")))]
 pub mod tower;
 pub mod transfer;
 

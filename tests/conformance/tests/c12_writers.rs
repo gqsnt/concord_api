@@ -1585,7 +1585,10 @@ async fn c12_5_an_error_prints_names_and_never_values() {
     }
     // The writer's own error is found, and prints names only.
     let lines = printed_chain(concord::MimeWriteError::find(&errors[3]).unwrap());
-    assert_eq!(lines[0], "MIME part 2 must be buffered");
+    assert_eq!(
+        lines[0],
+        "MIME part 2 is a stream that can be sent only once"
+    );
     assert_no_mark(&lines);
 }
 

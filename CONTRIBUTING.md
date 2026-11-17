@@ -65,6 +65,10 @@ tools/            the scripts behind `just`
 docs/             the guide, the reference, real APIs, internals, design
 ```
 
+## Before you propose a new value
+
+A need that the description cannot express becomes a value in `concord-extras`, a recipe in the guide, or nothing in Concord. Read [a value, a recipe, or nothing](docs/design/scope.md#a-value-a-recipe-or-nothing) first: it gives the rule and the cases that decided it.
+
 ## How the tests are organised
 
 **A contract has a number.** [The contracts](docs/reference/contracts.md) say what the engine and the generated code must do, line by line: `C5.4` is the line about a body read whole and its limit. A test that checks a contract starts its name with the contract's number: `c5_4_an_announced_size_over_the_limit_is_a_mismatch_before_anything_is_read`. `just matrix` lists the tests of each contract.

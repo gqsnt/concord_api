@@ -1145,6 +1145,302 @@ async fn c11_5_a_fixed_window_whose_reset_has_passed_is_whole_again() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn c11_5_a_spent_learned_fixed_refill_allows_discovery_again() {
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "2")
+        .header("x-left", "0")
+        .header("x-reset", &(unix_now() + 30).to_string())
+        .body("learned");
+    script.fail(TransportError::connect());
+    script.fail(TransportError::connect());
+    oks(&script, 1);
+    let limit = Limit::new()
+        .max_hold(secs(3))
+        .bucket(one_key("all").learn(remaining("x-limit", "x-left", "x-reset")));
+    let client = shop(&script, limit);
+    let start = Instant::now();
+
+    success(client.item(1).await);
+    sleep(secs(31)).await;
+    for _ in 0..2 {
+        let error = failure(client.item(1).await);
+        assert_eq!(error.class(), Some(Class::Connect));
+        assert_eq!(error.tries(), 1);
+    }
+    let value = client
+        .item(1)
+        .await
+        .unwrap_or_else(|error| panic!("expected discovery, got {:?}", LimitError::find(&error)));
+
+    assert_eq!(value, "ok");
+    assert_eq!(
+        sent(&script, start),
+        vec![secs(0), secs(31), secs(31), secs(31)]
+    );
+    assert_eq!(script.unused(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_learned_fixed_refill_too_small_for_the_cost_allows_discovery() {
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "3")
+        .header("x-left", "0")
+        .header("x-reset", &(unix_now() + 30).to_string());
+    script.fail(TransportError::connect());
+    oks(&script, 1);
+    let client = shop(
+        &script,
+        Limit::new().max_hold(secs(3)).bucket(
+            one_key("all")
+                .cost(|_| 2)
+                .learn(remaining("x-limit", "x-left", "x-reset")),
+        ),
+    );
+    let start = Instant::now();
+
+    success(client.item(1).await);
+    sleep(secs(31)).await;
+    assert_eq!(failure(client.item(1).await).class(), Some(Class::Connect));
+    let value = client
+        .item(1)
+        .await
+        .unwrap_or_else(|error| panic!("expected discovery, got {:?}", LimitError::find(&error)));
+
+    assert_eq!(value, "ok");
+    assert_eq!(sent(&script, start), vec![secs(0), secs(31), secs(31)]);
+    assert_eq!(script.unused(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_cost_above_a_learned_fixed_capacity_is_still_refused() {
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "3")
+        .header("x-left", "0")
+        .header("x-reset", &(unix_now() + 30).to_string());
+    script.fail(TransportError::connect());
+    oks(&script, 1);
+    let client = shop(
+        &script,
+        Limit::new().max_hold(secs(3)).bucket(
+            one_key("all")
+                .cost(|call| {
+                    if call.info().endpoint() == "shop.search" {
+                        4
+                    } else {
+                        2
+                    }
+                })
+                .learn(remaining("x-limit", "x-left", "x-reset")),
+        ),
+    );
+    let start = Instant::now();
+
+    success(client.item(1).await);
+    for stage in 0..3 {
+        if stage == 1 {
+            sleep(secs(31)).await;
+        } else if stage == 2 {
+            assert_eq!(failure(client.item(1).await).class(), Some(Class::Connect));
+        }
+        let error = failure(client.search().await);
+        assert!(matches!(
+            limit_error(&error),
+            LimitError::CostExceedsCapacity
+        ));
+        assert_eq!(error.tries(), 1);
+        assert_eq!(sent(&script, start).len(), if stage == 2 { 2 } else { 1 });
+    }
+
+    assert_eq!(start.elapsed(), secs(31), "an oversized cost never waits");
+    assert_eq!(
+        script.unused(),
+        1,
+        "an oversized cost never reaches the transport"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_fixed_rediscovery_is_serial_releases_on_failure_and_learns_again() {
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "2")
+        .header("x-left", "0")
+        .header("x-reset", &(unix_now() + 30).to_string());
+    script.fail(TransportError::connect());
+    script.fail(TransportError::connect());
+    script.fail(TransportError::connect()).after(secs(5));
+    script
+        .answer(200)
+        .after(secs(5))
+        .header("x-limit", "2")
+        .header("x-left", "2")
+        .header("x-reset", &(unix_now() + 60).to_string());
+    script.answer(200).after(secs(1));
+    script.answer(200).after(secs(1));
+    let client = shop(
+        &script,
+        Limit::new()
+            .max_hold(secs(15))
+            .bucket(one_key("all").learn(remaining("x-limit", "x-left", "x-reset"))),
+    );
+    let start = Instant::now();
+
+    success(client.item(1).await);
+    sleep(secs(31)).await;
+    for _ in 0..2 {
+        assert_eq!(failure(client.item(1).await).class(), Some(Class::Connect));
+    }
+    let (a, b, c, d) = tokio::join!(
+        client.item(1).send(),
+        client.item(1).send(),
+        client.item(1).send(),
+        client.item(1).send()
+    );
+    let mut failures = 0;
+    for result in [a, b, c, d] {
+        if let Err(error) = result {
+            assert_eq!(error.class(), Some(Class::Connect));
+            failures += 1;
+        }
+    }
+    assert_eq!(failures, 1);
+
+    assert_eq!(
+        sent(&script, start),
+        vec![
+            secs(0),
+            secs(31),
+            secs(31),
+            secs(31),
+            secs(36),
+            secs(41),
+            secs(41)
+        ]
+    );
+    assert_eq!(script.unused(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_fixed_refill_with_new_observations_stays_known() {
+    let script = Script::new();
+    script.answer(200).header("x-left", "0");
+    for _ in 0..2 {
+        script.answer(200).after(secs(1)).header("x-left", "2");
+    }
+    oks(&script, 1);
+    let client = shop(
+        &script,
+        Limit::new()
+            .max_hold(secs(15))
+            .bucket(one_key("all").learn(|seen| {
+                seen.header("x-left")
+                    .and_then(|left| left.parse().ok())
+                    .map(|left| vec![Window::fixed(2, secs(10)).remaining(left)])
+                    .unwrap_or_default()
+            })),
+    );
+    let start = Instant::now();
+
+    success(client.item(1).await);
+    let (a, b) = tokio::join!(client.item(1).send(), client.item(1).send());
+    success(a);
+    success(b);
+    success(client.item(1).await);
+
+    assert_eq!(
+        sent(&script, start),
+        vec![secs(0), secs(10), secs(10), secs(21)]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_fixed_refill_waits_for_outstanding_heads_before_forgetting() {
+    let script = Script::new();
+    script.answer(200).header("x-left", "0");
+    for _ in 0..2 {
+        script.answer(200).after(secs(5)).header("x-left", "2");
+    }
+    oks(&script, 1);
+    let client = shop(
+        &script,
+        Limit::new()
+            .max_hold(secs(20))
+            .bucket(one_key("all").learn(|seen| {
+                seen.header("x-left")
+                    .and_then(|left| left.parse().ok())
+                    .map(|left| vec![Window::fixed(2, secs(10)).remaining(left)])
+                    .unwrap_or_default()
+            })),
+    );
+    let start = Instant::now();
+
+    success(client.item(1).await);
+    sleep(secs(10)).await;
+    let (a, b, waiting) = tokio::join!(client.item(1).send(), client.item(1).send(), async {
+        sleep(secs(1)).await;
+        client.item(1).send().await
+    });
+    success(a);
+    success(b);
+    success(waiting);
+
+    assert_eq!(
+        sent(&script, start),
+        vec![secs(0), secs(10), secs(10), secs(25)]
+    );
+    assert_eq!(script.unused(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_forgetting_a_fixed_refill_preserves_other_windows() {
+    let script = Script::new();
+    script.answer(200).header("x-budget", "present");
+    script.fail(TransportError::connect());
+    script.answer(200).header("x-budget", "new");
+    oks(&script, 1);
+    let client = shop(
+        &script,
+        Limit::new().bucket(one_key("all").learn(|seen| {
+            if seen.header("x-budget").is_some() {
+                vec![
+                    Window::fixed(
+                        1,
+                        secs(if seen.header("x-budget") == Some("new") {
+                            12
+                        } else {
+                            5
+                        }),
+                    )
+                    .remaining(0),
+                    Window::rolling(2, secs(20)).remaining(1),
+                ]
+            } else {
+                vec![]
+            }
+        })),
+    );
+    let start = Instant::now();
+
+    success(client.item(1).await);
+    sleep(secs(5)).await;
+    assert_eq!(failure(client.item(1).await).class(), Some(Class::Connect));
+    success(client.item(1).await);
+    success(client.item(1).await);
+
+    assert_eq!(
+        sent(&script, start),
+        vec![secs(0), secs(5), secs(20), secs(32)]
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn c11_5_a_discovery_call_that_is_dropped_lets_the_next_through() {
     let script = Script::new();
     script.never();
@@ -1299,6 +1595,46 @@ async fn c11_6_a_client_that_touches_many_more_keys_than_max_keys_one_after_anot
     }
     let expected: Vec<Duration> = (0..100).map(secs).collect();
     assert_eq!(sent(&script, start), expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_6_a_spent_learned_fixed_refill_can_be_forgotten() {
+    for failed_discovery in [false, true] {
+        let script = Script::new();
+        script
+            .answer(200)
+            .header("x-limit", "1")
+            .header("x-left", "0")
+            .header("x-reset", &(unix_now() + 30).to_string());
+        script.fail(TransportError::connect());
+        if failed_discovery {
+            script.fail(TransportError::connect());
+        }
+        oks(&script, 1);
+        let client = shop(
+            &script,
+            Limit::new()
+                .max_keys(1)
+                .max_hold(secs(3))
+                .bucket(by_path().learn(remaining("x-limit", "x-left", "x-reset"))),
+        );
+        let start = Instant::now();
+
+        success(client.item(1).await);
+        sleep(secs(31)).await;
+        assert_eq!(failure(client.item(1).await).class(), Some(Class::Connect));
+        if failed_discovery {
+            assert_eq!(failure(client.item(1).await).class(), Some(Class::Connect));
+        }
+        success(client.item(2).await);
+
+        assert_eq!(start.elapsed(), secs(31));
+        assert_eq!(
+            script.requests().len(),
+            if failed_discovery { 4 } else { 3 }
+        );
+        assert_eq!(script.unused(), 0);
+    }
 }
 
 #[tokio::test(start_paused = true)]

@@ -1,9 +1,7 @@
 concord::api! {
-pub client Logs {
-        base "https://logs.example.com";
-        POST write(events: Vec<String>) {
-            headers { "content-encoding" = "gzip"; }
-            body concord::gzip(concord::json(events)?);
-        }
-    }
+pub client Uploads(origin: concord::Base) {
+    // the host that receives the bytes: its own base, nothing of the API's client
+    base origin;
+    POST send(bytes: concord::Body) { body bytes; }
+}
 }

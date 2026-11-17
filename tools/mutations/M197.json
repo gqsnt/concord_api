@@ -4,6 +4,6 @@
   "contract": "C12.3",
   "description": "The boundary is checked against the part headers only, so it may occur in a part's bytes",
   "file": "concord-extras/src/body/mime.rs",
-  "find": ".is_some_and(|bytes| !contains(bytes, candidate.as_bytes()))",
-  "replace": ".is_some()"
+  "find": ".is_none_or(|bytes| !contains(bytes, candidate.as_bytes()))",
+  "replace": ".is_none_or(|_| true)"
 }

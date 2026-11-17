@@ -47,7 +47,7 @@ pub trait Transport: Send + Sync + 'static {
 
 `concord::Http` and `reqwest::Client` implement it, a function wrapped by `concord::fake` implements it, and your own type can implement it ([a transport](extending.md#a-transport); a server that never responds takes one line there). `info` tells the transport the name of the endpoint and the attempt number.
 
-Your own reader is tested on its own, without a client, on a response made by `concord::reply` ([reading a success](responses-and-errors.md#reading-a-success)). A client whose description signs each request passes the signed request to the fake ([a middleware](credentials.md#a-middleware)).
+Your own reader is tested on its own, without a client, on a response made by `concord::reply` ([reading a success](responses-and-errors.md#reading-a-success)). A client whose description signs each request passes the signed request to the fake ([middleware or transport](middleware.md#middleware-or-transport)).
 
 ## What to add to `Cargo.toml`
 

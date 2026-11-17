@@ -45,6 +45,7 @@ pub(crate) enum BuildFailure {
     SpentStream,
     Origin,
     ContentLength,
+    RepeatableEdit,
 }
 
 #[derive(Clone)]
@@ -142,6 +143,9 @@ impl Note {
                 BuildFailure::Origin => f.write_str("the URL leaves the origin of the call"),
                 BuildFailure::ContentLength => {
                     f.write_str("the content-length does not match the body length")
+                }
+                BuildFailure::RepeatableEdit => {
+                    f.write_str("an edit replaced or removed a repeatable body")
                 }
             },
             Self::Transport(Class::Connect, connection) => f.write_str(match connection {
@@ -781,7 +785,10 @@ impl<E> std::error::Error for Error<E> {
     /// supplied by the reader. Decoder messages that may quote the response belong
     /// in `details()`, bounded to 1 KiB.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.inner.source.as_deref().map(|source| source as _)
+        self.inner
+            .source
+            .as_deref()
+            .map(crate::body::repeatable::original_source)
     }
 }
 

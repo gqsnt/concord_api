@@ -6,7 +6,7 @@ This page is for you when Concord rejected your description, or a call failed: f
 
 To find a message, search this page for a few words of the text that you got. At compile time, a message starts with `error:`; here it has a number, **1** to **46**, and is listed under its theme ([at compile time](#1-at-compile-time)). At run time, a text starts with its kind (`build error:`, `transport error:`, `refused:` or `mismatch:`) and names the endpoint (`in tasks.get`); the tables are grouped by kind ([when a request is built or answered](#2-when-a-request-is-built-or-answered)).
 
-When Concord rejects a description, the message points at your own token, says what is wrong, and says what to write. There are 46 messages at compile time, and 52 texts at run time.
+When Concord rejects a description, the message points at your own token, says what is wrong, and says what to write. There are 46 messages at compile time, and 52 texts at run time. The errors of `concord-extras`, and the causes of a failed repeatable body, add 55 texts of their own, which appear in the chain of `source()` or are returned directly ([the errors of `concord-extras`](#2-when-a-request-is-built-or-answered)).
 
 Some mistakes get no message from this page. A mistake inside your own Rust (`read Jsno;`, a type that does not fit, a struct that holds a `Secret` in `json(x)`, a generic parameter of an enclosing function in a type (E0401: `api!` generates items), `?` in `paginate`, `idempotent`, `idle_timeout` or `middleware`) is reported by `rustc`, in words that the traits of the core provide where they can (the macro, [The messages that are `rustc`'s](../internals/macro.md#the-messages-that-are-rustcs)). A line that is outside the grammar and that no message below names (`body client.f { … }`: the word before the block is a path) gets the parser's own message, at the token where it stopped (`expected ;`). Two checks of the language are also reported by `rustc`, in Concord's words:
 
@@ -534,7 +534,8 @@ One pattern, in Rust's own style: `<kind>: <fixed words>, in <endpoint>[, after 
 | A URL longer than 65,534 bytes, which the HTTP layer cannot hold: before any middleware sees the request, zero attempts | `build error: the URL is too long to be sent, in tasks.get` |
 | A URL at another origin: a page that leaves the origin of the first request of its `.pages()`, or a URL passed to `at_url` that leaves the origin that the call builds | `build error: the URL leaves the origin of the call, in tasks.list` |
 | A next URL, passed to `at_url`, that does not parse | `build error: the URL passed to at_url could not be parsed, in tasks.list` |
-| A `content-length` written by the description that is not the length of a body in memory | `build error: the content-length does not match the body length, in files.upload` |
+| A `content-length` written by the description that is not the length of a body in memory; for a `Body::repeatable`, a `content-length` that is not a number, or two that differ, before the body is opened | `build error: the content-length does not match the body length, in files.upload` |
+| An edit (`edit_request`) that reads or removes the repeatable body's placeholder, or replaces it with a detected different kind of body; no attempt is made. Wrappers and look-alikes cannot always be detected; if building succeeds, the declared repeatable body is sent | `build error: an edit replaced or removed a repeatable body, in files.upload` |
 | More header lines than `http::HeaderMap` can hold (32,768) | `build error: the request has too many headers, in tasks.get` |
 | The default `concord::Http` cannot be built, at the first send ([C7.3](contracts.md#c7-concords-own-client-and-the-timeouts)) | `build error: the HTTP client could not be built, in tasks.get` |
 | Generated code that passes the hidden `Draft` a header name or a fixed path text that the macro would reject | `build error: the description is not valid (a header name), in tasks.get`, and `(fixed path text)` |
@@ -556,7 +557,7 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 | A body that breaks, or ends before its announced size | `transport error: the response body could not be read after status 200, in files.download` |
 | A body that broke, and no head is known | `transport error: the body could not be read, in files.download` |
 | A response head that arrived and cannot be read: not HTTP, too many or too large headers, two lengths. Class Other: the standard rule does not retry it | `transport error: the response status line or headers could not be parsed, in tasks.get` |
-| The caller's own body stream that fails while it is sent; its error is `source()`. Class Other: a body that cannot be sent twice | `transport error: the body of the request failed, in files.upload` |
+| The caller's own one-shot body stream that fails while it is sent; its error is in the chain of `source()`, below the error of the HTTP library. For a `Body::repeatable`, also a failure while it is opened, or a source that gives fewer or more bytes than the `content-length`, whatever the transport reported; its error is `source()` itself. Class Other: the standard rule does not retry it | `transport error: the body of the request failed, in files.upload` |
 | Any other failure of the transport (class Other) | `transport error: the transport failed, in tasks.get` |
 
 **The words of a failed connection** are a closed list, one text each:
@@ -591,6 +592,108 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 **When the content type was not the reader's.** When a reader reports that the content type of the response was not its own, the three texts of a body that could not be read end with ` (unexpected content type)`: `mismatch: status 200, items[3].kind could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body is empty (unexpected content type), in tasks.get`. An empty body gets it only when the response had a `Content-Type`.
 
 The cause that `source()` returns holds no value of the response: a reader, shipped or your own, passes Concord no cause of its own; Concord builds the cause from the location and the kind of failure, and the reader's own message (at most 1 KiB, its mark included) is behind `details()`. A location prints names of the program and indexes only: a key of a map prints as `[key]`, a variant that was read as `[variant]` (`data[key][0].kind`). An error response whose body is broken is still a Refused error. An ignored body cannot fail the call.
+
+**The cause behind a failed repeatable body.** When a `Body::repeatable` fails while it is sent (`transport error: the body of the request failed`), `source()` returns the author's error unchanged, one of the core's two `io::Error` failures below, or the multipart boundary scanner's `io::Error`:
+
+| Failure | Printed text |
+|---|---|
+| The function given to `Body::repeatable`, or the stream that it returned, panicked; the panic payload is dropped. Fix the panic | `the repeatable body panicked` |
+| An opening of the body yielded fewer or more bytes than the `content-length` of the request (kind `InvalidData`). Make each opening yield the same bytes, or leave out the `content-length` | `the content-length does not match the body length` |
+
+The multipart boundary scanner returns an `io::Error` with the text `multipart boundary occurred in a stream part`, kind `Other` for form-data, `InvalidData` for mixed/related. It fails before the colliding bytes are yielded. Use different part bytes or a custom writer with a collision-free boundary.
+
+**The errors of `concord-extras`.** The values of `concord-extras` report a failure with an error type of their own. Its text is fixed words, with at most a one-based position (`MIME part 2 …`), and never a value of the request, of the response or of your code; the cause that it keeps, if any, is its `source()`. Every type below but `RecordError` and `TransferError` has `find` (`LimitError::find(&e)`), which returns it from anywhere in the chain of `source()`. You meet such an error in one of three places:
+
+- behind `transport error: the request was blocked before it was sent`: a middleware layer (`SigV4`, `Renewed`, `Rotating`, `Limit`) would not send the request;
+- behind `build error: the body could not be constructed`: a body writer in a `body` expression failed; called in your own code, the writer returns the error itself;
+- returned directly: by `concord::transfer::at`, by `try_next` on a `RecordStream`, by `SseEvent::json`, and by a `RotationDriver` when it ends.
+
+**Signing a request**, `concord::sign::SignError`, behind a blocked request:
+
+| Failure | Printed text |
+|---|---|
+| The body is a stream, which cannot be hashed without reading it. An unsigned payload is accepted only for S3, so other services return this even when it is allowed. Send the body as bytes | `The request body is a stream and cannot be hashed.` |
+| An unsigned stream on a base that is not HTTPS | `An unsigned request payload requires HTTPS.` |
+| The request goes to another origin than the one that the signer was made for | `The request leaves the signing origin.` |
+| A request head or a credential field is larger than its documented bound, or a region or a service is longer than 256 bytes | `The signing input exceeds its size limit.` |
+| The URL, the `Host`, the encoding of the path, the framing or the `Connection` options cannot be signed | `The request cannot be canonicalized for signing.` |
+| The access key ID, the region or the service is empty or holds a byte other than an ASCII letter, a digit, `-` or `_`; or the secret key or a session token is empty. Check the credentials | `The signing credentials or scope are invalid.` |
+| A header that the signer generates could not be built or inserted; its cause is `source()` | `A signing header could not be installed.` |
+| A header that is signed is not valid text | `A signed header is not valid text.` |
+| The signing time is outside the years 0001 to 9999 (UTC). Check the system clock | `The signing time is outside the supported range.` |
+| A proof that your own signing code computes failed, wrapped with `SignError::failed`; your error is `source()` | `The request proof failed.` |
+
+**A credential that is renewed**, `concord::auth::RenewalError`, behind a blocked request (also the `source()` of a `RotationError`):
+
+| Failure | Printed text |
+|---|---|
+| Your renewal function returned an error, or the token could not be installed; the cause is `source()` (a failed call to the token endpoint is a `concord::Error` there) | `the credential could not be renewed or installed` |
+| The shared renewal took longer than `renewal_timeout` | `the credential renewal exceeded renewal_timeout` |
+| Your renewal function, or another of your callbacks, panicked; the panic payload is dropped | `a credential callback panicked` |
+| The token cannot be written as the chosen header | `the credential could not be formatted as a header` |
+| The initial token has expired, or a renewed token does not outlast `early_by`. Return a token that lives longer, or lower `early_by` | `the credential has expired or does not outlast early_by` |
+| The request goes to another origin than the base of the credential. Attach the credential only to clients of that origin | `the request leaves the credential's origin` |
+| `renewal_timeout` is zero, or the settings do not agree; also a renewal that waits for itself (the renewal must use a client without this middleware) | `the credential renewal policy is invalid` |
+| A deadline cannot be represented | `the credential deadline cannot be represented` |
+
+**A refresh token that is replaced at each use**, `concord::auth::RotationError`, behind a blocked request, or returned by the `RotationDriver`:
+
+| Failure | Printed text |
+|---|---|
+| The store's `load` failed; its error is in `source()` | `the credential could not be loaded` |
+| The store's `save` failed; its outcome may be unknown, so the record is loaded again | `the credential could not be saved` |
+| The exchange failed, a wait timed out, a callback panicked, or another failure of `RenewalError`, which is `source()` | `the credential could not be renewed or installed` |
+| The refresh token is empty, or an exchange returned the token that it consumed | `the refresh token is empty or was not replaced` |
+| No known refresh token is safe to use: the store holds a `Refreshing` marker or an empty refresh token, or an exchange failed or returned an invalid one. Authorize the account again with the provider | `the account requires reauthorization` |
+| The driver was not polled while the call waited. Poll the `RotationDriver`, or spawn it | `the rotation driver was not polled during renewal_timeout` |
+| The driver was dropped, or a panic in the store stopped the account | `the rotation driver has stopped` |
+| Returned by the driver: a replacement could not be saved durably. Save the `pair` that the error holds | `the replacement credential must be saved by the application` |
+
+**Limits shared by the calls of a client**, `concord::limit::LimitError`, behind a blocked request:
+
+| Failure | Printed text |
+|---|---|
+| The settings are invalid: a bound, a key size, a window or a setting, including a cap of zero on calls in flight | `limit policy is invalid; check its bounds, keys and windows` |
+| The keys of the request would exceed `max_keys`, even after the keys that hold nothing are forgotten. Raise `max_keys` | `limit key bound reached; configure max_keys` |
+| The cost of a bucket is larger than the capacity of a known window, so the request could never be sent | `limit cost exceeds window capacity` |
+| The request would wait longer than `max_hold`. `MaxHold { required, .. }` holds the wait still needed, when it is known: for a call that is safe to repeat, wait for it and call again | `limit wait exceeds max_hold` |
+
+**Body writers**, behind `build error: the body could not be constructed`, or returned by the writer:
+
+| Failure | Printed text |
+|---|---|
+| `bracket_form` or `bracket_pairs`: a root, a key or an enum variant with data that bracketed keys cannot represent (`BracketFormError::Shape`). Called in your own code, the writer returns a `WriteError`, printed `the body could not be serialized`, with this error as its `source()` | `the bracketed form has an unsupported shape` |
+| `gzip`: the body is a stream; it compresses only a body in memory (`GzipError::Stream`) | `the gzip body must be buffered` |
+| `json_lines`: the whole body, line feeds included, would be larger than `max_bytes`. Split the batch, or raise the bound | `the JSON lines body exceeds its byte limit` |
+| `json_lines`: one record, here the third, could not be serialized; the writer's error is `source()` | `JSON record 3 could not be serialized` |
+| `multipart_mixed`, `multipart_related`: no parts | `the MIME body has no parts` |
+| The same: a part, here the second, is a one-shot stream. Give it as bytes or as `Body::repeatable` | `MIME part 2 is a stream that can be sent only once` |
+| The same: a part does not have exactly one valid `Content-Type` header | `MIME part 2 needs one valid content type` |
+| `Multipart::finish`: a field name or a file name holds a control character | `invalid multipart field or file name` |
+| `Multipart::finish`: the content type of a part is not a valid header value | `invalid multipart content type` |
+| `Multipart::finish`: the operating system could not provide a random boundary for a body that streams | `multipart boundary randomness unavailable` |
+
+**Records of a stream**, `concord::read::RecordError`, from `try_next` on a `RecordStream` (`JsonLines`, `Sse`) and from `SseEvent::json`. A `RecordStream` ends after its first error:
+
+| Failure | Printed text |
+|---|---|
+| The body could not be read: the text is the engine's own line, from the tables above, and the engine's error is `source()` | `transport error: the response body could not be read after status 200, in events.watch` |
+| A line, or a whole event block, is larger than the bound given to the reader (`JsonLines::new(…)`, `Sse::new(…)`) | `record exceeds its byte limit` |
+| A record is not valid UTF-8 | `record is not UTF-8` |
+| A JSON line, or the data of an event given to `SseEvent::json`, does not decode as the type. The fields hold the line and the column, never the record | `record does not decode as the requested type` |
+
+**A URL that the API returned**, `concord::transfer::TransferError`, returned by `concord::transfer::at` before anything is sent:
+
+| Failure | Printed text |
+|---|---|
+| The URL cannot be parsed: a malformed host or port, a space or a control character in the host; the parser's cause is `source()` | `transfer URL could not be parsed` |
+| The URL parsed, but the HTTP URI parser rejects it (a backtick in the host); its cause is `source()` | `transfer URL is not an HTTP URI` |
+| The text has no `://` followed by a host, or it is relative, or it cannot be a base | `transfer URL must have an absolute authority` |
+| The scheme is neither `http` nor `https` | `transfer URL must use HTTP or HTTPS` |
+| The URL holds user information (`@` in the authority) or a fragment (`#`) | `transfer URL must omit user information and fragments` |
+| Parsing would change the spelling of the URL: an uppercase scheme or host, removed dot segments, a space or a control character that would be encoded, and the like. The URL is used only when it would be sent exactly as it is written | `transfer URL spelling would change` |
+| The query is present but every part of it is empty (`?`, `?&`), which `at_url` would drop | `transfer URL query would be discarded` |
+| The text is longer than 65,534 bytes | `transfer URL exceeds 65,534 bytes` |
 
 ## 3. Three rules for every message
 
