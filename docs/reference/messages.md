@@ -62,7 +62,7 @@ Some mistakes get no message from this page. A mistake inside your own Rust (`re
   note: a pager is a closure `|call, page| …` that returns the next call, or a value such as `by_cursor(…)`
   ```
 
-- **A shipped pager used as a function.** The shipped pagers return a `Paging`, which is a pager and not a function. Calling one gets `` error[E0618]: expected function, found `Paging<…>` ``: call `next_call` on it, with `concord::page::Pager` in scope. Returning one as `impl Fn(…)`, passing it where a function is expected, or boxing it as `Box<dyn Fn(…)>` gets `` error[E0277]: expected an `Fn(…)` closure, found `Paging<…>` `` (or `FnMut`): return `Paging<C>` or `impl Pager<C>`, take `impl Pager<C>`, or box it as `Box<dyn Pager<C>>` ([upgrading from the release before](../guide/pages.md#upgrading-from-the-release-before)).
+- **A shipped pager used as a function.** The shipped pagers return a `Paging`, which is a pager and not a function. Calling one gets `` error[E0618]: expected function, found `Paging<…>` ``: call `next_call` on it, with `concord::page::Pager` in scope. Returning one as `impl Fn(…)`, passing it where a function is expected, or boxing it as `Box<dyn Fn(…)>` gets `` error[E0277]: expected an `Fn(…)` closure, found `Paging<…>` `` (or `FnMut`): return `Paging<C>` or `impl Pager<C>`, take `impl Pager<C>`, or box it as `Box<dyn Pager<C>>` ([upgrading from 5.0.0-rc.1](../guide/pages.md#upgrading-from-500-rc1)).
 
 ## 1. At compile time
 

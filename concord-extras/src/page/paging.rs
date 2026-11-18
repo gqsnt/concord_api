@@ -60,7 +60,9 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 ///    otherwise the move decides, and no next call is the end. A statement always has authority
 ///    over the short-page rule.
 /// 5. **The edits** of [`map_next`](Paging::map_next) are applied to the next call, in the order
-///    they were written: the one place where the order of the methods is meaning.
+///    they were written. The order written also counts inside two other steps: the statements
+///    are read in that order (step 2), and of two `or_when_set` given one input, the first
+///    written moves (step 0).
 ///
 /// Then the rules of [`Pages`](concord_core::Pages), for every pager: the next request may not
 /// repeat the one just sent (a Mismatch), nor go to another origin (a Build error). The page that
@@ -694,8 +696,9 @@ impl<C: Call> Pager<C> for Paging<C> {
 /// `paginate by_offset_total(start, |page| page.total);`: like [`by_offset`](super::by_offset),
 /// and the page states how many items the list holds. `n` is the number of items of the page
 /// ([`IntoItems::count`]) and `at` the `start` of the call that fetched it (0 when not set). When
-/// `at + n` reaches the total, this page is the last; below it, the list must move, and an empty
-/// page is the Mismatch of step 3 of [`Paging`]. A total or an offset that cannot be read as an
+/// `at + n` reaches the total, this page is the last; below it, the move must give a next call,
+/// and an empty page is the Mismatch of step 3 of [`Paging`], unless a pager chosen by
+/// [`or_when_set`](Paging::or_when_set), such as a cursor, still gives one. A total or an offset that cannot be read as an
 /// unsigned number, and an `at + n` that overflows, are Mismatches. The offset is named once: it is
 /// the input that moves and the one that is counted.
 ///
