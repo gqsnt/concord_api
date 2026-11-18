@@ -355,15 +355,20 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
 #[diagnostic::on_unimplemented(
     message = "a pager returns the next call: `Some(call)`, `None`, or a `Result` of either"
 )]
-pub trait IntoNext<C: Call>: sealed::Sealed {
+///
+/// Only these shapes implement it, each for its own call: another crate cannot add one.
+pub trait IntoNext<C: Call>: sealed::Sealed<C> {
     /// Returns the next call, the end, or the failure.
     fn into_next(self) -> Result<Option<C>, Fail<C::Problem>>;
 }
 
+// The seal names the call and the exact error type, so an implementation outside
+// this crate cannot exist, and a later conversion of pager errors cannot overlap one.
 mod sealed {
-    pub trait Sealed {}
-    impl<C> Sealed for Option<C> {}
-    impl<C, F> Sealed for Result<Option<C>, F> {}
+    use super::{Call, Fail};
+    pub trait Sealed<C> {}
+    impl<C: Call> Sealed<C> for Option<C> {}
+    impl<C: Call> Sealed<C> for Result<Option<C>, Fail<C::Problem>> {}
 }
 
 impl<C: Call> IntoNext<C> for Option<C> {
