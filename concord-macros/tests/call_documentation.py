@@ -13,13 +13,15 @@ from pathlib import Path
 from queue import Queue
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / "target/call-documentation"
-DOC = ROOT / "target/doc"
+# Every build of this script goes to the caller's CARGO_TARGET_DIR, or to the checkout's target.
+TARGET = Path(os.environ.get("CARGO_TARGET_DIR") or ROOT / "target").resolve()
+OUT = TARGET / "call-documentation"
+DOC = TARGET / "doc"
 ENV = {
     **os.environ,
     "CARGO_NET_OFFLINE": "true",
     "CARGO_BUILD_JOBS": "4",
-    "CARGO_TARGET_DIR": str(ROOT / "target"),
+    "CARGO_TARGET_DIR": str(TARGET),
     "RAYON_NUM_THREADS": "4",
 }
 API = """\
@@ -399,22 +401,117 @@ def hover_signature(result, method, include_impl=False):
     return "".join(display.split())
 
 
-ACCEPTS = re.compile(r"Accepts an? ")
-ACCEPTED_TYPE = re.compile(r"^Accepts an? \[?(\w+)")
+# A documented method: its signature, then its own docblock (empty when it has none).
+METHOD = re.compile(
+    r'<section id="method\.(\w+)" class="method">.*?<h4 class="code-header">(.*?)</h4></section>'
+    r'</summary>(?:<div class="docblock">(.*?)</div>)?</details>', re.S)
+# An option line of an endpoint page: a paragraph that opens with a link to the option's method.
+OPTION = re.compile(r'<p><a href="[^"]*#method\.(\w+)"[^>]*><code>(\w+\(impl Arg&lt;.*?&gt;\))</code></a>(.*?)</p>', re.S)
+TOP_DOC = re.compile(r'<details class="toggle top-doc" open>.*?<div class="docblock">(.*?)</div></details>', re.S)
+ARG_ANCHOR = re.compile(r'<a href="([^"]*)"[^>]*><code>concord::arg::Arg</code></a>')
 CONVERSION = "Text and list conversions: "
-CONVERSION_LINK = re.compile(
-    r'Text and list conversions: <a href="https://docs\.rs/concord-api/([^/"]+)/([^"#]+)"><code>concord::arg::Arg</code></a>\.'
-)
-# The setters whose declared type is spelled with one of these names carry the conversion text.
+# The spellings of a declared input type for which the macro writes the conversion text.
 CONVERTED = {"String", "Secret", "Vec"}
 ARG_PAGE = "concord/arg/index.html"
 
 
+def arg_types(signature):
+    """The `T` of each `impl Arg<T>` parameter of a signature, as text."""
+    text, found, at = display(signature), [], 0
+    while (start := text.find("impl Arg<", at)) >= 0:
+        depth, end = 1, start + len("impl Arg<")
+        while depth and end < len(text):
+            depth += (text[end] == "<") - (text[end] == ">")
+            end += 1
+        found.append(text[start + len("impl Arg<"):end - 1].strip())
+        at = end
+    return found
+
+
+def spelled(declared):
+    """The last path segment of the outer type: `Vec` for `std::vec::Vec<u8>`."""
+    return declared.split("<", 1)[0].strip().rsplit("::", 1)[-1]
+
+
+def declared(stored, setter):
+    """A setter stores `Option<T>` for an input declared `T`; any other parameter is `T` itself."""
+    if setter:
+        return stored[len("Option<"):-1] if stored.startswith("Option<") else stored
+    return stored
+
+
+def converted(types, setter):
+    """How many of these `impl Arg<T>` parameters are inputs spelled String, Secret or Vec."""
+    return sum(spelled(declared(stored, setter)) in CONVERTED for stored in types)
+
+
+def conversion_violations(doc, version):
+    """Check the conversion links of the generated documentation of tour-gen under `doc`.
+
+    The places that need one are found from the structure of the pages, not from their text: the
+    `impl Arg<T>` parameters of each documented method (a setter takes `self` or `__call` and
+    stores `Option<T>`). An endpoint page documents its options (the setters that take `__call`)
+    and the inputs of the factory that returns its call; that factory documents the options too.
+    Each documented input whose declared type is spelled String, Secret or Vec needs one conversion
+    text and one link; the others need none. Every link labelled `concord::arg::Arg`, anywhere,
+    must go to the page of the module for this release."""
+    expected_link = f"https://docs.rs/concord-api/{version}/{ARG_PAGE}"
+    pages = {page.resolve(): page.read_text() for page in sorted((doc / "tour_gen").rglob("*.html"))}
+    methods = {page: [(name, signature, docblock or "", arg_types(signature))
+                      for name, signature, docblock in METHOD.findall(html)]
+               for page, html in pages.items()}
+    options = {page: sum(converted(types, True) for _, signature, _, types in found
+                         if "__call:" in display(signature))
+               for page, found in methods.items()}
+    inputs, factories = {}, {}
+    for page, found in methods.items():
+        for name, signature, _, types in found:
+            header = display(signature)
+            if re.search(r"\((?:mut\s+)?self\b", header) or "__call:" in header:
+                continue
+            returned = re.search(r'-&gt;.*?Call</a>&lt;<a class="enum" href="([^"]+)"', signature)
+            if returned:
+                endpoint = (page.parent / returned[1]).resolve()
+                inputs[endpoint] = inputs.get(endpoint, 0) + converted(types, False)
+                factories[(page, name)] = endpoint
+    problems, places = [], 0
+    for page, html in pages.items():
+        name = page.relative_to(doc.resolve())
+        regions = []
+        for method, signature, docblock, types in methods[page]:
+            if not types and (page, method) not in factories:
+                continue
+            header = display(signature)
+            setter = bool(re.search(r"\((?:mut\s+)?self\b", header)) or "__call:" in header
+            wanted = converted(types, setter)
+            if (page, method) in factories:
+                wanted += options.get(factories[(page, method)], 0)
+            regions.append((f"method {method}", docblock, wanted))
+            places += wanted
+        top = TOP_DOC.search(html)
+        top = top[1] if top else ""
+        regions.append(("the page's description", top, inputs.get(page, 0) + options[page]))
+        places += inputs.get(page, 0) + options[page]
+        for method, code, rest in OPTION.findall(top):
+            regions.append((f"option {method}", rest, converted(arg_types(code), True)))
+        for place, text, wanted in regions:
+            anchors = ARG_ANCHOR.findall(text)
+            phrases = text.count(CONVERSION)
+            if (phrases, len(anchors)) != (wanted, wanted):
+                problems.append(f"{name}: {place}: {wanted} conversion links expected, "
+                                f"{phrases} texts and {len(anchors)} links found")
+        for href in ARG_ANCHOR.findall(html):
+            if href != expected_link:
+                problems.append(f"{name}: a concord::arg::Arg link goes to {href}, not {expected_link}")
+    if not places:
+        problems.append("tour-gen documents no input spelled String, Secret or Vec")
+    return places, sorted(set(problems))
+
+
 def check_links():
-    """Document tour-gen and the facade with --no-deps in a folder of their own, and check the
-    conversion text of every setter: present exactly where the input's type is spelled String,
-    Secret or Vec, and a link to docs.rs for this release and the page of concord::arg."""
-    links = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")) / "call-documentation/links"
+    """Document tour-gen and the facade with --no-deps in a folder of their own, then check the
+    conversion links of tour-gen (conversion_violations)."""
+    links = TARGET / "call-documentation/links"
     shutil.rmtree(links / "doc", ignore_errors=True)
     env = {**ENV, "CARGO_TARGET_DIR": str(links)}
     for package in ("tour-gen", "concord-api"):
@@ -423,37 +520,12 @@ def check_links():
     version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
     if not (links / "doc" / ARG_PAGE).is_file():
         raise SystemExit(f"The facade's documentation has no page {ARG_PAGE}")
-    expected = found = 0
-    wrong = []
-    for page in sorted((links / "doc/tour_gen").rglob("*.html")):
-        html = page.read_text()
-        name = page.relative_to(links / "doc")
-        # Each "Accepts …" sentence, up to the next one, is the text of one setter.
-        starts = [m.start() for m in ACCEPTS.finditer(html)]
-        for number, start in enumerate(starts):
-            text = html[start:starts[number + 1] if number + 1 < len(starts) else len(html)]
-            kind = ACCEPTED_TYPE.match(display(text))
-            wanted = bool(kind) and kind[1] in CONVERTED
-            expected += wanted
-            if CONVERSION not in text:
-                if wanted:
-                    wrong.append(f"{name}: no conversion text after: {display(text)[:80]}")
-                continue
-            found += 1
-            link = CONVERSION_LINK.search(text)
-            if not wanted:
-                wrong.append(f"{name}: conversion text for a type that has none: {display(text)[:80]}")
-            elif not link:
-                wrong.append(f"{name}: the conversion text is not a link to docs.rs: {display(text)[:120]}")
-            elif link[1] != version:
-                wrong.append(f"{name}: the link names version {link[1]}, not {version}")
-            elif link[2] != ARG_PAGE:
-                wrong.append(f"{name}: the link goes to {link[2]}, not {ARG_PAGE}")
-    if wrong:
-        raise SystemExit("Conversion links that are missing or wrong:\n" + "\n".join(sorted(set(wrong))))
-    if not expected:
-        raise SystemExit("No setter of tour-gen has an input spelled String, Secret or Vec")
-    print(f"{found} of {expected} setters of String, Secret or Vec inputs link "
+    places, problems = conversion_violations(links / "doc", version)
+    if problems:
+        raise SystemExit("Conversion links that are missing, extra or wrong:\n" + "\n".join(problems))
+    print(f"{places} conversion links, one for each input spelled String, Secret or Vec that a "
+          f"method or an endpoint page of tour-gen documents (found from the signatures), and none "
+          f"for the other inputs; every concord::arg::Arg link goes to "
           f"docs.rs/concord-api/{version}/{ARG_PAGE}, a page of the facade built here.")
 
 
