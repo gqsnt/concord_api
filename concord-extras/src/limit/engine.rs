@@ -85,6 +85,8 @@ struct Account {
     in_flight: u128,
     in_use: usize,
     gate: Gate,
+    // The last dated reset of each position, kept for the key whatever its windows become.
+    resets: [Option<SystemTime>; MAX_WINDOWS],
 }
 
 impl Account {
@@ -97,6 +99,7 @@ impl Account {
             in_flight: 0,
             in_use: 0,
             gate: Gate::default(),
+            resets: [None; MAX_WINDOWS],
         }
     }
 
@@ -191,22 +194,21 @@ impl Account {
         }
         let others = self.in_flight.saturating_sub(u128::from(cost));
         if fresh && self.windows.len() != windows.len() {
-            let consumed: Vec<_> = self.windows.iter().map(|window| window.reset_at).collect();
-            self.windows = (0..windows.len())
-                .map(|at| History::unknown(consumed.get(at).copied().flatten()))
-                .collect();
+            self.windows = windows.iter().map(|_| History::unknown()).collect();
         }
-        for (old, new) in self.windows.iter_mut().zip(windows) {
+        let mut spare = None;
+        for (at, (old, new)) in self.windows.iter_mut().zip(windows).enumerate() {
+            // Valid lists hold at most MAX_WINDOWS windows, so a spare is never used.
+            let identity = self.resets.get_mut(at).unwrap_or(&mut spare);
             if old.is_unknown() {
                 // A dated reset already consumed by this key gives no second refill.
-                if matches!((old.reset_at, new.reset_at), (Some(known), Some(seen)) if seen <= known)
-                {
+                if matches!((*identity, new.reset_at), (Some(known), Some(seen)) if seen <= known) {
                     continue;
                 }
                 // PANIC-SAFETY: This assigns through a reference to the slot; it is not a multiplication.
                 *old = History::new(new, now, false);
             }
-            old.observe(new, cost, others, now);
+            old.observe(new, cost, others, now, identity);
         }
     }
 }
@@ -219,8 +221,6 @@ struct History {
     configured: bool,
     events: VecDeque<(Instant, u128)>,
     used: u128,
-    // The reset as the server dated it, when a reader of dates gave it.
-    reset_at: Option<SystemTime>,
 }
 
 impl History {
@@ -233,7 +233,6 @@ impl History {
             configured,
             events: VecDeque::new(),
             used: 0,
-            reset_at: window.reset_at,
         };
         if let Kind::Rolling(period) = window.kind {
             if let Some(end) = now.checked_add(period) {
@@ -246,8 +245,8 @@ impl History {
         history
     }
 
-    /// A slot whose window is not known, with the dated reset it last consumed.
-    fn unknown(reset_at: Option<SystemTime>) -> Self {
+    /// A slot whose window is not known.
+    fn unknown() -> Self {
         Self {
             capacity: 0,
             kind: Kind::Fixed(None),
@@ -256,7 +255,6 @@ impl History {
             configured: false,
             events: VecDeque::new(),
             used: 0,
-            reset_at,
         }
     }
 
@@ -341,12 +339,19 @@ impl History {
         }
     }
 
-    fn observe(&mut self, new: &Window, cost: u64, others: u128, now: Instant) {
+    fn observe(
+        &mut self,
+        new: &Window,
+        cost: u64,
+        others: u128,
+        now: Instant,
+        identity: &mut Option<SystemTime>,
+    ) {
         // Give a refill that is due before deciding whether it has been given.
         self.available(now);
         let mut same_reset = None;
         if let (Kind::Fixed(Some(old)), Kind::Fixed(Some(at))) = (&self.kind, &new.kind) {
-            match (self.reset_at, new.reset_at) {
+            match (*identity, new.reset_at) {
                 // A reset that the server dated: its date, not the instant that this
                 // response's own clock gives, says whether it is older, the same or newer.
                 (Some(known), Some(seen)) if seen < known => return,
@@ -394,7 +399,10 @@ impl History {
                 );
                 self.capacity = new.capacity;
                 self.kind = Kind::Fixed(same_reset.or(reset));
-                self.reset_at = new.reset_at;
+                // A window without a date leaves the last dated reset in place.
+                if new.reset_at.is_some() {
+                    *identity = new.reset_at;
+                }
                 self.refilled = false;
                 self.remaining = previous.min(target).min(new.capacity);
             }
@@ -899,7 +907,7 @@ mod tests {
         let debit = std::mem::size_of::<(Instant, u128)>();
         let bound = MAX_KEY_BYTES + entry + MAX_WINDOWS * (history + MAX_HISTORY * debit);
         #[cfg(all(target_pointer_width = "64", target_os = "linux"))]
-        assert_eq!((entry, history, debit, bound), (128, 112, 32, 1_050_112));
+        assert_eq!((entry, history, debit, bound), (256, 96, 32, 1_050_112));
         assert!(bound >= MAX_KEY_BYTES);
     }
 

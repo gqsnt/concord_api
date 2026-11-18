@@ -500,3 +500,103 @@ async fn c11_5_remaining_in_unix_seconds_learns_a_reset_fifty_years_ahead() {
     ));
     assert_eq!(script.requests().len(), 1);
 }
+
+/// A learner of eight windows from the headers of each response: `width` says how many; the
+/// eighth reads its own `tail-…` headers. `prime` starts a new window of twenty.
+fn eight(script: &Script, width: u8, prime: bool) {
+    script
+        .answer(200)
+        .header("date", &http_date(T))
+        .header("width", &width.to_string())
+        .header("x-limit", if prime { "20" } else { "2" })
+        .header("x-remaining", if prime { "20" } else { "0" })
+        .header("x-reset", &rfc3339(if prime { T + 60 } else { T + 2 }))
+        .header("tail-limit", "2")
+        .header("tail-remaining", "0")
+        .header("tail-reset", &rfc3339(T + 2));
+}
+
+async fn widths(short: u8) -> Vec<Duration> {
+    let script = Script::new();
+    let body = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    let tail = remaining_rfc3339("tail-limit", "tail-remaining", "tail-reset");
+    let limit =
+        Limit::new()
+            .max_hold(sec(120))
+            .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+                let Some(width) = seen.header("width").and_then(|w| w.parse::<usize>().ok()) else {
+                    return Vec::new();
+                };
+                (0..width)
+                    .flat_map(|at| if at == 7 { tail(seen) } else { body(seen) })
+                    .collect()
+            }));
+    // Eight windows spent until T + 2; two responses that teach nothing spend the refill;
+    // then `short` windows, and eight again, the eighth naming T + 2 once more.
+    eight(&script, 8, false);
+    script.answer(200);
+    script.answer(200);
+    eight(&script, short, false);
+    eight(&script, 8, true);
+    for _ in 0..2 {
+        script.answer(200).after(sec(10));
+    }
+    let start = Instant::now();
+    for _ in 0..5 {
+        call(&limit, &script).await.unwrap();
+    }
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_survives_a_change_in_the_number_of_windows() {
+    let expected = [sec(0), sec(2), sec(2), sec(2), sec(2), sec(2), sec(12)];
+    assert_eq!(widths(8).await, expected);
+    // Seven windows for one response, then eight again: the eighth still knows its reset.
+    assert_eq!(widths(7).await, expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_survives_a_window_without_a_date() {
+    let script = Script::new();
+    let dated = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    let limit =
+        Limit::new()
+            .max_hold(sec(120))
+            .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+                if seen.header("plain") == Some("1") {
+                    vec![concord::limit::Window::fixed(1, sec(1)).remaining(0)]
+                } else {
+                    dated(seen)
+                }
+            }));
+    let spent = |script: &Script| {
+        script
+            .answer(200)
+            .header("date", &http_date(T))
+            .header("x-limit", "2")
+            .header("x-remaining", "0")
+            .header("x-reset", &rfc3339(T + 2));
+    };
+    // Spent until T + 2; the refill is spent; an undated window comes and is spent; then the
+    // reset of T + 2 is named again.
+    spent(&script);
+    script.answer(200);
+    script.answer(200);
+    script.answer(200).header("plain", "1");
+    script.answer(200);
+    spent(&script);
+    script.answer(200);
+    let start = Instant::now();
+    for _ in 0..7 {
+        call(&limit, &script).await.unwrap();
+    }
+    // The last call learns no refill from the repeated reset: it is the next learning call.
+    assert_eq!(
+        sent(&script, start),
+        [sec(0), sec(2), sec(2), sec(2), sec(3), sec(3), sec(3)]
+    );
+}

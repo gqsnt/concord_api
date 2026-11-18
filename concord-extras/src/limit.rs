@@ -147,7 +147,7 @@
 //! Learned windows are then learned again; configured windows still apply. Other bounds
 //! are constants: 8 windows per bucket, 512 UTF-8 bytes per key, 4096 history entries
 //! per window. On 64-bit Linux, one key's retained payload is at most 1,050,112 bytes:
-//! 512 key bytes + 128 bytes for the map entry + 8 × (112 window bytes +
+//! 512 key bytes + 256 bytes for the map entry + 8 × (96 window bytes +
 //! 4096 × 32 debit bytes). Spare slots of the hash table, allocator metadata, the shared
 //! settings and the calls and bodies owned by the caller come on top of this bound.
 //! A full history merges its two oldest entries at the later expiry, which errs on the
@@ -1059,8 +1059,9 @@ pub fn remaining(
 /// later one, lowers what is left at once, and the later of the two deadlines is kept, even
 /// when its own `Date` makes its reset look nearer. A later response that names the same reset
 /// again, after that refill, teaches nothing, however late it arrives, also once the key has
-/// returned to learning. The key remembers the last reset it consumed for as long as the limit
-/// keeps the key; a key that is forgotten to make room forgets it too. This assumes that the
+/// returned to learning. The key remembers the last reset it consumed, at each position, for as
+/// long as the limit keeps the key, also when a response gives it fewer windows or a window
+/// without a date; a key that is forgotten to make room forgets it too. This assumes that the
 /// resets an API gives for one key move forward: two servers whose clocks differ by a second
 /// can still name one refill twice.
 ///
