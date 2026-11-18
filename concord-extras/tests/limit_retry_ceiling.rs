@@ -138,3 +138,56 @@ async fn c4_3_a_caller_that_cancels_during_the_long_wait_sends_nothing_more() {
     assert_eq!(script.requests().len(), 1);
     assert_eq!(script.unused(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn c4_3_a_zero_ceiling_retries_an_asked_wait_of_zero_and_no_positive_one() {
+    // A rule asks for no wait: that is retried, after the random part alone.
+    let script = Script::new();
+    script.answer(418);
+    script.answer(200).body("ok");
+    let api = Data::new().with_transport(script.clone()).with_retry(
+        Retry::none()
+            .tries(2)
+            .max_retry_after(Duration::ZERO)
+            .when(|_| Some(Duration::ZERO)),
+    );
+    let start = Instant::now();
+    assert_eq!(api.get().await.unwrap(), "ok");
+    let at = sent(&script, start);
+    assert!(at[1] <= sec(1), "{at:?}");
+
+    // A rule asks for one nanosecond: no further attempt.
+    let script = Script::new();
+    script.answer(418);
+    script.answer(200).body("unused");
+    let api = Data::new().with_transport(script.clone()).with_retry(
+        Retry::none()
+            .tries(2)
+            .max_retry_after(Duration::ZERO)
+            .when(|_| Some(Duration::from_nanos(1))),
+    );
+    let error = api.get().await.unwrap_err();
+    assert!(error.is_status(418));
+    assert_eq!(error.tries(), 1);
+    assert_eq!(error.retry_after(), Some(Duration::from_nanos(1)));
+    assert_eq!(script.unused(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c4_3_a_wait_the_timer_cannot_represent_ends_the_retries_whatever_the_ceiling() {
+    let script = Script::new();
+    script
+        .answer(429)
+        .header("retry-after", &u64::MAX.to_string());
+    script.answer(200).body("unused");
+    let api = Data::new()
+        .with_transport(script.clone())
+        .with_retry(Retry::standard().max_retry_after(Duration::MAX));
+    let start = Instant::now();
+    let error = api.get().await.unwrap_err();
+    assert!(error.is_status(429));
+    assert_eq!(error.tries(), 1);
+    assert_eq!(error.retry_after(), Some(sec(u64::MAX)));
+    assert_eq!(start.elapsed(), Duration::ZERO);
+    assert_eq!(script.unused(), 1);
+}

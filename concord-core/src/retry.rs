@@ -147,9 +147,10 @@ impl<P> Retry<P> {
     /// [`retry_after`](crate::Error::retry_after) still says how long the server asked to
     /// wait. One that is not longer is waited for. The random part of each wait keeps its
     /// own schedule and its own cap, at most 60 seconds, whatever this setting is; a wait
-    /// that would end after the call's `timeout` still means no further attempt. Zero allows
-    /// no asked wait at all: another attempt happens only when nothing asked for one, or a
-    /// `Retry-After` of zero.
+    /// that would end after the call's `timeout` still means no further attempt, and so does a
+    /// wait that the timer cannot represent, whatever this setting is. Zero allows no positive
+    /// asked wait: an asked wait of zero is no wait, and that attempt comes after the random
+    /// part alone, as when nothing asked for a wait.
     ///
     /// Raising it lets a call last much longer. With no `timeout` on the call, each retry can
     /// sleep as long as this setting, so three tries can sleep twice that long; and a
