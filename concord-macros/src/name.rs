@@ -64,13 +64,26 @@ pub(crate) fn module_name(name: &str) -> String {
     out
 }
 
+/// C1.4: the first character of the name of a scope, an endpoint, a part or an input.
+pub(crate) const NAME_FIRST: &str = "abcdefghijklmnopqrstuvwxyz";
+
+/// C1.4: every character of such a name. A `_` is neither doubled nor last.
+pub(crate) const NAME_CHARACTERS: &str = "abcdefghijklmnopqrstuvwxyz0123456789_";
+
+/// C1.5: the first character of the name of a client.
+pub(crate) const CLIENT_FIRST: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+/// C1.5: every character of the name of a client.
+pub(crate) const CLIENT_CHARACTERS: &str =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+fn spelled(name: &str, first: &str, characters: &str) -> bool {
+    name.chars().next().is_some_and(|ch| first.contains(ch))
+        && name.chars().all(|ch| characters.contains(ch))
+}
+
 fn snake(name: &str) -> bool {
-    name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-        && !name.ends_with('_')
-        && !name.contains("__")
-        && name
-            .bytes()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == b'_')
+    spelled(name, NAME_FIRST, NAME_CHARACTERS) && !name.ends_with('_') && !name.contains("__")
 }
 
 /// A concrete usable suggestion for any rejected author spelling.
@@ -159,11 +172,7 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
             let spelling = node.name.to_string();
             if matches!(node.kind, NodeKind::Client) {
                 let module = module_name(&spelling);
-                if !spelling
-                    .as_bytes()
-                    .first()
-                    .is_some_and(u8::is_ascii_uppercase)
-                    || !spelling.bytes().all(|b| b.is_ascii_alphanumeric())
+                if !spelled(&spelling, CLIENT_FIRST, CLIENT_CHARACTERS)
                     || keyword(&module)
                     || spelling == "Self"
                 {
