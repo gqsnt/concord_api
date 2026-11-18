@@ -832,7 +832,7 @@ impl<E> Error<E> {
     /// Concord cannot tell: it does not mean that the request arrived.
     ///
     /// It reads what a transport or a middleware stated with
-    /// [`TransportError::not_sent`](crate::TransportError::not_sent), under the conditions below.
+    /// [`TransportError::not_sent`](crate::transport::TransportError::not_sent), under the conditions below.
     ///
     /// It is stated for a Transport error only, when the failure that ends the call states
     /// it, every send that Concord saw during that attempt ended with a failure that states
