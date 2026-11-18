@@ -894,8 +894,9 @@ impl Limit {
 
     /// Sets the longest total wait of a request: 60 seconds by default.
     ///
-    /// It bounds waiting: a request that needs no wait leaves, for every value of this
-    /// setting. A request whose known wait is longer fails at once; a request whose wait is
+    /// It bounds waiting: a request that needs no wait leaves, for every valid value of this
+    /// setting. A value that no deadline can represent, such as `Duration::MAX`, is invalid:
+    /// every call fails with `InvalidPolicy`, even one that needs no wait. A request whose known wait is longer fails at once; a request whose wait is
     /// unknown fails when this limit is reached. Zero lets a request leave only if it needs
     /// no wait. The error is `MaxHold`: `required` is the wait still needed when
     /// the request was refused, and `retry_after` keeps the server's original value for
@@ -906,7 +907,9 @@ impl Limit {
     /// passed since then, and fails with `MaxHold` if its wait would end later. A request
     /// that needs no wait leaves whatever those functions took: their time is the author's.
     /// They run to their end, so a call that fails can return later than this limit by the
-    /// time they take, with nothing sent.
+    /// time they take, with nothing sent. The limit is checked when the waiting task runs
+    /// again, and Tokio's timer wakes with a granularity of about a millisecond: a request
+    /// whose wait and `max_hold` are both shorter than that can be refused after waiting.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new().max_hold(std::time::Duration::from_secs(10));
