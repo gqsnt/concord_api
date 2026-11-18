@@ -761,3 +761,110 @@ async fn c11_5_a_consumed_reset_stays_paid_when_a_position_is_removed_and_restor
     assert_eq!(resized(8, true, 8, 7, false).await, expected);
     assert_eq!(resized(8, true, 8, 7, true).await, expected);
 }
+
+/// A head written at T: two units, none left, reset at T + 4; arriving `after` seconds late.
+fn spent_until_four(script: &Script, after: u64) {
+    script
+        .answer(200)
+        .after(sec(after))
+        .header("date", &http_date(T))
+        .header("x-limit", "2")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(T + 4));
+}
+
+fn reader() -> Box<dyn Fn(&Seen<'_>) -> Vec<concord::limit::Window> + Send + Sync> {
+    remaining_rfc3339("x-limit", "x-remaining", "x-reset")
+}
+
+async fn declared(replay: bool) -> Vec<Duration> {
+    let start = Instant::now();
+    // The window is read once from a response, and declared on the bucket of another limit.
+    let capture = Script::new();
+    spent_until_four(&capture, 0);
+    let kept = Arc::new(Mutex::new(None));
+    let into = kept.clone();
+    let read = reader();
+    let first = Limit::new().bucket(Bucket::new(|_| Some("k".into())).learn(move |seen| {
+        *into.lock().unwrap() = read(seen).pop();
+        Vec::new()
+    }));
+    call(&first, &capture).await.unwrap();
+    let window = kept.lock().unwrap().take().unwrap();
+    let limit = Limit::new().max_hold(Duration::ZERO).bucket(
+        Bucket::new(|_| Some("k".into()))
+            .window(window)
+            .learn(reader()),
+    );
+    let script = Script::new();
+    if replay {
+        spent_until_four(&script, 1);
+    } else {
+        script.answer(200).after(sec(1));
+    }
+    script.answer(200);
+    tokio::time::advance(sec(4)).await;
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    tokio::time::advance(sec(4)).await;
+    for _ in 0..2 {
+        script.answer(200);
+        if let Err(error) = call(&limit, &script).await {
+            assert!(matches!(cause(&error), LimitError::MaxHold { .. }));
+        }
+    }
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_declared_dated_window_pays_its_reset_once() {
+    assert_eq!(declared(false).await, [sec(4), sec(4)]);
+    // Its reset named again by a head after the refill gives nothing more.
+    assert_eq!(declared(true).await, [sec(4), sec(4)]);
+}
+
+async fn straddling(replay: bool) -> Vec<Duration> {
+    use futures_util::FutureExt;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let start = Instant::now();
+    let script = Script::new();
+    let first = AtomicBool::new(true);
+    let read = reader();
+    // The first head is learned from only after its own reset has passed.
+    let limit =
+        Limit::new()
+            .max_hold(Duration::ZERO)
+            .bucket(Bucket::new(|_| Some("k".into())).learn(move |seen| {
+                let windows = read(seen);
+                if first.swap(false, Ordering::SeqCst) {
+                    assert!(tokio::time::advance(sec(4)).now_or_never().is_none());
+                }
+                windows
+            }));
+    spent_until_four(&script, 0);
+    call(&limit, &script).await.unwrap();
+    if replay {
+        spent_until_four(&script, 1);
+    } else {
+        script.answer(200).after(sec(1));
+    }
+    script.answer(200);
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    tokio::time::advance(sec(4)).await;
+    script.answer(200).after(sec(1));
+    script.answer(200);
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    drop(b);
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_first_head_learned_after_its_reset_pays_it_once() {
+    let expected = [sec(0), sec(4), sec(4), sec(9)];
+    assert_eq!(straddling(false).await, expected);
+    assert_eq!(straddling(true).await, expected);
+}

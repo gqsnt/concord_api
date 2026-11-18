@@ -93,6 +93,11 @@ struct Account {
 
 impl Account {
     fn new(windows: &[Window], now: Instant) -> Self {
+        // A history is born with its date remembered, also a window set in advance.
+        let mut resets = [None; MAX_WINDOWS];
+        for (date, window) in resets.iter_mut().zip(windows) {
+            *date = window.reset_at;
+        }
         Self {
             windows: windows
                 .iter()
@@ -101,7 +106,7 @@ impl Account {
             in_flight: 0,
             in_use: 0,
             gate: Gate::default(),
-            resets: [None; MAX_WINDOWS],
+            resets,
             paid: 0,
         }
     }
@@ -197,7 +202,7 @@ impl Account {
         }
         let others = self.in_flight.saturating_sub(u128::from(cost));
         if fresh && self.windows.len() != windows.len() {
-            self.replace_windows(now, |slots| {
+            self.replace_windows(now, |slots, _, _| {
                 *slots = windows.iter().map(|_| History::unknown()).collect();
             });
         }
@@ -209,10 +214,19 @@ impl Account {
                 if matches!((known, new.reset_at), (Some(known), Some(seen)) if seen <= known) {
                     continue;
                 }
-                self.replace_windows(now, |slots| {
-                    if let Some(slot) = slots.get_mut(at) {
+                self.replace_windows(now, |slots, dates, paid| {
+                    if let (Some(slot), Some(date)) = (slots.get_mut(at), dates.get_mut(at)) {
                         // PANIC-SAFETY: This assigns through a reference to the slot; it is not a multiplication.
                         *slot = History::new(new, now, false);
+                        // A history is born with its date remembered, in the same step: a head
+                        // learned after its own reset refills at once, and has paid out then.
+                        if new.reset_at.is_some() {
+                            if *date != new.reset_at {
+                                *paid &= !bit;
+                            }
+                            // PANIC-SAFETY: This assigns through a reference to the date; it is not a multiplication.
+                            *date = new.reset_at;
+                        }
                     }
                 });
             }
@@ -234,14 +248,18 @@ impl Account {
     /// Replaces or drops window histories of this key: the only place where that happens.
     /// Before anything else, it records in the key, for each position, whether the date that
     /// its window held was paid out.
-    fn replace_windows(&mut self, now: Instant, change: impl FnOnce(&mut Vec<History>)) {
+    fn replace_windows(
+        &mut self,
+        now: Instant,
+        change: impl FnOnce(&mut Vec<History>, &mut [Option<SystemTime>; MAX_WINDOWS], &mut u8),
+    ) {
         for (at, window) in self.windows.iter_mut().enumerate() {
             window.available(now);
             if window.dated && window.refilled {
                 self.paid |= position(at);
             }
         }
-        change(&mut self.windows);
+        change(&mut self.windows, &mut self.resets, &mut self.paid);
     }
 }
 
