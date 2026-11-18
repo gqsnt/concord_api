@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use concord::page::IntoItems;
-use concord::{by_link, by_next_url, fake, reply_with, Json};
+use concord::{by_link, by_next_url, fake, reply_with, Json, Secret};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
@@ -40,6 +40,17 @@ concord::api! {
             paginate by_link();
         }
         GET user() -> Users { path "v1.0/users"; }
+        GET keyed(token?: Secret) -> Users {
+            path "v1.0/users";
+            query { token; }
+            paginate by_next_url(|page: &Users| page.next.clone());
+        }
+        GET keyed_linked(token?: Secret) -> Users {
+            path "v1.0/users";
+            query { token; }
+            paginate by_link();
+        }
+        GET keyed_user(token?: Secret) -> Users { path "v1.0/users"; query { token; } }
     }
 }
 
@@ -120,6 +131,56 @@ async fn c8_6_an_empty_query_on_the_current_path_is_not_the_request_just_sent() 
             );
         }
     }
+}
+
+/// With a secret query key, the secret is written again after what the server gave, and the
+/// comparison with the request just sent leaves the secret out but keeps the empty parts: `?&token=v`
+/// is not `?token=v`. A next URL that changes only the secret is still the request just sent.
+#[tokio::test(start_paused = true)]
+async fn c8_6_an_empty_query_with_a_secret_key_is_not_the_request_just_sent() {
+    for (next, second) in [("?", "?&token=v"), ("?&&", "?&&&token=v")] {
+        for linked in [false, true] {
+            let (graph, sent) = server(next);
+            let pages = if linked {
+                graph.keyed_linked().token("v").pages()
+            } else {
+                graph.keyed().token("v").pages()
+            };
+            let items = walk(pages.items()).await.unwrap();
+            assert_eq!(items, ["1", "2"], "{next}, linked: {linked}");
+            assert_eq!(
+                *sent.lock().unwrap(),
+                [
+                    "https://api.test/v1.0/users?token=v".to_owned(),
+                    format!("https://api.test/v1.0/users{second}")
+                ],
+                "{next}, linked: {linked}"
+            );
+        }
+    }
+    for linked in [false, true] {
+        let (graph, sent) = server("?token=z");
+        let pages = if linked {
+            graph.keyed_linked().token("v").pages()
+        } else {
+            graph.keyed().token("v").pages()
+        };
+        let error = walk(pages.items()).await.unwrap_err();
+        assert_eq!(error.kind(), concord::error::Kind::Mismatch, "linked: {linked}");
+        assert_eq!(sent.lock().unwrap().len(), 1, "linked: {linked}");
+    }
+}
+
+/// A URL that has only a path gets the secret written again too, in pages and outside them.
+#[tokio::test(start_paused = true)]
+async fn c8_6_a_url_with_only_a_path_gets_the_secret_key_again() {
+    use concord::page::Call;
+    let (graph, sent) = server("/slice");
+    walk(graph.keyed().token("v").pages().items()).await.unwrap();
+    assert_eq!(sent.lock().unwrap()[1], "https://api.test/slice?token=v");
+    let (graph, sent) = server("/unused");
+    graph.keyed_user().token("v").at_url("/slice").await.unwrap();
+    assert_eq!(sent.lock().unwrap()[0], "https://api.test/slice?token=v");
 }
 
 #[tokio::test(start_paused = true)]

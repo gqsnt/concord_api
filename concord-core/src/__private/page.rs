@@ -343,10 +343,9 @@ pub(super) fn same_page_request(
                 })
                 .collect();
             if removed {
-                let query = kept
-                    .iter()
-                    .any(|part| !part.is_empty())
-                    .then(|| kept.join("&"));
+                // Only the secret pairs go: the empty parts stay, so `?&token=v` is not
+                // `?token=v`, as the builder sends them.
+                let query = (!kept.is_empty()).then(|| kept.join("&"));
                 clean.set_query(query.as_deref());
             }
         }
