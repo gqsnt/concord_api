@@ -600,8 +600,10 @@ pub enum LimitError {
     ///
     /// It takes precedence when the request would also exceed `max_keys`.
     InvalidPolicy,
-    /// The request's keys exceed `max_keys`, even after forgetting the keys that hold nothing.
-    /// Raise the bound with [`Limit::max_keys`].
+    /// The keys already kept, across all buckets, plus the new keys of the request would exceed
+    /// `max_keys`, even after forgetting the keys that hold nothing. A request can be refused
+    /// with fewer than `max_keys` keys of its own, when other keys are still in use. Raise the
+    /// bound with [`Limit::max_keys`].
     TooManyKeys,
     /// The bucket's cost is larger than the capacity of at least one known window.
     CostExceedsCapacity,

@@ -514,7 +514,9 @@ impl Never<'_> {
 }
 
 /// A request as a [`Script`] received it.
-#[derive(Clone, Debug)]
+///
+/// `Debug` prints the URL as its text.
+#[derive(Clone)]
 pub struct Request {
     method: Method,
     url: reqwest::Url,
@@ -523,6 +525,20 @@ pub struct Request {
     upload: Upload,
     info: TryInfo,
     at: Instant,
+}
+
+impl std::fmt::Debug for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Request")
+            .field("method", &self.method)
+            .field("url", &self.url.as_str())
+            .field("headers", &self.headers)
+            .field("body", &self.body)
+            .field("upload", &self.upload)
+            .field("info", &self.info)
+            .field("at", &self.at)
+            .finish()
+    }
 }
 
 impl Request {
@@ -628,8 +644,27 @@ pub enum UploadState {
 
 /// The error of a body that [`Answer::cut`] ends, or that ends before its declared
 /// length ([`Answer::declare_length`]).
-#[derive(Debug)]
-pub struct Cut;
+///
+/// Only the script makes one, so that a later release can give it more to report.
+///
+/// ```compile_fail,E0423
+/// let cut = concord_testkit::script::Cut;
+/// ```
+pub struct Cut {
+    _private: (),
+}
+
+impl Cut {
+    fn new() -> Cut {
+        Cut { _private: () }
+    }
+}
+
+impl std::fmt::Debug for Cut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Cut")
+    }
+}
 
 impl std::fmt::Display for Cut {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -703,7 +738,7 @@ impl Body for ScriptBody {
                         // connection closed early.
                         End::Complete if this.declared.is_some() => {
                             this.done = true;
-                            Poll::Ready(Some(Err(Cut)))
+                            Poll::Ready(Some(Err(Cut::new())))
                         }
                         End::Complete => {
                             this.done = true;
@@ -711,7 +746,7 @@ impl Body for ScriptBody {
                         }
                         End::Cut => {
                             this.done = true;
-                            Poll::Ready(Some(Err(Cut)))
+                            Poll::Ready(Some(Err(Cut::new())))
                         }
                     };
                 }

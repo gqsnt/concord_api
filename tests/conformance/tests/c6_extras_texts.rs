@@ -360,10 +360,14 @@ async fn c6_2_every_text_of_the_extras_and_of_a_repeatable_body_is_on_the_messag
     assert_eq!(documented, printed);
 }
 
-/// The style of every text on the page: a first word in lower case unless it is an acronym
-/// (`JSON`, `MIME`), no final period, and no advice after a semicolon.
+/// The acronyms that may start a text in capitals.
+const ACRONYMS: [&str; 2] = ["JSON", "MIME"];
+
+/// The capitals and the punctuation of every text on the page: no capital at the start
+/// unless the first word is one of `ACRONYMS`, no final period, and no semicolon. It checks
+/// no words: advice written in another form would pass.
 #[tokio::test(start_paused = true)]
-async fn c6_2_every_text_of_the_extras_is_written_in_the_style_of_the_page() {
+async fn c6_2_every_text_of_the_extras_starts_in_lower_case_and_holds_no_period_or_semicolon() {
     let mut printed = repeatable_texts().await;
     printed.extend(sign_texts());
     printed.extend(renewal_texts());
@@ -374,9 +378,8 @@ async fn c6_2_every_text_of_the_extras_is_written_in_the_style_of_the_page() {
     printed.extend(transfer_texts());
     for text in &printed {
         let first = text.split(' ').next().unwrap();
-        let acronym = first.chars().all(|c| c.is_ascii_uppercase());
         assert!(
-            acronym || !first.starts_with(|c: char| c.is_uppercase()),
+            ACRONYMS.contains(&first) || !first.starts_with(|c: char| c.is_uppercase()),
             "a capital at the start: {text}"
         );
         assert!(!text.ends_with('.'), "a final period: {text}");

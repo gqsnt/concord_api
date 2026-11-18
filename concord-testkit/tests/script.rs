@@ -119,6 +119,21 @@ async fn the_recorded_url_has_the_type_of_the_url_a_transport_receives() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_debug_of_a_recorded_request_prints_the_url_as_its_text() {
+    let script = Script::new();
+    script.answer(200);
+    script
+        .send(get("http://api.test/v1/items?page=2"), info(1))
+        .await
+        .unwrap();
+    let text = format!("{:?}", script.requests()[0]);
+    assert!(
+        text.contains(r#"url: "http://api.test/v1/items?page=2","#),
+        "{text}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_try_with_nothing_scripted_gets_599() {
     let script = Script::new();
     let answer = script.send(get("http://api.test/"), info(4)).await.unwrap();
