@@ -132,12 +132,21 @@ impl Account {
                 .all(|window| window.unknown() || window.available(now) == window.capacity)
     }
 
-    fn inspect(&mut self, cost: u64, now: Instant, wait: &mut Wait) -> Result<(), LimitError> {
+    fn inspect(
+        &mut self,
+        selected: &Selected,
+        now: Instant,
+        wait: &mut Wait,
+    ) -> Result<(), LimitError> {
+        let cost = selected.cost;
+        let cap = selected.definition.max_in_flight;
         self.forget_spent(now, cost);
         self.in_use
             .checked_add(1)
             .ok_or(LimitError::InvalidPolicy)?;
         self.gate.inspect(now, wait);
+        // Every place of this key is taken until a body ends, fails or is dropped.
+        wait.unknown |= cap.is_some_and(|cap| self.in_use >= cap);
         self.in_flight
             .checked_add(u128::from(cost))
             .ok_or(LimitError::InvalidPolicy)?;
@@ -159,7 +168,10 @@ impl Account {
                 now.checked_add(period).ok_or(LimitError::InvalidPolicy)?;
             }
         }
-        wait.unknown |= self.windows.is_empty() && self.in_flight != 0;
+        // A key with no known window waits for a first head, unless its bucket only caps
+        // what is in flight: with no learn function, no head would teach it anything.
+        let only_caps = cap.is_some() && selected.definition.learn.is_none();
+        wait.unknown |= !only_caps && self.windows.is_empty() && self.in_flight != 0;
         Ok(())
     }
 
@@ -478,6 +490,10 @@ impl Inner {
         let now = Instant::now();
         if policy.max_keys == 0
             || policy.max_in_flight == Some(0)
+            || policy
+                .buckets
+                .iter()
+                .any(|bucket| bucket.max_in_flight == Some(0))
             || !policy
                 .buckets
                 .iter()
@@ -567,11 +583,11 @@ impl Inner {
                     .is_some_and(|cap| state.active >= cap);
                 for selected in &selected {
                     match state.buckets.get_mut(&selected.id) {
-                        Some(account) => account.inspect(selected.cost, now, &mut wait)?,
+                        Some(account) => account.inspect(selected, now, &mut wait)?,
                         None => pending
                             .entry(selected.id.clone())
                             .or_insert_with(|| Account::new(&selected.definition.windows, now))
-                            .inspect(selected.cost, now, &mut wait)?,
+                            .inspect(selected, now, &mut wait)?,
                     }
                 }
                 if !expired && !wait.unknown && wait.until <= now && wait.required.is_zero() {
@@ -857,6 +873,40 @@ mod tests {
         #[cfg(all(target_pointer_width = "64", target_os = "linux"))]
         assert_eq!((entry, history, debit, bound), (128, 112, 32, 1_050_112));
         assert!(bound >= MAX_KEY_BYTES);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_6_counters_are_checked_when_they_grow() {
+        let now = Instant::now();
+        let selected = Selected {
+            id: (0, "k".into()),
+            definition: Bucket::new(|_| Some("k".into())).max_in_flight(usize::MAX),
+            cost: 1,
+        };
+        let wait = || Wait {
+            until: now,
+            required: Duration::ZERO,
+            unknown: false,
+            retry_after: None,
+        };
+        let mut account = Account::new(&[], now);
+        // One place below the cap: the key still admits.
+        account.in_use = usize::MAX - 1;
+        let mut open = wait();
+        assert!(account.inspect(&selected, now, &mut open).is_ok());
+        assert!(!open.unknown);
+        // A count that cannot grow refuses the request; it never wraps or saturates.
+        account.in_use = usize::MAX;
+        assert!(matches!(
+            account.inspect(&selected, now, &mut wait()),
+            Err(LimitError::InvalidPolicy)
+        ));
+        account.in_use = 0;
+        account.in_flight = u128::MAX;
+        assert!(matches!(
+            account.inspect(&selected, now, &mut wait()),
+            Err(LimitError::InvalidPolicy)
+        ));
     }
 
     #[tokio::test(start_paused = true)]

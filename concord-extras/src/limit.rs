@@ -247,8 +247,6 @@ pub struct Bucket {
     learn: Option<Arc<Learn>>,
     hit: Option<Arc<Hit>>,
     windows: Vec<Window>,
-    // PANIC-SAFETY: The engine does not read this setting yet; no panic lint is relaxed.
-    #[allow(dead_code)]
     max_in_flight: Option<usize>,
 }
 
@@ -261,7 +259,9 @@ impl Bucket {
     /// known window, one request of that key at a time may leave: the next one may leave
     /// once the response head has been learned from, or once the earlier request has
     /// failed or been dropped, and only if the other limits allow it. It does not wait for
-    /// the body.
+    /// the body. If the responses teach nothing, that lasts for good. A bucket with a
+    /// [`max_in_flight`](Self::max_in_flight) cap and no [`learn`](Self::learn) function is
+    /// the exception: nothing can be learned, so its cap is its limit.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|call| Some(call.info().endpoint().into()));
@@ -294,13 +294,22 @@ impl Bucket {
     /// place until its response body is read to the end, fails or is dropped.
     ///
     /// By default a bucket has no cap of its own; [`Limit::max_in_flight`] caps the whole
-    /// limit. Both apply, with the windows, all at once: a request that waits for a place
-    /// holds nothing in another bucket. A key with a request in progress is never forgotten,
-    /// so its count is never lost. A request that finds no free place before `max_hold`
-    /// ends fails with `MaxHold`, whose `required` is `None`. A cap of zero fails the first
-    /// call with `InvalidPolicy`. The cap counts what this process has in progress: a
-    /// request dropped by its caller frees its place at once, even while the server still
-    /// works on it.
+    /// limit, and a client can use both: five calls for each tenant, and twenty in all. They
+    /// apply with the windows, all at once: a request that waits for a place holds nothing
+    /// in another bucket. A bucket that has a cap and no [`learn`](Self::learn) function
+    /// lets up to `n` requests of a key leave at once, from the first call; a bucket that
+    /// learns still lets one request of a key leave at a time until a response has taught
+    /// it a window (see [`new`](Self::new)). A request that finds no free place before
+    /// `max_hold` ends fails with `MaxHold`, whose `required` is `None`. A cap of zero fails
+    /// every call with `InvalidPolicy` before any key or cost function runs.
+    ///
+    /// The cap counts what this process holds, and does not protect against three things.
+    /// A request dropped by its caller, or by a call `timeout`, frees its place at once,
+    /// even while the server still works on it. A response whose body is kept and never
+    /// read holds its place for as long as it is kept. And a key with a request in progress
+    /// is never forgotten, so that its count is never lost: when every key that
+    /// [`Limit::max_keys`] allows has a request in progress, a request with a new key fails
+    /// at once with `TooManyKeys`.
     ///
     /// ```no_run
     /// use concord::limit::{Bucket, Limit};
