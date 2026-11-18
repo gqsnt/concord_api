@@ -81,7 +81,10 @@ async fn s3_parts_are_read_from_the_service_xml_and_the_marker_moves() {
     }
     assert_eq!(
         parts,
-        [(1, "\"e1\"".to_owned(), 5), (2, "\"e2\"".to_owned(), 6)]
+        [
+            (1, Some("\"e1\"".to_owned()), 5),
+            (2, Some("\"e2\"".to_owned()), 6)
+        ]
     );
     let requests = script.requests();
     assert_eq!(requests.len(), 2);
@@ -136,5 +139,57 @@ async fn s3_listed_keys_and_prefixes_are_decoded_once() {
     assert_eq!(
         requests[1].url().query(),
         Some("uploads=&encoding-type=url&key-marker=k%2F1&upload-id-marker=u")
+    );
+}
+
+/// The continuation token is opaque: it goes back exactly as the service wrote it, never decoded,
+/// so `t+%2B` is sent as `t%2B%252B`.
+#[tokio::test(start_paused = true)]
+async fn s3_the_continuation_token_is_never_decoded() {
+    let script = Script::new();
+    script.answer(200).body(
+        "<ListBucketResult><IsTruncated>true</IsTruncated>\
+         <NextContinuationToken>t+%2B</NextContinuationToken>\
+         <Contents><Key>a</Key><Size>1</Size></Contents></ListBucketResult>",
+    );
+    script
+        .answer(200)
+        .body("<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>");
+    let (objects, bucket) = store(&script);
+    let mut pages = objects.bucket(bucket).list_objects().pages();
+    while pages.try_next().await.unwrap().is_some() {}
+    let requests = script.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[1].url().query(),
+        Some("list-type=2&encoding-type=url&continuation-token=t%2B%252B")
+    );
+}
+
+/// Every member of a part is optional in the service's reference: a part without an `ETag` is
+/// read, with `None`.
+#[tokio::test(start_paused = true)]
+async fn s3_a_part_without_an_etag_is_read() {
+    let script = Script::new();
+    script.answer(200).body(
+        "<ListPartsResult><IsTruncated>false</IsTruncated>\
+         <Part><PartNumber>1</PartNumber><Size>5</Size></Part></ListPartsResult>",
+    );
+    let (store, bucket) = store(&script);
+    let mut pages = store
+        .bucket(bucket)
+        .object("o")
+        .upload("up")
+        .list_parts()
+        .pages();
+    let page = pages.try_next().await.unwrap().unwrap();
+    assert_eq!(page.parts.len(), 1);
+    assert_eq!(
+        (
+            page.parts[0].part_number,
+            page.parts[0].etag.clone(),
+            page.parts[0].size
+        ),
+        (1, None, 5)
     );
 }

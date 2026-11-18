@@ -1,7 +1,8 @@
 // The data types that the page names and does not print, cut to the fields that its code uses.
 
 /// A key, a prefix or a key marker of a listing asked for with `encoding-type=url`: the service
-/// writes it percent-encoded, with `+` for a space; it is decoded once, here.
+/// writes it percent-encoded, with `+` for a space (the AWS SDK for Python decodes these fields
+/// with `unquote_plus`); it is decoded once, here. A continuation token is opaque: never decoded.
 fn url_decoded<'de, D: serde::Deserializer<'de>>(text: D) -> Result<String, D::Error> {
     use serde::de::Error;
     let text = <String as serde::Deserialize>::deserialize(text)?;
@@ -87,7 +88,7 @@ pub struct PartInfo {
     #[serde(rename = "PartNumber")]
     pub part_number: u32,
     #[serde(rename = "ETag")]
-    pub etag: String,
+    pub etag: Option<String>,
     #[serde(rename = "Size")]
     pub size: u64,
 }
