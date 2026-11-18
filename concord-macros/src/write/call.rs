@@ -75,75 +75,203 @@ fn problem_needs_alias(ty: &syn::Type) -> bool {
     references.0
 }
 
-/// Where the value of a `paginate` expression comes from: each tail, branch, arm, `return` and
-/// `break` with a value, outside nested closures, items and `async` blocks.
+/// What can be at a place where the value of a `paginate` expression comes from.
 #[derive(Clone, Copy, PartialEq)]
 enum Origin {
-    /// A call, a method call or a path: its type is its own, any `Pager`.
-    Typed,
-    /// Anything else (a closure, a macro, a literal): it keeps the `FnMut` bound.
-    Inferred,
+    /// A closure written there: its parameters are inferred, as in earlier releases.
+    Closure,
+    /// A macro invocation: it may expand to a closure or to a pager.
+    Macro,
+    /// Anything else: its type is its own, and it must be a `Pager`.
+    Value,
 }
 
-fn origins(expr: &syn::Expr, out: &mut Vec<Origin>) {
+/// The way `paginate` takes its expression.
+#[derive(Clone, Copy, PartialEq)]
+enum Path {
+    /// A closure at some place: the `FnMut` bound of earlier releases.
+    Inferred,
+    /// Only macro invocations: the `FnMut` bound, with the message for a pager value.
+    Macro,
+    /// Any `Pager`, whatever expression produced it.
+    Pager,
+}
+
+/// The places where the value of `expr` comes from: every tail through blocks of any kind,
+/// `if`, `match`, `loop` and labelled blocks with their `break` values, and the value of every
+/// `return` at any depth, outside nested closures, `async` blocks and items. What is sure to
+/// diverge (`panic!`, `unreachable!`, `todo!`, `unimplemented!`, `std::process::exit` and
+/// `abort`) gives no value, so it does not count.
+fn paginate_path(expr: &syn::Expr) -> Path {
+    let mut found = Vec::new();
+    sites(expr, &mut found);
+    let mut returns = Returns(&mut found);
+    returns.visit_expr(expr);
+    if found.contains(&Origin::Closure) || found.is_empty() {
+        Path::Inferred
+    } else if found.iter().all(|origin| *origin == Origin::Macro) {
+        Path::Macro
+    } else {
+        Path::Pager
+    }
+}
+
+fn sites(expr: &syn::Expr, out: &mut Vec<Origin>) {
     match expr {
-        syn::Expr::Paren(paren) => origins(&paren.expr, out),
-        syn::Expr::Group(group) => origins(&group.expr, out),
-        syn::Expr::Block(block) => block_origins(&block.block, out),
-        syn::Expr::Unsafe(block) => block_origins(&block.block, out),
-        syn::Expr::Const(block) => block_origins(&block.block, out),
-        syn::Expr::If(branch) => {
-            block_origins(&branch.then_branch, out);
-            match &branch.else_branch {
-                Some((_, otherwise)) => origins(otherwise, out),
-                None => out.push(Origin::Inferred),
+        syn::Expr::Paren(paren) => sites(&paren.expr, out),
+        syn::Expr::Group(group) => sites(&group.expr, out),
+        syn::Expr::Block(block) => {
+            block_sites(&block.block, out);
+            if let Some(label) = &block.label {
+                Breaks::to(Some(&label.name), false, out).visit_block(&block.block);
             }
         }
-        syn::Expr::Match(choice) => choice.arms.iter().for_each(|arm| origins(&arm.body, out)),
-        syn::Expr::Return(exit) => match &exit.expr {
-            Some(value) => origins(value, out),
-            None => out.push(Origin::Inferred),
-        },
-        syn::Expr::Call(_) | syn::Expr::MethodCall(_) | syn::Expr::Path(_) => {
-            out.push(Origin::Typed)
+        syn::Expr::Unsafe(block) => block_sites(&block.block, out),
+        syn::Expr::Const(block) => block_sites(&block.block, out),
+        syn::Expr::If(branch) => {
+            block_sites(&branch.then_branch, out);
+            if let Some((_, otherwise)) = &branch.else_branch {
+                sites(otherwise, out);
+            }
         }
-        _ => out.push(Origin::Inferred),
+        syn::Expr::Match(choice) => choice.arms.iter().for_each(|arm| sites(&arm.body, out)),
+        syn::Expr::Loop(repeat) => {
+            let label = repeat.label.as_ref().map(|label| &label.name);
+            Breaks::to(label, true, out).visit_block(&repeat.body);
+        }
+        // Their values are found where they leave: by `Returns` and `Breaks`.
+        syn::Expr::Return(_) | syn::Expr::Break(_) | syn::Expr::Continue(_) => {}
+        syn::Expr::Closure(_) => out.push(Origin::Closure),
+        syn::Expr::Macro(invocation) if !diverging_macro(&invocation.mac) => {
+            out.push(Origin::Macro)
+        }
+        syn::Expr::Macro(_) => {}
+        syn::Expr::Call(call) if diverging_function(&call.func) => {}
+        _ => out.push(Origin::Value),
     }
 }
 
-fn block_origins(block: &syn::Block, out: &mut Vec<Origin>) {
-    if let Some(syn::Stmt::Expr(tail, None)) = block.stmts.last() {
-        origins(tail, out);
+fn block_sites(block: &syn::Block, out: &mut Vec<Origin>) {
+    let last = block.stmts.len().saturating_sub(1);
+    for (index, stmt) in block.stmts.iter().enumerate() {
+        match stmt {
+            // A block-like statement under `#[cfg]` may be the tail once the others are gone.
+            syn::Stmt::Expr(tail, None) if index == last || under_cfg(tail) => sites(tail, out),
+            syn::Stmt::Macro(invocation)
+                if index == last
+                    && invocation.semi_token.is_none()
+                    && !diverging_macro(&invocation.mac) =>
+            {
+                out.push(Origin::Macro)
+            }
+            _ => {}
+        }
     }
-    let mut exits = Exits(out);
-    block.stmts.iter().for_each(|stmt| exits.visit_stmt(stmt));
 }
 
-/// The `return`s and the `break`s with a value of a block, which are values of the expression.
-struct Exits<'a>(&'a mut Vec<Origin>);
-impl<'ast> Visit<'ast> for Exits<'_> {
+fn under_cfg(expr: &syn::Expr) -> bool {
+    let attrs = match expr {
+        syn::Expr::Block(block) => &block.attrs,
+        syn::Expr::If(branch) => &branch.attrs,
+        syn::Expr::Match(choice) => &choice.attrs,
+        syn::Expr::Loop(repeat) => &repeat.attrs,
+        syn::Expr::Unsafe(block) => &block.attrs,
+        _ => return false,
+    };
+    attrs.iter().any(|attr| attr.path().is_ident("cfg"))
+}
+
+fn diverging_macro(mac: &syn::Macro) -> bool {
+    mac.path.segments.last().is_some_and(|last| {
+        ["panic", "unreachable", "todo", "unimplemented"]
+            .iter()
+            .any(|name| last.ident == name)
+    })
+}
+
+fn diverging_function(func: &syn::Expr) -> bool {
+    let syn::Expr::Path(path) = func else {
+        return false;
+    };
+    let names: Vec<String> = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect();
+    matches!(
+        names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        ["std", "process", "exit" | "abort"] | ["process", "exit" | "abort"]
+    )
+}
+
+/// The value of every `return` inside an expression, outside nested closures, `async` blocks
+/// and items.
+struct Returns<'a>(&'a mut Vec<Origin>);
+impl<'ast> Visit<'ast> for Returns<'_> {
     fn visit_expr_return(&mut self, exit: &'ast syn::ExprReturn) {
-        match &exit.expr {
-            Some(value) => origins(value, self.0),
-            None => self.0.push(Origin::Inferred),
-        }
-    }
-    fn visit_expr_break(&mut self, exit: &'ast syn::ExprBreak) {
         if let Some(value) = &exit.expr {
-            origins(value, self.0);
+            sites(value, self.0);
         }
+        visit::visit_expr_return(self, exit);
     }
     fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
     fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
     fn visit_item(&mut self, _: &'ast syn::Item) {}
 }
 
-/// Whether `paginate` takes the expression as any `Pager`: when every value it can have is a
-/// call, a method call or a path. Every other form keeps the `FnMut` bound of earlier releases.
-fn typed_pager(expr: &syn::Expr) -> bool {
-    let mut found = Vec::new();
-    origins(expr, &mut found);
-    !found.is_empty() && found.iter().all(|origin| *origin == Origin::Typed)
+/// The values of the `break`s that leave one loop or one labelled block.
+struct Breaks<'a> {
+    label: Option<&'a syn::Lifetime>,
+    /// A loop: an unlabelled `break` leaves it, when not inside a nested loop.
+    unlabelled: bool,
+    depth: usize,
+    out: &'a mut Vec<Origin>,
+}
+impl<'a> Breaks<'a> {
+    fn to(label: Option<&'a syn::Lifetime>, unlabelled: bool, out: &'a mut Vec<Origin>) -> Self {
+        Breaks {
+            label,
+            unlabelled,
+            depth: 0,
+            out,
+        }
+    }
+    fn nested(&mut self, visit: impl FnOnce(&mut Self)) {
+        self.depth += 1;
+        visit(self);
+        self.depth -= 1;
+    }
+}
+impl<'ast> Visit<'ast> for Breaks<'_> {
+    fn visit_expr_break(&mut self, exit: &'ast syn::ExprBreak) {
+        let leaves = match &exit.label {
+            Some(label) => self.label == Some(label),
+            None => self.unlabelled && self.depth == 0,
+        };
+        if leaves {
+            if let Some(value) = &exit.expr {
+                sites(value, self.out);
+            }
+        }
+        visit::visit_expr_break(self, exit);
+    }
+    fn visit_expr_loop(&mut self, repeat: &'ast syn::ExprLoop) {
+        self.nested(|this| visit::visit_expr_loop(this, repeat));
+    }
+    fn visit_expr_while(&mut self, repeat: &'ast syn::ExprWhile) {
+        self.nested(|this| visit::visit_expr_while(this, repeat));
+    }
+    fn visit_expr_for_loop(&mut self, repeat: &'ast syn::ExprForLoop) {
+        self.nested(|this| visit::visit_expr_for_loop(this, repeat));
+    }
+    fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+    fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+    fn visit_item(&mut self, _: &'ast syn::Item) {}
 }
 
 impl Writer<'_> {
@@ -452,14 +580,16 @@ impl Writer<'_> {
                     _ => break,
                 }
             }
-            // A value that is always a call, a method call or a path has a type of its own: any
-            // `Pager`. Every other form keeps the `FnMut` bound that infers a closure written in it.
-            let build = if typed_pager(expression) {
-                emit_at!(expression.span()=>
+            // A closure at any place keeps the `FnMut` bound that infers it; only macros take
+            // that bound with the message for a pager value; anything else is any `Pager`.
+            let build = match paginate_path(expression) {
+                Path::Pager => emit_at!(expression.span()=>
                     ::concord::__private::pages_of_pager(__call, || { #bindings #expression })
-                )
-            } else if matches!(unwrapped, syn::Expr::Closure(_)) {
-                emit_at!(expression.span()=>
+                ),
+                Path::Macro => emit_at!(expression.span()=>
+                    ::concord::__private::pages_from_macro(__call, || { #bindings #expression })
+                ),
+                Path::Inferred if matches!(unwrapped, syn::Expr::Closure(_)) => emit_at!(expression.span()=>
                     fn __pager<__C, __N, __F>(_: &__C, __make: impl ::core::ops::FnOnce() -> __F) -> __F
                     where __C: ::concord::page::Call,
                         __N: ::concord::page::IntoNext<__C>,
@@ -468,15 +598,10 @@ impl Writer<'_> {
                     { __make() }
                     let __pager = __pager(&__call, || { #bindings #expression });
                     ::concord::__private::pages_with_pager(__call, || __pager)
-                )
-            } else if matches!(unwrapped, syn::Expr::Macro(_)) {
-                emit_at!(expression.span()=>
-                    ::concord::__private::pages_from_macro(__call, || { #bindings #expression })
-                )
-            } else {
-                emit_at!(expression.span()=>
+                ),
+                Path::Inferred => emit_at!(expression.span()=>
                     ::concord::__private::pages_with_pager(__call, || { #bindings #expression })
-                )
+                ),
             };
             emit_at!(expression.span()=>
                 #impl_attrs impl #root::__Pager for #marker {

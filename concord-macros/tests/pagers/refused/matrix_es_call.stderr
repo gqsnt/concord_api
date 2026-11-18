@@ -1,0 +1,9 @@
+error[E0618]: expected function, found `Paging<C>`
+  --> tests/pagers/refused/matrix_es_call.rs:11:23
+   |
+10 |     let pager = concord::by_offset_limit(from, size);
+   |         ----- `pager` has type `Paging<C>`
+11 |     move |call, page| pager(call, page)
+   |                       ^^^^^------------
+   |                       |
+   |                       call expression requires function

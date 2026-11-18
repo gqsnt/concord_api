@@ -18,60 +18,21 @@ error[E0283]: type annotations needed
 19 |         GET list(after?: String) -> Page { query { after; } paginate try { None::<()> }; }
    |                                                                      ^^^ cannot infer type
    |
-   = note: multiple `impl`s satisfying `_: IntoNext<probe::Call<List>>` found in the `concord_core` crate:
-           - impl<C> IntoNext<C> for std::option::Option<C>
+   = note: multiple `impl`s satisfying `_: Pager<probe::Call<List>>` found in the following crates: `concord_core`, `concord_extras`:
+           - impl<C, F, N> Pager<C> for F
+             where for<'a> <F as FnOnce<(C, &'a Answer<<C as concord::page::Call>::Value>)>>::Output == N, C: concord::page::Call, for<'a> F: FnMut(C, &'a Answer<<C as concord::page::Call>::Value>), F: Send, F: 'static, N: IntoNext<C>;
+           - impl<C> Pager<C> for Box<(dyn Pager<C> + 'static)>
              where C: concord::page::Call;
-           - impl<C> IntoNext<C> for std::result::Result<std::option::Option<C>, Fail<<C as concord::page::Call>::Problem>>
+           - impl<C> Pager<C> for Box<Paging<C>>
              where C: concord::page::Call;
-note: required by a bound in `concord::__private::pages_with_pager`
+           - impl<C> Pager<C> for Paging<C>
+             where C: concord::page::Call;
+note: required by a bound in `concord::__private::pages_of_pager`
   --> $WORKSPACE/concord-core/src/__private/page.rs
    |
-   | pub fn pages_with_pager<C, N, F>(
-   |        ---------------- required by a bound in this function
+   | pub fn pages_of_pager<C, P>(
+   |        -------------- required by a bound in this function
 ...
-   |     N: IntoNext<C>,
-   |        ^^^^^^^^^^^ required by this bound in `pages_with_pager`
-   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0283]: type annotations needed
-  --> tests/pagers/refused/try_block.rs:19:70
-   |
-19 |         GET list(after?: String) -> Page { query { after; } paginate try { None::<()> }; }
-   |                                                                      ^^^ cannot infer type
-   |
-   = note: multiple `impl`s satisfying `for<'a> _: FnMut(probe::Call<List>, &'a Answer<Page>)` found in the following crates: `alloc`, `core`:
-           - impl<A, F> FnMut<A> for &F
-             where A: std::marker::Tuple, F: Fn<A>, F: ?Sized;
-           - impl<A, F> FnMut<A> for &mut F
-             where A: std::marker::Tuple, F: FnMut<A>, F: ?Sized;
-           - impl<Args, F, A> FnMut<Args> for Box<F, A>
-             where Args: std::marker::Tuple, F: FnMut<Args>, A: Allocator, F: ?Sized;
-           - impl<F, Args> FnMut<Args> for SyncView<F>
-             where F: FnMut<Args>, Args: std::marker::Tuple;
-   = note: cannot satisfy `for<'a> <_ as FnOnce<(probe::Call<List>, &'a Answer<Page>)>>::Output == _`
-   = note: the type must also implement `Send`
-note: required by a bound in `concord::__private::pages_with_pager`
-  --> $WORKSPACE/concord-core/src/__private/page.rs
-   |
-   | pub fn pages_with_pager<C, N, F>(
-   |        ---------------- required by a bound in this function
-...
-   |     F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
-   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_with_pager`
-note: required by a bound in `concord::__private::pages_with_pager`
-  --> $WORKSPACE/concord-core/src/__private/page.rs
-   |
-   | pub fn pages_with_pager<C, N, F>(
-   |        ---------------- required by a bound in this function
-...
-   |     F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
-   |                                       ^ required by this bound in `pages_with_pager`
-note: required by a bound in `concord::__private::pages_with_pager`
-  --> $WORKSPACE/concord-core/src/__private/page.rs
-   |
-   | pub fn pages_with_pager<C, N, F>(
-   |        ---------------- required by a bound in this function
-...
-   |     F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
-   |                                           ^^^^ required by this bound in `pages_with_pager`
+   |     P: Pager<C>,
+   |        ^^^^^^^^ required by this bound in `pages_of_pager`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

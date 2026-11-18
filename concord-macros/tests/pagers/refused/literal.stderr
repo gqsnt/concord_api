@@ -1,16 +1,30 @@
-error[E0277]: expected an `FnMut(probe::Call<List>, &Answer<Page>)` closure, found `{integer}`
+error[E0277]: `{integer}` is not a pager for this endpoint
   --> tests/pagers/refused/literal.rs:19:70
    |
 19 |         GET list(after?: String) -> Page { query { after; } paginate 42; }
-   |                                                                      ^^ expected an `FnMut(probe::Call<List>, &Answer<Page>)` closure, found `{integer}`
+   |                                                                      ^^ the trait `for<'a> FnMut(probe::Call<List>, &'a Answer<Page>)` is not implemented for `{integer}`
    |
-   = help: the trait `for<'a> FnMut(probe::Call<List>, &'a Answer<Page>)` is not implemented for `{integer}`
-note: required by a bound in `concord::__private::pages_with_pager`
+   = note: a pager is a closure `|call, page| …` that returns the next call, or a value such as `by_cursor(…)`
+help: the following other types implement trait `Pager<C>`
+  --> $WORKSPACE/concord-core/src/page.rs
+   |
+   | impl<C: Call> Pager<C> for Box<dyn Pager<C>> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<(dyn Pager<C> + 'static)>`
+   |
+  ::: $WORKSPACE/concord-extras/src/page/paging.rs
+   |
+   | impl<C: Call> Pager<C> for Box<Paging<C>> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<Paging<C>>`
+...
+   | impl<C: Call> Pager<C> for Paging<C> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Paging<C>`
+   = note: required for `{integer}` to implement `Pager<probe::Call<List>>`
+note: required by a bound in `concord::__private::pages_of_pager`
   --> $WORKSPACE/concord-core/src/__private/page.rs
    |
-   | pub fn pages_with_pager<C, N, F>(
-   |        ---------------- required by a bound in this function
+   | pub fn pages_of_pager<C, P>(
+   |        -------------- required by a bound in this function
 ...
-   |     F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
-   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_with_pager`
+   |     P: Pager<C>,
+   |        ^^^^^^^^ required by this bound in `pages_of_pager`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
