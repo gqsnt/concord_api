@@ -102,15 +102,9 @@ pub(super) fn watch(
         .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
         .and_then(|text| text.parse::<u64>().ok())
         .or_else(|| response.content_length());
-    // A body whose exact size is known to pass the limit is never shown: leave it
-    // untouched. The header alone does not decide it: a `HEAD`, a `304` or a tunnel
-    // announce a length and give no byte.
-    if response
-        .content_length()
-        .is_some_and(|length| usize::try_from(length).map_or(true, |length| length > LIMIT))
-    {
-        return response;
-    }
+    // No response is left untouched for its announced length: a `HEAD` or a `304` can
+    // announce the representation's length, even as the exact size hint, and give no
+    // byte. The limit applies to the bytes that come.
     let url = response.url().clone();
     let mut raw: http::Response<reqwest::Body> = response.into();
     // Only an extension is set, so this builder has no fallible inputs.
@@ -123,7 +117,7 @@ pub(super) fn watch(
     let pending = Pending {
         status: raw.status(),
         headers: raw.headers().clone(),
-        head: *method == http::Method::HEAD,
+        sent: Sent::of(method),
         announced,
         body: Vec::new(),
         rejects,
@@ -148,7 +142,7 @@ struct Pending {
     status: StatusCode,
     headers: HeaderMap,
     // The method as this layer sent it; a lower layer may have changed it.
-    head: bool,
+    sent: Sent,
     announced: Option<u64>,
     // One buffer, never larger than the limit.
     body: Vec<u8>,
@@ -188,13 +182,13 @@ impl Pending {
         let Pending {
             status,
             headers,
-            head,
+            sent,
             announced,
             body,
             rejects,
             reject,
         } = self;
-        if !complete(status, head, announced, body.len()) {
+        if !complete(status, sent, announced, body.len()) {
             return;
         }
         let seen = Seen {
@@ -209,31 +203,46 @@ impl Pending {
     }
 }
 
+/// The method of the request as this layer sent it, as far as it decides the body.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Sent {
+    Head,
+    Connect,
+    Other,
+}
+
+impl Sent {
+    fn of(method: &http::Method) -> Self {
+        if *method == http::Method::HEAD {
+            Self::Head
+        } else if *method == http::Method::CONNECT {
+            Self::Connect
+        } else {
+            Self::Other
+        }
+    }
+}
+
 /// Whether a body that ended cleanly after `length` bytes is the whole body of its
 /// response, so that the function may see it. A body that ended with an error never
 /// reaches this question.
-fn complete(status: StatusCode, head: bool, announced: Option<u64>, length: usize) -> bool {
-    // An empty body is complete whatever the `Content-Length`, the method or the status:
-    // that length describes the representation for a `HEAD` and a `304`, it frames
-    // nothing for a tunnel, and a lower layer may have sent a `HEAD` in place of the
-    // method this layer saw.
-    if length == 0 {
-        return true;
-    }
-    // These statuses never carry a body: a byte means a malformed response.
-    if status.is_informational()
+fn complete(status: StatusCode, sent: Sent, announced: Option<u64>, length: usize) -> bool {
+    // These responses never carry a body: a length there describes the representation
+    // (`HEAD`, `304`) or frames nothing (a tunnel), so they are complete with no byte,
+    // and a byte means a malformed response. A lower layer that changes the method
+    // defeats this: the method that counts is the one this layer sent.
+    let bodiless = status.is_informational()
         || status == StatusCode::NO_CONTENT
         || status == StatusCode::RESET_CONTENT
         || status == StatusCode::NOT_MODIFIED
-    {
-        return false;
+        || sent == Sent::Head
+        || (sent == Sent::Connect && status.is_success());
+    if bodiless {
+        return length == 0;
     }
-    // A response to a `HEAD`, as this layer sent it, carries no body either.
-    if head {
-        return false;
-    }
-    // Otherwise the reader's rule: the length announced, by the header or the exact size
-    // hint, or, with neither, a clean end.
+    // Any other response follows the reader's rule: exactly the length announced, by the
+    // header or the exact size hint. A clean end before it, as an HTTP/2 stream reset
+    // with no error, is a cut body. With nothing announced, a clean end is complete.
     announced.is_none_or(|announced| u64::try_from(length).is_ok_and(|length| length == announced))
 }
 
@@ -281,5 +290,40 @@ impl Body for Watched {
 
     fn size_hint(&self) -> SizeHint {
         self.body.size_hint()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn c11_2_the_rule_for_a_complete_body() {
+        let ok = StatusCode::OK;
+        for (status, sent, announced, length, complete_body) in [
+            // An HTTP/2 reset with no error before any data: eight announced, none came.
+            (ok, Sent::Other, Some(8), 0, false),
+            (ok, Sent::Other, Some(8), 8, true),
+            (ok, Sent::Other, Some(8), 9, false),
+            (ok, Sent::Other, None, 0, true),
+            (ok, Sent::Other, None, 5, true),
+            (ok, Sent::Head, Some(80_000), 0, true),
+            (ok, Sent::Head, Some(1), 1, false),
+            (StatusCode::NOT_MODIFIED, Sent::Other, Some(80_000), 0, true),
+            (StatusCode::NO_CONTENT, Sent::Other, None, 0, true),
+            (StatusCode::RESET_CONTENT, Sent::Other, Some(1), 1, false),
+            (StatusCode::RESET_CONTENT, Sent::Other, Some(8), 0, true),
+            (StatusCode::CONTINUE, Sent::Other, None, 1, false),
+            (StatusCode::CREATED, Sent::Connect, Some(8), 0, true),
+            (StatusCode::CREATED, Sent::Connect, Some(8), 1, false),
+            (StatusCode::FORBIDDEN, Sent::Connect, Some(1), 1, true),
+            (StatusCode::FORBIDDEN, Sent::Connect, Some(1), 0, false),
+        ] {
+            assert_eq!(
+                complete(status, sent, announced, length),
+                complete_body,
+                "{status} {sent:?} {announced:?} {length}"
+            );
+        }
     }
 }

@@ -602,18 +602,19 @@ impl Renewed {
     /// a [`Seen`], once the body has been read to its end, and only when the response's
     /// final URL, as the transport reports it, is at the origin of the credential's base,
     /// and the body is complete and holds at most 64 KiB. A body that ends with an error is
-    /// never complete. One that ends cleanly is complete, in this order: when it gave no
-    /// byte, whatever the `Content-Length`, the method or the status (a `HEAD`, a `304`, a
-    /// tunnel, a method changed by a lower layer), and the function then sees the headers;
-    /// never when it gave a byte for a `1xx`, `204`, `205` or `304`, or for a `HEAD`
-    /// request as this layer sent it; otherwise when it gave exactly the length that the
-    /// reader expects (the `Content-Length`, or else the exact size hint), or, with
-    /// neither, all it had. When it returns `true`,
+    /// never complete. One that ends cleanly is complete by this rule. A response that
+    /// never carries a body (a `1xx`, `204`, `205` or `304`, a response to a `HEAD` this
+    /// layer sent, a successful response to a `CONNECT` this layer sent) is complete when
+    /// it gave no byte, whatever length it announces, and the function then sees its
+    /// headers; it is never shown if it gave a byte. Any other response is complete when
+    /// it gave exactly the length that the reader expects (the `Content-Length`, or else
+    /// the exact size hint), or, with neither, all it had: no byte against a positive
+    /// length announced is a cut body. When it returns `true`,
     /// the token that the request carried is rejected as after a `401`: only if it is
     /// still the current token, so an answer that arrives after a renewal never discards
-    /// the newer token. Nothing is renewed at once: the next call that needs the token
-    /// renews it, once, and the calls that wait at the same time share that renewal. The
-    /// response is returned
+    /// the newer token. Nothing is renewed at once: each later attempt that needs the
+    /// token, of any call, joins the renewal in flight or starts one, and the retry
+    /// setting of each call bounds its attempts. The response is returned
     /// unchanged. `rejected_when` itself schedules no retry, and `after_401` retries a `401`
     /// only; a retry rule of the call that applies to the response can send the call again,
     /// and that attempt then carries the renewed token. A `401` always rejects the token,
@@ -641,9 +642,9 @@ impl Renewed {
     ///
     /// The function must return promptly. A panic in it rejects nothing, and its payload is
     /// dropped, but Rust's panic hook still prints the panic message: never put text of the
-    /// body in a panic message. Nothing bounds a server that rejects every response: every
-    /// call after a rejection renews once, as described above, and each renewal is bounded
-    /// by `renewal_timeout`. Configuring a clone changes every clone.
+    /// body in a panic message. Nothing bounds the renewals across calls when a server
+    /// rejects every token; each renewal is bounded by `renewal_timeout`. Configuring a
+    /// clone changes every clone.
     ///
     /// ```no_run
     /// #[derive(serde::Deserialize)]

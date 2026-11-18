@@ -708,8 +708,9 @@ impl Rotating {
     /// rule, has been read. When it returns `true`, the access token that the request
     /// carried is rejected as after a `401`: only if it is still the current token, so an
     /// answer that arrives after a renewal never discards the newer pair. Nothing is
-    /// exchanged at once: the next call that needs the token runs the exchange, once, and
-    /// the calls that wait at the same time share it. The response is returned unchanged. `rejected_when` itself
+    /// exchanged at once: each later attempt that needs the token, of any call, joins the
+    /// exchange in flight or starts one, and the retry setting of each call bounds its
+    /// attempts. The response is returned unchanged. `rejected_when` itself
     /// schedules no retry, and `after_401` retries a `401` only; a retry rule of the call
     /// that applies to the response can send the call again, and that attempt then waits
     /// for the exchange and carries the new token. A `401` always rejects the token, and
@@ -721,9 +722,9 @@ impl Rotating {
     /// is longer. Frames, trailers, the size hint and the end of the body pass through
     /// unchanged; without this function, a response is not touched. The function must
     /// return promptly; a panic in it rejects nothing, but Rust's panic hook still prints
-    /// the panic message: never put text of the body in a panic message. Nothing bounds a
-    /// server that rejects every response: every call after a rejection runs one exchange,
-    /// and waits for it at most `renewal_timeout`. Configuring a clone changes every clone.
+    /// the panic message: never put text of the body in a panic message. Nothing bounds the
+    /// exchanges across calls when a server rejects every token; each call waits for one
+    /// at most `renewal_timeout`. Configuring a clone changes every clone.
     ///
     /// ```no_run
     /// #[derive(serde::Deserialize)]
