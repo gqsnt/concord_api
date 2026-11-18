@@ -294,3 +294,106 @@ async fn c8_6_a_slot_that_answers_from_its_own_storage_is_the_input_it_forwards_
     );
     assert_eq!(end, Ok(()));
 }
+
+/// A slot of yours that names one input or another, as a switch says: it names one input at a
+/// time, and `or_when_set` reads which one when it decides, with the value.
+#[derive(Clone, Copy)]
+struct Switched<X, Y>(X, Y, &'static std::sync::atomic::AtomicBool);
+impl<C, X: Slot<C, Value = u8>, Y: Slot<C, Value = u8>> Slot<C> for Switched<X, Y> {
+    type Value = u8;
+    fn get<'a>(&self, call: &'a C) -> Option<&'a u8> {
+        if self.2.load(std::sync::atomic::Ordering::SeqCst) {
+            self.1.get(call)
+        } else {
+            self.0.get(call)
+        }
+    }
+    fn set(&self, call: C, value: u8) -> C {
+        if self.2.load(std::sync::atomic::Ordering::SeqCst) {
+            self.1.set(call, value)
+        } else {
+            self.0.set(call, value)
+        }
+    }
+    fn input(&self) -> concord::page::InputId {
+        if self.2.load(std::sync::atomic::Ordering::SeqCst) {
+            self.1.input()
+        } else {
+            self.0.input()
+        }
+    }
+}
+
+static TO_Y_LATER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static TO_X_LATER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// `x` chooses one move, and the switched slot another; the switch turns once the pager is built.
+fn switching<C, X, Y>(x: X, y: Y, switch: &'static std::sync::atomic::AtomicBool) -> Paging<C>
+where
+    C: Call<Value = Vec<u8>>,
+    X: Slot<C, Value = u8>,
+    Y: Slot<C, Value = u8>,
+{
+    let paging = by_cursor(x, |_| Some(99))
+        .or_when_set(x, by_cursor(x, |_| Some(1)))
+        .or_when_set(Switched(x, y, switch), by_cursor(y, |_| Some(2)))
+        .has_more(|page| !page.is_empty());
+    switch.fetch_xor(true, std::sync::atomic::Ordering::SeqCst);
+    paging
+}
+
+concord::api! {
+    client Switching {
+        base "https://switch.test";
+        read Json;
+        GET to_y(x?: u8, y?: u8) -> Vec<u8> { query { x; y; } paginate switching(x, y, &TO_Y_LATER); }
+        GET to_x(x?: u8, y?: u8) -> Vec<u8> { query { x; y; } paginate switching(x, y, &TO_X_LATER); }
+    }
+}
+
+async fn walk_switching(to_y: bool) -> (Vec<String>, Result<(), Option<String>>) {
+    let script = Script::new();
+    script.answer(200).body("[7]");
+    script.answer(200).body("[]");
+    let api = Switching::new().with_transport(script.clone());
+    let mut pages = if to_y {
+        api.to_y().x(5).y(6).pages()
+    } else {
+        api.to_x().x(5).y(6).pages()
+    };
+    let end = loop {
+        match pages.try_next().await {
+            Ok(Some(_)) => {}
+            Ok(None) => break Ok(()),
+            Err(error) => break Err(error.reason().map(str::to_owned)),
+        }
+    };
+    let urls = script
+        .requests()
+        .iter()
+        .map(|request| request.url().to_string())
+        .collect();
+    (urls, end)
+}
+
+/// Built naming `x`, deciding naming `y`: the call sets two inputs that each choose a move.
+#[tokio::test]
+async fn c8_6_a_slot_that_names_another_input_at_the_decision_is_that_input() {
+    let (urls, end) = walk_switching(true).await;
+    assert_eq!(urls, ["https://switch.test/?x=5&y=6"]);
+    assert_eq!(end, Err(Some(TWO_MOVES.to_owned())));
+}
+
+/// Built naming `y`, deciding naming `x`: one input, and the first written moves.
+#[tokio::test]
+async fn c8_6_a_slot_that_names_the_same_input_at_the_decision_is_one_choice() {
+    let (urls, end) = walk_switching(false).await;
+    assert_eq!(
+        urls,
+        [
+            "https://switch.test/?x=5&y=6",
+            "https://switch.test/?x=1&y=6"
+        ]
+    );
+    assert_eq!(end, Ok(()));
+}

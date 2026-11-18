@@ -17,6 +17,8 @@ const TWO_MOVES: &str = "the call chooses two moves: it sets two inputs that eac
 const OFFSET: &str = "the offset cannot grow any further";
 
 type Gate<C> = Box<dyn Fn(&C) -> bool + Send>;
+/// The input that a slot names on this call, when that input is set: both read together.
+type Chooser<C> = Box<dyn Fn(&C) -> Option<InputId> + Send>;
 type Statement<C> =
     Box<dyn FnMut(&C, &<C as Call>::Value) -> Result<bool, Fail<<C as Call>::Problem>> + Send>;
 type Move<C> = Box<dyn Pager<C>>;
@@ -136,7 +138,7 @@ struct Parts<C: Call> {
     /// 2. The statements of the page: `true` for "more".
     statements: Vec<Statement<C>>,
     /// 3. The moves chosen by an input, then the move otherwise.
-    or_when_set: Vec<(InputId, Gate<C>, Move<C>)>,
+    or_when_set: Vec<(Chooser<C>, Move<C>)>,
     moves: Move<C>,
     /// 4. The short-page rules, read only when no statement spoke: each gives a size, and the
     ///    page is counted once, after the move.
@@ -536,10 +538,10 @@ impl<C: Call> Paging<C> {
     pub fn or_when_set<S: Slot<C>, P: Pager<C>>(mut self, input: S, other: P) -> Paging<C> {
         // The input is known by its identity in the endpoint (`Slot::input`), not by the type of
         // `S` or where its value lives: a slot of yours that forwards to it is the same input,
-        // and one slot type that can name two inputs names two.
+        // and one slot type that can name two inputs names two. The identity is read when the
+        // decision is made, with the value: a slot names one input at a time.
         self.parts().or_when_set.push((
-            input.input(),
-            Box::new(move |call| input.get(call).is_some()),
+            Box::new(move |call| input.get(call).map(|_| input.input())),
             Box::new(other),
         ));
         self
@@ -618,11 +620,11 @@ impl<C: Call> Pager<C> for Paging<C> {
         // 0. The call: two inputs set that each choose a move are a mistake, whatever the page
         // says. One input given to two `or_when_set` is one choice: the first written.
         let mut chosen: Option<(usize, InputId)> = None;
-        for (index, (input, set, _)) in parts.or_when_set.iter().enumerate() {
-            if set(&call) {
+        for (index, (chooses, _)) in parts.or_when_set.iter().enumerate() {
+            if let Some(input) = chooses(&call) {
                 match chosen {
-                    None => chosen = Some((index, *input)),
-                    Some((_, first)) if first != *input => return Err(mismatch(TWO_MOVES)),
+                    None => chosen = Some((index, input)),
+                    Some((_, first)) if first != input => return Err(mismatch(TWO_MOVES)),
                     Some(_) => {}
                 }
             }
@@ -664,7 +666,7 @@ impl<C: Call> Pager<C> for Paging<C> {
         // 3. The move: its failure is the result, also on a short page.
         let alternative = chosen.and_then(|(index, _)| parts.or_when_set.get_mut(index));
         let next = match alternative {
-            Some((_, _, other)) => other.next_call(call, page)?,
+            Some((_, other)) => other.next_call(call, page)?,
             None => parts.moves.next_call(call, page)?,
         };
         // 4. With no statement, a short page ends the list: the page is counted after the move.

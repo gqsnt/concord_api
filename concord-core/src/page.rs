@@ -353,7 +353,8 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
 
     /// Which input of the endpoint this slot names. A slot of yours that forwards to another
     /// returns the identity of the input it forwards to (`self.0.input()`), whatever it reads
-    /// or where its value lives.
+    /// or where its value lives. A slot names one input at a time: a pager reads `input()` and
+    /// `get` together, when it decides, never one when it is built and the other later.
     fn input(&self) -> InputId;
 }
 
