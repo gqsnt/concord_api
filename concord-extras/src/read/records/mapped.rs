@@ -303,14 +303,15 @@ impl fmt::Debug for JsonLine {
 /// record is held to the bound of the reader, and the mapping receives it whole; nothing is held
 /// beyond one record and the value that the mapping returns. The mapping runs inside
 /// `try_next`, to its end: dropping a `try_next` never leaves a record half mapped. All the
-/// records skipped in one pull share one work budget (16 KiB and 64 chunks); when it is spent,
-/// the pull yields to the runtime and goes on at the next poll, so a server that sends only
-/// skipped records holds the caller, not a thread, until the call's timeout ends it. A panic of
+/// records skipped in one poll share one work budget (16 KiB and 64 chunks); when it is spent,
+/// the call's timeout is checked, the poll yields to the executor, and the next poll goes on,
+/// so a server that sends only skipped records holds the caller, not a thread, until the call's
+/// timeout ends it. A panic of
 /// the mapping reaches the caller of `try_next`; the body and its place in any cap on concurrency
 /// are released as it unwinds, and a later pull returns `Ok(None)`.
 ///
-/// The mapping is cloned for each response, so a mapping that keeps state starts each stream
-/// afresh. It must own what it holds (`'static`): a closure written in `read` that needs an input
+/// The mapping is cloned for each response: state that it owns starts afresh with each stream,
+/// and state that it holds behind an `Arc` is shared by every stream. It must own what it holds (`'static`): a closure written in `read` that needs an input
 /// of the call takes an owned copy first,
 /// `read { let prefix = prefix.clone(); Sse::new(n).try_map(move |event| …).until_end_of_body() };`
 /// because the description gives `read` each input by reference.

@@ -54,7 +54,7 @@ concord::api! {
 }
 ```
 
-`stream` is the same request as `create`, plus `"stream": true`, and a different return type: a typed stream, `RecordStream<Streamed, anthropic::Error>`, read by `Sse` with a bound of 64 KiB on one event and mapped by `streamed`, below. `until_last_record()` says that the reply ends with a record of its own, `message_stop`: a body that ends before it is an error, not a whole reply. The bound is this example's policy; a delta of text is far smaller (unsure for the largest event that the API sends). The idle timeout of two minutes is this example's margin for a long silence before the first event (unsure how often the API sends `ping` events). No call timeout is set, so a long reply is not cut.
+`stream` is the same request as `create`, plus `"stream": true`, and a different return type: a typed stream, `RecordStream<Streamed, anthropic::Error>`, read by `Sse` with a bound of 64 KiB on one event and mapped by `streamed`, below. `until_last_record()` says that the reply ends with a record of its own, `message_stop`: a body that ends before it is an error, not a whole reply. The bound is this example's policy; a delta of text is far smaller (unsure for the largest event that the API sends). The idle timeout of two minutes is this example's margin for a long silence before the first event (unsure how often the API sends `ping` events). No call deadline (`with_timeout`) is set, so a long reply is not cut.
 
 ## Beside the description
 
