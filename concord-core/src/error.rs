@@ -1106,10 +1106,14 @@ impl<P> Fail<P> {
 ///
 /// The check does not depend on how a type is spelled: an alias is seen through, and the
 /// wrappers that a return type can have carry the problem of what they wrap (`Option<S>`,
-/// `Result<S, E>` and `Box<S>`, where `S` implements this trait). A newtype, a tuple, or a type
-/// that dereferences to a stream is checked when its author implements this trait, and not
-/// otherwise. An arm that consumes a stream and returns something else exposes no stream
-/// error, and has nothing to check.
+/// `Result<S, E>` and `Box<S>`, where `S` implements this trait). A newtype or a tuple struct of
+/// your own, and a type of your own that dereferences to a stream, are checked when you
+/// implement this trait for it, and not otherwise; a tuple such as `(Stream, u32)` cannot be
+/// marked, because the orphan rule forbids implementing this trait for it, so wrap it in a
+/// tuple struct of your own. An arm that consumes a stream and returns something else exposes no
+/// stream error, and has nothing to check. An implementation that names another problem than
+/// the one its value's error holds misleads only its author: it hides a foreign error from the
+/// check, or refuses a correct endpoint.
 ///
 /// ```
 /// # use concord_core as concord;
