@@ -359,9 +359,11 @@ fn c10_4_doc_rule_4_setters_preserve_spelling_and_state_accepted_values() {
         assert_eq!(options.iter().find(|line| !line.is_empty()), Some(&intro));
         assert!(!page.iter().any(|line| line == "The first argument is the call."));
         if name == "text" {
-            assert!(lines.iter().any(|line| line.contains(
-                "[`concord::arg::Arg`](mod@concord::arg)"
-            )));
+            assert!(lines.iter().any(|line| line.contains(concat!(
+                "[`concord::arg::Arg`](https://docs.rs/concord-api/",
+                env!("CARGO_PKG_VERSION"),
+                "/concord/arg/index.html)"
+            ))));
         }
     }
     assert!(violations.is_empty(), "{}", violations.join("\n"));

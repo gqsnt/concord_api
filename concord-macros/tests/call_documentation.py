@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+import tomllib
 from html import unescape
 from pathlib import Path
 from queue import Queue
@@ -398,24 +399,36 @@ def hover_signature(result, method, include_impl=False):
     return "".join(display.split())
 
 
-UNRESOLVED_CONCORD = re.compile(r"\[<code>((?:::)?concord::[^<]*)</code>\]")
-ARG_LINK = '<a href="../concord/arg/index.html" title="mod concord::arg"><code>concord::arg::Arg</code></a>'
+CONVERSIONS = re.compile(r"Text and list conversions: (<a\b[^>]*><code>[^<]*</code></a>|.{0,120})", re.S)
+CONVERSION_LINK = re.compile(r'^<a href="https://docs\.rs/concord-api/([^/"]+)/([^"#]+)"><code>concord::arg::Arg</code></a>$')
+LINKS = ROOT / "target/call-documentation/links"
 
 
 def check_links():
-    """Document tour-gen with its dependencies, as an author's crate is, and find links left as text."""
-    cargo("doc", "-j", "4", "-p", "tour-gen", cwd=ROOT)
-    pages = sorted((DOC / "tour_gen").rglob("*.html"))
-    unresolved = sorted({
-        f"{page.relative_to(DOC)}: {display(link)}"
-        for page in pages
-        for link in UNRESOLVED_CONCORD.findall(page.read_text())
-    })
-    if unresolved:
-        raise SystemExit("Generated links to concord that rustdoc left as text:\n" + "\n".join(unresolved))
-    if not any(ARG_LINK in page.read_text() for page in pages):
-        raise SystemExit("No setter of tour-gen links its text and list conversions to concord::arg")
-    print("Every generated link to concord resolves; the setters link concord::arg.")
+    """Document tour-gen with --no-deps in a folder of its own, as an author's crate is, and check
+    that every conversion link names this release and a page of the facade's documentation."""
+    shutil.rmtree(LINKS / "doc", ignore_errors=True)
+    env = {**ENV, "CARGO_TARGET_DIR": str(LINKS)}
+    for package in ("tour-gen", "concord-api"):
+        subprocess.check_output(["cargo", "doc", "--offline", "-j", "4", "--no-deps", "-p", package],
+                                cwd=ROOT, env=env)
+    version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+    links, wrong = 0, []
+    for page in sorted((LINKS / "doc/tour_gen").rglob("*.html")):
+        for link in CONVERSIONS.findall(page.read_text()):
+            links += 1
+            found = CONVERSION_LINK.match(link)
+            if not found:
+                wrong.append(f"{page.relative_to(LINKS / 'doc')}: not a link to docs.rs: {link}")
+            elif found[1] != version:
+                wrong.append(f"{page.relative_to(LINKS / 'doc')}: version {found[1]}, not {version}")
+            elif not (LINKS / "doc" / found[2]).is_file():
+                wrong.append(f"{page.relative_to(LINKS / 'doc')}: no page {found[2]} in the facade's documentation")
+    if wrong:
+        raise SystemExit("Conversion links that do not reach the facade's page:\n" + "\n".join(sorted(set(wrong))))
+    if not links:
+        raise SystemExit("No setter of tour-gen documents its text and list conversions")
+    print(f"All {links} conversion links name docs.rs for {version} and a page of the facade.")
 
 
 def check_search():

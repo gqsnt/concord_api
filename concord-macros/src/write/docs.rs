@@ -209,8 +209,13 @@ impl Writer<'_> {
         if matches!(&input.ty, syn::Type::Path(path) if path.path.segments.last().is_some_and(|s| matches!(s.ident.to_string().as_str(), "String" | "Secret" | "Vec")))
         {
             // The trait's own definition is hidden and published by an inline re-export, so an
-            // intra-doc link cannot reach it from the author's crate: link its public module.
-            text.push_str(" Text and list conversions: [`concord::arg::Arg`](mod@concord::arg).");
+            // intra-doc link cannot reach it, and an author's `cargo doc --no-deps` resolves no
+            // link into the facade: link the published page of its module, for this release.
+            text.push_str(concat!(
+                " Text and list conversions: [`concord::arg::Arg`](https://docs.rs/concord-api/",
+                env!("CARGO_PKG_VERSION"),
+                "/concord/arg/index.html)."
+            ));
         }
         text
     }
