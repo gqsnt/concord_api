@@ -95,7 +95,6 @@ fn reason(error: &TransferError) -> &'static str {
         TransferError::UnsupportedScheme => "UnsupportedScheme",
         TransferError::ForbiddenUrlPart => "ForbiddenUrlPart",
         TransferError::ChangedUrl => "ChangedUrl",
-        TransferError::EmptyQuery => "EmptyQuery",
         TransferError::UrlTooLong => "UrlTooLong",
         _ => panic!("unexpected transfer error"),
     }
@@ -268,11 +267,6 @@ fn c11_11_every_rewriting_class_is_refused_without_sending() {
         ("https://storage.test/café", "ChangedUrl"),
         ("https://storage.test/p?q=a b", "ChangedUrl"),
         ("https://storage.test/p?q=café", "ChangedUrl"),
-        // The engine's any(nonempty) guard drops all of these queries.
-        ("https://storage.test/p?", "EmptyQuery"),
-        ("https://storage.test/p?&", "EmptyQuery"),
-        ("https://storage.test/p?&&", "EmptyQuery"),
-        ("https://storage.test/p?&&&&&", "EmptyQuery"),
         // Unsupported and opaque URLs; a URL-parser/HTTP-URI boundary.
         ("ftp://storage.test/p", "UnsupportedScheme"),
         ("data://storage.test/p", "UnsupportedScheme"),
@@ -298,7 +292,6 @@ fn c11_11_documented_precedence_selects_one_reachable_variant() {
         ("https://[invalid]/p?".to_owned(), "InvalidUrl"),
         ("ftp://STORAGE.test/p?".to_owned(), "UnsupportedScheme"),
         ("HTTPS://storage.test/p?".to_owned(), "ChangedUrl"),
-        ("https://storage.test/p?&&".to_owned(), "EmptyQuery"),
         ("https://sto`rage.test/p".to_owned(), "InvalidUri"),
     ] {
         refused(&url, expected);
@@ -510,7 +503,6 @@ async fn c11_11_errors_and_generated_calls_never_print_values() {
         ("ftp://storage.test/SECRET", "UnsupportedScheme"),
         ("https://SECRET@storage.test/p", "ForbiddenUrlPart"),
         ("https://storage.test/../SECRET", "ChangedUrl"),
-        ("https://secret.test/SECRET?&&", "EmptyQuery"),
     ];
     for (url, expected) in urls {
         let error = refused(url, expected);

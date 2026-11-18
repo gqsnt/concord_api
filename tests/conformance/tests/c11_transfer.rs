@@ -123,7 +123,6 @@ fn variant(error: &TransferError) -> &'static str {
         TransferError::UnsupportedScheme => "UnsupportedScheme",
         TransferError::ForbiddenUrlPart => "ForbiddenUrlPart",
         TransferError::ChangedUrl => "ChangedUrl",
-        TransferError::EmptyQuery => "EmptyQuery",
         TransferError::UrlTooLong => "UrlTooLong",
         _ => "another variant",
     }
@@ -333,28 +332,23 @@ fn c11_11_whitespace_controls_slashes_and_backslashes_each_have_one_variant() {
     assert!(script.requests().is_empty());
 }
 
-#[test]
-fn c11_11_a_query_of_separators_only_is_an_empty_query() {
-    let script = Script::new();
+/// A query of separators only is a query, and `at_url` sends it as given: `transfer::at` accepts
+/// it, and it reaches the transport as written.
+#[tokio::test(start_paused = true)]
+async fn c11_11_a_query_of_separators_only_is_sent_as_written() {
     for url in [
         "https://uploads.example.test/file?",
         "https://uploads.example.test/file?&",
         "https://uploads.example.test/file?&&",
         "https://uploads.example.test/?&&&",
-    ] {
-        let error = refused(at(uploads(&script).send(Body::from("p")), url), url);
-        assert!(
-            matches!(error, TransferError::EmptyQuery),
-            "{url:?}: {}",
-            variant(&error)
-        );
-    }
-    // One pair that is not empty is a query: `?&=` has the pair `=`.
-    for url in [
         "https://uploads.example.test/file?=",
         "https://uploads.example.test/file?&a",
     ] {
-        let _ = accepted(at(uploads(&script).send(Body::from("p")), url), url);
+        let script = Script::new();
+        ok(&script);
+        let call = accepted(at(uploads(&script).send(Body::from("p")), url), url);
+        success(call.await);
+        assert_eq!(urls(&script), [url]);
     }
 }
 
@@ -439,7 +433,6 @@ fn c11_11_a_url_that_does_not_parse_keeps_its_value_free_cause() {
         "/s3cr3t",
         "https://uploads.example.test/s3cr3t#x",
         "HTTPS://uploads.example.test/s3cr3t",
-        "https://uploads.example.test/s3cr3t?",
         "ftp://uploads.example.test/s3cr3t",
     ] {
         let error = refused(at(uploads(&script).send(Body::from("p")), url), url);
@@ -478,7 +471,6 @@ fn c11_11_no_refusal_prints_or_holds_the_url() {
         "https://uploads.example.test/x?sig=s3cr3t#s3cr3t",
         "HTTPS://uploads.example.test/x?sig=s3cr3t",
         "https://uploads.example.test/x/../s3cr3t",
-        "https://uploads.example.test/s3cr3t?",
         "ftp://uploads.example.test/s3cr3t",
         "https://[::1/s3cr3t",
         long.as_str(),

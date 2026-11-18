@@ -765,7 +765,6 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 | The scheme is neither `http` nor `https` | `transfer URL must use HTTP or HTTPS` |
 | The URL holds user information (`@` in the authority) or a fragment (`#`) | `transfer URL must omit user information and fragments` |
 | Parsing would change the spelling of the URL: an uppercase scheme or host, removed dot segments, a space or a control character that would be encoded, and the like. The URL is used only when it would be sent exactly as it is written | `transfer URL spelling would change` |
-| The query is present but every part of it is empty (`?`, `?&`), which `at_url` would drop | `transfer URL query would be discarded` |
 | The text is longer than 65,534 bytes | `transfer URL exceeds 65,534 bytes` |
 
 ## 3. Three rules for every message

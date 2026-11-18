@@ -7,11 +7,11 @@
 //! helper adds no call type, reader, retry loop or engine state.
 //!
 //! Only an absolute HTTP(S) URL whose spelling stays the same once parsed as a URL and
-//! as an HTTP URI is accepted. Fragments, a lone `?` and a query made only of `&`
-//! separators are refused, because `at_url` discards them. User information is refused
-//! too: `at_url` can keep it, and the engine's comparison of origins ignores it. Any
-//! other spelling of the query, the case of escapes, the order and repeated keys are
-//! kept for a call without credentials. This function cannot inspect the secret query
+//! as an HTTP URI is accepted. Fragments are refused, because `at_url` discards them.
+//! User information is refused too: `at_url` can keep it, and the engine's comparison of
+//! origins ignores it. Every spelling of the query (a lone `?` and a query made only of `&`
+//! separators included), the case of escapes, the order and repeated keys are kept for a
+//! call without credentials. This function cannot inspect the secret query
 //! entries, middleware, custom transport or later edits of an opaque call; use a
 //! separate description, as below, and limit your edits to the headers the API returned.
 //!
@@ -87,8 +87,8 @@ use std::sync::Arc;
 ///
 /// Checks run in this order: the byte bound; the literal authority form; written
 /// user information and fragments; URL parsing; the scheme and parsed authority;
-/// parsed user information; URL and absolute-join spelling; an empty query; HTTP
-/// URI parsing and spelling. The first failed check determines the variant, even
+/// parsed user information; URL and absolute-join spelling; HTTP URI parsing and
+/// spelling. The first failed check determines the variant, even
 /// when later checks would also refuse the input.
 ///
 /// ```no_run
@@ -151,13 +151,6 @@ pub enum TransferError {
     /// spelling; missing authority slashes instead produce [`NotAbsolute`](Self::NotAbsolute).
     /// Whitespace or controls that make parsing fail produce [`InvalidUrl`](Self::InvalidUrl).
     ChangedUrl,
-    /// An otherwise canonical URL has a present query whose components, split
-    /// at `&`, are all empty: `https://storage.test/p?`,
-    /// `https://storage.test/p?&` or `https://storage.test/p?&&`.
-    ///
-    /// `at_url` would discard this query. Empty components mixed with nonempty
-    /// ones, as in `https://storage.test/p?&key=value&&`, are preserved.
-    EmptyQuery,
     /// The original text exceeds 65,534 bytes, regardless of its syntax.
     ///
     /// This check runs first; even relative input of 65,535 bytes produces this
@@ -174,7 +167,6 @@ impl fmt::Debug for TransferError {
             Self::UnsupportedScheme => "UnsupportedScheme",
             Self::ForbiddenUrlPart => "ForbiddenUrlPart",
             Self::ChangedUrl => "ChangedUrl",
-            Self::EmptyQuery => "EmptyQuery",
             Self::UrlTooLong => "UrlTooLong",
         };
         f.debug_tuple(name).finish()
@@ -190,7 +182,6 @@ impl fmt::Display for TransferError {
             Self::UnsupportedScheme => "transfer URL must use HTTP or HTTPS",
             Self::ForbiddenUrlPart => "transfer URL must omit user information and fragments",
             Self::ChangedUrl => "transfer URL spelling would change",
-            Self::EmptyQuery => "transfer URL query would be discarded",
             Self::UrlTooLong => "transfer URL exceeds 65,534 bytes",
         })
     }
@@ -281,12 +272,6 @@ pub fn at<C: Call>(call: C, url: &str) -> Result<C, TransferError> {
         .map_err(|source| TransferError::InvalidUrl(Arc::new(source)))?;
     if joined.as_str() != url {
         return Err(TransferError::ChangedUrl);
-    }
-    if parsed
-        .query()
-        .is_some_and(|query| query.split('&').all(str::is_empty))
-    {
-        return Err(TransferError::EmptyQuery);
     }
     let uri: concord_core::http::Uri = url
         .parse()
