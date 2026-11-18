@@ -87,3 +87,48 @@ async fn s3_parts_are_read_from_the_service_xml_and_the_marker_moves() {
     assert_eq!(requests.len(), 2);
     assert!(requests[1].url().as_str().contains("part-number-marker=1"));
 }
+
+/// The listings ask for `encoding-type=url`, so the service writes each key, prefix and key marker
+/// percent-encoded; the types decode each once. A listed key given to `object(…)` addresses that
+/// object, and a key marker goes back as the key it names.
+#[tokio::test(start_paused = true)]
+async fn s3_listed_keys_and_prefixes_are_decoded_once() {
+    let script = Script::new();
+    script.answer(200).body(
+        "<ListBucketResult><IsTruncated>false</IsTruncated>\
+         <Contents><Key>a%2Fb%2Bc%2520+d</Key><Size>1</Size></Contents>\
+         <CommonPrefixes><Prefix>a%2F</Prefix></CommonPrefixes></ListBucketResult>",
+    );
+    script.answer(200);
+    let (objects, bucket) = store(&script);
+    let bucket = objects.bucket(bucket);
+    let page = bucket.list_objects().pages().try_next().await.unwrap().unwrap();
+    assert_eq!(page.objects[0].key, "a/b+c%20 d");
+    assert_eq!(page.common_prefixes[0].prefix, "a/");
+    let key = page.objects[0].key.clone();
+    let _ = bucket.object(key).get().await.unwrap();
+    assert_eq!(
+        script.requests()[1].url().path(),
+        "/a/b%2Bc%2520%20d",
+        "the object that was listed, encoded once"
+    );
+
+    let script = Script::new();
+    script.answer(200).body(
+        "<ListMultipartUploadsResult><IsTruncated>true</IsTruncated>\
+         <NextKeyMarker>k%2F1</NextKeyMarker><NextUploadIdMarker>u</NextUploadIdMarker>\
+         </ListMultipartUploadsResult>",
+    );
+    script.answer(200).body(
+        "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+    );
+    let (uploads, bucket) = store(&script);
+    let mut pages = uploads.bucket(bucket).list_multipart_uploads().pages();
+    while pages.try_next().await.unwrap().is_some() {}
+    let requests = script.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[1].url().query(),
+        Some("uploads=&encoding-type=url&key-marker=k%2F1&upload-id-marker=u")
+    );
+}

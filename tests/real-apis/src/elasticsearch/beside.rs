@@ -58,7 +58,7 @@ where
             return Err(concord::mismatch("a last hit with no sort values"));
         }
         if after.get(&call) == Some(&last.sort) {
-            return Err(concord::mismatch("the sort values of the page just sent"));
+            return Err(concord::mismatch("the last hit repeats the request's sort values"));
         }
         let id = page.pit_id.clone().ok_or_else(|| concord::mismatch("no pit_id"))?;
         let keep_alive = pit.get(&call).map(|old| old.keep_alive.clone()).unwrap_or_default();

@@ -1,5 +1,33 @@
 // The data types that the page names and does not print, cut to the fields that its code uses.
 
+/// A key, a prefix or a key marker of a listing asked for with `encoding-type=url`: the service
+/// writes it percent-encoded, with `+` for a space; it is decoded once, here.
+fn url_decoded<'de, D: serde::Deserializer<'de>>(text: D) -> Result<String, D::Error> {
+    use serde::de::Error;
+    let text = <String as serde::Deserialize>::deserialize(text)?;
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut rest = text.bytes();
+    while let Some(byte) = rest.next() {
+        bytes.push(match byte {
+            b'+' => b' ',
+            b'%' => {
+                let digits = [rest.next(), rest.next()];
+                let hex = |digit: Option<u8>| char::from(digit.unwrap_or(b'x')).to_digit(16);
+                match (hex(digits[0]), hex(digits[1])) {
+                    (Some(high), Some(low)) => u8::try_from(high * 16 + low).map_err(D::Error::custom)?,
+                    _ => return Err(D::Error::custom("a percent escape is not two hex digits")),
+                }
+            }
+            byte => byte,
+        });
+    }
+    String::from_utf8(bytes).map_err(D::Error::custom)
+}
+
+fn url_decoded_option<'de, D: serde::Deserializer<'de>>(text: D) -> Result<Option<String>, D::Error> {
+    url_decoded(text).map(Some)
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct S3Problem {
     #[serde(rename = "Code")]
@@ -24,20 +52,24 @@ pub struct ObjectsPage {
 }
 #[derive(Debug, serde::Deserialize)]
 pub struct ObjectInfo {
-    #[serde(rename = "Key")]
+    #[serde(rename = "Key", deserialize_with = "url_decoded")]
     pub key: String,
     #[serde(rename = "Size")]
     pub size: u64,
 }
 #[derive(Debug, serde::Deserialize)]
 pub struct CommonPrefix {
-    #[serde(rename = "Prefix")]
+    #[serde(rename = "Prefix", deserialize_with = "url_decoded")]
     pub prefix: String,
 }
+/// `ListMultipartUploadsResult`, with the service's element names.
 #[derive(Debug, serde::Deserialize)]
 pub struct UploadsPage {
+    #[serde(rename = "IsTruncated")]
     pub is_truncated: bool,
+    #[serde(rename = "NextKeyMarker", default, deserialize_with = "url_decoded_option")]
     pub next_key_marker: Option<String>,
+    #[serde(rename = "NextUploadIdMarker")]
     pub next_upload_id_marker: Option<String>,
 }
 /// `ListPartsResult`, with the service's element names and its parts.

@@ -30,7 +30,7 @@ fn hits(pit: &str, sort: Option<serde_json::Value>) -> String {
 async fn elasticsearch_a_point_in_time_that_does_not_move_is_a_mismatch() {
     for (sort, reason) in [
         (None, "a last hit with no sort values"),
-        (Some(json!([7])), "the sort values of the page just sent"),
+        (Some(json!([7])), "the last hit repeats the request's sort values"),
     ] {
         let script = Script::new();
         script.answer(200).body(hits("p2", sort.clone()));
