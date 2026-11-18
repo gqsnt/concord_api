@@ -204,6 +204,8 @@ async fn http_does_not_decompress() {
 
 `with_base(server.url())` sends every request of the client to the server. `no_proxy()` keeps any proxy configured in the environment out of a local test, because `concord::Http` reads the environment's proxy settings ([the client](calling.md#the-client)). `server.requests()` returns what arrived: `method()`, `target()`, `path()`, `query()`, `header(name)`, `header_all(name)`, `body()`. `server.on(method, path)` scripts the response to the next request with that method and path; several rules for one route respond in the order they were written (a `503`, then a `200`). `.close()`, used instead of a reply, reads the request and closes the connection before sending any byte of a response.
 
+The server has bounds of its own, so that a test that sends too much fails instead of filling memory. A request head is at most 64 KiB, without its last empty line: a longer one is answered `400` and the connection is closed, and the request is not recorded. A line of chunked framing (a chunk size, or a trailer) is at most 4 KiB, and the trailers together at most 64 KiB: past that, the request is recorded with what arrived of its body, `body_state()` is `BodyState::Broken`, the answer is `400` and the connection is closed. A request body is at most 64 MiB (`concord_testkit::server::MAX_REQUEST_BODY`): a larger one, whether its `content-length` says so or its chunks add up to more, is recorded as `BodyState::Broken` and answered `413`, and the connection is closed. In each case no rule is used.
+
 ## Where each tool comes from
 
 | Tool | |

@@ -642,10 +642,18 @@ impl<E> Error<E> {
         self.inner.headers.as_ref()
     }
 
-    /// Returns the longer of the response’s `Retry-After` and the wait requested by the first
-    /// `when` rule that returned one, for the attempt that was not made. Both waits are recorded
-    /// when the retry decision is made: this method neither reads the header again nor calls
-    /// any rule.
+    /// Returns the wait that Concord recorded when it decided about another attempt: the longer
+    /// of the response’s `Retry-After` and the wait requested by the first `when` rule that
+    /// returned one, for the attempt that was not made.
+    ///
+    /// Both waits are recorded when the retry decision is made: this method neither reads the
+    /// header again nor calls any rule, and a `Retry-After` date was measured against the
+    /// system clock at that decision. A rule is asked only while another attempt is still
+    /// possible, so after the last attempt, or for a request that may not be repeated, this is
+    /// the `Retry-After` alone.
+    ///
+    /// For the header alone, use [`Headers::retry_after`] on [`headers`](Error::headers): it
+    /// reads `Retry-After` when it is called, and knows no rule.
     pub fn retry_after(&self) -> Option<std::time::Duration> {
         self.inner.retry_after
     }
