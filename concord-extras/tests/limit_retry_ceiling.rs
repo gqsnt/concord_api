@@ -86,6 +86,15 @@ async fn c4_3_a_raised_ceiling_ends_the_retries_before_the_call_timeout() {
     assert_eq!(error.tries(), 1);
     assert_eq!(error.retry_after(), Some(sec(120)));
     assert_eq!(start.elapsed(), Duration::ZERO);
+
+    // With a timeout that the wait fits in, the same 429 is retried: what refused it above
+    // was the deadline, not the ceiling.
+    let script = two_minutes();
+    let api = Data::new()
+        .with_transport(script.clone())
+        .with_retry(ceiling());
+    assert_eq!(api.get().with_timeout(sec(200)).await.unwrap(), "ok");
+    assert_eq!(script.requests().len(), 2);
 }
 
 #[tokio::test(start_paused = true)]

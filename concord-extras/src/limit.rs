@@ -119,7 +119,9 @@
 //! may leave to learn the windows. The next request of that key may leave once the
 //! response head has been learned from, or once the first request fails or is dropped
 //! before that, and only if the other limits allow it. It does not wait for the body.
-//! Nothing can prove that this first request fits a budget not yet seen. A fixed window
+//! Nothing can prove that this first request fits a budget not yet seen. A bucket that has
+//! a cap on the calls in flight ([`Bucket::max_in_flight`]) and no `learn` function is the
+//! exception: it can learn nothing, so it lets up to its cap leave at once. A fixed window
 //! refills once to its whole capacity at the stated reset; it invents no other reset.
 //! Once a learned fixed window's refill cannot pay a request within its capacity, and no
 //! request awaiting its head reports a newer reset, that window is no longer known.
@@ -307,7 +309,9 @@ impl Bucket {
     /// lets up to `n` requests of a key leave at once, from the first call; a bucket that
     /// learns still lets one request of a key leave at a time until a response has taught
     /// it a window (see [`new`](Self::new)). A request that finds no free place before
-    /// `max_hold` ends fails with `MaxHold`, whose `required` is `None`. A cap of zero fails
+    /// `max_hold` ends fails with `MaxHold`, whose `required` is `None`; when another wait
+    /// that is known, a window or a `429`, is longer than what is left of `max_hold`, the
+    /// request fails at once instead, and `required` is that wait. A cap of zero fails
     /// every call with `InvalidPolicy` before any key or cost function runs.
     ///
     /// The cap counts what this process holds, and does not protect against three things.

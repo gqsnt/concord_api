@@ -301,16 +301,33 @@ async fn c11_6_keys_with_calls_in_flight_refuse_the_next_new_key_at_once() {
 async fn c11_4_a_retried_attempt_takes_a_new_place_and_nothing_is_sent_twice() {
     let script = Script::new();
     script.answer(503).body("busy");
+    script.answer(200).body("held").stall();
     script.answer(200).body("ok");
+    // A known window: only the cap can hold the retried attempt.
+    let limit = Limit::new().bucket(
+        Bucket::new(|_| Some("k".into()))
+            .window(Window::rolling(100, sec(60)))
+            .max_in_flight(1),
+    );
     let api = Data::new()
         .with_transport(script.clone())
-        .with_middleware(Limit::new().bucket(Bucket::new(|_| Some("k".into())).max_in_flight(1)))
+        .with_middleware(limit.clone())
         .with_retry(concord::Retry::none().tries(2).when(|_| Some(sec(1))));
-    assert_eq!(api.get().await.unwrap(), "ok");
+    let start = Instant::now();
+    let retried = tokio::spawn(async move { api.get().await });
+    // While the call sleeps before its second attempt, a peer takes the one place.
+    tokio::time::sleep_until(start + Duration::from_millis(500)).await;
+    let held = call(&limit, &script, "red").await.unwrap();
+    tokio::time::sleep_until(start + sec(3)).await;
+    assert_eq!(script.requests().len(), 2);
+    drop(held);
+    assert_eq!(retried.await.unwrap().unwrap(), "ok");
+    let at: Vec<_> = script.requests().iter().map(|r| r.at() - start).collect();
+    assert_eq!(at, [sec(0), Duration::from_millis(500), sec(3)]);
     let numbers: Vec<_> = script
         .requests()
         .iter()
         .map(|r| r.info().number())
         .collect();
-    assert_eq!(numbers, [1, 2]);
+    assert_eq!(numbers, [1, 1, 2]);
 }
