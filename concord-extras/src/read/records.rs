@@ -546,7 +546,7 @@ trait Pull<T, E = RecordError>: Stream<Item = Result<T, E>> + Unpin {
 type Parse<T> = dyn FnMut(Vec<u8>) -> Result<Option<T>, RecordError> + Send;
 
 struct Framed<T> {
-    lines: Lines,
+    lines: Lines<ByteStream>,
     parse: Box<Parse<T>>,
 }
 
@@ -570,7 +570,7 @@ impl<T> Pull<T> for Framed<T> {
     fn cancel_wait(&mut self) {
         // ByteStream's public pull guard resets its idle timer on drop, even
         // when unpolled. Its body, call clock and buffered bytes stay in place.
-        drop(self.lines.input.try_next());
+        self.lines.input.cancel_wait();
     }
 }
 
@@ -618,8 +618,40 @@ fn spend(remaining: &mut usize, cx: &mut Context<'_>) -> bool {
 
 // Line framing: LF for JSON Lines, LF/CRLF/CR for SSE, a bounded
 // unfinished line, and at most one transport-owned chunk retained at a time.
-struct Lines {
-    input: ByteStream,
+// Where a framer takes its chunks: the body itself, or a body read as records.
+trait Source: Unpin + Send {
+    fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, StreamError>>>;
+    // A pull guard dropped unpolled resets the idle timer and keeps the body and its bytes.
+    fn cancel_wait(&mut self);
+    fn check_deadline(&mut self) -> Result<(), StreamError>;
+}
+
+impl Source for ByteStream {
+    fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, StreamError>>> {
+        Pin::new(self).poll_next(cx)
+    }
+    fn cancel_wait(&mut self) {
+        drop(self.try_next());
+    }
+    fn check_deadline(&mut self) -> Result<(), StreamError> {
+        ByteStream::check_deadline(self)
+    }
+}
+
+impl<P> Source for concord_core::read::RecordBody<P> {
+    fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, StreamError>>> {
+        concord_core::read::RecordBody::poll_chunk(self, cx)
+    }
+    fn cancel_wait(&mut self) {
+        drop(self.next_chunk());
+    }
+    fn check_deadline(&mut self) -> Result<(), StreamError> {
+        concord_core::read::RecordBody::check_deadline(self)
+    }
+}
+
+struct Lines<S> {
+    input: S,
     chunk: Bytes,
     pos: usize,
     line: Vec<u8>,
@@ -633,8 +665,8 @@ struct Lines {
 
 const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 
-impl Lines {
-    fn new(input: ByteStream, max: usize, sse: bool) -> Self {
+impl<S: Source> Lines<S> {
+    fn new(input: S, max: usize, sse: bool) -> Self {
         Self {
             input,
             chunk: Bytes::new(),
@@ -646,6 +678,16 @@ impl Lines {
             bom: sse.then_some(0),
             empty_cr: false,
             event_size: 0,
+        }
+    }
+
+    // The work budget of this pull is spent, and the task is already woken: the call's
+    // deadline is checked before the pull yields, so that input which is always ready (comments,
+    // skipped records) cannot outlast it.
+    fn yield_now(&mut self) -> Poll<Result<Option<Vec<u8>>, RecordError>> {
+        match self.input.check_deadline() {
+            Ok(()) => Poll::Pending,
+            Err(error) => Poll::Ready(Err(error.into())),
         }
     }
 
@@ -684,7 +726,7 @@ impl Lines {
         loop {
             while let Some(byte) = self.chunk.get(self.pos).copied() {
                 if !spend(&mut work.bytes, cx) {
-                    return Poll::Pending;
+                    return self.yield_now();
                 }
                 self.pos = self.pos.saturating_add(1);
                 if let Some(matched) = self.bom {
@@ -732,9 +774,9 @@ impl Lines {
             self.chunk = Bytes::new();
             self.pos = 0;
             if !spend(&mut work.chunks, cx) {
-                return Poll::Pending;
+                return self.yield_now();
             }
-            match Pin::new(&mut self.input).poll_next(cx) {
+            match self.input.poll_chunk(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Err(error))) => return Poll::Ready(Err(error.into())),
                 Poll::Ready(Some(Ok(chunk))) => self.chunk = chunk,

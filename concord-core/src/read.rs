@@ -1,7 +1,7 @@
 //! How a response becomes a value.
 
 use crate::answer::{BodyClock, BodyTimeout, Headers, KnownKind, KnownOutcome};
-use crate::error::{Class, Clock, Error, Kept, Kind, MismatchFailure};
+use crate::error::{Class, Clock, Error, Kept, Kind, MismatchFailure, RecordFaultKind};
 use crate::transport::{TransportError, TryInfo};
 use bytes::Bytes;
 use futures_core::Stream;
@@ -1354,11 +1354,15 @@ impl<P> RecordBody<P> {
     ///     body.refuse(410)
     /// }
     /// ```
-    // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
-    #[allow(clippy::unimplemented)]
     pub fn refuse(self, problem: P) -> Error<P> {
-        let _ = (problem, self.record, &self.stream.info);
-        unimplemented!()
+        let info = &self.stream.info;
+        Error::refused(
+            info.endpoint(),
+            info.number(),
+            self.stream.status,
+            self.stream.headers.clone(),
+            Some(problem),
+        )
     }
 
     /// Returns the call's error for a fault of the current record, or of the body as a sequence
@@ -1373,17 +1377,34 @@ impl<P> RecordBody<P> {
     ///     body.fail(RecordFault::not_utf8())
     /// }
     /// ```
-    // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
-    #[allow(clippy::unimplemented)]
     pub fn fail(self, fault: RecordFault) -> Error<P> {
-        let _ = (
-            fault.kind,
-            fault.at,
-            fault.reason,
-            self.record,
-            &self.stream.info,
+        let failure = match fault.kind {
+            FaultKind::Unfinished => MismatchFailure::Unfinished,
+            kind => MismatchFailure::Record {
+                record: self.record,
+                fault: match kind {
+                    FaultKind::TooLarge => RecordFaultKind::TooLarge,
+                    FaultKind::NotUtf8 => RecordFaultKind::NotUtf8,
+                    FaultKind::NotTheType => RecordFaultKind::NotTheType,
+                    FaultKind::DoesNotFit | FaultKind::Unfinished => RecordFaultKind::DoesNotFit,
+                },
+            },
+        };
+        let info = &self.stream.info;
+        let mut error = Error::mismatch(
+            info.endpoint(),
+            info.number(),
+            self.stream.status,
+            self.stream.headers.clone(),
+            failure,
         );
-        unimplemented!()
+        if let Some(reason) = fault.reason {
+            error = error.with_fixed_reason(reason);
+        }
+        if let Some((line, column)) = fault.at {
+            error = error.with_reader_details(format!("line {line}, column {column}"));
+        }
+        error
     }
 }
 
@@ -1464,7 +1485,8 @@ impl RecordFault {
 
     /// The place inside the record where the decoder stopped, a line and a column of the
     /// record's own text, as a decoder reports them. They appear in `details()` only, never
-    /// in the text or the cause of the error. Only a fault that does not decode keeps them.
+    /// in the text or the cause of the error. Only a fault that does not decode keeps them, and
+    /// a line of zero, which a decoder gives when it does not know the place, keeps nothing.
     ///
     /// ```no_run
     /// # use concord_core as concord;
@@ -1472,7 +1494,7 @@ impl RecordFault {
     /// ```
     #[must_use]
     pub fn at(mut self, line: usize, column: usize) -> Self {
-        if matches!(self.kind, FaultKind::NotTheType) {
+        if matches!(self.kind, FaultKind::NotTheType) && line != 0 {
             self.at = Some((line, column));
         }
         self
@@ -1489,8 +1511,10 @@ impl RecordFault {
         Self::of(FaultKind::DoesNotFit)
     }
 
-    /// The same, with a fixed reason of the program, which `reason()` returns: it is never
-    /// printed in the text or the cause of the error.
+    /// The same, with a fixed reason of the program, which `reason()` and `details()` return:
+    /// it is never printed in the text, the `Debug` or the cause of the error. The reason is a
+    /// fixed sentence of your program and must hold nothing of the response. For every fault
+    /// that the body itself finds, `reason()` is `None`.
     ///
     /// ```no_run
     /// # use concord_core as concord;

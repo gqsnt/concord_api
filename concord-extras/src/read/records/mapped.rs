@@ -3,9 +3,12 @@
 
 #[cfg(feature = "json")]
 use super::JsonLines;
-use super::{RecordError, RecordStream, Sse, SseEvent};
+use super::{Events, Lines, Pull, RecordError, RecordStream, Source, Sse, SseEvent, Work};
 use concord_core::read::{Incoming, ReadError, Reader, RecordBody, RecordFault};
+use futures_core::Stream;
 use std::fmt;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// What a mapping does with a record that fits: yield a value, skip the record, or end the
 /// stream. Why a stream fails is the other half of the mapping's result, a [`RecordFail`].
@@ -181,9 +184,10 @@ impl<P> RecordFail<P> {
     }
 
     /// The record, or the sequence of records so far, does not fit what the client expects:
-    /// the stream ends with the Mismatch `record 7 does not fit the stream`, whose `reason()` is
-    /// `reason`. The reason is a fixed text of the program; it is never printed in the error's
-    /// text or cause.
+    /// the stream ends with the Mismatch `record 7 does not fit the stream`, whose `reason()`
+    /// and `details()` give `reason`. It is never printed in the error's text, `Debug` or cause.
+    /// The reason is a fixed sentence of your program and must hold nothing of the response, as
+    /// the reason of [`concord::mismatch`](concord_core::mismatch) in an arm.
     ///
     /// ```no_run
     /// use concord::read::RecordFail;
@@ -563,20 +567,17 @@ where
     P: Send + 'static,
     F: FnMut(SseEvent) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
 {
-    // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
-    #[allow(clippy::unimplemented)]
     async fn read(
         &self,
         body: Incoming,
     ) -> Result<RecordStream<T, concord_core::Error<P>>, ReadError> {
-        let _ = (
-            body.stream().into_records::<P>(),
-            &self.reader,
-            &self.map,
+        Ok(typed(
+            body,
+            self.reader.max_event_bytes,
+            Events::new(),
+            self.map.clone(),
             self.end,
-        );
-        let _ = RecordFail::<P>::into_error;
-        unimplemented!()
+        ))
     }
 }
 
@@ -587,25 +588,190 @@ where
     P: Send + 'static,
     F: FnMut(JsonLine) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
 {
-    // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
-    #[allow(clippy::unimplemented)]
     async fn read(
         &self,
         body: Incoming,
     ) -> Result<RecordStream<T, concord_core::Error<P>>, ReadError> {
-        let _ = (
-            body.stream().into_records::<P>(),
-            &self.reader,
-            &self.map,
+        Ok(typed(
+            body,
+            self.reader.max_record_bytes,
+            LineRecords,
+            self.map.clone(),
             self.end,
-        );
-        let _ = (
-            RecordFail::<P>::into_error,
-            JsonLine {
-                text: String::new(),
+        ))
+    }
+}
+
+// How the lines of a body make records: what a line completes, and whether a record (a line,
+// an event block) ends with it.
+trait Framing: Send + 'static {
+    type Record;
+    const SSE: bool;
+    fn line(&mut self, line: Vec<u8>) -> (Result<Option<Self::Record>, RecordError>, bool);
+}
+
+impl Framing for Events {
+    type Record = SseEvent;
+    const SSE: bool = true;
+    fn line(&mut self, line: Vec<u8>) -> (Result<Option<SseEvent>, RecordError>, bool) {
+        let ended = line.is_empty();
+        (Events::line(self, &line), ended)
+    }
+}
+
+#[cfg(feature = "json")]
+struct LineRecords;
+
+#[cfg(feature = "json")]
+impl Framing for LineRecords {
+    type Record = JsonLine;
+    const SSE: bool = false;
+    fn line(&mut self, line: Vec<u8>) -> (Result<Option<JsonLine>, RecordError>, bool) {
+        let text = String::from_utf8(line).map_err(|error| RecordError::Utf8 {
+            record: 0,
+            source: error.utf8_error(),
+        });
+        (text.map(|text| Some(JsonLine { text })), true)
+    }
+}
+
+fn typed<K, T, P, F>(
+    body: Incoming,
+    max: usize,
+    framing: K,
+    map: F,
+    end: End,
+) -> RecordStream<T, concord_core::Error<P>>
+where
+    K: Framing,
+    T: Send + 'static,
+    P: Send + 'static,
+    F: FnMut(K::Record) -> Result<Step<T>, RecordFail<P>> + Send + 'static,
+{
+    let status = body.status();
+    let headers = body.headers().clone();
+    let mut input = body.stream().into_records::<P>();
+    input.start_record();
+    RecordStream {
+        records: Some(Box::new(Typed {
+            lines: Some(Lines::new(input, max, K::SSE)),
+            framing,
+            map,
+            end,
+        })),
+        status,
+        headers,
+    }
+}
+
+// The pull of a mapped stream. The body is held in `lines` until the stream ends: a terminal
+// record, an end, an error and the end of the body all drop it, before the pull returns.
+struct Typed<K, P, F> {
+    lines: Option<Lines<RecordBody<P>>>,
+    framing: K,
+    map: F,
+    end: End,
+}
+
+// No field is pinned: the pull is driven through `&mut`.
+impl<K, P, F> Unpin for Typed<K, P, F> {}
+
+impl<K, P, F> Typed<K, P, F> {
+    // A fault of framing, reported through the body at hand, which it consumes.
+    fn fault(&mut self, error: RecordError) -> Option<concord_core::Error<P>> {
+        let lines = self.lines.take()?;
+        let body = lines.input;
+        Some(match error {
+            RecordError::Stream(error) => error.into(),
+            RecordError::TooLarge { .. } => body.fail(RecordFault::too_large()),
+            RecordError::Utf8 { .. } => body.fail(RecordFault::not_utf8()),
+            RecordError::Decode { line, column, .. } => {
+                body.fail(RecordFault::not_the_type().at(line, column))
             }
-            .text,
-        );
-        unimplemented!()
+        })
+    }
+}
+
+impl<K, T, P, F> Stream for Typed<K, P, F>
+where
+    K: Framing,
+    F: FnMut(K::Record) -> Result<Step<T>, RecordFail<P>>,
+{
+    type Item = Result<T, concord_core::Error<P>>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        // One budget for every record of this pull, skipped records included.
+        let mut work = Work {
+            bytes: 16_384,
+            chunks: 64,
+        };
+        loop {
+            let Some(lines) = this.lines.as_mut() else {
+                return Poll::Ready(None);
+            };
+            let line = match lines.poll_line(cx, &mut work) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Ok(Some(line))) => line,
+                Poll::Ready(Ok(None)) => {
+                    let ended = this.lines.take().map(|lines| lines.input);
+                    return match (this.end, ended) {
+                        (End::LastRecord, Some(body)) => {
+                            Poll::Ready(Some(Err(body.fail(RecordFault::unfinished()))))
+                        }
+                        _ => Poll::Ready(None),
+                    };
+                }
+                Poll::Ready(Err(error)) => return Poll::Ready(this.fault(error).map(Err)),
+            };
+            let (record, ended) = this.framing.line(line);
+            let record = match record {
+                Ok(Some(record)) => record,
+                Ok(None) => {
+                    if ended {
+                        lines.input.start_record();
+                    }
+                    continue;
+                }
+                Err(error) => return Poll::Ready(this.fault(error).map(Err)),
+            };
+            match (this.map)(record) {
+                Ok(Step::Next(value)) => {
+                    if ended {
+                        lines.input.start_record();
+                    }
+                    return Poll::Ready(Some(Ok(value)));
+                }
+                Ok(Step::Skip) => {
+                    if ended {
+                        lines.input.start_record();
+                    }
+                }
+                Ok(Step::Last(value)) => {
+                    this.lines = None;
+                    return Poll::Ready(Some(Ok(value)));
+                }
+                Ok(Step::End) => {
+                    this.lines = None;
+                    return Poll::Ready(None);
+                }
+                Err(fail) => {
+                    let ended = this.lines.take().map(|lines| fail.into_error(lines.input));
+                    return Poll::Ready(ended.map(Err));
+                }
+            }
+        }
+    }
+}
+
+impl<K, T, P, F> Pull<T, concord_core::Error<P>> for Typed<K, P, F>
+where
+    K: Framing,
+    F: FnMut(K::Record) -> Result<Step<T>, RecordFail<P>>,
+{
+    fn cancel_wait(&mut self) {
+        if let Some(lines) = &mut self.lines {
+            lines.input.cancel_wait();
+        }
     }
 }

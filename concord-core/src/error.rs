@@ -71,6 +71,22 @@ pub(crate) enum MismatchFailure {
         place: Place,
     },
     InputEmpty,
+    // What a reader of records found after the head, with the record that the body counted.
+    Record {
+        record: usize,
+        fault: RecordFaultKind,
+    },
+    // The body ended cleanly before the record that ends the stream.
+    Unfinished,
+}
+
+/// What is wrong with one record, as `RecordFault` says it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RecordFaultKind {
+    TooLarge,
+    NotUtf8,
+    NotTheType,
+    DoesNotFit,
 }
 
 #[derive(Clone, Copy)]
@@ -261,6 +277,16 @@ impl Note {
                     }
                 }
                 MismatchFailure::InputEmpty => f.write_str("the decoder's input is empty"),
+                MismatchFailure::Record { record, fault } => {
+                    write!(f, "record {record} ")?;
+                    f.write_str(match fault {
+                        RecordFaultKind::TooLarge => "exceeds the reader's size limit",
+                        RecordFaultKind::NotUtf8 => "is not UTF-8",
+                        RecordFaultKind::NotTheType => "could not be decoded",
+                        RecordFaultKind::DoesNotFit => "does not fit the stream",
+                    })
+                }
+                MismatchFailure::Unfinished => f.write_str("the body ended before its last record"),
             },
         }
     }
@@ -565,7 +591,9 @@ impl<E> Error<E> {
             | MismatchFailure::InputContentType
             | MismatchFailure::InputLimit
             | MismatchFailure::InputDecode { .. }
-            | MismatchFailure::InputEmpty => {
+            | MismatchFailure::InputEmpty
+            | MismatchFailure::Record { .. }
+            | MismatchFailure::Unfinished => {
                 Some(Box::new(ReaderCause(Note::Mismatch(failure.clone()))) as Source)
             }
             _ => None,
@@ -612,6 +640,12 @@ impl<E> Error<E> {
     /// Reader free text is copied into a bounded allocation and is only printed by details.
     pub(crate) fn with_reader_details(mut self, details: String) -> Self {
         self.inner.reader_details = Some(crate::__private::cut_details(details));
+        self
+    }
+
+    /// The fixed reason of a mapping that rejected a record: `reason()` and `details()` only.
+    pub(crate) fn with_fixed_reason(mut self, reason: &'static str) -> Self {
+        self.inner.reason = Some(Cow::Borrowed(reason));
         self
     }
 }
