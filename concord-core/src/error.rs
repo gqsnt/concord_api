@@ -1791,15 +1791,11 @@ mod tests {
         use std::panic::{RefUnwindSafe, UnwindSafe};
         fn all_four<T: UnwindSafe + RefUnwindSafe + Send + Sync>() {}
         fn send_sync<T: Send + Sync>() {}
-        #[allow(dead_code)] // PANIC-SAFETY: A type for a compile-time check; no panic lint is relaxed.
-        struct Problem {
-            code: String,
-        }
         all_four::<Fail<()>>();
-        all_four::<Fail<Problem>>();
+        all_four::<Fail<String>>();
         // The call's error holds the cause of a transport, which is not unwind-safe.
         send_sync::<Error<()>>();
-        send_sync::<Error<Problem>>();
+        send_sync::<Error<String>>();
         let held: Fail<()> = Fail::from_read(crate::read::ReadError::not_the_type(
             bytes::Bytes::from_static(b"{}"),
         ));
