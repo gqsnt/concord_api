@@ -922,3 +922,35 @@ fn c10_1_a_shadowed_prelude_name_is_not_linked_to_the_prelude() {
         "the page links `String` to the prelude's"
     );
 }
+
+/// A type written with a leading `::` is the crate's, so it is never linked to a module of
+/// the author's with the crate's name (`::concord::Secret` beside `mod concord`). An intra-doc
+/// link cannot name the crate past that module, so the page shows the path as written.
+#[test]
+fn c10_1_an_absolute_type_is_linked_absolutely() {
+    let output = super::surface::rustdoc_output(
+        "absolute_links",
+        r#"pub mod concord { pub struct Secret; }
+        ::concord::api! {
+            pub client Api(token?: ::concord::Secret) {
+                base "https://a.test"; headers { "x-token" = token; }
+                GET get(key: ::concord::Secret) { headers { "x-key" = key; } }
+            }
+        }"#,
+    );
+    for page in ["struct.Api.html", "api/enum.Get.html"] {
+        let text = std::fs::read_to_string(output.join(page)).unwrap();
+        assert!(
+            !text.contains("concord/struct.Secret.html\""),
+            "{page} links `::concord::Secret` to the author's module"
+        );
+        assert!(
+            !text.contains("href=\"::concord"),
+            "{page} has an unresolved link"
+        );
+        assert!(
+            text.contains("<code>::concord::Secret</code>"),
+            "{page} lost the path"
+        );
+    }
+}

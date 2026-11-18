@@ -135,12 +135,18 @@ impl Writer<'_> {
                     } else {
                         Some(format!("{}{spelling}", "super::".repeat(depth)))
                     };
-                    let absolute = path.path.leading_colon.is_some() || first == "crate";
                     match target {
                         Some(target) => format!("[`{shown}`]({target})"),
-                        None if absolute => format!("[`{shown}`]({spelling})"),
+                        None if path.path.leading_colon.is_some() => format!("`::{spelling}`"),
+                        None if first == "crate" => format!("[`{shown}`]({spelling})"),
                         None => format!("`{shown}`"),
                     }
+                } else if path.path.leading_colon.is_some() {
+                    // A path that starts with `::` names a crate, but an intra-doc link has no
+                    // way to say so: a module of the author's with the crate's name would take
+                    // `concord::Secret`, and rustdoc leaves `::concord::Secret` unresolved.
+                    // It is shown as written, without a link.
+                    format!("`::{spelling}`")
                 } else {
                     format!("[`{shown}`]")
                 };
