@@ -1543,7 +1543,7 @@ fn urls(script: &Script) -> Vec<String> {
     script
         .requests()
         .iter()
-        .map(|request| request.url().to_owned())
+        .map(|request| request.url().as_str().to_owned())
         .collect()
 }
 
@@ -2253,7 +2253,7 @@ async fn c11_7_a_call_dropped_while_it_waits_leaves_no_waiter() {
     let urls: Vec<String> = script
         .requests()
         .iter()
-        .map(|request| request.url().to_owned())
+        .map(|request| request.url().as_str().to_owned())
         .collect();
     assert_eq!(
         urls,

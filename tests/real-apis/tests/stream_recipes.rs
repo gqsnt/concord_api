@@ -136,6 +136,7 @@ async fn c5_10_docker_frames_preserve_channels_binary_bytes_and_every_cut() {
         assert!(frames.try_next().await.unwrap().is_none());
         assert!(script.requests()[0]
             .url()
+            .as_str()
             .ends_with("/containers/abc/logs?stdout=true&stderr=true&follow=true"));
         one_send(&script);
     }
@@ -385,7 +386,7 @@ async fn c5_10_gmail_batch_correlates_out_of_order_replies_at_every_cut() {
             .unwrap()
             .contains("GET /gmail/v1/users/me/messages/one HTTP/1.1"));
         assert_eq!(
-            requests[0].url(),
+            requests[0].url().as_str(),
             "https://gmail.googleapis.com/batch/gmail/v1"
         );
         one_send(&script);
@@ -427,7 +428,7 @@ async fn c5_10_odata_batch_keeps_order_and_inner_failures_with_one_outer_post() 
     );
     assert!(replies.iter().all(|reply| reply.0.is_none()));
     assert_eq!(
-        script.requests()[0].url(),
+        script.requests()[0].url().as_str(),
         "https://tenant.sharepoint.com/sites/demo/_api/$batch"
     );
     one_send(&script);
@@ -951,7 +952,7 @@ mod upload {
         );
         for request in sent {
             assert_eq!(request.method(), "PUT");
-            assert_eq!(request.url(), "https://files.test/files/large.bin");
+            assert_eq!(request.url().as_str(), "https://files.test/files/large.bin");
             assert_eq!(request.upload().bytes(), contents);
             assert_eq!(
                 request.upload().state(),

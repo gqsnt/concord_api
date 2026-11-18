@@ -916,7 +916,7 @@ async fn c12_14_transfer_and_header_edits_preserve_the_same_plan() {
     assert_eq!(opens.load(Ordering::SeqCst), 2);
     assert_eq!(edits.load(Ordering::SeqCst), 1);
     for request in script.requests() {
-        assert_eq!(request.url(), url);
+        assert_eq!(request.url().as_str(), url);
         assert_eq!(request.header("x-returned"), Some("kept"));
     }
 }

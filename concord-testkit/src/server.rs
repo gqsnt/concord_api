@@ -202,7 +202,8 @@ impl Server {
         }
     }
 
-    /// Returns `http://127.0.0.1:<port>`, without a trailing slash.
+    /// Returns `http://127.0.0.1:<port>`, without a trailing slash: the text that a client's
+    /// `with_base` takes.
     pub fn url(&self) -> String {
         format!("http://{}", self.addr)
     }
@@ -487,7 +488,23 @@ impl Gate {
 }
 
 /// The state of the body of a recorded [`Request`].
+///
+/// A later release may add states. Match it with a fallback arm, so that a new state
+/// remains compatible.
+///
+/// ```compile_fail,E0004
+/// use concord_testkit::server::BodyState;
+///
+/// fn exhaustive(state: BodyState) {
+///     match state {
+///         BodyState::Coming => (),
+///         BodyState::Ended => (),
+///         BodyState::Broken => (),
+///     }
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BodyState {
     /// The head arrived; the body has not ended yet.
     Coming,

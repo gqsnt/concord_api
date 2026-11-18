@@ -629,7 +629,7 @@ fn c12_10_credentials_and_diagnostics_hide_values_and_retain_causes() {
     assert_eq!(format!("{credentials:?}"), "Credentials(..)");
     let cause = SignError::failed(std::io::Error::other("private-cause"));
     assert_eq!(format!("{cause:?}"), "Failed(..)");
-    assert_eq!(cause.to_string(), "The request proof failed.");
+    assert_eq!(cause.to_string(), "the request proof failed");
     assert_eq!(cause.source().unwrap().to_string(), "private-cause");
     // Like the other errors of the extras, a SignError can be cloned; the clone shares the cause.
     fn cloneable<T: Clone + Send + Sync + 'static>() {}

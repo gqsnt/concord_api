@@ -161,7 +161,7 @@ impl Script {
     fn take(&self, request: &reqwest::Request, info: TryInfo) -> (usize, Option<Step>) {
         let request = Request {
             method: request.method().clone(),
-            url: request.url().as_str().to_owned(),
+            url: request.url().clone(),
             headers: request.headers().clone(),
             body: request
                 .body()
@@ -514,15 +514,31 @@ impl Never<'_> {
 }
 
 /// A request as a [`Script`] received it.
-#[derive(Clone, Debug)]
+///
+/// `Debug` prints the URL as its text.
+#[derive(Clone)]
 pub struct Request {
     method: Method,
-    url: String,
+    url: reqwest::Url,
     headers: HeaderMap,
     body: Option<Bytes>,
     upload: Upload,
     info: TryInfo,
     at: Instant,
+}
+
+impl std::fmt::Debug for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Request")
+            .field("method", &self.method)
+            .field("url", &self.url.as_str())
+            .field("headers", &self.headers)
+            .field("body", &self.body)
+            .field("upload", &self.upload)
+            .field("info", &self.info)
+            .field("at", &self.at)
+            .finish()
+    }
 }
 
 impl Request {
@@ -531,8 +547,10 @@ impl Request {
         &self.method
     }
 
-    /// Returns the whole URL.
-    pub fn url(&self) -> &str {
+    /// Borrows the whole URL, parsed, as the transport received it: the same type as
+    /// `request.url()` on the request a [`Transport`] gets. Compare its text with
+    /// `url().as_str()`.
+    pub fn url(&self) -> &reqwest::Url {
         &self.url
     }
 
@@ -594,7 +612,24 @@ impl Upload {
 }
 
 /// The state of reading an upload.
+///
+/// A later release may add states. Match it with a fallback arm, so that a new state
+/// remains compatible.
+///
+/// ```compile_fail,E0004
+/// use concord_testkit::script::UploadState;
+///
+/// fn exhaustive(state: &UploadState) {
+///     match state {
+///         UploadState::Unread => (),
+///         UploadState::Reading => (),
+///         UploadState::Ended => (),
+///         UploadState::Failed(_) => (),
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UploadState {
     /// The script was not told to read it.
     #[default]
@@ -609,8 +644,27 @@ pub enum UploadState {
 
 /// The error of a body that [`Answer::cut`] ends, or that ends before its declared
 /// length ([`Answer::declare_length`]).
-#[derive(Debug)]
-pub struct Cut;
+///
+/// Only the script makes one, so that a later release can give it more to report.
+///
+/// ```compile_fail,E0423
+/// let cut = concord_testkit::script::Cut;
+/// ```
+pub struct Cut {
+    _private: (),
+}
+
+impl Cut {
+    fn new() -> Cut {
+        Cut { _private: () }
+    }
+}
+
+impl std::fmt::Debug for Cut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Cut")
+    }
+}
 
 impl std::fmt::Display for Cut {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -684,7 +738,7 @@ impl Body for ScriptBody {
                         // connection closed early.
                         End::Complete if this.declared.is_some() => {
                             this.done = true;
-                            Poll::Ready(Some(Err(Cut)))
+                            Poll::Ready(Some(Err(Cut::new())))
                         }
                         End::Complete => {
                             this.done = true;
@@ -692,7 +746,7 @@ impl Body for ScriptBody {
                         }
                         End::Cut => {
                             this.done = true;
-                            Poll::Ready(Some(Err(Cut)))
+                            Poll::Ready(Some(Err(Cut::new())))
                         }
                     };
                 }

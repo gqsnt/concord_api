@@ -113,7 +113,7 @@ script.answer(200).body("{}");                          // played after the `429
 | Method | Returns |
 |---|---|
 | `method()` | `&Method`: `Method::GET`, `Method::POST`, … |
-| `url()` | `&str`: the whole URL, as text. For its parts, parse it: `concord::reqwest::Url::parse(request.url())?.query_pairs()`. (A transport receives a `reqwest::Request`, whose `url()` is a `&Url`; the text is the same. Code written for a `&Url` does not compile on the text: `rustc` reports no method `host_str` on `&str`, or, for `.as_str()`, the unstable feature `str_as_str`.) |
+| `url()` | `&Url` (`concord::reqwest::Url`): the whole URL, parsed, the same type as `request.url()` in a fake. Compare its text with `request.url().as_str()`; read its parts with `query_pairs()`, `path()` or `host_str()`. |
 | `header(name: &str)` | `Option<&str>`: the first value of that header, or `None` when it is absent or when its value holds a byte other than visible ASCII or a tab (as `HeaderValue::to_str` decides: a value in UTF-8 beyond ASCII is `None` too; read it as bytes through `headers()`). `headers()` returns the whole `&HeaderMap`, repeated values and sensitive marks included. |
 | `body()` | `Option<&[u8]>`: the bytes of a body held in memory; `None` for a request without a body and for a stream. `upload()` returns what the script read of a stream (`.read_upload()`): its `bytes()`, its `pieces()` and its `state()`. |
 | `info()` | `&TryInfo`: `number()` is the attempt (1 for the first), `endpoint()` the name of the endpoint (`tasks.get`). |

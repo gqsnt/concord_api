@@ -646,7 +646,10 @@ async fn c11_1_renewed_base_prefix_scopes_only_origin_including_default_port() {
             .unwrap(),
         "ok"
     );
-    assert_eq!(api.requests()[0].url(), "https://data.test/sibling");
+    assert_eq!(
+        api.requests()[0].url().as_str(),
+        "https://data.test/sibling"
+    );
     assert_attempts(&tokens, &[1]);
     assert_attempts(&api, &[1]);
 }

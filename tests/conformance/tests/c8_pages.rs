@@ -95,7 +95,7 @@ fn urls(script: &Script) -> Vec<String> {
     script
         .requests()
         .iter()
-        .map(|request| request.url().to_owned())
+        .map(|request| request.url().as_str().to_owned())
         .collect()
 }
 
@@ -206,7 +206,7 @@ async fn c8_4_table_8_none_ends_with_the_try_next_after_the_last_page() {
     end(pages.try_next().await);
     end(pages.try_next().await);
     assert_eq!(script.requests().len(), 2, "the end sends nothing");
-    assert!(script.requests()[1].url().ends_with("cursor=b"));
+    assert!(script.requests()[1].url().as_str().ends_with("cursor=b"));
 }
 
 #[tokio::test(start_paused = true)]
@@ -231,12 +231,12 @@ async fn c8_4_table_8_the_request_of_a_page_is_built_when_it_is_asked_for() {
 
     let requests = script.requests();
     assert_eq!(
-        requests[0].url(),
+        requests[0].url().as_str(),
         "https://shapes.example.com/guarded/p1?key=q1"
     );
     assert_eq!(requests[0].header("x-key"), Some("h1"));
     assert_eq!(
-        requests[1].url(),
+        requests[1].url().as_str(),
         "https://shapes.example.com/guarded/p2?key=q2&cursor=b"
     );
     assert_eq!(requests[1].header("x-key"), Some("h2"));

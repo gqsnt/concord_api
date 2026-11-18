@@ -170,7 +170,7 @@ impl SignError {
     ///
     /// ```
     /// let error = concord::sign::SignError::failed(std::io::Error::other("private cause"));
-    /// assert_eq!(error.to_string(), "The request proof failed.");
+    /// assert_eq!(error.to_string(), "the request proof failed");
     /// ```
     pub fn failed(cause: impl StdError + Send + Sync + 'static) -> Self {
         Self::Failed(Arc::new(cause))
@@ -206,16 +206,16 @@ impl fmt::Debug for SignError {
 impl fmt::Display for SignError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::StreamingBody => "The request body is a stream and cannot be hashed.",
-            Self::InsecureUnsignedPayload => "An unsigned request payload requires HTTPS.",
-            Self::WrongOrigin => "The request leaves the signing origin.",
-            Self::TooLarge => "The signing input exceeds its size limit.",
-            Self::InvalidRequest => "The request cannot be canonicalized for signing.",
-            Self::InvalidCredentials => "The signing credentials or scope are invalid.",
-            Self::InvalidHeader(_) => "A signing header could not be installed.",
-            Self::InvalidHeaderText(_) => "A signed header is not valid text.",
-            Self::InvalidTime => "The signing time is outside the supported range.",
-            Self::Failed(_) => "The request proof failed.",
+            Self::StreamingBody => "the request body is a stream and cannot be hashed",
+            Self::InsecureUnsignedPayload => "an unsigned request payload requires HTTPS",
+            Self::WrongOrigin => "the request leaves the signing origin",
+            Self::TooLarge => "the signing input exceeds its size limit",
+            Self::InvalidRequest => "the request cannot be canonicalized for signing",
+            Self::InvalidCredentials => "the signing credentials or scope are invalid",
+            Self::InvalidHeader(_) => "a signing header could not be installed",
+            Self::InvalidHeaderText(_) => "a signed header is not valid text",
+            Self::InvalidTime => "the signing time is outside the supported range",
+            Self::Failed(_) => "the request proof failed",
         })
     }
 }
@@ -455,27 +455,84 @@ impl SigV4 {
         self
     }
 
-    /// Signs the request for the given region, without checking its origin.
+    /// Signs the request for the given region, after checking that it goes to the origin of
+    /// this signer's base.
     ///
-    /// The adapter must check the origin first, with [`check_origin`] or its own list of
-    /// allowed hosts; only the middleware checks the origin against this signer's base.
-    /// This synchronous form hashes the whole buffered body before it returns; the
-    /// middleware yields between chunks. The headers change only on success.
+    /// The origin is checked first, as the middleware checks it: before the credentials or
+    /// the clock are read. Unlike the middleware, which signs for the region given to
+    /// [`SigV4::new`], it signs for `region`. This synchronous form hashes the whole buffered
+    /// body before it returns; the middleware yields between chunks. The headers change only
+    /// on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SignError::WrongOrigin` when the scheme, host or effective port of the request
+    /// is not that of the base. Otherwise, it returns the error that the middleware would
+    /// return for this request if it had been given `region`. `region` is checked as the
+    /// middleware checks its own: first its length, so a region longer than 256 bytes is
+    /// `TooLarge`, whatever it holds; then its bytes, so an empty region, or one that holds
+    /// another byte than an ASCII letter, a digit, `-` or `_`, is `InvalidCredentials`.
     ///
     /// ```no_run
-    /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request,
-    /// #     bucket: &concord::Base) -> Result<(), concord::sign::SignError> {
-    /// concord::sign::check_origin(request, bucket)?;
+    /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request)
+    /// #     -> Result<(), concord::sign::SignError> {
     /// signer.sign(request, "eu-west-1")?;
     /// # Ok(()) }
     /// ```
     pub fn sign(&self, request: &mut Request, region: &str) -> Result<(), SignError> {
+        self.check_own_origin(request)?;
+        self.sign_any_origin(request, region)
+    }
+
+    /// Signs the request for the given region, without checking its origin.
+    ///
+    /// It is the right method only for an adapter that signs for several origins on
+    /// purpose: the origins of several buckets, or a global host beside regional ones,
+    /// with one set of credentials. The base given to [`SigV4::new`] then plays no part: a request
+    /// that reaches this method unchecked is signed for whatever host it names, with the
+    /// credentials of this signer. For one origin, use [`SigV4::sign`] or the middleware.
+    ///
+    /// The caller then owes three things:
+    ///
+    /// - Before calling it, check each request against the origins that it trusts with these
+    ///   credentials, with [`check_origin`] for each one, and never against an origin taken
+    ///   from the request, from a response or from any other value that the API returned.
+    /// - After signing, do not edit the signed fields: the method, the URL, the body and
+    ///   every header that was signed. An edit after signing can make the signature invalid
+    ///   for the request that is sent.
+    /// - Send the request through a transport that follows no redirect. Concord's own client,
+    ///   `concord::Http`, follows none; a transport that replaces it must not either, or the
+    ///   signed request, with its session token, can reach a host that was never checked.
+    ///
+    /// Like [`SigV4::sign`], it hashes the whole buffered body before it returns, and the
+    /// headers change only on success.
+    ///
+    /// ```no_run
+    /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request,
+    /// #     buckets: &[concord::Base]) -> Result<(), concord::sign::SignError> {
+    /// use concord::sign::{check_origin, SignError};
+    /// if !buckets.iter().any(|bucket| check_origin(request, bucket).is_ok()) {
+    ///     return Err(SignError::WrongOrigin);
+    /// }
+    /// signer.sign_any_origin(request, "eu-west-1")?;
+    /// # Ok(()) }
+    /// ```
+    pub fn sign_any_origin(&self, request: &mut Request, region: &str) -> Result<(), SignError> {
         self.validate(request, region)?;
         let payload = match self.payload(request)? {
             Some(bytes) => hex::encode(Sha256::digest(bytes)),
             None => "UNSIGNED-PAYLOAD".into(),
         };
         self.finish(request, region, &payload)
+    }
+
+    /// `WrongOrigin` unless the request goes to the origin of this signer's base. A base that
+    /// could not be parsed matches no request.
+    fn check_own_origin(&self, request: &Request) -> Result<(), SignError> {
+        match &self.origin {
+            Some(base) if same_origin(request.url(), base) => Ok(()),
+            _ => Err(SignError::WrongOrigin),
+        }
     }
 
     fn payload<'a>(&self, request: &'a Request) -> Result<Option<&'a [u8]>, SignError> {
@@ -656,13 +713,7 @@ impl Middleware for SigV4 {
         next: Next<'_>,
     ) -> Result<Response, TransportError> {
         let result = async {
-            if !self
-                .origin
-                .as_ref()
-                .is_some_and(|base| same_origin(request.url(), base))
-            {
-                return Err(SignError::WrongOrigin);
-            }
+            self.check_own_origin(&request)?;
             self.validate(&request, &self.region)?;
             let payload = match self.payload(&request)? {
                 None => "UNSIGNED-PAYLOAD".into(),
@@ -1018,7 +1069,7 @@ mod tests {
                 HeaderValue::from_static(value),
             );
         }
-        signer.sign(&mut request, "us-east-1").unwrap();
+        signer.sign_any_origin(&mut request, "us-east-1").unwrap();
         assert_eq!(request.headers()["x-amz-date"], "20130524T000000Z");
         assert_eq!(
             request.headers()["x-amz-content-sha256"],
@@ -1359,7 +1410,7 @@ mod tests {
                 .parse()
                 .unwrap(),
         );
-        signer.sign(&mut request, "us-east-1").unwrap();
+        signer.sign_any_origin(&mut request, "us-east-1").unwrap();
         let (headers, names) = canonical_headers(request.headers()).unwrap();
         let path = canonical_path(request.url().path(), &signer.path).unwrap();
         let canonical = format!("GET\n{path}\n\n{headers}\n{names}\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
@@ -1424,7 +1475,7 @@ mod tests {
                 );
                 let mut request =
                     Request::new(Method::GET, "https://service.test/".parse().unwrap());
-                let result = signer.sign(&mut request, &region);
+                let result = signer.sign_any_origin(&mut request, &region);
                 if size == 256 {
                     result.unwrap();
                 } else {

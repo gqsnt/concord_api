@@ -378,7 +378,7 @@ async fn c4_1_the_mark_runs_once_for_a_send_after_idle_timeout_and_before_the_re
     // Once for the send, not once for each try; the request is built after the mark.
     assert_eq!(trace.seen(), ["idle_timeout", "idempotent", "query"]);
     assert_eq!(
-        script.requests()[1].url(),
+        script.requests()[1].url().as_str(),
         "https://shapes.example.com/order?step=query"
     );
 }

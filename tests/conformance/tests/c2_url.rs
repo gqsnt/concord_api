@@ -800,7 +800,7 @@ async fn c2_3_c2_11_a_url_of_65_534_bytes_is_sent_and_one_byte_more_is_a_build_e
         assert_eq!(text, "readme", "{length} bytes");
         let requests = script.requests();
         assert_eq!(requests.len(), 1, "{length} bytes");
-        assert_eq!(requests[0].url().len(), length);
+        assert_eq!(requests[0].url().as_str().len(), length);
         assert_eq!(
             log.events().first().map(String::as_str),
             Some("caller out 1 files.readme")
@@ -839,7 +839,7 @@ async fn c2_6_a_query_that_makes_the_url_too_long_is_a_build_error() {
         let result = call.send().await;
         if sent {
             engine::success(result);
-            assert_eq!(script.requests()[0].url().len(), length);
+            assert_eq!(script.requests()[0].url().as_str().len(), length);
         } else {
             let error = engine::failure(result);
             assert_eq!(

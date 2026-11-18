@@ -129,7 +129,7 @@ async fn c11_12_nothing_of_api_client_travels() {
     let api_requests = api_script.requests();
     let request = &api_requests[0];
     assert_eq!(
-        request.url(),
+        request.url().as_str(),
         "https://api.test/v1/ticket?token=api%2Fkey%2B~&normal=api-query"
     );
     assert_eq!(request.header("authorization"), Some("Bearer api/key+~"));
@@ -166,7 +166,7 @@ async fn c11_12_nothing_of_api_client_travels() {
     assert_eq!(transfer_script.unused(), 0);
     let requests = transfer_script.requests();
     let request = &requests[0];
-    assert_eq!(request.url().as_bytes(), SIGNED.as_bytes());
+    assert_eq!(request.url().as_str().as_bytes(), SIGNED.as_bytes());
     assert_eq!(request.method(), Method::PUT);
     assert_eq!(request.headers(), &expected);
     assert_eq!(request.body(), Some(b"payload".as_slice()));
@@ -198,8 +198,8 @@ async fn c11_11_signed_target_is_exact_for_every_preserved_query_class() {
         assert_attempts(&script, &[1]);
         assert_eq!(script.unused(), 0);
         let requests = script.requests();
-        assert_eq!(requests[0].url().as_bytes(), url.as_bytes());
-        let uri: concord::http::Uri = requests[0].url().parse().unwrap();
+        assert_eq!(requests[0].url().as_str().as_bytes(), url.as_bytes());
+        let uri: concord::http::Uri = requests[0].url().as_str().parse().unwrap();
         assert_eq!(uri.path_and_query().unwrap().as_str().as_bytes(), target.as_bytes());
         assert!(requests[0].headers().is_empty());
         assert_eq!(requests[0].method(), Method::GET);
@@ -336,7 +336,10 @@ async fn c11_11_url_length_bound_is_exact() {
         "ok"
     );
     assert_attempts(&script, &[1]);
-    assert_eq!(script.requests()[0].url().as_bytes(), url.as_bytes());
+    assert_eq!(
+        script.requests()[0].url().as_str().as_bytes(),
+        url.as_bytes()
+    );
     refused(&format!("{url}a"), "UrlTooLong");
 }
 
@@ -374,7 +377,7 @@ async fn c11_12_other_origin_is_refused_before_edits_or_sending() {
     let url = "https://storage.test/sibling?sig=%2f";
     assert_eq!(at(client.fetch(), url).unwrap().await.unwrap(), "ok");
     assert_attempts(&script, &[1]);
-    assert_eq!(script.requests()[0].url(), url);
+    assert_eq!(script.requests()[0].url().as_str(), url);
     let script = Script::new();
     script.answer(200).body("ok");
     at(
@@ -388,7 +391,7 @@ async fn c11_12_other_origin_is_refused_before_edits_or_sending() {
     .unwrap();
     assert_attempts(&script, &[1]);
     assert_eq!(
-        script.requests()[0].url(),
+        script.requests()[0].url().as_str(),
         "https://other.test/sibling?sig=%2f"
     );
 }
@@ -411,8 +414,8 @@ async fn c11_11_no_secret_query_preserves_bytes_even_with_a_secret_header() {
     assert_attempts(&script, &[1, 1]);
     assert_eq!(script.unused(), 0);
     let requests = script.requests();
-    assert_eq!(requests[0].url().as_bytes(), url.as_bytes());
-    assert_eq!(requests[1].url().as_bytes(), reattached.as_bytes());
+    assert_eq!(requests[0].url().as_str().as_bytes(), url.as_bytes());
+    assert_eq!(requests[1].url().as_str().as_bytes(), reattached.as_bytes());
     for request in requests {
         assert_eq!(request.header("authorization"), Some("Bearer api/key+~"));
         assert!(request.headers()["authorization"].is_sensitive());
@@ -446,7 +449,7 @@ async fn c11_11_opaque_secret_queries_are_a_documented_boundary() {
         at(api.ticket(), url).unwrap().await.unwrap();
         assert_attempts(&script, &[1]);
         let requests = script.requests();
-        assert_eq!(requests[0].url().as_bytes(), expected.as_bytes());
+        assert_eq!(requests[0].url().as_str().as_bytes(), expected.as_bytes());
         assert_eq!(
             requests[0].header("authorization"),
             Some("Bearer api/key+~")
@@ -606,7 +609,7 @@ async fn c11_12_redirect_response_is_returned_without_another_send() {
     assert!(error.is_status(302));
     assert_eq!(error.tries(), 1);
     assert_attempts(&script, &[1]);
-    assert_eq!(script.requests()[0].url(), SIGNED);
+    assert_eq!(script.requests()[0].url().as_str(), SIGNED);
     assert_eq!(script.unused(), 1);
 }
 
@@ -622,7 +625,7 @@ async fn c11_12_target_changing_edits_are_a_documented_boundary() {
     assert_eq!(at(edited, SIGNED).unwrap().await.unwrap(), "edited");
     assert_attempts(&script, &[1]);
     assert_eq!(
-        script.requests()[0].url(),
+        script.requests()[0].url().as_str(),
         "https://other.test/changed?sig=%2F"
     );
     assert_eq!(script.unused(), 0);
@@ -662,7 +665,7 @@ async fn c11_12_retry_idempotence_reader_and_transport_are_retained() {
         }
         for request in script.requests() {
             assert_eq!(request.method(), method);
-            assert_eq!(request.url().as_bytes(), SIGNED.as_bytes());
+            assert_eq!(request.url().as_str().as_bytes(), SIGNED.as_bytes());
             assert_eq!(request.upload().bytes(), b"payload");
         }
     }
@@ -721,7 +724,7 @@ async fn c11_12_stream_body_validation_never_claims_and_sends_once() {
     assert_eq!(error.tries(), 1);
     assert_attempts(&script, &[1]);
     assert_eq!(script.unused(), 1);
-    assert_eq!(script.requests()[0].url(), SIGNED);
+    assert_eq!(script.requests()[0].url().as_str(), SIGNED);
     assert_eq!(script.requests()[0].upload().bytes(), b"payload");
     assert_eq!(dropped.load(Ordering::SeqCst), 1);
     let error = at(call, SIGNED).unwrap().await.unwrap_err();

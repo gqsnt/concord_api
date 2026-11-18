@@ -180,7 +180,7 @@ async fn c12_1_runtime_query_pairs_append_once_without_reencoding() {
         .await
         .unwrap();
     attempts(&script, &[1]);
-    assert_eq!(script.requests()[0].url(), "https://writers.test/?page=1&z=a+%2B%26%2F%C3%A9&metadata%5Border%5D=7781&items%5B1%5D%5Bprice%5D=price_1&mode=send_invoice");
+    assert_eq!(script.requests()[0].url().as_str(), "https://writers.test/?page=1&z=a+%2B%26%2F%C3%A9&metadata%5Border%5D=7781&items%5B1%5D%5Bprice%5D=price_1&mode=send_invoice");
 }
 
 #[test]

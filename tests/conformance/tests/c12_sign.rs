@@ -517,7 +517,7 @@ fn judge(
 fn judged(request: &concord_testkit::script::Request, who: &Who, payload: Payload<'_>) -> Verdict {
     judge(
         request.method(),
-        request.url(),
+        request.url().as_str(),
         request.headers(),
         who,
         payload,
@@ -802,7 +802,7 @@ async fn c12_9_the_four_aws_example_requests_sent_through_a_client_are_signed_as
 
     let requests = script.requests();
     assert_eq!(requests.len(), 4);
-    let urls: Vec<&str> = requests.iter().map(|r| r.url()).collect();
+    let urls: Vec<&str> = requests.iter().map(|r| r.url().as_str()).collect();
     assert_eq!(
         urls,
         [
@@ -857,7 +857,7 @@ async fn c12_9_a_query_with_repeated_empty_escaped_and_unordered_keys_is_signed_
     let requests = script.requests();
     assert_eq!(requests.len(), 4);
     for (request, query) in requests.iter().zip(raw_queries) {
-        assert!(request.url().ends_with(query), "{}", request.url());
+        assert!(request.url().as_str().ends_with(query), "{}", request.url());
         judged(request, &who, Payload::Bytes(b""));
     }
     judged(&requests[3], &who, Payload::Bytes(b""));
@@ -895,7 +895,7 @@ async fn c12_9_a_raw_plus_empty_fields_lower_case_escapes_and_reserved_character
     assert_eq!(requests.len(), raw_queries.len());
     for (request, query) in requests.iter().zip(raw_queries) {
         // The URL is sent as it was written; only the canonical form changes.
-        assert_eq!(request.url(), format!("{BUCKET}/?{query}"));
+        assert_eq!(request.url().as_str(), format!("{BUCKET}/?{query}"));
         judged(request, &who, Payload::Bytes(b""));
     }
 }
@@ -1065,11 +1065,11 @@ async fn c12_9_preserve_signs_an_aws_encoded_path_as_it_is_sent() {
     );
     let requests = script.requests();
     for (request, (_, path)) in requests.iter().zip(keys) {
-        assert_eq!(request.url(), format!("{BUCKET}{path}"));
+        assert_eq!(request.url().as_str(), format!("{BUCKET}{path}"));
         judged(request, &who, Payload::Bytes(b""));
     }
     assert_eq!(
-        requests[keys.len()].url(),
+        requests[keys.len()].url().as_str(),
         format!("{BUCKET}/a%2Fb%E2%82%AC")
     );
     judged(&requests[keys.len()], &who, Payload::Bytes(b""));
@@ -1141,7 +1141,7 @@ async fn c12_9_normalize_and_encode_encodes_the_path_once_more_as_aws_does_for_o
     assert_eq!(requests.len(), paths.len());
     for (request, (path, canonical)) in requests.iter().zip(paths) {
         // The URL is not rewritten.
-        assert_eq!(request.url(), format!("{origin}{path}"));
+        assert_eq!(request.url().as_str(), format!("{origin}{path}"));
         assert_eq!(aws::normalized_path(path), canonical, "the judge on {path}");
         judged(request, &who, Payload::Bytes(b""));
     }
@@ -1165,7 +1165,7 @@ async fn c12_9_one_path_is_signed_as_it_is_for_s3_and_encoded_again_for_other_se
     }
     let requests = script.requests();
     for request in &requests {
-        assert_eq!(request.url(), format!("{BUCKET}/a%20b"));
+        assert_eq!(request.url().as_str(), format!("{BUCKET}/a%20b"));
     }
     judged(&requests[0], &s3, Payload::Bytes(b""));
     judged(&requests[1], &iam, Payload::Bytes(b""));
@@ -1495,13 +1495,16 @@ async fn c12_9_a_conflicting_host_is_refused_and_a_port_is_signed_in_host() {
     assert_eq!(refusal(&error), "InvalidRequest", "a Host without its port");
     let requests = script.requests();
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[1].url(), "https://store.example.test:8443/k");
+    assert_eq!(
+        requests[1].url().as_str(),
+        "https://store.example.test:8443/k"
+    );
     judged(&requests[1], &who, Payload::Bytes(b""));
     judged(&requests[2], &who, Payload::Bytes(b""));
 }
 
 #[tokio::test(start_paused = true)]
-async fn c12_9_sign_signs_a_request_for_another_region_and_host() {
+async fn c12_9_sign_any_origin_signs_a_request_for_another_region_and_host() {
     // The signer's own origin and region are another host and `us-east-1`.
     let configured = Who::s3();
     let signer = configured.signer(&base(BUCKET));
@@ -1511,10 +1514,11 @@ async fn c12_9_sign_signs_a_request_for_another_region_and_host() {
     *request.body_mut() = Some(reqwest::Body::from("hello"));
     insert(&mut request, "content-type", b"text/plain");
     signer
-        .sign(&mut request, "eu-west-1")
+        .sign_any_origin(&mut request, "eu-west-1")
         .expect("sign for another region and host");
     let first = judged_raw(&request, &who, Payload::Bytes(b"hello"));
-    // `sign` accepts this host; `check_origin` rejects it against the configured base.
+    // `sign_any_origin` accepts this host; `check_origin` rejects it against the configured
+    // base.
     assert_eq!(
         format!(
             "{:?}",
@@ -1526,7 +1530,9 @@ async fn c12_9_sign_signs_a_request_for_another_region_and_host() {
     // The same request signed twice: the fields of the first signature are replaced, not
     // added to; the time has moved.
     tokio::time::advance(secs(5)).await;
-    signer.sign(&mut request, "eu-west-1").expect("sign again");
+    signer
+        .sign_any_origin(&mut request, "eu-west-1")
+        .expect("sign again");
     let second = judged_raw(&request, &who, Payload::Bytes(b"hello"));
     assert_eq!(
         aws::epoch_seconds(&second.amz_date) - aws::epoch_seconds(&first.amz_date),
@@ -1763,6 +1769,56 @@ async fn c12_10_a_request_to_another_origin_is_refused_before_anything_is_sent()
             .with_transport(script.clone());
         success(client.get("k".to_owned()).await);
         judged(&script.requests()[0], &who, Payload::Bytes(b""));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_10_sign_refuses_another_origin_before_a_key_is_used_and_changes_nothing() {
+    // Credentials that cannot sign: at the right origin their own refusal would show.
+    let cannot = Who::s3().keys("AKID/BAD", SECRET);
+    for who in [Who::s3(), cannot] {
+        let signer = who.signer(&base(BUCKET));
+        for other in [
+            "https://other.s3.amazonaws.com/k",
+            "http://examplebucket.s3.amazonaws.com/k",
+            "https://examplebucket.s3.amazonaws.com:8443/k",
+            "https://examplebucket.s3.amazonaws.com.evil.test/k",
+            "https://s3.amazonaws.com/k",
+        ] {
+            let mut request = raw(http::Method::GET, other);
+            insert(&mut request, "authorization", b"stale");
+            let before = request.headers().clone();
+            let error = signer
+                .sign(&mut request, "eu-west-1")
+                .expect_err("another origin");
+            assert_eq!(format!("{error:?}"), "WrongOrigin", "{other}");
+            assert_eq!(*request.headers(), before, "{other}");
+        }
+    }
+    let mut own = raw(
+        http::Method::GET,
+        "https://examplebucket.s3.amazonaws.com/k",
+    );
+    let error = Who::s3()
+        .keys("AKID/BAD", SECRET)
+        .signer(&base(BUCKET))
+        .sign(&mut own, "eu-west-1")
+        .expect_err("credentials that cannot sign");
+    assert_eq!(format!("{error:?}"), "InvalidCredentials");
+    // The same origin, written with its default port or another path, is signed, for the
+    // region given to `sign`.
+    let signer = Who::s3().signer(&base(BUCKET));
+    let who = Who::s3().region("eu-west-1");
+    for same in [
+        "https://examplebucket.s3.amazonaws.com:443/k",
+        "https://examplebucket.s3.amazonaws.com/prefix/k",
+        "https://EXAMPLEBUCKET.s3.amazonaws.com/k",
+    ] {
+        let mut request = raw(http::Method::GET, same);
+        signer
+            .sign(&mut request, "eu-west-1")
+            .expect("the signer's own origin");
+        judged_raw(&request, &who, Payload::Bytes(b""));
     }
 }
 

@@ -1200,7 +1200,7 @@ mod engine_tests {
                 assert!(script
                     .requests()
                     .iter()
-                    .all(|r| r.url().starts_with("https://edited.test/")));
+                    .all(|r| r.url().as_str().starts_with("https://edited.test/")));
             } else {
                 let error = pages.try_next().await.unwrap_err();
                 assert_eq!(error.kind(), Kind::Build);
@@ -1253,7 +1253,7 @@ mod engine_tests {
         assert!(pages.try_next().await.unwrap().is_some());
         assert!(pages.try_next().await.unwrap().is_some());
         assert_eq!(
-            script.requests()[1].url(),
+            script.requests()[1].url().as_str(),
             "https://api.test/different/next?x=1"
         );
         over(&mut pages).await;
@@ -1279,8 +1279,14 @@ mod engine_tests {
         assert!(pages.try_next().await.unwrap().is_some());
         assert!(pages.try_next().await.unwrap().is_some());
         let requests = script.requests();
-        assert_eq!(requests[0].url(), "https://api.test/first?public=1&key=old");
-        assert_eq!(requests[1].url(), "https://api.test/next?public=2&key=old");
+        assert_eq!(
+            requests[0].url().as_str(),
+            "https://api.test/first?public=1&key=old"
+        );
+        assert_eq!(
+            requests[1].url().as_str(),
+            "https://api.test/next?public=2&key=old"
+        );
         over(&mut pages).await;
     }
 

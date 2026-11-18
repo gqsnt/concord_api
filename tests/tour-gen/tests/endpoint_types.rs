@@ -31,10 +31,11 @@ async fn c1_11_one_function_sends_two_endpoints() -> riot::Result<()> {
     assert_eq!(requests.len(), 2);
     assert!(requests
         .iter()
-        .any(|request| request.url().ends_with("/by-riot-id/Ada/EUW")));
-    assert!(requests
-        .iter()
-        .any(|request| request.url().ends_with("/by-puuid/p-1/ids?count=3")));
+        .any(|request| request.url().as_str().ends_with("/by-riot-id/Ada/EUW")));
+    assert!(requests.iter().any(|request| request
+        .url()
+        .as_str()
+        .ends_with("/by-puuid/p-1/ids?count=3")));
     Ok(())
 }
 

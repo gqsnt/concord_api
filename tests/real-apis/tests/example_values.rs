@@ -92,7 +92,10 @@ async fn c11_9_a_streamed_reply_is_typed_by_the_authors_function() {
     let requests = script.requests();
     assert_eq!(requests.len(), 3);
     let first = &requests[0];
-    assert_eq!(first.url(), "https://api.anthropic.com/v1/messages");
+    assert_eq!(
+        first.url().as_str(),
+        "https://api.anthropic.com/v1/messages"
+    );
     assert_eq!(first.header("x-api-key"), Some("PRIVATE_API_KEY"));
     assert_eq!(first.header("anthropic-version"), Some("2023-06-01"));
     let body: serde_json::Value = serde_json::from_slice(first.body().unwrap()).unwrap();
@@ -163,7 +166,7 @@ async fn c12_6_github_renews_a_users_token_and_saves_the_new_pair_first() {
     let exchanges = tokens.requests();
     assert_eq!(exchanges.len(), 1);
     assert_eq!(
-        exchanges[0].url(),
+        exchanges[0].url().as_str(),
         "https://github.com/login/oauth/access_token"
     );
     assert_eq!(exchanges[0].header("accept"), Some("application/json"));
@@ -173,7 +176,7 @@ async fn c12_6_github_renews_a_users_token_and_saves_the_new_pair_first() {
     );
     let calls = api.requests();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].url(), "https://api.github.com/user");
+    assert_eq!(calls[0].url().as_str(), "https://api.github.com/user");
     assert_eq!(calls[0].header("authorization"), Some("Bearer a1"));
     match store.load().await.unwrap() {
         Stored::Ready(pair) => {
@@ -251,7 +254,7 @@ async fn c12_3_drive_uploads_metadata_and_content_in_one_related_body() {
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
     assert_eq!(
-        request.url(),
+        request.url().as_str(),
         "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
     );
     assert_eq!(
@@ -294,7 +297,7 @@ async fn c12_2_elasticsearch_sends_the_bulk_lines_compressed_with_gzip() {
     let requests = script.requests();
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
-    assert_eq!(request.url(), "https://search.test/_bulk");
+    assert_eq!(request.url().as_str(), "https://search.test/_bulk");
     assert_eq!(request.header("content-encoding"), Some("gzip"));
     assert_eq!(request.header("content-type"), Some("application/x-ndjson"));
     let lines = Body::new(

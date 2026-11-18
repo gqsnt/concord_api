@@ -595,11 +595,15 @@ impl fmt::Debug for Seen<'_> {
 #[derive(Clone)]
 pub enum LimitError {
     /// The configuration is invalid: a bound, a key size, a window or a setting,
-    /// including a cap of zero on concurrency.
+    /// including a cap of zero on concurrency. Check the bounds, the keys and the windows
+    /// of the configuration.
     ///
     /// It takes precedence when the request would also exceed `max_keys`.
     InvalidPolicy,
-    /// The request's keys exceed `max_keys`, even after forgetting the keys that hold nothing.
+    /// The keys already kept, across all buckets, plus the new keys of the request would exceed
+    /// `max_keys`, even after forgetting the keys that hold nothing. A request can be refused
+    /// with fewer than `max_keys` keys of its own, when other keys are still in use. Raise the
+    /// bound with [`Limit::max_keys`].
     TooManyKeys,
     /// The bucket's cost is larger than the capacity of at least one known window.
     CostExceedsCapacity,
@@ -694,8 +698,8 @@ impl fmt::Debug for LimitError {
 impl fmt::Display for LimitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::InvalidPolicy => "limit policy is invalid; check its bounds, keys and windows",
-            Self::TooManyKeys => "limit key bound reached; configure max_keys",
+            Self::InvalidPolicy => "the limit policy is invalid",
+            Self::TooManyKeys => "limit keys exceed max_keys",
             Self::CostExceedsCapacity => "limit cost exceeds window capacity",
             Self::MaxHold { .. } => "limit wait exceeds max_hold",
         })

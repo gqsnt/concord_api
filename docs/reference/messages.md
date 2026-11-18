@@ -644,26 +644,26 @@ The cause that `source()` returns holds no value of the response: a reader, ship
 
 The multipart boundary scanner returns an `io::Error` with the text `multipart boundary occurred in a stream part`, kind `Other` for form-data, `InvalidData` for mixed/related. It fails before the colliding bytes are yielded. Use different part bytes or a custom writer with a collision-free boundary.
 
-**The errors of `concord-extras`.** The values of `concord-extras` report a failure with an error type of their own. Its text is fixed words, with at most a one-based position (`MIME part 2 …`), and never a value of the request, of the response or of your code; the cause that it keeps, if any, is its `source()`. Every type below but `RecordError` and `TransferError` has `find` (`LimitError::find(&e)`), which returns it from anywhere in the chain of `source()`. You meet such an error in one of three places:
+**The errors of `concord-extras`.** The values of `concord-extras` report a failure with an error type of their own. Its text is fixed words, with at most a one-based position (`MIME part 2 …`), and never a value of the request, of the response or of your code; the cause that it keeps, if any, is its `source()`. It starts in lower case unless its first word is an acronym (`JSON`, `MIME`), it ends without a period, and it holds no semicolon: what to do is in the first column of its row, not after the text. Every type below but `RecordError` and `TransferError` has `find` (`LimitError::find(&e)`), which returns it from anywhere in the chain of `source()`. You meet such an error in one of three places:
 
 - behind `transport error: the request was blocked before it was sent`: a middleware layer (`SigV4`, `Renewed`, `Rotating`, `Limit`) would not send the request;
 - behind `build error: the body could not be constructed`: a body writer in a `body` expression failed; called in your own code, the writer returns the error itself;
-- returned directly: by `concord::transfer::at`, by `try_next` on a `RecordStream`, by `SseEvent::json`, and by a `RotationDriver` when it ends.
+- returned directly: by `concord::transfer::at`, by `try_next` on a `RecordStream`, by `SseEvent::json`, by a `RotationDriver` when it ends, and by `SigV4::sign` and `SigV4::sign_any_origin`, called in your own adapter.
 
-**Signing a request**, `concord::sign::SignError`, behind a blocked request:
+**Signing a request**, `concord::sign::SignError`, behind a blocked request, or returned by `SigV4::sign` and `SigV4::sign_any_origin`. The two methods return the same errors as the middleware, for the region that they are given, except that `sign_any_origin` never returns the error of another origin:
 
 | Failure | Printed text |
 |---|---|
-| The body is a stream, which cannot be hashed without reading it. An unsigned payload is accepted only for S3, so other services return this even when it is allowed. Send the body as bytes | `The request body is a stream and cannot be hashed.` |
-| An unsigned stream on a base that is not HTTPS | `An unsigned request payload requires HTTPS.` |
-| The request goes to another origin than the one that the signer was made for | `The request leaves the signing origin.` |
-| A request head or a credential field is larger than its documented bound, or a region or a service is longer than 256 bytes | `The signing input exceeds its size limit.` |
-| The URL, the `Host`, the encoding of the path, the framing or the `Connection` options cannot be signed | `The request cannot be canonicalized for signing.` |
-| The access key ID, the region or the service is empty or holds a byte other than an ASCII letter, a digit, `-` or `_`; or the secret key or a session token is empty. Check the credentials | `The signing credentials or scope are invalid.` |
-| A header that the signer generates could not be built or inserted; its cause is `source()` | `A signing header could not be installed.` |
-| A header that is signed is not valid text | `A signed header is not valid text.` |
-| The signing time is outside the years 0001 to 9999 (UTC). Check the system clock | `The signing time is outside the supported range.` |
-| A proof that your own signing code computes failed, wrapped with `SignError::failed`; your error is `source()` | `The request proof failed.` |
+| The body is a stream, which cannot be hashed without reading it. An unsigned payload is accepted only for S3, so other services return this even when it is allowed. Send the body as bytes | `the request body is a stream and cannot be hashed` |
+| An unsigned stream in a request whose URL is not HTTPS | `an unsigned request payload requires HTTPS` |
+| The request goes to another origin than the one that the signer was made for (the middleware and `SigV4::sign`) | `the request leaves the signing origin` |
+| A request head or a credential field is larger than its documented bound, or a region or a service is longer than 256 bytes | `the signing input exceeds its size limit` |
+| The URL, the `Host`, the encoding of the path, the framing or the `Connection` options cannot be signed | `the request cannot be canonicalized for signing` |
+| The access key ID, the region or the service is empty or holds a byte other than an ASCII letter, a digit, `-` or `_`; or the secret key or a session token is empty. Check the credentials | `the signing credentials or scope are invalid` |
+| A header that the signer generates could not be built or inserted; its cause is `source()` | `a signing header could not be installed` |
+| A header that is signed is not valid text | `a signed header is not valid text` |
+| The signing time is outside the years 0001 to 9999 (UTC). Check the system clock | `the signing time is outside the supported range` |
+| A proof that your own signing code computes failed, wrapped with `SignError::failed`; your error is `source()` | `the request proof failed` |
 
 **A credential that is renewed**, `concord::auth::RenewalError`, behind a blocked request (also the `source()` of a `RotationError`):
 
@@ -695,8 +695,8 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 
 | Failure | Printed text |
 |---|---|
-| The settings are invalid: a bound, a key size, a window or a setting, including a cap of zero on calls in flight | `limit policy is invalid; check its bounds, keys and windows` |
-| The keys of the request would exceed `max_keys`, even after the keys that hold nothing are forgotten. Raise `max_keys` | `limit key bound reached; configure max_keys` |
+| The settings are invalid: a bound, a key size, a window or a setting, including a cap of zero on calls in flight. Check the bounds, the keys and the windows | `the limit policy is invalid` |
+| The keys already kept, across all buckets, plus the new keys of the request would exceed `max_keys`, even after the keys that hold nothing are forgotten: a request can be refused with fewer than `max_keys` keys of its own, when other keys are still in use. Raise `max_keys` | `limit keys exceed max_keys` |
 | The cost of a bucket is larger than the capacity of a known window, so the request could never be sent | `limit cost exceeds window capacity` |
 | The request would wait longer than `max_hold`. `MaxHold { required, .. }` holds the wait still needed, when it is known: for a call that is safe to repeat, wait for it and call again | `limit wait exceeds max_hold` |
 
