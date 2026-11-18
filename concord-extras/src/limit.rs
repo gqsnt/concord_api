@@ -280,6 +280,13 @@ impl Bucket {
 
     /// Adds a window known in advance; call it again to add more, up to eight.
     ///
+    /// A window set here is where the budget of each key starts. When [`learn`](Self::learn)
+    /// returns a window at the same position, the capacity that the API reports replaces
+    /// this one, also upward, from that response on; what is left can still only go down.
+    /// The same code can then serve keys of different sizes: Riot gives a development key
+    /// 20 requests a second and a production key far more, so a bucket declared for the
+    /// first learns the second from its headers.
+    ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|_| Some("requests".into()))
     ///     .window(concord::limit::Window::rolling(10, std::time::Duration::from_secs(1)));
