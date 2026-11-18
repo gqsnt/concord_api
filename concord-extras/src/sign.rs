@@ -455,21 +455,64 @@ impl SigV4 {
         self
     }
 
-    /// Signs the request for the given region, without checking its origin.
+    /// Signs the request for the given region, after checking that it goes to the origin of
+    /// this signer's base.
     ///
-    /// The adapter must check the origin first, with [`check_origin`] or its own list of
-    /// allowed hosts; only the middleware checks the origin against this signer's base.
-    /// This synchronous form hashes the whole buffered body before it returns; the
-    /// middleware yields between chunks. The headers change only on success.
+    /// The origin is checked first, as the middleware checks it: before the credentials or
+    /// the clock are read. Unlike the middleware, which signs for the region given to
+    /// [`SigV4::new`], it signs for `region`. This synchronous form hashes the whole buffered
+    /// body before it returns; the middleware yields between chunks. The headers change only
+    /// on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SignError::WrongOrigin` when the scheme, host or effective port of the request
+    /// is not that of the base; otherwise, the error that the middleware would return for this
+    /// request.
     ///
     /// ```no_run
-    /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request,
-    /// #     bucket: &concord::Base) -> Result<(), concord::sign::SignError> {
-    /// concord::sign::check_origin(request, bucket)?;
+    /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request)
+    /// #     -> Result<(), concord::sign::SignError> {
     /// signer.sign(request, "eu-west-1")?;
     /// # Ok(()) }
     /// ```
     pub fn sign(&self, request: &mut Request, region: &str) -> Result<(), SignError> {
+        // The same check as the middleware's, before the credentials or the clock are read.
+        if !self
+            .origin
+            .as_ref()
+            .is_some_and(|base| same_origin(request.url(), base))
+        {
+            return Err(SignError::WrongOrigin);
+        }
+        self.sign_any_origin(request, region)
+    }
+
+    /// Signs the request for the given region, without checking its origin.
+    ///
+    /// It is the right method only for an adapter that signs for several origins on
+    /// purpose: a host for each bucket, or a global host beside regional ones, with one
+    /// set of credentials. The base given to [`SigV4::new`] then plays no part. The caller
+    /// owes the check that this method skips: before calling it, check the request against
+    /// the origins that the adapter was configured with, with [`check_origin`] for each one,
+    /// and never against an origin taken from the request itself. A request that reaches
+    /// this method unchecked is signed for whatever host it names, with the credentials of
+    /// this signer. For one origin, use [`SigV4::sign`] or the middleware.
+    ///
+    /// Like [`SigV4::sign`], it hashes the whole buffered body before it returns, and the
+    /// headers change only on success.
+    ///
+    /// ```no_run
+    /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request,
+    /// #     buckets: &[concord::Base]) -> Result<(), concord::sign::SignError> {
+    /// use concord::sign::{check_origin, SignError};
+    /// if !buckets.iter().any(|bucket| check_origin(request, bucket).is_ok()) {
+    ///     return Err(SignError::WrongOrigin);
+    /// }
+    /// signer.sign_any_origin(request, "eu-west-1")?;
+    /// # Ok(()) }
+    /// ```
+    pub fn sign_any_origin(&self, request: &mut Request, region: &str) -> Result<(), SignError> {
         self.validate(request, region)?;
         let payload = match self.payload(request)? {
             Some(bytes) => hex::encode(Sha256::digest(bytes)),
@@ -1018,7 +1061,7 @@ mod tests {
                 HeaderValue::from_static(value),
             );
         }
-        signer.sign(&mut request, "us-east-1").unwrap();
+        signer.sign_any_origin(&mut request, "us-east-1").unwrap();
         assert_eq!(request.headers()["x-amz-date"], "20130524T000000Z");
         assert_eq!(
             request.headers()["x-amz-content-sha256"],
@@ -1359,7 +1402,7 @@ mod tests {
                 .parse()
                 .unwrap(),
         );
-        signer.sign(&mut request, "us-east-1").unwrap();
+        signer.sign_any_origin(&mut request, "us-east-1").unwrap();
         let (headers, names) = canonical_headers(request.headers()).unwrap();
         let path = canonical_path(request.url().path(), &signer.path).unwrap();
         let canonical = format!("GET\n{path}\n\n{headers}\n{names}\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
@@ -1424,7 +1467,7 @@ mod tests {
                 );
                 let mut request =
                     Request::new(Method::GET, "https://service.test/".parse().unwrap());
-                let result = signer.sign(&mut request, &region);
+                let result = signer.sign_any_origin(&mut request, &region);
                 if size == 256 {
                     result.unwrap();
                 } else {

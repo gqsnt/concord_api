@@ -1504,7 +1504,7 @@ async fn c12_9_a_conflicting_host_is_refused_and_a_port_is_signed_in_host() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn c12_9_sign_signs_a_request_for_another_region_and_host() {
+async fn c12_9_sign_any_origin_signs_a_request_for_another_region_and_host() {
     // The signer's own origin and region are another host and `us-east-1`.
     let configured = Who::s3();
     let signer = configured.signer(&base(BUCKET));
@@ -1514,10 +1514,11 @@ async fn c12_9_sign_signs_a_request_for_another_region_and_host() {
     *request.body_mut() = Some(reqwest::Body::from("hello"));
     insert(&mut request, "content-type", b"text/plain");
     signer
-        .sign(&mut request, "eu-west-1")
+        .sign_any_origin(&mut request, "eu-west-1")
         .expect("sign for another region and host");
     let first = judged_raw(&request, &who, Payload::Bytes(b"hello"));
-    // `sign` accepts this host; `check_origin` rejects it against the configured base.
+    // `sign_any_origin` accepts this host; `check_origin` rejects it against the configured
+    // base.
     assert_eq!(
         format!(
             "{:?}",
@@ -1529,7 +1530,9 @@ async fn c12_9_sign_signs_a_request_for_another_region_and_host() {
     // The same request signed twice: the fields of the first signature are replaced, not
     // added to; the time has moved.
     tokio::time::advance(secs(5)).await;
-    signer.sign(&mut request, "eu-west-1").expect("sign again");
+    signer
+        .sign_any_origin(&mut request, "eu-west-1")
+        .expect("sign again");
     let second = judged_raw(&request, &who, Payload::Bytes(b"hello"));
     assert_eq!(
         aws::epoch_seconds(&second.amz_date) - aws::epoch_seconds(&first.amz_date),
@@ -1766,6 +1769,56 @@ async fn c12_10_a_request_to_another_origin_is_refused_before_anything_is_sent()
             .with_transport(script.clone());
         success(client.get("k".to_owned()).await);
         judged(&script.requests()[0], &who, Payload::Bytes(b""));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_10_sign_refuses_another_origin_before_a_key_is_used_and_changes_nothing() {
+    // Credentials that cannot sign: at the right origin their own refusal would show.
+    let cannot = Who::s3().keys("AKID/BAD", SECRET);
+    for who in [Who::s3(), cannot] {
+        let signer = who.signer(&base(BUCKET));
+        for other in [
+            "https://other.s3.amazonaws.com/k",
+            "http://examplebucket.s3.amazonaws.com/k",
+            "https://examplebucket.s3.amazonaws.com:8443/k",
+            "https://examplebucket.s3.amazonaws.com.evil.test/k",
+            "https://s3.amazonaws.com/k",
+        ] {
+            let mut request = raw(http::Method::GET, other);
+            insert(&mut request, "authorization", b"stale");
+            let before = request.headers().clone();
+            let error = signer
+                .sign(&mut request, "eu-west-1")
+                .expect_err("another origin");
+            assert_eq!(format!("{error:?}"), "WrongOrigin", "{other}");
+            assert_eq!(*request.headers(), before, "{other}");
+        }
+    }
+    let mut own = raw(
+        http::Method::GET,
+        "https://examplebucket.s3.amazonaws.com/k",
+    );
+    let error = Who::s3()
+        .keys("AKID/BAD", SECRET)
+        .signer(&base(BUCKET))
+        .sign(&mut own, "eu-west-1")
+        .expect_err("credentials that cannot sign");
+    assert_eq!(format!("{error:?}"), "InvalidCredentials");
+    // The same origin, written with its default port or another path, is signed, for the
+    // region given to `sign`.
+    let signer = Who::s3().signer(&base(BUCKET));
+    let who = Who::s3().region("eu-west-1");
+    for same in [
+        "https://examplebucket.s3.amazonaws.com:443/k",
+        "https://examplebucket.s3.amazonaws.com/prefix/k",
+        "https://EXAMPLEBUCKET.s3.amazonaws.com/k",
+    ] {
+        let mut request = raw(http::Method::GET, same);
+        signer
+            .sign(&mut request, "eu-west-1")
+            .expect("the signer's own origin");
+        judged_raw(&request, &who, Payload::Bytes(b""));
     }
 }
 

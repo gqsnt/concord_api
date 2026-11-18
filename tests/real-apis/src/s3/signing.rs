@@ -34,11 +34,12 @@ impl Signed {
             request.headers_mut().try_insert("content-md5", HeaderValue::from_str(&digest)?)
                 .map_err(SignError::failed)?;
         }
-        // The origin was selected from configuration, never from the outgoing URL.
+        // The origin was selected from configuration, never from the outgoing URL: one
+        // signer serves every origin, so it signs without its own check.
         self.signer.get_or_init(||
             SigV4::new(origin, self.credentials.clone(), region, "s3", CanonicalPath::Preserve)
                 .allow_unsigned_payload()
-        ).sign(request, region)
+        ).sign_any_origin(request, region)
     }
 }
 
