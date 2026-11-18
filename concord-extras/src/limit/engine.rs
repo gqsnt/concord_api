@@ -567,7 +567,9 @@ impl Inner {
             let (now, wait, expired) = {
                 let mut state = self.lock();
                 let now = Instant::now();
-                let expired = now > deadline && (waited_once || !max_hold.is_zero());
+                // `max_hold` bounds waiting: a request that needs no wait leaves, whatever its
+                // key and cost functions took; one that waited may not leave after it.
+                let expired = now > deadline && waited_once;
                 let missing = selected
                     .iter()
                     .filter(|s| !state.buckets.contains_key(&s.id))
@@ -936,7 +938,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn c11_7_admission_lock_delay_counts_against_max_hold() {
+    async fn c11_7_a_lock_delay_never_refuses_a_request_that_needs_no_wait() {
         let limit = super::super::Limit::new().max_hold(Duration::from_secs(1));
         let script = Script::new();
         let start = Instant::now();
@@ -945,15 +947,8 @@ mod tests {
                 .now_or_never()
                 .is_none());
         }));
-        let result = limit.inner.reserve(vec![], Instant::now()).await;
-        let error = match result {
-            Err(error) => error,
-            Ok(_) => panic!("admission outlived max_hold while taking the policy lock"),
-        };
-        assert!(
-            matches!(error, LimitError::MaxHold { required: Some(required), waited, .. }
-            if required.is_zero() && waited == Duration::from_secs(2))
-        );
+        // Nothing makes this request wait, so the time taken before admission refuses nothing.
+        assert!(limit.inner.reserve(vec![], Instant::now()).await.is_ok());
         assert_eq!(start.elapsed(), Duration::from_secs(2));
         assert_eq!(script.requests().len(), 0);
     }

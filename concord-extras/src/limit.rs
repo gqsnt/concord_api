@@ -894,17 +894,19 @@ impl Limit {
 
     /// Sets the longest total wait of a request: 60 seconds by default.
     ///
-    /// A request whose known wait is longer fails at once; a request whose wait is
-    /// unknown fails when this limit is reached. Zero lets a request leave only if it
-    /// needs no wait. The error is `MaxHold`: `required` is the wait still needed when
+    /// It bounds waiting: a request that needs no wait leaves, for every value of this
+    /// setting. A request whose known wait is longer fails at once; a request whose wait is
+    /// unknown fails when this limit is reached. Zero lets a request leave only if it needs
+    /// no wait. The error is `MaxHold`: `required` is the wait still needed when
     /// the request was refused, and `retry_after` keeps the server's original value for
     /// a `429` that contributed to the wait.
     ///
-    /// The time counts from when the limit receives the request, so the key and cost
-    /// functions of the buckets take part of it, and a request that could leave only after
-    /// this limit fails with `MaxHold` instead. Those functions run to their end: a call can
-    /// return later than this limit by the time they take, without its request being sent.
-    /// With zero, a request that needs no wait still leaves, whatever its functions took.
+    /// The time counts from when the limit receives the request, the key and cost functions
+    /// of the buckets included: a request that must wait may wait until this limit has
+    /// passed since then, and fails with `MaxHold` if its wait would end later. A request
+    /// that needs no wait leaves whatever those functions took: their time is the author's.
+    /// They run to their end, so a call that fails can return later than this limit by the
+    /// time they take, with nothing sent.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new().max_hold(std::time::Duration::from_secs(10));

@@ -2033,20 +2033,45 @@ async fn c11_7_concurrency_wait_has_max_hold_and_canceled_timeout_leaks_no_permi
 
 #[tokio::test(start_paused = true)]
 async fn c11_7_max_hold_counts_the_time_of_the_key_function() {
+    // A key function that takes two seconds.
+    let slow = |window: Option<Window>| {
+        let bucket = Bucket::new(|_| {
+            assert!(tokio::time::advance(sec(2)).now_or_never().is_none());
+            Some("k".into())
+        });
+        match window {
+            Some(window) => bucket.window(window),
+            None => bucket,
+        }
+    };
+
+    // A request that needs no wait leaves, whatever its key function took: under a max_hold
+    // of one second, it leaves at two.
     let script = Script::new();
     script.answer(200);
-    // A key function that takes two seconds, under a max_hold of one.
-    let limit = Limit::new().max_hold(sec(1)).bucket(Bucket::new(|_| {
-        assert!(tokio::time::advance(sec(2)).now_or_never().is_none());
-        Some("k".into())
-    }));
+    let limit = Limit::new().max_hold(sec(1)).bucket(slow(None));
     let start = Instant::now();
+    call(&limit, &script, "a").await.unwrap();
+    times(&script, start, &[2]);
+
+    // A request that must wait may wait only until max_hold has passed since the limit
+    // received it. The second request arrives at 2 s, its key function ends at 4 s, and the
+    // window frees at 6 s, after its max_hold of 3 s ends at 5 s: it fails at once, at 4 s.
+    let script = Script::new();
+    script.answer(200);
+    script.answer(200);
+    let limit = Limit::new()
+        .max_hold(sec(3))
+        .bucket(slow(Some(Window::rolling(1, sec(4)))));
+    let start = Instant::now();
+    call(&limit, &script, "a").await.unwrap();
     let error = call(&limit, &script, "a").await.unwrap_err();
     assert!(
-        matches!(cause(&error), LimitError::MaxHold { waited, .. } if *waited == sec(2)),
+        matches!(cause(&error), LimitError::MaxHold { required: Some(wait), waited, .. }
+            if *wait == sec(2) && *waited == sec(2)),
         "{:?}",
         cause(&error)
     );
-    assert_eq!(start.elapsed(), sec(2));
-    assert!(script.requests().is_empty());
+    assert_eq!(start.elapsed(), sec(4));
+    times(&script, start, &[2]);
 }
