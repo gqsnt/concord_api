@@ -1,4 +1,4 @@
-//! Six pagers, and what they combine with. Each returns a [`Paging`]: a pager, which
+//! Seven pagers, and what they combine with. Each returns a [`Paging`]: a pager, which
 //! `paginate` takes as it is, with methods for what the page states.
 //!
 //! In a `paginate` statement, an input of the endpoint names its slot on the call

@@ -336,8 +336,10 @@ pub struct TryMap<R, F> {
     map: F,
 }
 
-/// The two words that finish [`try_map`](Sse::try_map). No type implements this trait: it is
-/// the bound that the compiler names when a mapped reader is used before its end is chosen.
+/// A marker that no type implements, there to carry the compiler's message when a reader made
+/// by [`try_map`](Sse::try_map) is used before [`until_last_record`](TryMap::until_last_record)
+/// or [`until_end_of_body`](TryMap::until_end_of_body) chooses how its stream ends. It is not for
+/// implementation: finish the reader with one of those two methods instead.
 #[diagnostic::on_unimplemented(
     message = "the reader made by `try_map` does not say how its stream ends",
     label = "finish this reader with `.until_last_record()` or `.until_end_of_body()`",

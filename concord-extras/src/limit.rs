@@ -654,8 +654,9 @@ impl Seen<'_> {
     /// the next second on any day, also on one when UTC had no leap second, and a two-digit year
     /// takes its century from this process's clock. Without such a header it is counted from
     /// [`now()`](Self::now), and a wrong clock then costs this much: a clock that is fast by
-    /// some minutes makes each reset that much nearer, so a window refills that much early,
-    /// and a reset nearer than the error looks past and teaches nothing; a clock that is
+    /// some minutes makes each reset that much nearer, so a window refills that much earlier,
+    /// and a reset that is nearer than the clock's error appears to have passed and teaches
+    /// nothing; a clock that is
     /// slow makes requests wait that much longer than the server needs. The limit then waits
     /// on its internal timer, not on the wall clock. [`until_unix`](Self::until_unix) always
     /// counts from `now()`, and has no bound of fifty years.

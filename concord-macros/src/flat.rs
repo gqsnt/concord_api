@@ -335,7 +335,7 @@ impl Client<'_> {
 }
 
 impl Endpoint<'_> {
-    /// Deterministic plain text for review and checked-in golden files.
+    /// The endpoint as deterministic plain text, as the checked-in golden files hold it.
     pub(crate) fn print(&self) -> String {
         let method = match &self.node.kind {
             NodeKind::Endpoint(method) => method

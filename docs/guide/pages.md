@@ -105,7 +105,7 @@ Seven functions say how the next call is made. Each returns a `Paging`:
 | `by_cursor(after, f)` | `after` takes the value that `f` finds in the page. | When `f` returns `None`. The length of a page is never looked at: Slack, DynamoDB and Google send short or empty pages in the middle of a list. |
 | `by_offset(start)` | `start` grows by the number of items that arrived (an offset that is not set counts as 0). | On an empty page. |
 | `by_offset_limit(start, count)` | The same, and the same `count`. | On an empty page, or on a page shorter than the `count` that the caller set. Use it only for an API that promises full pages until the last one. |
-| `by_offset_total(start, f)` | The same as `by_offset`. `f` reads the total number of items from the page. | When `start` plus the items of this page reaches the total. Below it, the list must move: an empty page there is an error ([below](#more-items-but-nothing-to-continue-with-is-an-error)). |
+| `by_offset_total(start, f)` | The same as `by_offset`. `f` reads the total number of items from the page. | When `start` plus the items of this page reaches the total. Below it, the move must give a next call: an empty page there is an error ([below](#more-items-but-nothing-to-continue-with-is-an-error)), unless a pager chosen by `or_when_set`, such as a cursor, still gives one. |
 | `by_page(page, first)` | `page + 1`. With no `page` set, the page just fetched was number `first`. | On an empty page. |
 | `by_link()` | The same call, sent to the URL of `Link: <…>; rel="next"` (RFC 8288). | When the response has no such link. A `Link` field that cannot be parsed is a Mismatch, not the end. Only the syntax of a field is checked: its target is parsed the way `reqwest` parses a URL. |
 | `by_next_url(f)` | The same call, sent to the URL that `f` reads from the page. | When `f` returns `None`. |
@@ -118,7 +118,7 @@ Six methods of `Paging` add what the author knows about the API. Each returns th
 | `.stop_on_short_page(count, default)` | For a page that states nothing: a page with fewer items than the `count` that the caller set, or than `default` when the caller set none, is the last. |
 | `.stop_on_short_page_of(size)` | The same, for an API whose page size is fixed and has no input. |
 | `.only_when_set(input)` | When the call that fetched a page did not set `input`, that page is the last, and nothing else is read: a caller who does not set it gets one page. |
-| `.or_when_set(input, other)` | When the caller set `input`, the pager `other` moves instead: for an API that pages in both directions, with one input for each (`starting_after` and `ending_before`). A call that sets the inputs of two is a Mismatch after its first page. When `other` is a `Paging` with methods of its own, it decides by the same order on its own, inside the move: this value's statements, gate and short-page rule come first, so an outer "no more" ends the list without reading the inner statements, and an inner "no more" under an outer "more" leaves no next call (a Mismatch). |
+| `.or_when_set(input, other)` | When the caller set `input`, the pager `other` moves instead: for an API that pages in both directions, with one input for each (`starting_after` and `ending_before`). After each page, a call that sets two distinct inputs given to `or_when_set` is a Mismatch; of two `or_when_set` given one input, the first written moves. When `other` is a `Paging` with methods of its own, it decides by the same order on its own, inside the move: this value's statements, gate and short-page rule come first, so an outer "no more" ends the list without reading the inner statements, and an inner "no more" under an outer "more" leaves no next call (a Mismatch). |
 | `.map_next(\|next, page\| …)` | Changes the next call before it is sent: a second marker that comes in a pair, or an input that the API refuses beside a cursor, cleared with its setter (`next.resource_version(None)`). |
 
 A function of your own becomes a `Paging` with `Paging::from_fn(…)`, and any pager with `Paging::from_pager(…)` ([a pager of your own](#a-pager-of-your-own)). `.into_fn()` turns a `Paging` back into a closure ([where a pager that is not a closure can be written](#where-a-pager-that-is-not-a-closure-can-be-written)).
@@ -134,9 +134,9 @@ For each page, a `Paging` decides in this order, **whatever the order in which i
 4. **With no statement at all,** a short-page rule (`stop_on_short_page`, `stop_on_short_page_of`, and the `count` of `by_offset_limit`) ends the list on a short page, after the move; otherwise the move decides, and no next call is the end. A statement always has authority over a short-page rule.
 5. **The edits** of `map_next` are applied to the next call, in the order in which they were written.
 
-So `.has_more(…).only_when_set(page)` and `.only_when_set(page).has_more(…)` are the same pager, and so is any other order of the methods: a program that writes descriptions may emit them in the order of its template. **The one place where the order matters is the edits of `map_next`**, which run one after the other, as written. The promise covers statements that read only the page; two statements that share state of their own see each other in the order written.
+So `.has_more(…).only_when_set(page)` and `.only_when_set(page).has_more(…)` are the same pager, and so is any other order of the methods: a program that writes descriptions may emit them in the order of its template. **The order written still matters inside three steps:** the edits of `map_next` run one after the other, as written; of two `or_when_set` given one input, the first written moves; and the statements are read in the order written, which two statements that share state of their own can see. The promise of order covers statements that read only the page.
 
-Then the rules that hold for every pager, written or shipped: the next request may not repeat the one just sent (a Mismatch; only the one just sent: a list that alternates between two requests is not seen), nor go to another origin (a Build error) ([what holds for every page](#what-holds-for-every-page)).
+Then the rules that hold for every pager, written or shipped: the next request may not repeat the one just sent (a Mismatch; only the one just sent: a list that alternates between two requests is not seen). The two requests are compared as they were built, after `edit_request` and before any middleware, with what a secret wrote in them left out; an `edit_request` that changes the URL loses what says where a secret was written in it, and the URL is then compared as it is. Nor may it go to another origin (a Build error) ([what holds for every page](#what-holds-for-every-page)).
 
 ## More items, but nothing to continue with, is an error
 
@@ -172,7 +172,7 @@ let mut pages = stripe.customers().list().email("a@b.example").limit(50).pages()
 
 ## A pager of your own
 
-**A pager is anything that implements `concord::page::Pager<C>`**: from the call that fetched a page and that page, the next call, `None` at the end, or a failure. Every closure `|call, page| …` that returns `Option<C>`, or `Result<Option<C>, Fail<C::Problem>>`, is one, as in earlier releases:
+**A pager is anything that implements `concord::page::Pager<C>`**: it takes the call that fetched a page and that page, and returns the next call, `None` at the end, or a failure. Every closure `|call, page| …` that returns `Option<C>`, or `Result<Option<C>, Fail<C::Problem>>`, is one, as in 5.0.0-rc.1:
 
 ```rust
 paginate move |call, page| page.value().next_cursor().map(|cursor| call.starting_after(cursor));
@@ -265,7 +265,7 @@ concord::api! {
 
 and nowhere in it is there a macro, an attribute (`#[cfg]` included), an item declared inside it (a `fn`, a `struct`), a `return`, a `?`, a loop, a label, or a `break` with a value. A closure passed as an argument, such as the one given to `has_more`, does not count, and neither do the `return`, `?` and loops of an `async` block: they are its own. A closure is welcome anywhere, but a macro inside it does count (`|page| page.next.as_ref().map(|s| format!("{s}"))`): write that function as a named one, or convert the pager. Even a call or a path may need a type written, as Rust needs it anyway: a generic constant (`Bank::<_>::FP`).
 
-**Everything else is read as a closure**, exactly as in earlier releases, so a description that uses only closures of its own compiles and behaves as before, whatever its shape. A `Paging` in such an expression (after a `return` or a `break`, in a `loop`, under `#[cfg]`, out of a macro of yours, behind `*` or `.0`) is refused with Concord's own message:
+**Everything else is read as a closure**, as in 5.0.0-rc.1, so a description that uses only closures of its own compiles as before, whatever its shape, unless a closure returns a type of its own through an implementation of `IntoNext`, which this release refuses ([the changelog](../../CHANGELOG.md)). The rules that hold for every page apply to it as to any pager. A `Paging` in such an expression (after a `return` or a `break`, in a `loop`, under `#[cfg]`, out of a macro of yours, behind `*` or `.0`) is refused with Concord's own message:
 
 ```text
 error[E0277]: `paginate` reads this expression as a closure, and its value is `Paging<shop::Call<…>>`, which is not a closure
@@ -278,13 +278,13 @@ What to write, in order of preference:
 - **Move the choice into a function** of yours that returns the `Paging`, and call it: `paginate choose(after, before);`. A call is always taken as it is, and the function's return type, `Paging<C>`, keeps the methods for the caller of the function.
 - **Write `.into_fn()` after the pager**, where the expression must stay as it is: `loop { break by_cursor(…).into_fn(); }`, `my_pager!(after).into_fn()`. A macro of yours that itself writes `return` converts inside its own expansion: a suffix on its invocation comes too late. A pager type of your own in such an expression is converted the same way: `Paging::from_pager(my_pager!()).into_fn()`. `Paging::from_pager(…)` alone does not help there: the expression inside it is still one that `paginate` reads as a closure.
 
-**`.into_fn()` ends a decision.** Attach `has_more`, `stop_on_short_page` and the other methods before it: `by_cursor(…).has_more(…).into_fn()`. A converted pager that is wrapped again with `Paging::from_fn` starts a separate decision, whose rules come first and know nothing of the inner ones: an outer "no more" ends the list without reading the inner statements, and an outer short-page rule can end the list although an inner statement says that more items follow.
+**`.into_fn()` consumes a `Paging` and returns a closure**, which decides each page by the rules of that `Paging`, and only those. Attach `has_more`, `stop_on_short_page` and the other methods before it: `by_cursor(…).has_more(…).into_fn()`. When that closure is wrapped again with `Paging::from_fn`, the outer `Paging` is a separate decision: its rules come first, and it sees the closure only as a move, whose rules it does not know: an outer "no more" ends the list without reading the inner statements, and an outer short-page rule can end the list although an inner statement says that more items follow.
 
 A value that is neither a closure nor a pager gets the same message, or, where the expression is a call or a path, ``error[E0277]: `u32` is not a pager for this endpoint``, with the note ``a pager is a closure `|call, page| …` that returns the next call, or a value such as `by_cursor(…)` ``.
 
-## Upgrading from the release before
+## Upgrading from 5.0.0-rc.1
 
-**A shipped pager is no longer a function.** `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link` and `by_next_url` returned closures; they now return a `Paging<C>`, which is a pager and not a function. In `paginate`, written as a call, nothing changes. Code that used one as a function stops compiling, with one of these messages:
+**A shipped pager is no longer a function.** In 5.0.0-rc.1, `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link` and `by_next_url` returned closures; they now return a `Paging<C>`, which is a pager and not a function. In `paginate`, written as a call, nothing changes. Code that used one as a function stops compiling, with one of these messages:
 
 | The message | What was written | What to write |
 |---|---|---|

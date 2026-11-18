@@ -365,8 +365,8 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
     fn input(&self) -> InputId;
 }
 
-/// Which input of an endpoint a [`Slot`] names: its position among the inputs of the endpoint,
-/// the number that the generated code gives it. Two slots of one call `C` name one input when
+/// Identifies the input of an endpoint that a [`Slot`] names, by its position among the inputs
+/// of the endpoint: the number that the generated code gives it. Two slots of one call `C` name one input when
 /// their `InputId`s are equal; the call's type is the endpoint, so the number alone is compared.
 ///
 /// `or_when_set` knows an input by it: where the value of an input lives, and its type, are not
@@ -419,12 +419,12 @@ impl<C: Call> IntoNext<C> for Result<Option<C>, Fail<C::Problem>> {
     }
 }
 
-/// What `paginate` takes: from the call that fetched a page and that page, the next call,
-/// the end (`None`), or a failure.
+/// What `paginate` takes: it receives the call that fetched a page and that page, and returns
+/// the next call, the end (`None`), or a failure.
 ///
 /// Every closure that returns `Option<C>`, or `Result<Option<C>, Fail<C::Problem>>`, is a pager,
-/// and so is what `concord`'s six pagers return. A type of your own implements it to keep state
-/// or to wrap another pager, which it can then call:
+/// and so is the `Paging` that `concord`'s shipped pagers return. A type of your own implements
+/// it to keep state or to wrap another pager, which it can then call:
 ///
 /// ```
 /// # use concord_core as concord;
