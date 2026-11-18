@@ -4,8 +4,10 @@ use quote::{quote, ToTokens};
 use std::collections::{BTreeMap, BTreeSet};
 use syn::visit::{self, Visit};
 
-/// The tokens without their spacing. A string literal keeps its decoded text whole, so
-/// `"tasks.cre ate"` and `"tasks.create"` differ, and a raw string equals an ordinary one.
+/// The tokens without their spacing. A string literal is kept as its decoded text, written
+/// in hexadecimal between quotes, so that no rewriting of paths or names below can reach
+/// inside it: `"tasks.cre ate"` and `"tasks.concord::reqwest::create"` differ from
+/// `"tasks.create"`, and a raw string equals an ordinary one.
 fn spelled(tokens: proc_macro2::TokenStream) -> String {
     use proc_macro2::{Delimiter, TokenTree};
     tokens
@@ -22,7 +24,13 @@ fn spelled(tokens: proc_macro2::TokenStream) -> String {
             }
             TokenTree::Literal(literal) => {
                 match syn::parse2::<syn::LitStr>(TokenTree::Literal(literal.clone()).into()) {
-                    Ok(text) => format!("{:?}", text.value()),
+                    Ok(text) => format!(
+                        "\"{}\"",
+                        text.value()
+                            .bytes()
+                            .map(|byte| format!("{byte:02x}"))
+                            .collect::<String>()
+                    ),
                     Err(_) => literal.to_string(),
                 }
             }
@@ -421,7 +429,14 @@ impl<'ast> Visit<'ast> for Surface {
                                     "{}{}={}",
                                     attributes(&constant.attrs),
                                     canonical(&constant.ty),
-                                    canonical(&constant.expr)
+                                    // A string by its value, never rewritten.
+                                    match &constant.expr {
+                                        syn::Expr::Lit(syn::ExprLit {
+                                            lit: syn::Lit::Str(text),
+                                            ..
+                                        }) => format!("{:?}", text.value()),
+                                        other => canonical(other),
+                                    }
                                 ),
                             );
                         }
@@ -1036,6 +1051,12 @@ fn c1_16_surface_comparison_reports_each_drift_of_the_hand_written_client() {
             "tasks",
             "const NAME: &'static str = \"tasks.create\";",
             "const NAME: &'static str = \"tasks.cre ate\";",
+            "tasks::Create::__trait::Endpoint::NAME",
+        ),
+        (
+            "tasks",
+            "const NAME: &'static str = \"tasks.create\";",
+            "const NAME: &'static str = \"tasks.concord::reqwest::create\";",
             "tasks::Create::__trait::Endpoint::NAME",
         ),
         (
