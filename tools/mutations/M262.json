@@ -1,0 +1,12 @@
+{
+  "id": "M262",
+  "area": "conditional preparation",
+  "contract": "C10.10",
+  "description": "Expose conditional preparation under a name any call can invoke, without requiring GET or HEAD.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "                fn __prepare_inner(mut self)",
+  "replace": "                #[doc(hidden)]\n                pub fn prepare_if_none_match(mut self, etag: &str)\n                    -> Result<::concord::__private::Prepared<E::Value, __Problem>> {\n                    self.__options.if_none_match(etag);\n                    self.__prepare_inner()\n                }\n                fn __prepare_inner(mut self)",
+  "checks": [
+    "macro-unit"
+  ]
+}

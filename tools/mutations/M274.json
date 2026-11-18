@@ -1,0 +1,12 @@
+{
+  "id": "M274",
+  "area": "authored setter signature",
+  "contract": "C1.11, C10.4",
+  "description": "Show the storage projection instead of the authored type in a setter signature.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "let stored = stored(input.input, input.input.ty.to_token_stream());",
+  "replace": "let stored = stored(input.input, self.input_type(input));",
+  "checks": [
+    "macro-compiler"
+  ]
+}

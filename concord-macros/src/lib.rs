@@ -25,6 +25,7 @@ fn expand(description: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let mut written = proc_macro2::TokenStream::new();
     if let Some(client) = &parsed.client {
         name::check(client, &mut parsed.diagnostics);
+        write::check_client_type_names(client, &mut parsed.diagnostics);
         let flat = resolve::resolve(client, &mut parsed.diagnostics);
         check::check(client, &flat, &mut parsed.diagnostics);
         written = write::sound_client(client, &flat, &parsed.diagnostics);

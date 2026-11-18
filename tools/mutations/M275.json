@@ -1,0 +1,12 @@
+{
+  "id": "M275",
+  "area": "request expression order",
+  "contract": "C10.3",
+  "description": "Evaluate groups of request entries in reverse tree order.",
+  "file": "concord-macros/src/write/request.rs",
+  "find": "        let mut names = Vec::new();\n        let mut next = 0;\n        for group in entries.chunk_by(|a, b| same_origin(&a.line.origin, &b.line.origin)) {",
+  "replace": "        let mut names = Vec::new();\n        let mut next = 0;\n        for group in entries.chunk_by(|a, b| same_origin(&a.line.origin, &b.line.origin)).rev() {",
+  "checks": [
+    "generated-tour"
+  ]
+}

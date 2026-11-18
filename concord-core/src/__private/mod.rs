@@ -8,22 +8,29 @@ mod answer;
 mod build;
 mod call;
 mod client;
+mod data;
 mod page;
 mod run;
 mod value;
 
 pub use answer::{
-    arm, cut_details, no_arm, read_body, reader, refused, refused_plain, CheckedReader,
+    answer_empty, answer_head, answer_read, arm, cut_details, frame_answer, no_arm, read_body,
+    reader, reader_for_problem, reader_for_response, refused, refused_plain, CheckedReader,
+    PlainRefusal, ProblemRefusal, Refusal,
 };
-pub use build::{build_error, Draft, Piece, Written};
-pub use call::{Call, Prepared, RequestSecrets};
+pub use build::{build_error, evaluate_body, evaluate_entry, prepare_call, Draft, Piece, Written};
+pub use call::{
+    prepare_conditional, Call, ConditionalAccess, ConditionalCall, Prepared, RequestSecrets,
+};
 pub use client::{Core, Options};
-pub use page::{pages, same_page_request, without_fragment, SecretUrl};
-pub use run::{exchange, exchange_raw, Run};
+pub use data::{CallData, InputSlot};
+#[cfg(test)]
+use page::same_page_request;
+pub use page::{pages, pages_with_pager, without_fragment, SecretUrl};
+pub use run::Run;
 pub use value::{
     idempotent, inherited, inherited_path, AdaptValue, BodySecretValue, BoolInput, Idempotent,
     InheritAcrossBase, InheritPathAcrossBase, SecretInput, SecretValue, Value, ValueRef,
 };
 
-pub use crate::call_methods;
 pub use crate::retry::{again, Outcome};

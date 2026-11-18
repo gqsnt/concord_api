@@ -72,7 +72,7 @@ Every client has six more methods. Each returns the client with the change appli
 | `with_middleware(m)` | One more middleware layer that every request passes through, before the description's middleware: logging, a token that is renewed ([`concord::auth::Renewed`](credentials.md#a-token-that-is-renewed)), a shared limit ([`concord::limit::Limit`](limits.md)), or a layer of your own ([a middleware](extending.md#a-middleware)). |
 | `with_transport(t)` | The transport that sends the requests, beneath the middleware: `concord::Http` with your own settings, your own `reqwest::Client`, a fake for tests, or another HTTP library ([testing a client](testing.md), [a transport](extending.md#a-transport)). |
 
-**The names that Concord reserves.** A child or an optional input becomes a method, so it may not take the name of a method that its receiver already has. These names are matched exactly. On a call, they are Concord's own methods (`send`, `send_raw`, `request`, `pages`, …) and `at_url`, which pagers use. On a client or a handle: `call` (reserved for future use) and `clone`; on a client, also `new`. One prefix is reserved, `with_`, and no other: Telegram's `send_message` is a name like any other. Concord adds no new name to a call, a handle or a client in a minor version, unless it starts with `with_`. A required input is an argument, so its name is free. A scope or an endpoint may not generate a type named `Error`, `Result` or `Retry` in the module of its client. See [contracts](../reference/contracts.md) C1.6 for the full table. Finally, names that begin with `__` are reserved for Concord: in a module that contains `concord::api!`, declare no item (a `const`, a `static`, a function, a type) whose name begins with `__`.
+**The names that Concord reserves.** A child or an optional input becomes a method, so it may not take the name of a method that its receiver already has. These names are matched exactly. On a call, they are Concord's own methods (`send`, `send_raw`, `request`, `pages`, …) and `at_url`, which pagers use. On a client or a handle: `call` (reserved for future use) and `clone`; on a client, also `new`. One prefix is reserved, `with_`, and no other: Telegram's `send_message` is a name like any other. Concord adds no new name to a call, a handle or a client in a minor version, unless it starts with `with_`. A required input is an argument, so its name is free. A scope or an endpoint may not generate a type named `Call`, `Endpoint`, `Error`, `Result` or `Retry` in the module of its client. See [contracts](../reference/contracts.md) C1.6 for the full table. Finally, names that begin with `__` are reserved for Concord: in a module that contains `concord::api!`, declare no item (a `const`, a `static`, a function, a type) whose name begins with `__`.
 
 **Concord's own HTTP client is `concord::Http`**, a Concord type that wraps `reqwest`. It waits at most 30 seconds for a connection, follows no redirects and adds no `Referer` header. It keeps no cookies and does not decompress by default ([below](#compression-proxies-and-tls)); a build of `reqwest` with cookie support can turn cookies on in `Http::with`. It reads the proxy settings from the environment. See [Concord's own HTTP client](../reference/crates.md#concords-own-http-client) for the exact settings.
 
@@ -262,41 +262,109 @@ See [testing a client](testing.md) for a fake transport, a scripted transport on
 ## The public API of a client
 
 ```rust
-// what the docs would list
-// arguments are shown with their declared types (see U4 and U5 for what else is accepted)
+use concord::{arg::Arg, reqwest, Answer, Pages, Retry, Sending};
+use std::{future::{Future, IntoFuture}, time::Duration};
 
 impl Riot {
-    pub fn new(key: Secret) -> Riot;
-    // with_retry, with_timeout, with_idle_timeout, with_base, with_middleware, with_transport
+    pub fn new(key: impl Arg<Secret>) -> Self;
 
-    pub fn account(&self, route: AccountRoute) -> riot::Account;
-    pub fn matches(&self, route: MatchRoute) -> riot::Matches;
+    pub fn with_retry(self, __retry: Retry<RiotProblem>) -> Self;
+    pub fn with_timeout(self, __timeout: Duration) -> Self;
+    pub fn with_idle_timeout(self, __timeout: Duration) -> Self;
+    pub fn with_base(self, __base: impl concord::base::IntoBase) -> Self;
+    pub fn with_transport(self, __transport: impl concord::Transport) -> Self;
+    pub fn with_middleware(self, __middleware: impl concord::Middleware) -> Self;
+
+    pub fn account(&self, route: impl Arg<AccountRoute>) -> riot::Account;
+    pub fn matches(&self, route: impl Arg<MatchRoute>) -> riot::Matches;
 }
 
 impl riot::Matches {
-    pub fn ids(&self, puuid: Puuid) -> riot::matches::Ids;
-    pub fn get(&self, id: MatchId) -> riot::matches::Get;
+    pub fn ids(&self, puuid: impl Arg<Puuid>) -> riot::Call<riot::matches::Ids>;
+    pub fn get(&self, id: impl Arg<MatchId>) -> riot::Call<riot::matches::Get>;
 }
 
-impl riot::matches::Ids {
-    pub fn start(self, start: u32) -> Self;
-    pub fn count(self, count: u32) -> Self;
-    pub fn queue(self, queue: i32) -> Self;
-    pub fn start_time(self, start_time: i64) -> Self;
+use riot::{matches::Ids, Call};
 
-    pub fn send(self) -> concord::Sending<Vec<MatchId>, RiotProblem>;   // one page: riot::Result<Vec<MatchId>>. (With no `paginate`, `.await` on the call does this.)
-    pub fn send_full(self) -> concord::Sending<concord::Answer<Vec<MatchId>>, RiotProblem>;   // with the status and the headers
-    pub fn pages(self) -> concord::Pages<Vec<MatchId>, RiotProblem>;    // because of `paginate`; `.pages().items()` yields each `MatchId`
-    // send_if_none_match(etag): an Answer<Option<Vec<MatchId>>>, because the method is `GET`
-    pub fn request(&self) -> riot::Result<reqwest::Request>;         // look
-    pub fn into_request(self) -> riot::Result<reqwest::Request>;      // take
-    pub async fn read_response(&self, response: reqwest::Response) -> riot::Result<Vec<MatchId>>;   // a response that you got yourself
-    pub fn send_raw(self) -> concord::Sending<reqwest::Response, RiotProblem>;
-    // with_retry, with_timeout, with_idle_timeout, edit_request
+impl Call<Ids> {
+    pub fn start(self, start: impl Arg<Option<u32>>) -> Self;
+    pub fn count(self, count: impl Arg<Option<u32>>) -> Self;
+    pub fn queue(self, queue: impl Arg<Option<i32>>) -> Self;
+    pub fn start_time(self, start_time: impl Arg<Option<i64>>) -> Self;
+}
+
+impl Ids {
+    // The first argument is the call.
+    pub fn count(__call: Call<Ids>, count: impl Arg<Option<u32>>) -> Call<Ids>;
+}
+
+impl<E: riot::Endpoint> riot::Call<E> {
+    pub fn send(self) -> Sending<E::Value, RiotProblem>; // one page for a paginated call
+    pub fn send_full(self) -> Sending<Answer<E::Value>, RiotProblem>; // with status and headers
+    pub fn send_raw(self) -> Sending<reqwest::Response, RiotProblem>;
+    pub fn request(&self) -> riot::Result<reqwest::Request>; // look
+    pub fn into_request(self) -> riot::Result<reqwest::Request>; // take
+    pub fn read_response(&self, response: reqwest::Response)
+        -> impl Future<Output = riot::Result<E::Value>> + Send + '_;
+    pub fn edit_request(self, edit: impl Fn(&mut reqwest::Request) + Send + Sync + 'static)
+        -> Self;
+    pub fn with_retry(self, retry: Retry<RiotProblem>) -> Self;
+    pub fn with_timeout(self, timeout: Duration) -> Self;
+    pub fn with_idle_timeout(self, timeout: Duration) -> Self;
+}
+
+impl<E: riot::Endpoint> riot::Call<E>
+where
+    E::Paging: concord::call::DeclaresPaginate,
+{
+    pub fn pages(self) -> Pages<E::Value, RiotProblem>; // .pages().items() yields each item
+}
+
+impl<E: riot::Endpoint> riot::Call<E>
+where
+    E::Conditional: concord::call::IsGetOrHead,
+{
+    pub fn send_if_none_match(self, etag: &str)
+        -> Sending<Answer<Option<E::Value>>, RiotProblem>;
+}
+
+impl<E: riot::Endpoint> IntoFuture for riot::Call<E>
+where
+    E::Paging: concord::call::AwaitWithoutPaginate,
+{
+    // rustdoc prints Result<<E as Endpoint>::Value, Error<RiotProblem>>
+    type Output = riot::Result<E::Value>;
+    type IntoFuture = Sending<E::Value, RiotProblem>;
+    fn into_future(self) -> Self::IntoFuture;
 }
 ```
 
-Generated types follow the tree, and a scope may share its name with one of your own types: `riot::Account` is the handle of the scope `account`, while `Account` is still your struct ([rule 24](../reference/rules.md)). Everything generated has the visibility written on the client. Your own types and imports resolve as they do where `api!` is invoked; see [the macro page](../internals/macro.md#where-the-generated-items-live-and-how-they-reach-the-authors-types) for how the macro achieves this. In a crate that is itself named `riot`, write `use ::riot::*;`.
+`Matches::ids` returns `riot::Call<riot::matches::Ids>`. The type `Ids` is the `E` of `Call<E>` and has no values, so a function that takes `Ids` cannot be called. Its page documents the endpoint and lists functions such as `Ids::count`. Write `Ids::count(call, 5)` or `call.count(5)`.
+
+A field can hold the call as `Call<Ids>`.
+
+```rust
+use riot::{matches::Ids, Call};
+
+struct MatchHistory {
+    call: Call<Ids>,
+}
+```
+
+Use `E: riot::Endpoint` to accept any call of this client. `E::Value` is the value of a successful send. This bound does not tell Rust whether the endpoint has `paginate`, so use `send().await`. For a paginated call it returns one page.
+
+```rust
+async fn timed<E: riot::Endpoint>(call: riot::Call<E>) -> riot::Result<E::Value> {
+    let started = std::time::Instant::now();
+    let result = call.send().await;
+    let _elapsed = started.elapsed();
+    result
+}
+```
+
+See [your own methods beside the generated ones](extending.md#your-own-methods-beside-the-generated-ones) to add a method to one call.
+
+Generated types follow the tree, and a scope may share its name with one of your own types: `riot::Account` is the handle of the scope `account`, while `Account` is still your struct ([rule 24](../reference/rules.md)). Every generated item that you can name has the visibility written on the client. Your own types and imports resolve as they do where `api!` is invoked; see [the macro page](../internals/macro.md#where-the-generated-items-live-and-how-they-reach-the-authors-types) for how the macro achieves this. In a crate that is itself named `riot`, write `use ::riot::*;`.
 
 ## Arguments
 
@@ -325,4 +393,4 @@ So `.ids(&puuid)`, `.ids(puuid)`, `.count(5)`, `.count(None)`, `.by_riot_id("Fak
 
 ## The generated documentation of an endpoint
 
-Each generated method is documented from the description: your own `///` text, then how the endpoint is called, its request line (the method, the URL with its placeholders, the keys of the query), the headers it sets, and what each input accepts. All of it is generated from the declaration, so it cannot go stale. It is also the quickest way to check that a description is right: read the request line and compare it with the provider's documentation. The inputs of a part are shown like the endpoint's own. The crate documentation includes `concord::sample`, a small client generated by the macro, as rustdoc renders it.
+Each generated method is documented from the description: your own `///` text, then how the endpoint is called, its request line (the method, the URL with its placeholders, the keys of the query), the headers it sets, and what each input accepts. The method links to the endpoint type's page, which also shows the type of the call, the option signatures and what a send returns. The `Call` page has the shared methods and says when you can use them. All of it is generated from the declaration, so it cannot go stale. It is also the quickest way to check that a description is right: read the request line and compare it with the provider's documentation. The inputs of a part are shown like the endpoint's own. The crate documentation includes `concord::sample`, a small client generated by the macro, as rustdoc renders it.

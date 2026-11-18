@@ -106,7 +106,7 @@ let ids  = riot.matches(Europe).ids(&puuid).count(5).send().await?;   // one pag
 
 Each level of the tree is one method call. A required input is an argument. An optional input has a setter with the same name; it accepts a `T`, a `&T` or an `Option<T>` (`None` unsets it).
 
-Generated names follow the tree: the client `Riot` generates the module `riot`, its scope `matches` the handle `riot::Matches`, and the endpoint `ids` inside it the call `riot::matches::Ids`. The error is `riot::Error`, with `riot::Result<T>`; the retry policy is `riot::Retry` (`concord::Retry<RiotProblem>`).
+Generated names follow the tree: the client `Riot` generates the module `riot`, its scope `matches` the handle `riot::Matches`, and the endpoint `ids` inside it the endpoint type `riot::matches::Ids`. The method `Matches::ids` returns `riot::Call<riot::matches::Ids>`. The error is `riot::Error`, with `riot::Result<T>`; the retry policy is `riot::Retry` (`concord::Retry<RiotProblem>`).
 
 ### The methods of a call
 

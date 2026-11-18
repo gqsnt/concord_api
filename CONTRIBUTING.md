@@ -41,7 +41,7 @@ Where local sockets cannot be opened, `CONCORD_SKIP_SOCKETS=1 just gate` skips t
 
 | Command | What it does |
 |---|---|
-| `just release` | Everything a release needs, in order: `gate`, `docs-audit`, `doc-examples`, `panics`, `package`, `features-all`, `mutants`. |
+| `just release` | Everything a release needs, in order: `gate`, `docs-audit`, `doc-examples`, `call-doc-search`, `call-editor`, `panics`, `package`, `features-all`, `mutants`. The call probes need Node, `rust-analyzer`, and `rust-src`. |
 | `just mutants` | Puts known bugs into the engine, one at a time, and checks that a test catches each one. |
 | `just package` | Checks each published crate as a user receives it: what its package contains, and that it builds on its own, outside this workspace. |
 | `just features-all` | Checks every subset of the features of `concord-api`, on stable and on 1.96. |

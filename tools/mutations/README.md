@@ -32,9 +32,17 @@ Add one JSON file with an unused `M` identifier and these fields:
 | `find` | Exact original text, occurring once in that source file. |
 | `replace` | Replacement text; may be empty. |
 
-`requires_sockets` is an optional boolean. `checks` optionally adds public-surface,
-documentation, allocation, or macro growth checks. Use the values accepted by
-`mutate.py`. `macro-growth` runs the name growth unit tests of `concord-macros`.
+`requires_sockets` is an optional boolean. `checks` adds checks to the default
+package suite. Use the values accepted by `mutate.py`.
+
+| Check | Test targets |
+| --- | --- |
+| `macro-growth` | Name growth unit tests of `concord-macros`. |
+| `macro-unit` | Unit tests of `concord-macros`, excluding the saved expansion comparison. A changed expansion alone does not establish a contract failure. |
+| `macro-unused-calls` | Checks attribute placement and warning text on generated factory and setter declarations. |
+| `macro-compiler` | The `compiler`, `call_rules`, and `call_surface` integration tests of `concord-macros`, including compiler fixtures and rendered signatures. |
+| `generated-tour` | Library and integration tests of `tour-gen`. |
+
 Never change a test's expected result to catch a mutation. A missing or ambiguous
 `find` is stale and fails the check rather than counting as caught.
 

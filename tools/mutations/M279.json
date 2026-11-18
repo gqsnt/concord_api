@@ -1,0 +1,12 @@
+{
+  "id": "M279",
+  "area": "conditional preparation bound",
+  "contract": "C10.10",
+  "description": "Implement the engine's conditional preparation capability even for endpoints other than GET and HEAD.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "            impl<E: Endpoint> ::concord::__private::ConditionalCall for Call<E>\n            where E::Conditional: ::concord::call::IsGetOrHead {",
+  "replace": "            impl<E: Endpoint> ::concord::__private::ConditionalCall for Call<E> {",
+  "checks": [
+    "macro-unit"
+  ]
+}

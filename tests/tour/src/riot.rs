@@ -121,57 +121,92 @@ const _: () = {
         type __Problem = RiotProblem;
     }
 
-    impl ::concord::page::Slot<riot::matches::Ids> for riot::__IdsPuuid {
+    impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsPuuid {
         type Value = Puuid;
-        fn get<'a>(&self, __call: &'a riot::matches::Ids) -> ::core::option::Option<&'a Self::Value> {
-            ::core::option::Option::Some(&__call.puuid)
+        fn get<'a>(
+            &self,
+            __call: &'a riot::Call<riot::matches::Ids>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            ::core::option::Option::Some(&__call.__inputs.puuid)
         }
-        fn set(&self, mut __call: riot::matches::Ids, __value: Self::Value) -> riot::matches::Ids {
-            __call.puuid = __value;
+        fn set(
+            &self,
+            mut __call: riot::Call<riot::matches::Ids>,
+            __value: Self::Value,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.__inputs.puuid = __value;
             __call
         }
     }
 
-    impl ::concord::page::Slot<riot::matches::Ids> for riot::__IdsStart {
+    impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsStart {
         type Value = u32;
-        fn get<'a>(&self, __call: &'a riot::matches::Ids) -> ::core::option::Option<&'a Self::Value> {
-            __call.start.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a riot::Call<riot::matches::Ids>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.start.as_ref()
         }
-        fn set(&self, mut __call: riot::matches::Ids, __value: Self::Value) -> riot::matches::Ids {
-            __call.start = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: riot::Call<riot::matches::Ids>,
+            __value: Self::Value,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.__inputs.start = ::core::option::Option::Some(__value);
             __call
         }
     }
 
-    impl ::concord::page::Slot<riot::matches::Ids> for riot::__IdsCount {
+    impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsCount {
         type Value = u32;
-        fn get<'a>(&self, __call: &'a riot::matches::Ids) -> ::core::option::Option<&'a Self::Value> {
-            __call.count.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a riot::Call<riot::matches::Ids>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.count.as_ref()
         }
-        fn set(&self, mut __call: riot::matches::Ids, __value: Self::Value) -> riot::matches::Ids {
-            __call.count = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: riot::Call<riot::matches::Ids>,
+            __value: Self::Value,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.__inputs.count = ::core::option::Option::Some(__value);
             __call
         }
     }
 
-    impl ::concord::page::Slot<riot::matches::Ids> for riot::__IdsQueue {
+    impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsQueue {
         type Value = i32;
-        fn get<'a>(&self, __call: &'a riot::matches::Ids) -> ::core::option::Option<&'a Self::Value> {
-            __call.queue.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a riot::Call<riot::matches::Ids>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.queue.as_ref()
         }
-        fn set(&self, mut __call: riot::matches::Ids, __value: Self::Value) -> riot::matches::Ids {
-            __call.queue = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: riot::Call<riot::matches::Ids>,
+            __value: Self::Value,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.__inputs.queue = ::core::option::Option::Some(__value);
             __call
         }
     }
 
-    impl ::concord::page::Slot<riot::matches::Ids> for riot::__IdsStartTime {
+    impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsStartTime {
         type Value = i64;
-        fn get<'a>(&self, __call: &'a riot::matches::Ids) -> ::core::option::Option<&'a Self::Value> {
-            __call.start_time.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a riot::Call<riot::matches::Ids>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.start_time.as_ref()
         }
-        fn set(&self, mut __call: riot::matches::Ids, __value: Self::Value) -> riot::matches::Ids {
-            __call.start_time = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: riot::Call<riot::matches::Ids>,
+            __value: Self::Value,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.__inputs.start_time = ::core::option::Option::Some(__value);
             __call
         }
     }
@@ -318,16 +353,16 @@ const _: () = {
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
         /// Paging ends on an empty page or a page shorter than the supplied `count`; `count` is the maximum for each page.
-        pub fn ids(&self, puuid: impl ::concord::arg::Arg<Puuid>) -> riot::matches::Ids {
-            riot::matches::Ids {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn ids(&self, puuid: impl ::concord::arg::Arg<Puuid>) -> riot::Call<riot::matches::Ids> {
+            riot::Call::__new(riot::__MatchesIdsInputs {
                 __scope: self.clone(),
                 puuid: puuid.into_input(),
                 start: ::core::option::Option::None,
                 count: ::core::option::Option::None,
                 queue: ::core::option::Option::None,
                 start_time: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// One match.
@@ -343,12 +378,12 @@ const _: () = {
         /// - `id`: [`MatchId`] or &[`MatchId`]. The regional identifier of the match to fetch.
         ///
         /// `.await` returns [`riot::Result`]<[`Match`]>.
-        pub fn get(&self, id: impl ::concord::arg::Arg<MatchId>) -> riot::matches::Get {
-            riot::matches::Get {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn get(&self, id: impl ::concord::arg::Arg<MatchId>) -> riot::Call<riot::matches::Get> {
+            riot::Call::__new(riot::__MatchesGetInputs {
                 __scope: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
     }
 
@@ -404,17 +439,17 @@ const _: () = {
         /// Status: `2xx`.
         ///
         /// `.await` returns [`riot::Result`]<[`Option`]<[`tour::Account`](crate::Account)>>.
+        #[must_use = "a call does nothing until sent or awaited"]
         pub fn by_riot_id(
             &self,
             game_name: impl ::concord::arg::Arg<String>,
             tag_line: impl ::concord::arg::Arg<String>,
-        ) -> riot::account::ByRiotId {
-            riot::account::ByRiotId {
+        ) -> riot::Call<riot::account::ByRiotId> {
+            riot::Call::__new(riot::__AccountByRiotIdInputs {
                 __scope: self.clone(),
                 game_name: game_name.into_input(),
                 tag_line: tag_line.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// The account of a signed-in player.
@@ -431,12 +466,12 @@ const _: () = {
         /// - `access_token`: [`Secret`], &[`Secret`], [`String`], or &[`str`]. The player's bearer token.
         ///
         /// `.await` returns [`riot::Result`]<[`tour::Account`](crate::Account)>.
-        pub fn me(&self, access_token: impl ::concord::arg::Arg<Secret>) -> riot::account::Me {
-            riot::account::Me {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn me(&self, access_token: impl ::concord::arg::Arg<Secret>) -> riot::Call<riot::account::Me> {
+            riot::Call::__new(riot::__AccountMeInputs {
                 __scope: self.clone(),
                 access_token: access_token.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
     }
 
@@ -464,12 +499,13 @@ const _: () = {
     //     paginate by_offset_limit(start, count);
     // }
     /// The options of this endpoint.
-    impl riot::matches::Ids {
+    #[doc(hidden)]
+    impl riot::Call<riot::matches::Ids> {
         /// Index of the first match id to return.
         ///
         /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
         pub fn start(mut self, start: impl ::concord::arg::Arg<::core::option::Option<u32>>) -> Self {
-            self.start = start.into_input();
+            self.__inputs.start = start.into_input();
             self
         }
 
@@ -477,7 +513,7 @@ const _: () = {
         ///
         /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
         pub fn count(mut self, count: impl ::concord::arg::Arg<::core::option::Option<u32>>) -> Self {
-            self.count = count.into_input();
+            self.__inputs.count = count.into_input();
             self
         }
 
@@ -485,7 +521,7 @@ const _: () = {
         ///
         /// Accepts [`i32`], &[`i32`], or an [`Option`]<[`i32`]>. `None` clears it.
         pub fn queue(mut self, queue: impl ::concord::arg::Arg<::core::option::Option<i32>>) -> Self {
-            self.queue = queue.into_input();
+            self.__inputs.queue = queue.into_input();
             self
         }
 
@@ -496,21 +532,76 @@ const _: () = {
             mut self,
             start_time: impl ::concord::arg::Arg<::core::option::Option<i64>>,
         ) -> Self {
-            self.start_time = start_time.into_input();
+            self.__inputs.start_time = start_time.into_input();
             self
         }
     }
 
     impl riot::matches::Ids {
+        /// Option `start` of `matches::ids`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Index of the first match id to return.
+        ///
+        /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
+        pub fn start(
+            __call: riot::Call<riot::matches::Ids>,
+            start: impl ::concord::arg::Arg<::core::option::Option<u32>>,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.start(start)
+        }
+        /// Option `count` of `matches::ids`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Maximum number of match ids in one page.
+        ///
+        /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
+        pub fn count(
+            __call: riot::Call<riot::matches::Ids>,
+            count: impl ::concord::arg::Arg<::core::option::Option<u32>>,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.count(count)
+        }
+        /// Option `queue` of `matches::ids`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Only the matches of this queue.
+        ///
+        /// Accepts [`i32`], &[`i32`], or an [`Option`]<[`i32`]>. `None` clears it.
+        pub fn queue(
+            __call: riot::Call<riot::matches::Ids>,
+            queue: impl ::concord::arg::Arg<::core::option::Option<i32>>,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.queue(queue)
+        }
+        /// Option `start_time` of `matches::ids`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Only the matches that started at or after this time, in seconds since the epoch.
+        ///
+        /// Accepts [`i64`], &[`i64`], or an [`Option`]<[`i64`]>. `None` clears it.
+        pub fn start_time(
+            __call: riot::Call<riot::matches::Ids>,
+            start_time: impl ::concord::arg::Arg<::core::option::Option<i64>>,
+        ) -> riot::Call<riot::matches::Ids> {
+            __call.start_time(start_time)
+        }
+    }
+
+    impl riot::Call<riot::matches::Ids> {
         fn __build_draft(&self) -> riot::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
                 let route = matches.route;
                 __draft.base(&[
@@ -530,16 +621,16 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let puuid = &self.puuid;
-                let start = &self.start;
-                let count = &self.count;
-                let queue = &self.queue;
-                let start_time = &self.start_time;
+                let puuid = &self.__inputs.puuid;
+                let start = &self.__inputs.start;
+                let count = &self.__inputs.count;
+                let queue = &self.__inputs.queue;
+                let start_time = &self.__inputs.start_time;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "puuid",
                     &(&::concord::__private::ValueRef(puuid)).adapt(),
@@ -549,16 +640,16 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let puuid = &self.puuid;
-                let start = &self.start;
-                let count = &self.count;
-                let queue = &self.queue;
-                let start_time = &self.start_time;
+                let puuid = &self.__inputs.puuid;
+                let start = &self.__inputs.start;
+                let count = &self.__inputs.count;
+                let queue = &self.__inputs.queue;
+                let start_time = &self.__inputs.start_time;
                 __draft.query(
                     "start",
                     &[::concord::__private::Piece::Val(
@@ -570,16 +661,16 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let puuid = &self.puuid;
-                let start = &self.start;
-                let count = &self.count;
-                let queue = &self.queue;
-                let start_time = &self.start_time;
+                let puuid = &self.__inputs.puuid;
+                let start = &self.__inputs.start;
+                let count = &self.__inputs.count;
+                let queue = &self.__inputs.queue;
+                let start_time = &self.__inputs.start_time;
                 __draft.query(
                     "count",
                     &[::concord::__private::Piece::Val(
@@ -591,16 +682,16 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let puuid = &self.puuid;
-                let start = &self.start;
-                let count = &self.count;
-                let queue = &self.queue;
-                let start_time = &self.start_time;
+                let puuid = &self.__inputs.puuid;
+                let start = &self.__inputs.start;
+                let count = &self.__inputs.count;
+                let queue = &self.__inputs.queue;
+                let start_time = &self.__inputs.start_time;
                 __draft.query(
                     "queue",
                     &[::concord::__private::Piece::Val(
@@ -612,16 +703,16 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let puuid = &self.puuid;
-                let start = &self.start;
-                let count = &self.count;
-                let queue = &self.queue;
-                let start_time = &self.start_time;
+                let puuid = &self.__inputs.puuid;
+                let start = &self.__inputs.start;
+                let count = &self.__inputs.count;
+                let queue = &self.__inputs.queue;
+                let start_time = &self.__inputs.start_time;
                 __draft.query(
                     "startTime",
                     &[::concord::__private::Piece::Val(
@@ -633,7 +724,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 // Written by the client: only `client` is in reach.
                 let key = client.key;
@@ -652,13 +743,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.matches.ids",
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.matches.ids",
                 )
@@ -681,7 +772,7 @@ const _: () = {
                 __status if __status.is_success() => {
                     ::concord::__private::read_body(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<Vec<MatchId>, _>(Json))()
                         },
@@ -693,7 +784,7 @@ const _: () = {
                 _ => {
                     return ::core::result::Result::Err(::concord::__private::refused(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<_, _>(Json))()
                         },
@@ -711,7 +802,7 @@ const _: () = {
             self,
         ) -> riot::Result<::concord::__private::Prepared<Vec<MatchId>, RiotProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -719,7 +810,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -730,55 +821,47 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl riot::Endpoint for riot::matches::Ids {
+        type Value = Vec<MatchId>;
+    }
+
+    call_spec!(
+        riot,
         riot::matches::Ids,
+        riot::__MatchesIdsInputs,
         Vec<MatchId>,
         RiotProblem,
-        riot::Result,
-        "[`riot::Result`]<[`Vec`]<[`MatchId`]>>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Vec`]<[`MatchId`]> pages.
-            ///
-            /// `try_next().await` returns [`riot::Result`]<[`Option`]<[`Vec`]<[`MatchId`]>>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Vec<MatchId>, RiotProblem> {
-                // The owners in reach, as views of references, then each input as its
-                // place. `self` moves into the machine before the pager is written in
-                // place (a closure there takes its type from `pages`), so the views borrow
-                // a clone of the handle. The pager owns what it holds.
-                let __owners = self.__scope.clone();
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client {
-                        key: &__owners.__client.key,
-                    };
-                    #[allow(unused_variables)]
-                    let matches = __Matches {
-                        route: &__owners.route,
-                    };
-                    #[allow(unused_variables)]
-                    let (puuid, start, count, queue, start_time) = (
-                        riot::__IdsPuuid,
-                        riot::__IdsStart,
-                        riot::__IdsCount,
-                        riot::__IdsQueue,
-                        riot::__IdsStartTime,
-                    );
-                    by_offset_limit(start, count)
-                })
-            }
-
-        }
+        "Ids"
     );
-
-    impl ::std::fmt::Debug for riot::matches::Ids {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Ids")
-                .field("endpoint", &"riot.matches.ids")
-                .finish_non_exhaustive()
+    impl riot::__spec::Paged for riot::matches::Ids {
+        fn pages(call: riot::Call<riot::matches::Ids>) -> ::concord::Pages<Vec<MatchId>, RiotProblem> {
+            // The owners in reach, as views of references, then each input as its
+            // place. `call` moves into the machine before the pager is written in
+            // place (a closure there takes its type from `pages`), so the views borrow
+            // a clone of the handle. The pager owns what it holds.
+            let __owners = call.__inputs.__scope.clone();
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client {
+                    key: &__owners.__client.key,
+                };
+                #[allow(unused_variables)]
+                let matches = __Matches {
+                    route: &__owners.route,
+                };
+                #[allow(unused_variables)]
+                let (puuid, start, count, queue, start_time) = (
+                    riot::__IdsPuuid,
+                    riot::__IdsStart,
+                    riot::__IdsCount,
+                    riot::__IdsQueue,
+                    riot::__IdsStartTime,
+                );
+                by_offset_limit(start, count)
+            })
         }
     }
+    impl riot::__spec::Conditional for riot::matches::Ids {}
 
     // /// One match.
     // GET get(
@@ -787,16 +870,16 @@ const _: () = {
     // ) -> Match {
     //     path "{id}";
     // }
-    impl riot::matches::Get {
+    impl riot::Call<riot::matches::Get> {
         fn __build_draft(&self) -> riot::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
                 let route = matches.route;
                 __draft.base(&[
@@ -815,12 +898,12 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let matches = __Matches {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -829,7 +912,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 // Written by the client: only `client` is in reach.
                 let key = client.key;
@@ -848,13 +931,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.matches.get",
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.matches.get",
                 )
@@ -877,7 +960,7 @@ const _: () = {
                 __status if __status.is_success() => {
                     ::concord::__private::read_body(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<Match, _>(Json))()
                         },
@@ -889,7 +972,7 @@ const _: () = {
                 _ => {
                     return ::core::result::Result::Err(::concord::__private::refused(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<_, _>(Json))()
                         },
@@ -907,7 +990,7 @@ const _: () = {
             self,
         ) -> riot::Result<::concord::__private::Prepared<Match, RiotProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -915,7 +998,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -926,23 +1009,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl riot::Endpoint for riot::matches::Get {
+        type Value = Match;
+    }
+
+    call_spec!(
+        riot,
         riot::matches::Get,
+        riot::__MatchesGetInputs,
         Match,
         RiotProblem,
-        riot::Result,
-        "[`riot::Result`]<[`Match`]>",
-        awaitable,
-        conditional
+        "Get"
     );
-
-    impl ::std::fmt::Debug for riot::matches::Get {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Get")
-                .field("endpoint", &"riot.matches.get")
-                .finish_non_exhaustive()
-        }
-    }
+    impl riot::__spec::Awaitable for riot::matches::Get {}
+    impl riot::__spec::Conditional for riot::matches::Get {}
 
     // /// The account behind a Riot ID (`name#tag`). `None` when there is no such player.
     // GET by_riot_id(
@@ -954,16 +1034,16 @@ const _: () = {
     //     path "by-riot-id/{game_name}/{tag_line}";
     //     status { 404 => None }
     // }
-    impl riot::account::ByRiotId {
+    impl riot::Call<riot::account::ByRiotId> {
         fn __build_draft(&self) -> riot::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let account = __Account {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
                 let route = account.route;
                 __draft.base(&[
@@ -983,13 +1063,13 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let account = __Account {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let game_name = &self.game_name;
-                let tag_line = &self.tag_line;
+                let game_name = &self.__inputs.game_name;
+                let tag_line = &self.__inputs.tag_line;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "game_name",
                     &(&::concord::__private::ValueRef(game_name)).adapt(),
@@ -998,13 +1078,13 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let account = __Account {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let game_name = &self.game_name;
-                let tag_line = &self.tag_line;
+                let game_name = &self.__inputs.game_name;
+                let tag_line = &self.__inputs.tag_line;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "tag_line",
                     &(&::concord::__private::ValueRef(tag_line)).adapt(),
@@ -1013,7 +1093,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 // Written by the client: only `client` is in reach.
                 let key = client.key;
@@ -1032,13 +1112,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.account.by_riot_id",
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.account.by_riot_id",
                 )
@@ -1060,10 +1140,10 @@ const _: () = {
             let __value = match __status {
                 ::concord::http::StatusCode::NOT_FOUND => {
                     // The arm of the endpoint: the owners in reach, then its inputs.
-                    let client = __Client { key: &self.__scope.__client.key };
-                    let account = __Account { route: &self.__scope.route };
-                    let game_name = &self.game_name;
-                    let tag_line = &self.tag_line;
+                    let client = __Client { key: &self.__inputs.__scope.__client.key };
+                    let account = __Account { route: &self.__inputs.__scope.route };
+                    let game_name = &self.__inputs.game_name;
+                    let tag_line = &self.__inputs.tag_line;
                     #[allow(unused_braces)]
                     let __arm = ||
                      -> ::std::result::Result<
@@ -1077,7 +1157,7 @@ const _: () = {
                 __status if __status.is_success() => ::core::option::Option::Some(
                     ::concord::__private::read_body(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<Account, _>(Json))()
                         },
@@ -1089,7 +1169,7 @@ const _: () = {
                 _ => {
                     return ::core::result::Result::Err(::concord::__private::refused(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<_, _>(Json))()
                         },
@@ -1107,7 +1187,7 @@ const _: () = {
             self,
         ) -> riot::Result<::concord::__private::Prepared<Option<Account>, RiotProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -1115,7 +1195,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -1126,23 +1206,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl riot::Endpoint for riot::account::ByRiotId {
+        type Value = Option<Account>;
+    }
+
+    call_spec!(
+        riot,
         riot::account::ByRiotId,
+        riot::__AccountByRiotIdInputs,
         Option<Account>,
         RiotProblem,
-        riot::Result,
-        "[`riot::Result`]<[`Option`]<[`tour::Account`](crate::Account)>>",
-        awaitable,
-        conditional
+        "ByRiotId"
     );
-
-    impl ::std::fmt::Debug for riot::account::ByRiotId {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("ByRiotId")
-                .field("endpoint", &"riot.account.by_riot_id")
-                .finish_non_exhaustive()
-        }
-    }
+    impl riot::__spec::Awaitable for riot::account::ByRiotId {}
+    impl riot::__spec::Conditional for riot::account::ByRiotId {}
 
     // /// The account of a signed-in player.
     // /// Uses the player's own token instead of the API key.
@@ -1153,16 +1230,16 @@ const _: () = {
     //     path "me";
     //     headers { remove "x-riot-token"; "authorization" = "Bearer {access_token}"; }
     // }
-    impl riot::account::Me {
+    impl riot::Call<riot::account::Me> {
         fn __build_draft(&self) -> riot::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let account = __Account {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
                 let route = account.route;
                 __draft.base(&[
@@ -1182,12 +1259,12 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__scope.__client.key,
+                    key: &self.__inputs.__scope.__client.key,
                 };
                 let account = __Account {
-                    route: &self.__scope.route,
+                    route: &self.__inputs.__scope.route,
                 };
-                let access_token = &self.access_token;
+                let access_token = &self.__inputs.access_token;
                 __draft.header(
                     "authorization",
                     &[
@@ -1206,13 +1283,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.account.me",
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     "riot.account.me",
                 )
@@ -1235,7 +1312,7 @@ const _: () = {
                 __status if __status.is_success() => {
                     ::concord::__private::read_body(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<Account, _>(Json))()
                         },
@@ -1247,7 +1324,7 @@ const _: () = {
                 _ => {
                     return ::core::result::Result::Err(::concord::__private::refused(
                         &{
-                            let client = __Client { key: &self.__scope.__client.key };
+                            let client = __Client { key: &self.__inputs.__scope.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<_, _>(Json))()
                         },
@@ -1265,7 +1342,7 @@ const _: () = {
             self,
         ) -> riot::Result<::concord::__private::Prepared<Account, RiotProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -1273,7 +1350,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -1284,21 +1361,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl riot::Endpoint for riot::account::Me {
+        type Value = Account;
+    }
+
+    call_spec!(
+        riot,
         riot::account::Me,
+        riot::__AccountMeInputs,
         Account,
         RiotProblem,
-        riot::Result,
-        "[`riot::Result`]<[`tour::Account`](crate::Account)>",
-        awaitable,
-        conditional
+        "Me"
     );
+    impl riot::__spec::Awaitable for riot::account::Me {}
+    impl riot::__spec::Conditional for riot::account::Me {}
 
-    impl ::std::fmt::Debug for riot::account::Me {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Me")
-                .field("endpoint", &"riot.account.me")
-                .finish_non_exhaustive()
-        }
-    }
 };

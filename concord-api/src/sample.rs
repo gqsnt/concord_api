@@ -45,9 +45,11 @@
 //! |---|---|
 //! | [`Library`] | The client: `Library::new(key)`, its settings (`with_timeout`, `with_retry`, …), and `books()`. |
 //! | [`library::Books`] | The handle of the scope `books`: one method per endpoint. |
-//! | [`library::books::Title`] | A call: `.await` sends it. It also has `send_full()`, `request()`, and the settings of one call. |
-//! | [`library::books::Titles`] | A paginated call: `.pages()`, `.pages().items()`, and `send()` for one page. It has no `.await`. |
-//! | [`library::books::Delete`] | A call with no arrow: `.await` returns `()`. |
+//! | [`library::Call`] | The call type, with the shared methods such as `send_full()`, `request()`, and the settings of one call. |
+//! | [`library::Endpoint`] | The sealed trait that gives the success type of each endpoint as `Value`. |
+//! | [`library::books::Title`] | The type of the endpoint `title`. `Books::title` returns `library::Call<library::books::Title>`. `.await` sends it. |
+//! | [`library::books::Titles`] | The type of the paginated endpoint `titles`. Its call has `.pages()`, `.pages().items()`, and `send()` for one page. It has no `.await`. |
+//! | [`library::books::Delete`] | The type of the endpoint `delete`, which has no arrow. Awaiting its call returns a result with `()` on success. |
 //! | [`library::Error`], [`library::Result`], [`library::Retry`] | The aliases: `concord::Error<String>`, a `Result` of it, and `concord::Retry<String>`. |
 //!
 //! The aliases show a hidden trait, `<() as __Types>::__Problem`, which stands for the `problem`

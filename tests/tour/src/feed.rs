@@ -55,24 +55,38 @@ const _: () = {
         type __Input1 = ::core::option::Option<String>;
     }
 
-    impl ::concord::page::Slot<feed::List> for feed::__ListStartingAfter {
+    impl ::concord::page::Slot<feed::Call<feed::List>> for feed::__ListStartingAfter {
         type Value = String;
-        fn get<'a>(&self, __call: &'a feed::List) -> ::core::option::Option<&'a Self::Value> {
-            __call.starting_after.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a feed::Call<feed::List>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.starting_after.as_ref()
         }
-        fn set(&self, mut __call: feed::List, __value: Self::Value) -> feed::List {
-            __call.starting_after = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: feed::Call<feed::List>,
+            __value: Self::Value,
+        ) -> feed::Call<feed::List> {
+            __call.__inputs.starting_after = ::core::option::Option::Some(__value);
             __call
         }
     }
 
-    impl ::concord::page::Slot<feed::ByCursor> for feed::__ByCursorStartingAfter {
+    impl ::concord::page::Slot<feed::Call<feed::ByCursor>> for feed::__ByCursorStartingAfter {
         type Value = String;
-        fn get<'a>(&self, __call: &'a feed::ByCursor) -> ::core::option::Option<&'a Self::Value> {
-            __call.starting_after.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a feed::Call<feed::ByCursor>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.starting_after.as_ref()
         }
-        fn set(&self, mut __call: feed::ByCursor, __value: Self::Value) -> feed::ByCursor {
-            __call.starting_after = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: feed::Call<feed::ByCursor>,
+            __value: Self::Value,
+        ) -> feed::Call<feed::ByCursor> {
+            __call.__inputs.starting_after = ::core::option::Option::Some(__value);
             __call
         }
     }
@@ -144,12 +158,12 @@ const _: () = {
         /// `.send().await` returns [`feed::Result`]<[`Page`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn list(&self) -> feed::List {
-            feed::List {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn list(&self) -> feed::Call<feed::List> {
+            feed::Call::__new(feed::__ListInputs {
                 __client: self.clone(),
                 starting_after: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// List feed entries with an ordinary cursor pager.
@@ -165,12 +179,12 @@ const _: () = {
         /// `.send().await` returns [`feed::Result`]<[`Page`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn by_cursor(&self) -> feed::ByCursor {
-            feed::ByCursor {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn by_cursor(&self) -> feed::Call<feed::ByCursor> {
+            feed::Call::__new(feed::__ByCursorInputs {
                 __client: self.clone(),
                 starting_after: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// List feed entries by following the next Link header.
@@ -182,11 +196,11 @@ const _: () = {
         /// `.send().await` returns [`feed::Result`]<[`Page`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn linked(&self) -> feed::Linked {
-            feed::Linked {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn linked(&self) -> feed::Call<feed::Linked> {
+            feed::Call::__new(feed::__LinkedInputs {
                 __client: self.clone(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
     }
 
@@ -206,7 +220,8 @@ const _: () = {
     //     paginate move |call, page| page.value().next_cursor().map(|cursor| call.starting_after(cursor));
     // }
     /// The options of this endpoint.
-    impl feed::List {
+    #[doc(hidden)]
+    impl feed::Call<feed::List> {
         /// Continue after this cursor.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
@@ -214,12 +229,28 @@ const _: () = {
             mut self,
             starting_after: impl ::concord::arg::Arg<::core::option::Option<String>>,
         ) -> Self {
-            self.starting_after = starting_after.into_input();
+            self.__inputs.starting_after = starting_after.into_input();
             self
         }
     }
 
     impl feed::List {
+        /// Option `starting_after` of `list`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Continue after this cursor.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn starting_after(
+            __call: feed::Call<feed::List>,
+            starting_after: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> feed::Call<feed::List> {
+            __call.starting_after(starting_after)
+        }
+    }
+
+    impl feed::Call<feed::List> {
         fn __build_draft(&self) -> feed::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit("https://feed.example.com")]);
@@ -227,7 +258,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let starting_after = &self.starting_after;
+                let starting_after = &self.__inputs.starting_after;
                 __draft.query(
                     "starting_after",
                     &[::concord::__private::Piece::Val(
@@ -242,9 +273,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> feed::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "feed.list")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "feed.list")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "feed.list")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "feed.list")
             }
         }
 
@@ -280,7 +311,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> feed::Result<::concord::__private::Prepared<Page, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -288,7 +319,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -299,40 +330,25 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        feed::List,
-        Page,
-        (),
-        feed::Result,
-        "[`feed::Result`]<[`Page`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Page`] pages.
-            ///
-            /// `try_next().await` returns [`feed::Result`]<[`Option`]<[`Page`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Page> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let starting_after = feed::__ListStartingAfter;
-                    move |call, page| page.value().next_cursor().map(|cursor| call.starting_after(cursor))
-                })
-            }
+    impl feed::Endpoint for feed::List {
+        type Value = Page;
+    }
 
-        }
-    );
-
-    impl ::std::fmt::Debug for feed::List {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("List")
-                .field("endpoint", &"feed.list")
-                .finish_non_exhaustive()
+    call_spec!(feed, feed::List, feed::__ListInputs, Page, (), "List");
+    impl feed::__spec::Paged for feed::List {
+        fn pages(call: feed::Call<feed::List>) -> ::concord::Pages<Page> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let starting_after = feed::__ListStartingAfter;
+                move |call, page| page.value().next_cursor().map(|cursor| call.starting_after(cursor))
+            })
         }
     }
+    impl feed::__spec::Conditional for feed::List {}
 
     // /// List feed entries with an ordinary cursor pager.
     // GET by_cursor(
@@ -344,7 +360,8 @@ const _: () = {
     //     paginate by_cursor(starting_after, page_cursor);
     // }
     /// The options of this endpoint.
-    impl feed::ByCursor {
+    #[doc(hidden)]
+    impl feed::Call<feed::ByCursor> {
         /// Continue after this cursor.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
@@ -352,12 +369,28 @@ const _: () = {
             mut self,
             starting_after: impl ::concord::arg::Arg<::core::option::Option<String>>,
         ) -> Self {
-            self.starting_after = starting_after.into_input();
+            self.__inputs.starting_after = starting_after.into_input();
             self
         }
     }
 
     impl feed::ByCursor {
+        /// Option `starting_after` of `by_cursor`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Continue after this cursor.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn starting_after(
+            __call: feed::Call<feed::ByCursor>,
+            starting_after: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> feed::Call<feed::ByCursor> {
+            __call.starting_after(starting_after)
+        }
+    }
+
+    impl feed::Call<feed::ByCursor> {
         fn __build_draft(&self) -> feed::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit("https://feed.example.com")]);
@@ -365,7 +398,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let starting_after = &self.starting_after;
+                let starting_after = &self.__inputs.starting_after;
                 __draft.query(
                     "starting_after",
                     &[::concord::__private::Piece::Val(
@@ -380,9 +413,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> feed::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "feed.by_cursor")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "feed.by_cursor")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "feed.by_cursor")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "feed.by_cursor")
             }
         }
 
@@ -418,7 +451,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> feed::Result<::concord::__private::Prepared<Page, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -426,7 +459,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -437,38 +470,30 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl feed::Endpoint for feed::ByCursor {
+        type Value = Page;
+    }
+
+    call_spec!(
+        feed,
         feed::ByCursor,
+        feed::__ByCursorInputs,
         Page,
         (),
-        feed::Result,
-        "[`feed::Result`]<[`Page`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Page`] pages.
-            ///
-            /// `try_next().await` returns [`feed::Result`]<[`Option`]<[`Page`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Page> {
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let starting_after = feed::__ByCursorStartingAfter;
-                    by_cursor(starting_after, page_cursor)
-                })
-            }
-
-        }
+        "ByCursor"
     );
-
-    impl ::std::fmt::Debug for feed::ByCursor {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("ByCursor")
-                .field("endpoint", &"feed.by_cursor")
-                .finish_non_exhaustive()
+    impl feed::__spec::Paged for feed::ByCursor {
+        fn pages(call: feed::Call<feed::ByCursor>) -> ::concord::Pages<Page> {
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let starting_after = feed::__ByCursorStartingAfter;
+                by_cursor(starting_after, page_cursor)
+            })
         }
     }
+    impl feed::__spec::Conditional for feed::ByCursor {}
 
     // /// List feed entries by following the next Link header.
     // GET linked(
@@ -477,7 +502,7 @@ const _: () = {
     //     paginate by_link();
     // }
 
-    impl feed::Linked {
+    impl feed::Call<feed::Linked> {
         fn __build_draft(&self) -> feed::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit("https://feed.example.com")]);
@@ -489,9 +514,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> feed::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "feed.linked")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "feed.linked")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "feed.linked")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "feed.linked")
             }
         }
 
@@ -527,7 +552,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> feed::Result<::concord::__private::Prepared<Page, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -535,7 +560,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -546,34 +571,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        feed::Linked,
-        Page,
-        (),
-        feed::Result,
-        "[`feed::Result`]<[`Page`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Page`] pages.
-            ///
-            /// `try_next().await` returns [`feed::Result`]<[`Option`]<[`Page`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Page> {
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    by_link()
-                })
-            }
+    impl feed::Endpoint for feed::Linked {
+        type Value = Page;
+    }
 
-        }
-    );
-
-    impl ::std::fmt::Debug for feed::Linked {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Linked")
-                .field("endpoint", &"feed.linked")
-                .finish_non_exhaustive()
+    call_spec!(feed, feed::Linked, feed::__LinkedInputs, Page, (), "Linked");
+    impl feed::__spec::Paged for feed::Linked {
+        fn pages(call: feed::Call<feed::Linked>) -> ::concord::Pages<Page> {
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                by_link()
+            })
         }
     }
+    impl feed::__spec::Conditional for feed::Linked {}
+
 };

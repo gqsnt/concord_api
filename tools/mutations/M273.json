@@ -1,0 +1,12 @@
+{
+  "id": "M273",
+  "area": "hidden endpoint documentation",
+  "contract": "C1.12, C10.4",
+  "description": "Expose the type of an endpoint declared with hidden documentation.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "        let attrs = &node.node.attrs;",
+  "replace": "        let attrs = node.node.attrs.iter().filter(|attr| {\n            !matches!(&attr.meta, syn::Meta::List(doc)\n                if attr.path().is_ident(\"doc\") && doc.tokens.to_string() == \"hidden\")\n        });",
+  "checks": [
+    "macro-compiler"
+  ]
+}

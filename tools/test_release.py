@@ -17,6 +17,7 @@ class Release(unittest.TestCase):
             self.assertEqual(release.main([]), 0)
         self.assertEqual([call.args[0] for call in run.call_args_list], [
             ["just", "gate"], ["just", "docs-audit"], ["just", "doc-examples"],
+            ["just", "call-doc-search"], ["just", "call-editor"],
             ["just", "panics"], ["just", "package"],
             ["just", "features-all"], ["just", "mutants", "--jobs", "1"],
         ])

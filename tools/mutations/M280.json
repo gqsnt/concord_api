@@ -1,0 +1,10 @@
+{
+  "id": "M280",
+  "area": "unused unpaged call guidance",
+  "contract": "C8.8",
+  "description": "Remove the attribute from the method that returns a call without a pager.",
+  "file": "concord-macros/src/write/items.rs",
+  "find": ".map(|endpoint| docs::call_must_use(endpoint.pager.is_some()));",
+  "replace": ".and_then(|endpoint| endpoint.pager.as_ref()).map(|_| docs::call_must_use(true));",
+  "checks": ["macro-unused-calls"]
+}

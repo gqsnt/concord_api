@@ -14,7 +14,7 @@ The engine needs two things from outside: `reqwest`, and Tokio's timer (`tokio::
 |---|---|---|
 | `Core<P>` | The transport and the middleware of the client (each behind an `Arc<dyn …>`), the retry policy, the two timeouts, and a base that replaces the description's. | In the client. A clone is cheap, and shares the transport and the middleware. |
 | A handle (`riot::Matches`) | A `Core<P>` and the inputs of every level above. | Made by each call to a scope's method. |
-| A call (`riot::matches::Ids`) | The same, plus its own inputs and an `Options<P>`. It is `Clone`. | Made by the endpoint's method. Sent once. |
+| A call (`riot::Call<riot::matches::Ids>`) | The same, plus its own inputs and an `Options<P>`. It is `Clone`. | Made by the endpoint's method. Sent once. |
 | `Options<P>` | What this call changes: retry, timeouts, a URL that replaces the built one (`at_url`), the edits of `edit_request`. | In the call. |
 | `Run` | **The timeouts of one call:** the instant when `timeout` expires, and the length of `idle_timeout` for this call. Also the name of the endpoint, and a slot for an outcome that is already known ([the two timeouts](#the-two-timeouts)). | Made at step 1 of a send. Every part that waits holds a clone: the attempts, the readers, a `ByteStream`. |
 | `TryInfo` | The name of the endpoint (`riot.matches.ids`: a promise, the same text as in a printed error), the number of the attempt, and (hidden) the `Run`. | Made for each attempt. Given to each middleware, to the transport, and to the generated code of the attempt. |
@@ -40,9 +40,9 @@ The engine needs two things from outside: `reqwest`, and Tokio's timer (`tokio::
 
 Steps 1 to 3 run once for a call, and once for each page of a paginated call. Every attempt sends a copy of the same request ([C3.1, C3.2](../reference/contracts.md)); with a repeatable body, a copy of the same head, with the body opened again.
 
-**A send has two halves, and both are hidden.** `prepare` is steps 1 to 3: it returns a `Prepared`, which holds the `Run`, the finished request, what a secret wrote in it (for pages), the `idempotent` mark, and what reads the response. `Prepared::send` is steps 4 and 5. `send_full()` runs one after the other. The hidden trait of every call (`__private::Call`) has both halves (a `GET` or a `HEAD` has a second first half for a conditional send: see [reading a response that you obtained yourself](#reading-a-response-that-you-obtained-yourself)), so that the engine can inspect a request between the two: that is what [pages](#pages) do. [The hidden interface](#the-hidden-interface-method-by-method) is summarized in one table below.
+**A send has two halves, and both are hidden.** `prepare` is steps 1 to 3: it returns a `Prepared`, which holds the `Run`, the finished request, what a secret wrote in it (for pages), the `idempotent` mark, and what reads the response. `Prepared::send` is steps 4 and 5. `send_full()` runs one after the other. The hidden trait of every call (`__private::Call`) has both halves (a `GET` or a `HEAD` can also prepare a conditional request: see [reading a response that you obtained yourself](#reading-a-response-that-you-obtained-yourself)), so that the engine can inspect a request between the two: that is what [pages](#pages) do. [The hidden interface](#the-hidden-interface-method-by-method) is summarized in one table below.
 
-`request()` is steps 2 and 3 with `Draft::finish`: the same request, and the call stays whole. It rejects a body that can be read only once, without consuming it; a repeatable body is left unopened, in a request that is not cloneable. `into_request()` is steps 2 and 3 as for a send.
+`request()` is steps 2 and 3 with `Draft::finish_request` with `take` false: the same request, and the call stays whole. It rejects a body that can be read only once, without consuming it; a repeatable body is left unopened, in a request that is not cloneable. `into_request()` is steps 2 and 3 as for a send.
 
 ### How a value is written
 
@@ -64,27 +64,30 @@ In a `{x}` placeholder, an empty value is rejected, and so is a finished segment
 
 ### The hidden interface, method by method
 
-For every public method of a call, this table says what generated code calls. **The macro generates five things in each endpoint:**
+For every public method of a call, this table says what generated code calls. **The macro generates the endpoint parts of a call in its `Endpoint` implementation:**
 
 - `__ENDPOINT`, the name of the endpoint (`riot.matches.ids`);
 - `__build_draft()`: step 2, the request on a `Draft`;
-- `__build_request(take)`: `__build_draft()`, then `Draft::finish` (`take` is false) or `Draft::finish_for_send` (`take` is true);
-- `__read_answer(response, info)`: the reader, the arms, the problem;
-- `__prepare_inner()`: step 1 (the `Run`, `idle_timeout`, `idempotent`), then `__build_draft()`, then `Draft::prepare`, which finishes the request for a send and returns a `Prepared` that holds `__read_answer`.
+- `__read_answer(response, info)`: the reader, the arms, the problem.
 
-**Everything else is the same for every call** and comes from one hidden macro of the core, `call_methods!`, which the macro invokes once for each endpoint. It is the only copy of these methods: the macro generates the invocation, and none of these methods itself. `call_methods!` generates the public methods of the table, the hidden trait `__private::Call` (its `prepare` is `__prepare_inner`; `answered_from`, below), `page::Call` (`at_url`), `IntoFuture` for a call with no `paginate`, and, for a `GET` or a `HEAD`, the second first half `__prepare_if_none_match(etag)` (see [a conditional send](#reading-a-response-that-you-obtained-yourself)).
+**The macro generates the shared part once on the client's `Call<E>`:**
+
+- `__build_request(take)`: `__build_draft()`, then `Draft::finish_request` (`take` is false to inspect the request, true to take it);
+- `__prepare_inner()`: step 1 (the `Run`, `idle_timeout`, `idempotent`), then `__build_draft()`, then `prepare_call` (which uses `Draft::prepare`) to finish the request for a send and return a `Prepared` that holds `__read_answer`.
+
+**The other methods are written once** for all calls of the client, with a bound on the `impl` where a method needs one. On `Call<E>`, the macro generates the public methods of the table, the hidden trait `__private::Call` (its `prepare` is `__prepare_inner`; `answered_from`, below), `concord::page::Call` (`at_url`), `IntoFuture` for a call with no `paginate`, and `__prepare_if_none_match(etag)` to prepare a conditional `GET` or `HEAD` (see [a conditional send](#reading-a-response-that-you-obtained-yourself)).
 
 | Public method of a call | What it is built on |
 |---|---|
 | `send()`, and `.await` (a call to an endpoint with `paginate` has only `send()`) | `prepare()`, then `Prepared::send`, then the value of the `Answer`. |
 | `send_full()` | `prepare()`, then `Prepared::send`. |
-| `send_raw()` | `prepare()`, then `Prepared::send_raw`: the attempts end at the head, and nothing is read. |
+| `send_raw()` | `prepare()`, then `Prepared::send_raw`. The attempts end at the head, and the body is left unread. |
 | `send_if_none_match(etag)` (a `GET` or a `HEAD`) | `__prepare_if_none_match(etag)`, then `Prepared::send` (see [a conditional send](#reading-a-response-that-you-obtained-yourself)). |
-| `request()` | `__build_request(false)`: steps 2 and 3 with `Draft::finish`; a one-shot body is rejected, not taken, and a repeatable body is left unopened. No `Run`, no `idle_timeout`, no `idempotent`. |
-| `into_request()` | `__build_request(true)`: steps 2 and 3 with `Draft::finish_for_send`, and a one-shot body is taken; a repeatable body becomes one stream that opens when it is read, with no plan for another attempt. No `Run`. |
+| `request()` | `__build_request(false)`: steps 2 and 3 with `Draft::finish_request` and `take` false; a one-shot body is rejected, not taken, and a repeatable body is left unopened. No `Run`, no `idle_timeout`, no `idempotent`. |
+| `into_request()` | `__build_request(true)`: steps 2 and 3 with `Draft::finish_request` and `take` true, and a one-shot body is taken; a repeatable body becomes one stream that opens when it is read, with no plan for another attempt. No `Run`. |
 | `read_response(response)` | `__read_answer(response, info)` alone (see [reading a response that you obtained yourself](#reading-a-response-that-you-obtained-yourself)). |
-| `with_retry`, `with_timeout`, `with_idle_timeout`, `edit_request(f)`, `at_url(url)` | A field of `Options`, read by `prepare` and by `finish_for_send`. |
-| `pages()` (generated by the macro, inside the `call_methods!` invocation) | `__private::pages(call, pager)`: the state machine of [pages](#pages). For each page: `prepare()`, the two checks on the `Prepared`, then `Prepared::send`. On the call that the pager returns: `answered_from(url)`, below. |
+| `with_retry`, `with_timeout`, `with_idle_timeout`, `edit_request(edit)`, `at_url(url)` | A field of `Options`, read by `prepare` and by `finish_for_send`. |
+| `pages()` (on `Call<E>` for an endpoint with `paginate`) | `__private::pages_with_pager(call, make_pager)`: the state machine of [pages](#pages). For each page: `prepare()`, the two checks on the `Prepared`, then `Prepared::send`. On the call that the pager returns: `answered_from(url)`, below. |
 | `pages().items()` | `IntoItems` of each page. |
 
 **How generated code passes values to the `Draft`.**
@@ -94,13 +97,13 @@ For every public method of a call, this table says what generated code calls. **
 - `Draft::segment` given only an empty literal does nothing.
 - `Draft::header` receives the name as written; it compares and stores it without case.
 
-**The other pieces of `__private`.** `Core` and `Options` (what a client and a call hold: [the values](#the-values)); `Draft`, a request being built, which takes each value with its name ([how a value is written](#how-a-value-is-written)); one adapter that every placed value goes through, which recognizes `Secret` and `Option<Secret>` before it requires `Serialize`; `InheritAcrossBase` and `InheritPathAcrossBase`, two traits that the secret side of the adapter does not implement, so that a secret, in an entry or in a segment of a `path`, stays with the `base` where it was written ([C8.9](../reference/contracts.md#c8-secrets-and-pages)); `Run`, `exchange`, `exchange_raw` and `again` (the timeouts and the attempts of one send, in one loop, and the retry decision: [the attempts](#the-attempts)); `no_arm` (the Mismatch for a 2xx that no arm of a `HEAD` matches, with its evidence); and functions such as `reader`, whose bound checks an expression of the author's and which carries the type that is read. The names of the helpers carry no promise. How the macro uses them: [the macro](macro.md).
+**The other pieces of `__private`.** `Core` and `Options` (what a client and a call hold: [the values](#the-values)); `Draft`, a request being built, which takes each value with its name ([how a value is written](#how-a-value-is-written)); one adapter that every placed value goes through, which recognizes `Secret` and `Option<Secret>` before it requires `Serialize`; `InheritAcrossBase` and `InheritPathAcrossBase`, two traits that the secret side of the adapter does not implement, so that a secret, in an entry or in a segment of a `path`, stays with the `base` where it was written ([C8.9](../reference/contracts.md#c8-secrets-and-pages)); `Run`, `exchange_loop` and `again` (the timeouts and the attempts of one send, in one loop, and the retry decision: [the attempts](#the-attempts)); `no_arm` (the Mismatch for a 2xx that no arm of a `HEAD` matches, with its evidence); and functions such as `reader`, whose bound checks an expression of the author's and which carries the type that is read. The names of the helpers carry no promise. How the macro uses them: [the macro](macro.md).
 
 **A relative next URL needs the URL of the response that contained it**, and a pager passes only text to `at_url`. So the pages state machine tells the next call where its response came from: the hidden trait of every call has `answered_from(url)`, which stores that URL in `Options`. `finish_for_send` resolves a relative `at_url` against it; a call that no state machine touched (a caller's own `call.at_url("../next")`) has none, and resolves against the URL that it builds. The resolution comes before the origin check and before the edits.
 
 ## The attempts
 
-One loop runs the attempts, for every kind of send. `__private::exchange` (a send) and `__private::exchange_raw` (`send_raw()`) both call it; they differ only in how an attempt reads its response.
+One loop runs the attempts, for every kind of send. `Prepared::send` reaches `exchange_loop` through `exchange_prepared`, and `Prepared::send_raw` reaches it through `exchange_raw_prepared`. They differ only in the function that reads each response.
 
 ```text
 exchange_with(run, core, options, mark, request, read):
@@ -304,7 +307,7 @@ let game = call.read_response(response).await?;      // riot::Result<Match>
 
 No retry, no timeout and no pages: those belong to a send, and Concord sent nothing. On an error from `read_response`, `tries()` is 0.
 
-**A conditional send.** `call.send_if_none_match(etag)`, on a call whose method is `GET` or `HEAD`, writes `If-None-Match` when the request is built (replacing one that the description wrote, and before the edits of `edit_request`), and sends. A `304` that no arm matches produces an `Answer` whose value is `None`; anything else produces `Some(value)`. The headers are there in both cases. **It has its own first half** (see [the path of one call](#the-path-of-one-call)): for a `GET` or a `HEAD`, `call_methods!` generates `__prepare_if_none_match(etag)` beside `prepare`. It is `prepare` with two differences: the header is written after the description's headers and before `finish_for_send` runs the edits (so a caller's edit that removes `if-none-match` removes this one too), and what reads the response returns `None` for a `304` that no arm matches. It returns a `Prepared` whose value is `Option<T>`; `send_if_none_match` is that half, then `Prepared::send`.
+**A conditional send.** `call.send_if_none_match(etag)`, on a call whose method is `GET` or `HEAD`, writes `If-None-Match` when the request is built (replacing one that the description wrote, and before the edits of `edit_request`), and sends. A `304` that no arm matches produces an `Answer` whose value is `None`; anything else produces `Some(value)`. The headers are there in both cases. **Preparing a conditional request.** For a `GET` or a `HEAD`, `Call<E>` has `__prepare_if_none_match(etag)` beside `prepare` (see [the path of one call](#the-path-of-one-call)). It is `prepare` with two differences: the header is written after the description's headers and before `finish_for_send` runs the edits (so a caller's edit that removes `if-none-match` removes this one too), and what reads the response returns `None` for a `304` that no arm matches. It returns a `Prepared` whose value is `Option<T>`; `send_if_none_match` is that half, then `Prepared::send`.
 
 ## What a call costs
 

@@ -213,7 +213,7 @@ A project ages well when it can add things for years without breaking anyone. Th
 | adds `idempotent`, a header, a query pair | The signature does not change. |
 | moves optional inputs, with their statements, into a part | A part generates nothing by itself. The node has them as if it had written them. |
 | changes a `path`, or the placement of an input | The wire changes; the call does not. |
-| marks a node `#[deprecated]` | The mark goes on what is generated for it. |
+| marks a node `#[deprecated]` | The mark goes on the node’s type and the method that returns its handle or call. For a scope, it also goes on the module. For an endpoint, it also goes on its setters on `Call<E>` and the setter functions on the endpoint's type. |
 
 They **are** broken when the author adds or reorders a required input, changes a type, moves or renames a node, adds an arm that changes the type after the arrow, or adds `paginate` to an endpoint: its call can then no longer be awaited directly, and its callers see it when they compile.
 

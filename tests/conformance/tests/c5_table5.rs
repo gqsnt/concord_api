@@ -87,17 +87,17 @@ fn europe(script: &Script) -> tour::riot::Account {
     riot(script).account(tour::Europe)
 }
 
-fn match_get(script: &Script) -> tour::riot::matches::Get {
+fn match_get(script: &Script) -> tour::riot::Call<tour::riot::matches::Get> {
     riot(script)
         .matches(tour::Europe)
         .get(tour::MatchId::from("EUW1_1"))
 }
 
-fn exists(script: &Script) -> tour::files::Exists {
+fn exists(script: &Script) -> tour::files::Call<tour::files::Exists> {
     files(script).exists(tour::DocId::from("readme"))
 }
 
-fn download(script: &Script) -> tour::files::Download {
+fn download(script: &Script) -> tour::files::Call<tour::files::Download> {
     files(script).download(tour::FileId::from("f"))
 }
 

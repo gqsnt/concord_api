@@ -1,0 +1,12 @@
+{
+  "id": "M277",
+  "area": "shared refusal reader",
+  "contract": "C5.6, C5.11",
+  "description": "Use the plain refusal reader for an endpoint that declared a typed problem reader.",
+  "file": "concord-core/src/__private/answer.rs",
+  "find": "        return Err(refusal.refuse(response, info).await);\n    }\n    let (url, status, headers) = answer_head(&response);\n    let value",
+  "replace": "        let _ = refusal;\n        return Err(refused_plain(response, &info).await);\n    }\n    let (url, status, headers) = answer_head(&response);\n    let value",
+  "checks": [
+    "generated-tour"
+  ]
+}

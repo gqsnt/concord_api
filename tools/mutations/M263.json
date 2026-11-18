@@ -1,0 +1,12 @@
+{
+  "id": "M263",
+  "area": "sealed endpoint trait",
+  "contract": "C10.3",
+  "description": "Remove the sealed supertrait from Endpoint.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "#vis trait Endpoint: __sealed::Sealed +",
+  "replace": "#vis trait Endpoint:",
+  "checks": [
+    "macro-unit"
+  ]
+}

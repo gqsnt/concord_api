@@ -1,0 +1,38 @@
+error[E0308]: mismatched types
+  --> tests/compiler-errors/calls/wrong_call_slot.rs:11:35
+   |
+11 |                 let _ = start.get(&other);
+   |                               --- ^^^^^^ expected `&Call<List>`, found `&Call<Other>`
+   |                               |
+   |                               arguments to this method are incorrect
+   |
+   = note: expected reference `&Call<List>`
+              found reference `&Call<api::Other>`
+note: method defined here
+  --> $WORKSPACE/concord-core/src/page.rs
+   |
+   |     fn get<'a>(&self, call: &'a C) -> Option<&'a Self::Value>;
+   |        ^^^
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/calls/wrong_call_slot.rs:12:35
+   |
+12 |                 let _ = start.set(other, 10);
+   |                               --- ^^^^^ expected `Call<List>`, found `Call<Other>`
+   |                               |
+   |                               arguments to this method are incorrect
+   |
+   = note: expected struct `Call<List>`
+              found struct `Call<api::Other>`
+help: the return type of this call is `api::Call<api::Other>` due to the type of the argument passed
+  --> tests/compiler-errors/calls/wrong_call_slot.rs:12:25
+   |
+12 |                 let _ = start.set(other, 10);
+   |                         ^^^^^^^^^^-----^^^^^
+   |                                   |
+   |                                   this argument influences the return type of `set`
+note: method defined here
+  --> $WORKSPACE/concord-core/src/page.rs
+   |
+   |     fn set(&self, call: C, value: Self::Value) -> C;
+   |        ^^^

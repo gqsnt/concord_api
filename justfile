@@ -38,7 +38,7 @@ doc:
 msrv:
     @python3 -B tools/gate.py msrv
 
-# Check Concord feature combinations with forwarded features off and on, and each forwarder.
+# Check Concord feature combinations with each optional feature off and on.
 [no-exit-message]
 features:
     @python3 -B tools/gate.py features
@@ -93,12 +93,22 @@ docs-audit:
 doc-examples:
     @cargo test --offline -p real-apis --test pages
 
+# Check that rustdoc search finds an option on its endpoint type.
+[no-exit-message]
+call-doc-search:
+    @python3 -B concord-macros/tests/call_documentation.py call-doc-search
+
+# Check generated call methods in rust-analyzer completion and hover.
+[no-exit-message]
+call-editor:
+    @python3 -B concord-macros/tests/call_documentation.py call-editor
+
 # Package all five libraries and check their unpacked contents and feature sets.
 [no-exit-message]
 package:
     @python3 -B tools/package.py
 
-# Run gate, documentation checks, safety, packaging, feature isolation, and mutations.
+# Run gate, documentation and editor checks, safety, packaging, feature isolation, and mutations.
 [no-exit-message]
 release:
     @python3 -B tools/release.py

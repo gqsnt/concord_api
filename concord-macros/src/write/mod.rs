@@ -22,6 +22,7 @@ macro_rules! emit_at {
 
 mod answer;
 mod call;
+mod call_docs;
 mod docs;
 mod items;
 mod recovery;
@@ -58,12 +59,30 @@ fn method(method: &Method) -> String {
         .map_or_else(|| method.keyword.to_string(), syn::LitStr::value)
 }
 
-fn stored(input: &Input) -> TokenStream {
-    let ty = &input.ty;
+fn stored(input: &Input, ty: TokenStream) -> TokenStream {
     if input.optional.is_some() {
         emit!(::core::option::Option<#ty>)
     } else {
-        emit!(#ty)
+        ty
+    }
+}
+
+pub(crate) fn check_client_type_names(client: &Client, diagnostics: &mut crate::diag::Diagnostics) {
+    for child in &client.node.children {
+        if child.parse_failed || child.name != "endpoint" {
+            continue;
+        }
+        let mut message = crate::diag::reserved_child("endpoint", "endpoint_item")
+            .label("reserved for the generated endpoint trait");
+        if client
+            .node
+            .children
+            .iter()
+            .any(|other| name::type_name(&other.name.to_string()) == "EndpointItem")
+        {
+            message = message.help("choose a distinct child name and update every use");
+        }
+        diagnostics.raise(child.name.span(), message);
     }
 }
 
@@ -77,6 +96,37 @@ struct NodeInfo<'a> {
     children: Vec<usize>,
     implementation: TokenStream,
     deprecated: bool,
+}
+
+impl NodeInfo<'_> {
+    fn endpoint_attrs(&self) -> TokenStream {
+        let cfg = &self.cfg;
+        let attrs = self.node.attrs.iter().filter(|attr| {
+            attr.path().is_ident("deprecated")
+                || (attr.path().is_ident("doc") && matches!(attr.meta, syn::Meta::List(_)))
+        });
+        emit!(#(#cfg)* #(#attrs)*)
+    }
+
+    fn endpoint_impl_attrs(&self) -> TokenStream {
+        let attrs = self.endpoint_attrs();
+        let allow = self
+            .node
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("deprecated"))
+            .then(|| emit!(#[allow(useless_deprecated)]));
+        emit!(#allow #attrs)
+    }
+
+    fn input_type_attrs(&self) -> TokenStream {
+        if matches!(self.node.kind, NodeKind::Endpoint(_)) {
+            self.endpoint_attrs()
+        } else {
+            let cfg = &self.cfg;
+            emit!(#(#cfg)*)
+        }
+    }
 }
 
 struct Writer<'a> {
@@ -279,11 +329,92 @@ impl<'a> Writer<'a> {
         access
     }
 
+    fn tuple_data(&self, index: usize) -> bool {
+        self.nodes.get(index).is_some_and(|node| {
+            matches!(node.node.kind, NodeKind::Endpoint(_)) && node.inputs.len() <= 12
+        })
+    }
+
+    fn input_position(&self, index: usize, input: &flat::InputLine<'_>) -> Option<usize> {
+        self.nodes.get(index)?.inputs.iter().position(|line| {
+            std::ptr::eq(line.owner, input.owner) && std::ptr::eq(line.input, input.input)
+        })
+    }
+
+    fn input_type(&self, input: &flat::InputLine<'_>) -> TokenStream {
+        let root = &self.root;
+        let id = self.input_id(input);
+        emit!(<() as #root::__Types>::#id)
+    }
+
+    fn problem_alias(&self) -> Ident {
+        let mut alias = ident("__DeclaredProblem");
+        if let Some(ty) = self.problem_type() {
+            alias.set_span(alias.span().located_at(ty.span()));
+        }
+        alias
+    }
+
+    fn problem_span(&self) -> Span {
+        self.problem_type().map_or(self.client_span, Spanned::span)
+    }
+
+    fn at_problem(&self, tokens: TokenStream) -> TokenStream {
+        if let Some(ty) = self.problem_type() {
+            located(tokens, ty.span())
+        } else {
+            tokens
+        }
+    }
+
+    fn input_field(
+        &self,
+        current: usize,
+        input: &flat::InputLine<'_>,
+        base: TokenStream,
+    ) -> TokenStream {
+        let access = self.access(current, input.owner, base);
+        if self.tuple_data(current) {
+            if let Some(position) = self.input_position(current, input) {
+                let position = syn::Index::from(position);
+                return emit!(#access.__inputs.#position);
+            }
+        }
+        let field = &input.input.name;
+        emit!(#access.#field)
+    }
+
+    fn slot_value(&self, index: usize, input: &flat::InputLine<'_>) -> TokenStream {
+        let root = &self.root;
+        let Some((ty, position)) = self.slot_arguments(index, input) else {
+            return TokenStream::new();
+        };
+        emit!(::concord::__private::InputSlot::<#ty, #position, #root::__PagingKey>::NEW)
+    }
+
+    fn slot_type(&self, index: usize, input: &flat::InputLine<'_>) -> TokenStream {
+        let root = &self.root;
+        let Some((ty, position)) = self.slot_arguments(index, input) else {
+            return TokenStream::new();
+        };
+        emit!(::concord::__private::InputSlot<#ty, #position, #root::__PagingKey>)
+    }
+
+    fn slot_arguments(
+        &self,
+        index: usize,
+        input: &flat::InputLine<'_>,
+    ) -> Option<(TokenStream, usize)> {
+        let node = self.nodes.get(index)?;
+        let position = self.input_position(index, input)?;
+        Some((self.call_type(node), position))
+    }
+
     fn core(&self, current: usize) -> TokenStream {
         let Some(root) = self.nodes.first() else {
             return TokenStream::new();
         };
-        let access = self.access(current, root.node, emit!(self));
+        let access = self.access(current, root.node, emit!(__value));
         let field = emit!(#access.__core);
         if self.nodes.get(current).is_some_and(|n| n.deprecated) {
             let value = self.borrow_field(current, field, false);
@@ -327,8 +458,8 @@ impl<'a> Writer<'a> {
             };
             let fields = owner.inputs.iter().map(|input| {
                 let field = &input.input.name;
-                let access = self.access(current, input.owner, base.clone());
-                let reference = self.borrow_field(current, emit!(#access.#field), false);
+                let access = self.input_field(current, input, base.clone());
+                let reference = self.borrow_field(current, access, false);
                 emit!(#field: #reference)
             });
             if owner.inputs.is_empty() {
@@ -340,12 +471,11 @@ impl<'a> Writer<'a> {
         let locals = origin.locals.iter().map(|input| {
             let field = &input.input.name;
             if slots {
-                let slot = self.slot(current, input);
-                let root = &self.root;
-                emit!(let #field = #root::#slot;)
+                let slot = self.slot_value(current, input);
+                emit!(let #field = #slot;)
             } else {
-                let access = self.access(current, input.owner, base.clone());
-                let reference = self.borrow_field(current, emit!(#access.#field), false);
+                let access = self.input_field(current, input, base.clone());
+                let reference = self.borrow_field(current, access, false);
                 emit!(let #field = #reference;)
             }
         });
@@ -361,10 +491,6 @@ impl<'a> Writer<'a> {
         span: Span,
     ) -> TokenStream {
         located(self.bindings(origin, current, base, slots), span)
-    }
-
-    fn slot(&self, current: usize, input: &flat::InputLine<'_>) -> Option<Ident> {
-        Some(ident(&format!("__Slot{current}{}", self.input_id(input)?)))
     }
 
     fn visibility(&self, depth: usize) -> TokenStream {
@@ -422,22 +548,27 @@ impl<'a> Writer<'a> {
             .collect::<Vec<_>>();
         let associated = all_inputs.iter().map(|(n, input)| {
             let id = self.input_id(input);
-            let cfg = &n.cfg;
+            let attrs = n.input_type_attrs();
+            let allow = n.deprecated.then(|| emit!(#[allow(unused_attributes)]));
             let declaration = quote::quote_spanned!(input.input.ty.span()=>
                 type #id: ::core::clone::Clone + ::core::marker::Send + ::core::marker::Sync + 'static;
             );
-            emit!(#(#cfg)* #declaration)
+            emit!(#attrs #allow #declaration)
         });
-        let cloners = all_inputs.iter().map(|(n, input)| {
-            let id = self.input_id(input);
-            let clone = self.clone_id(input);
-            let cfg = &n.cfg;
-            emit! {
-                #(#cfg)* fn #clone(__value: &Self::#id) -> Self::#id {
-                    ::core::clone::Clone::clone(__value)
+        let cloners = all_inputs
+            .iter()
+            .filter(|(n, _)| !matches!(n.node.kind, NodeKind::Endpoint(_)))
+            .map(|(n, input)| {
+                let id = self.input_id(input);
+                let clone = self.clone_id(input);
+                let cfg = &n.cfg;
+                let ty = stored(input.input, emit!(Self::#id));
+                emit! {
+                    #(#cfg)* fn #clone(__value: &#ty) -> #ty {
+                        ::core::clone::Clone::clone(__value)
+                    }
                 }
-            }
-        });
+            });
         let node_types = self.nodes.iter().enumerate().filter(|(_, n)| !matches!(n.node.kind, NodeKind::Endpoint(_))).map(|(i, n)| {
             let id = ident(&format!("__Node{i}")); let cfg = &n.cfg;
             emit!(#(#cfg)* type #id: ::core::clone::Clone + ::core::marker::Send + ::core::marker::Sync + 'static;)
@@ -456,23 +587,40 @@ impl<'a> Writer<'a> {
             });
         let associated_impl = all_inputs.iter().map(|(n, input)| {
             let id = self.input_id(input);
-            let ty = stored(input.input);
-            let cfg = &n.cfg;
-            emit!(#(#cfg)* type #id = #ty;)
+            let attrs = n.input_type_attrs();
+            let allow = n
+                .deprecated
+                .then(|| emit!(#[allow(deprecated, unused_attributes, useless_deprecated)]));
+            let span = input.input.ty.span();
+            let value = id.as_ref().map(|id| Ident::new(&id.to_string(), span));
+            emit_at!(span=> #attrs #allow type #id = #value;)
+        });
+        let input_aliases = all_inputs.iter().map(|(n, input)| {
+            let id = self.input_id(input);
+            let ty = &input.input.ty;
+            let attrs = n.input_type_attrs();
+            emit!(#attrs type #id = #ty;)
         });
         let problem = self
             .problem_type()
             .map(|ty| emit!(#ty))
             .unwrap_or_else(|| emit!(()));
-        let problem_bound = quote::quote_spanned!(self.problem_type().map_or(self.client_span,Spanned::span)=>
+        let problem_span = self.problem_span();
+        let problem_bound = quote::quote_spanned!(problem_span=>
             type __Problem: ::core::marker::Send + ::core::marker::Sync + 'static;
         );
+        let problem_alias = self.problem_alias();
+        let problem_use = located(emit!(#problem_alias), problem_span);
+        let problem_impl = emit_at!(problem_span=> type __Problem = #problem_use;);
         let fields = client.inputs.iter().map(|input| {
             let field = &input.input.name;
-            let id = self.input_id(input);
-            emit!(#field: <() as #root::__Types>::#id,)
+            let ty = stored(input.input, self.input_type(input));
+            emit!(#field: #ty,)
         });
         let tree = self.declarations(0);
+        let call_declarations = self.call_declarations();
+        let call_implementations = self.call_implementations();
+        let send_methods = self.send_methods();
         let views = self
             .nodes
             .iter()
@@ -483,7 +631,7 @@ impl<'a> Writer<'a> {
                 let cfg = &node.cfg;
                 let fields = node.inputs.iter().map(|input| {
                     let name = &input.input.name;
-                    let ty = stored(input.input);
+                    let ty = stored(input.input, self.input_id(input).to_token_stream());
                     emit!(#name: &'__a #ty)
                 });
                 if node.inputs.is_empty() {
@@ -503,6 +651,17 @@ impl<'a> Writer<'a> {
             let cfg = &node.cfg;
             emit!(#(#cfg)* #[allow(deprecated)] type #alias = #path;)
         });
+        let data_aliases = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.deprecated && matches!(node.node.kind, NodeKind::Endpoint(_)))
+            .map(|(index, node)| {
+                let alias = ident(&format!("__DataImpl{index}"));
+                let path = self.raw_data_path(index);
+                let cfg = &node.cfg;
+                emit!(#(#cfg)* #[allow(deprecated)] type #alias<__T = ()> = #path<__T>;)
+            });
         let client_doc = self.client_doc();
         let module_doc = format!("Calls and results for [`{client_name}`].");
         let problem_doc = self.problem_type().map(|ty| self.alias_type_doc(ty));
@@ -538,7 +697,7 @@ impl<'a> Writer<'a> {
             #[doc = #module_doc]
             #vis mod #root {
                 #[doc(hidden)]
-                #module_vis trait __Types {
+                #module_vis trait __Types: 'static {
                     #(#associated)* #(#node_types)*
                     #problem_bound
                     #(#cloners)*
@@ -549,123 +708,24 @@ impl<'a> Writer<'a> {
                 #module_vis type Result<T> = ::core::result::Result<T, Error>;
                 #[doc = #retry_doc]
                 #module_vis type Retry = #retry_type;
+                type __Problem = <() as __Types>::__Problem;
+                #call_declarations
+                #call_implementations
                 #tree
             }
             #(#cfg)*
             #[allow(unused_variables, unused_mut, unused_braces, dead_code, clippy::redundant_closure_call)]
             const _: () = {
                 #[allow(unused_imports)] use ::concord::__private::AdaptValue as _;
-                impl #root::__Types for () { #(#node_type_impls)* #(#associated_impl)* type __Problem = #problem; }
+                type #problem_alias = #problem;
+                #(#input_aliases)*
+                impl #root::__Types for () { #(#node_type_impls)* #(#associated_impl)* #problem_impl }
+                #send_methods
                 #(#aliases)*
+                #(#data_aliases)*
                 #(#views)*
                 #(#implementations)*
             };
-        }
-    }
-
-    fn endpoint(&self, index: usize, endpoint: &flat::Endpoint<'_>) -> TokenStream {
-        let Some(node) = self.nodes.get(index) else {
-            return TokenStream::new();
-        };
-        let ty = &node.implementation;
-        let cfg = &node.cfg;
-        let root = &self.root;
-        let output = endpoint
-            .node
-            .output
-            .as_ref()
-            .map(|o| o.ty.to_token_stream())
-            .unwrap_or_else(|| emit!(()));
-        let core = self.core(index);
-        let path = &endpoint.path;
-        let request = self.request(index, endpoint);
-        let answer = self.answer(index, endpoint);
-        let shown_problem = self.problem_type().map(|ty| emit!(, #ty));
-        let paging = endpoint.pager.as_ref().map(|pager| {
-            let expression = pager.value;
-            let bindings = self.bindings_at(&pager.origin, index, emit!(__owners), true, expression.span());
-            let make=emit_at!(expression.span()=> __pager(&self, || { #bindings #expression }));
-            let call=emit_at!(expression.span()=> ::concord::__private::pages(self, __pager));
-            emit_at!(expression.span()=>
-                /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-                pub fn pages(self) -> ::concord::Pages<#output #shown_problem> {
-                    fn __pager<__C, __N, __F>(_: &__C, __make: impl ::core::ops::FnOnce() -> __F) -> __F
-                    where __C: ::concord::page::Call,
-                        __N: ::concord::page::IntoNext<__C>,
-                        __F: ::core::ops::FnMut(__C, &::concord::Answer<__C::Value>) -> __N
-                            + ::core::marker::Send + 'static,
-                    { __make() }
-                    let __owners = ::core::clone::Clone::clone(&self);
-                    let __pager = #make;
-                    #call
-                }
-            )
-        });
-        let slots = endpoint.pager.as_ref().map(|_| {
-            let slots = node.inputs.iter().map(|input| {
-                let slot = self.slot(index, input);
-                let field = &input.input.name;
-                let input_type = &input.input.ty;
-                let get = if input.input.optional.is_some() { emit!(__call.#field.as_ref()) } else { emit!(::core::option::Option::Some(&__call.#field)) };
-                let set = if input.input.optional.is_some() { emit!(::core::option::Option::Some(__value)) } else { emit!(__value) };
-                let allow=node.deprecated.then(||emit!(#[allow(deprecated)]));
-                emit!(#(#cfg)* #allow #[doc(hidden)] impl ::concord::page::Slot<#ty> for #root::#slot {
-                    type Value = #input_type;
-                    fn get<'__a>(&self, __call: &'__a #ty) -> ::core::option::Option<&'__a Self::Value> { #get }
-                    fn set(&self, mut __call: #ty, __value: Self::Value) -> #ty { __call.#field = #set; __call }
-                })
-            });
-            emit!(#(#slots)*)
-        });
-        let idle_timeout = endpoint.idle_timeout.as_ref().map(|line| {
-            let bindings = self.bindings(&line.origin, index, emit!(self), false);
-            let expression = line.value;
-            let options = self.borrow_field(index, emit!(self.__options), true);
-            emit! {
-                let __idle_timeout = { #bindings (|| -> ::std::time::Duration { #expression })() };
-                (#options).description_idle_timeout(__idle_timeout);
-            }
-        });
-        let mutable = endpoint.idle_timeout.is_some().then(|| emit!(mut));
-        let idempotent = match &endpoint.idempotent {
-            Some(line) => match line.value {
-                Some(expression) => {
-                    let bindings = self.bindings(&line.origin, index, emit!(self), false);
-                    emit_at!(expression.span()=> { #bindings ::concord::__private::idempotent((|| { #expression })()) })
-                }
-                None => emit!(::concord::__private::Idempotent::Yes),
-            },
-            None => emit!(::concord::__private::Idempotent::ByMethod),
-        };
-        let common = self.call_methods(ty, &output, endpoint, paging.as_ref());
-        let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
-        let problem = self
-            .problem_type()
-            .map(|ty| emit!(#ty))
-            .unwrap_or_else(|| emit!(()));
-        let options = self.borrow_field(index, emit!(self.__options), false);
-        emit! {
-            #(#cfg)* impl #ty {
-                const __ENDPOINT: &'static str = #path;
-                #request
-                #answer
-                fn __prepare_inner(#mutable self) -> #root::Result<::concord::__private::Prepared<#output, <() as #root::__Types>::__Problem>> {
-                    let __run = ::concord::__private::Run::start(&#core, #options, Self::__ENDPOINT);
-                     #idle_timeout
-                    let __idempotent = #idempotent;
-                    let __draft = self.__build_draft()?;
-                    __draft.prepare::<#output, #problem, _, _>(
-                        __run, ::core::clone::Clone::clone(&#core),
-                        ::core::clone::Clone::clone(#options), __idempotent,
-                        move |__response, __info| {
-                            let __call = ::core::clone::Clone::clone(&self);
-                            async move { __call.__read_answer(__response, __info).await }
-                        },
-                    )
-                }
-            }
-            #(#cfg)* #allow const _: () = { #common };
-            #slots
         }
     }
 }

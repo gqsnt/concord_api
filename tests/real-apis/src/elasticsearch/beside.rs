@@ -1,4 +1,4 @@
-use concord::page::{Call, Slot};
+use concord::page::Slot;
 use concord::{reqwest, Answer, Fail};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ pub fn document_404<T: DeserializeOwned>(body: Value) -> Result<T, Fail<EsProble
 pub fn pit_after<C, P, A>(pit: P, after: A)
     -> impl Fn(C, &Answer<SearchPage>) -> Result<Option<C>, Fail<EsProblem>> + Send + 'static
 where
-    C: Call<Value = SearchPage, Problem = EsProblem>,
+    C: concord::page::Call<Value = SearchPage, Problem = EsProblem>,
     P: Slot<C, Value = Pit>,
     A: Slot<C, Value = Vec<Value>>,
 {
@@ -82,7 +82,7 @@ pub fn cat_reply(text: String, format: &Option<CatFormat>) -> Result<CatReply, F
     }
 }
 
-impl elasticsearch::indices::Search {
+impl elasticsearch::Call<elasticsearch::indices::Search> {
     /// The same search, sent as a `POST`: for a proxy that drops the body of a `GET`.
     pub fn post(self) -> Self {
         self.edit_request(|request| *request.method_mut() = reqwest::Method::POST)

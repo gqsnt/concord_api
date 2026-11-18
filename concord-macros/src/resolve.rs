@@ -174,7 +174,7 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                         continue;
                     }
                     let part_inputs = own_inputs(part, node);
-                    // Reserve before the loop so fixture counts are independent of map growth.
+                    // Keep inspection counts independent of map growth.
                     #[cfg(test)]
                     input_names.reserve(part_inputs.len());
                     for input in part_inputs {
@@ -612,7 +612,7 @@ fn own_inputs<'a>(written: &'a Node, owner: &'a Node) -> Vec<InputLine<'a>> {
     })
 }
 
-/// The base in reach at the writer counts; a missing one binds at the first below.
+/// Use the base in scope at the write, or the first base below it if there is none.
 fn crosses(written: usize, endpoint: usize) -> bool {
     if written == 0 {
         endpoint > 1

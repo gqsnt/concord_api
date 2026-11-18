@@ -767,7 +767,13 @@ const TOO_LONG: &str = "build error: the URL is too long to be sent, in files.re
 
 /// `files.readme(repo)`, whose URL is the base, `repo` and `/readme`, with a middleware of the
 /// caller that notes each try, over a script that answers once.
-fn readme_of_length(length: usize) -> (tour::files::Readme, concord_testkit::Script, engine::Log) {
+fn readme_of_length(
+    length: usize,
+) -> (
+    tour::files::Call<tour::files::Readme>,
+    concord_testkit::Script,
+    engine::Log,
+) {
     let fixed = url(&ok(tour::Files::new("key").readme("a").request())).len() - 1;
     let script = concord_testkit::Script::new();
     script

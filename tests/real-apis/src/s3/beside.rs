@@ -1,5 +1,5 @@
 use concord::http::{HeaderName, HeaderValue};
-use concord::page::{Call, Slot};
+use concord::page::Slot;
 use concord::{reqwest, Answer, Fail};
 use serde::Deserialize;
 
@@ -92,7 +92,7 @@ impl PartsPage {
 pub fn checked_cursor<C, S, V>(slot: S, next: fn(&C::Value) -> NextMarker<V>)
     -> impl Fn(C, &Answer<C::Value>) -> Result<Option<C>, Fail<S3Problem>> + Send + 'static
 where
-    C: Call<Problem = S3Problem>,
+    C: concord::page::Call<Problem = S3Problem>,
     S: Slot<C, Value = V>,
     V: Send + 'static,
 {
@@ -103,7 +103,7 @@ where
 pub fn uploads_after<C, K, U>(key: K, upload: U)
     -> impl Fn(C, &Answer<UploadsPage>) -> Result<Option<C>, Fail<S3Problem>> + Send + 'static
 where
-    C: Call<Value = UploadsPage, Problem = S3Problem>,
+    C: concord::page::Call<Value = UploadsPage, Problem = S3Problem>,
     K: Slot<C, Value = String>,
     U: Slot<C, Value = String>,
 {

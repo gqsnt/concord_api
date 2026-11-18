@@ -67,13 +67,23 @@ fn c1_20_regression_api_descriptions_expand_to_rust_files() {
 
 #[test]
 fn c1_6_retry_alias_reserves_its_generated_type_namespace() {
-    let expanded = crate::expand(
-        r#"client Names { base "https://names.test"; GET retry(); }"#
-            .parse()
-            .unwrap(),
-    )
-    .to_string();
-    assert!(expanded.contains("`retry` is reserved by Concord"));
+    for (kind, name) in [("GET", "retry"), ("scope", "call"), ("scope", "endpoint")] {
+        let node = if kind == "scope" {
+            format!("scope {name} {{ GET get(); }}")
+        } else {
+            format!("{kind} {name}();")
+        };
+        let expanded = crate::expand(
+            format!(r#"client Names {{ base "https://names.test"; {node} }}"#)
+                .parse()
+                .unwrap(),
+        )
+        .to_string();
+        assert!(
+            expanded.contains(&format!("`{name}` is reserved by Concord")),
+            "{expanded}"
+        );
+    }
 }
 
 #[path = "generated_docs.rs"]

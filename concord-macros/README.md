@@ -4,7 +4,8 @@ Concord's macro, `api!`. Concord is the crate `concord-api`, used as `concord` i
 
 The macro reads a nested description
 of an HTTP API and generates a typed client: a client type, one method for each endpoint, one
-struct for each call, and one error type.
+`Call<E>` type for the client, and one error type. Each endpoint method returns that call type
+with the endpoint's type as `E`.
 
 The macro handles the tree, the statements and the inputs. It has no built-in format, authentication
 scheme or pager: what follows `read`, `paginate` or `body` is a Rust expression, and the

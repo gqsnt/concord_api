@@ -124,12 +124,12 @@ const _: () = {
         /// - `.done(false)`: accepts [`bool`], &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it. Filter tasks by completion state.
         ///
         /// `.await` returns [`tasks::Result`]<[`Vec`]<[`Task`]>>.
-        pub fn list(&self) -> tasks::List {
-            tasks::List {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn list(&self) -> tasks::Call<tasks::List> {
+            tasks::Call::__new(tasks::__ListInputs {
                 __client: self.clone(),
                 done: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Create a task with a title.
@@ -146,12 +146,12 @@ const _: () = {
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
         /// `.await` returns [`tasks::Result`]<[`Task`]>.
-        pub fn create(&self, task: impl ::concord::arg::Arg<NewTask>) -> tasks::Create {
-            tasks::Create {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn create(&self, task: impl ::concord::arg::Arg<NewTask>) -> tasks::Call<tasks::Create> {
+            tasks::Call::__new(tasks::__CreateInputs {
                 __client: self.clone(),
                 task: task.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Fetch one task by its identifier.
@@ -165,12 +165,12 @@ const _: () = {
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the task to fetch.
         ///
         /// `.await` returns [`tasks::Result`]<[`Task`]>.
-        pub fn get(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Get {
-            tasks::Get {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn get(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Call<tasks::Get> {
+            tasks::Call::__new(tasks::__GetInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Delete one task by its identifier.
@@ -184,12 +184,12 @@ const _: () = {
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the task to delete.
         ///
         /// `.await` returns [`tasks::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
-        pub fn delete(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Delete {
-            tasks::Delete {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn delete(&self, id: impl ::concord::arg::Arg<u64>) -> tasks::Call<tasks::Delete> {
+            tasks::Call::__new(tasks::__DeleteInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
     }
 
@@ -207,17 +207,34 @@ const _: () = {
     //     query { done; }
     // }
     /// The options of this endpoint.
-    impl tasks::List {
+    #[doc(hidden)]
+    impl tasks::Call<tasks::List> {
         /// Filter tasks by completion state.
         ///
         /// Accepts [`bool`], &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it.
         pub fn done(mut self, done: impl ::concord::arg::Arg<::core::option::Option<bool>>) -> Self {
-            self.done = done.into_input();
+            self.__inputs.done = done.into_input();
             self
         }
     }
 
     impl tasks::List {
+        /// Option `done` of `list`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Filter tasks by completion state.
+        ///
+        /// Accepts [`bool`], &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it.
+        pub fn done(
+            __call: tasks::Call<tasks::List>,
+            done: impl ::concord::arg::Arg<::core::option::Option<bool>>,
+        ) -> tasks::Call<tasks::List> {
+            __call.done(done)
+        }
+    }
+
+    impl tasks::Call<tasks::List> {
         fn __build_draft(&self) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -226,7 +243,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let done = &self.done;
+                let done = &self.__inputs.done;
                 __draft.query(
                     "done",
                     &[::concord::__private::Piece::Val(
@@ -241,9 +258,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> tasks::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "tasks.list")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "tasks.list")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "tasks.list")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "tasks.list")
             }
         }
 
@@ -279,7 +296,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> tasks::Result<::concord::__private::Prepared<Vec<Task>, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -287,7 +304,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -298,23 +315,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl tasks::Endpoint for tasks::List {
+        type Value = Vec<Task>;
+    }
+
+    call_spec!(
+        tasks,
         tasks::List,
+        tasks::__ListInputs,
         Vec<Task>,
         (),
-        tasks::Result,
-        "[`tasks::Result`]<[`Vec`]<[`Task`]>>",
-        awaitable,
-        conditional
+        "List"
     );
-
-    impl ::std::fmt::Debug for tasks::List {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("List")
-                .field("endpoint", &"tasks.list")
-                .finish_non_exhaustive()
-        }
-    }
+    impl tasks::__spec::Awaitable for tasks::List {}
+    impl tasks::__spec::Conditional for tasks::List {}
 
     // /// Create a task with a title.
     // POST create(
@@ -323,7 +337,7 @@ const _: () = {
     // ) -> Task {
     //     body json(task);
     // }
-    impl tasks::Create {
+    impl tasks::Call<tasks::Create> {
         fn __build_draft(&self) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -332,7 +346,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let task = &self.task;
+                let task = &self.__inputs.task;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ json(task) }))();
                 let __body = match __body {
@@ -352,9 +366,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> tasks::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "tasks.create")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "tasks.create")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "tasks.create")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "tasks.create")
             }
         }
 
@@ -390,7 +404,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> tasks::Result<::concord::__private::Prepared<Task, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -398,7 +412,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -409,23 +423,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl tasks::Endpoint for tasks::Create {
+        type Value = Task;
+    }
+
+    call_spec!(
+        tasks,
         tasks::Create,
+        tasks::__CreateInputs,
         Task,
         (),
-        tasks::Result,
-        "[`tasks::Result`]<[`Task`]>",
-        awaitable,
-        unconditional
+        "Create"
     );
-
-    impl ::std::fmt::Debug for tasks::Create {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Create")
-                .field("endpoint", &"tasks.create")
-                .finish_non_exhaustive()
-        }
-    }
+    impl tasks::__spec::Awaitable for tasks::Create {}
 
     // /// Fetch one task by its identifier.
     // GET get(
@@ -434,7 +444,7 @@ const _: () = {
     // ) -> Task {
     //     path "{id}";
     // }
-    impl tasks::Get {
+    impl tasks::Call<tasks::Get> {
         fn __build_draft(&self) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -443,7 +453,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -455,9 +465,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> tasks::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "tasks.get")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "tasks.get")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "tasks.get")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "tasks.get")
             }
         }
 
@@ -493,7 +503,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> tasks::Result<::concord::__private::Prepared<Task, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -501,7 +511,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -512,23 +522,13 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        tasks::Get,
-        Task,
-        (),
-        tasks::Result,
-        "[`tasks::Result`]<[`Task`]>",
-        awaitable,
-        conditional
-    );
-
-    impl ::std::fmt::Debug for tasks::Get {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Get")
-                .field("endpoint", &"tasks.get")
-                .finish_non_exhaustive()
-        }
+    impl tasks::Endpoint for tasks::Get {
+        type Value = Task;
     }
+
+    call_spec!(tasks, tasks::Get, tasks::__GetInputs, Task, (), "Get");
+    impl tasks::__spec::Awaitable for tasks::Get {}
+    impl tasks::__spec::Conditional for tasks::Get {}
 
     // /// Delete one task by its identifier.
     // DELETE delete(
@@ -537,7 +537,7 @@ const _: () = {
     // ) {
     //     path "{id}";
     // }
-    impl tasks::Delete {
+    impl tasks::Call<tasks::Delete> {
         fn __build_draft(&self) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::DELETE);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -546,7 +546,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -558,9 +558,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> tasks::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "tasks.delete")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "tasks.delete")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "tasks.delete")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "tasks.delete")
             }
         }
 
@@ -583,7 +583,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> tasks::Result<::concord::__private::Prepared<(), ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -591,7 +591,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -602,21 +602,18 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        tasks::Delete,
-        (),
-        (),
-        tasks::Result,
-        "[`tasks::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>",
-        awaitable,
-        unconditional
-    );
-
-    impl ::std::fmt::Debug for tasks::Delete {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Delete")
-                .field("endpoint", &"tasks.delete")
-                .finish_non_exhaustive()
-        }
+    impl tasks::Endpoint for tasks::Delete {
+        type Value = ();
     }
+
+    call_spec!(
+        tasks,
+        tasks::Delete,
+        tasks::__DeleteInputs,
+        (),
+        (),
+        "Delete"
+    );
+    impl tasks::__spec::Awaitable for tasks::Delete {}
+
 };

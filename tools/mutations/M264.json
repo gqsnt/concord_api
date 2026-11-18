@@ -1,0 +1,12 @@
+{
+  "id": "M264",
+  "area": "closed endpoint set",
+  "contract": "C1.11, C10.3",
+  "description": "Grant the endpoint seal to a type outside the declared endpoint set.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "            #(#seals)*\n",
+  "replace": "            #(#seals)*\n            impl __sealed::Sealed for () {}\n",
+  "checks": [
+    "macro-unit"
+  ]
+}

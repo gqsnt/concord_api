@@ -1,0 +1,10 @@
+error[E0624]: method `conditional` is private
+  --> tests/compiler-errors/calls/prepared_post_hidden.rs:23:37
+   |
+23 |     let _ = post.prepare().unwrap().conditional();
+   |                                     ^^^^^^^^^^^ private method
+   |
+  ::: $WORKSPACE/concord-core/src/__private/call.rs
+   |
+   |     fn conditional(self) -> Prepared<Option<T>, P> {
+   |     ---------------------------------------------- private method defined here

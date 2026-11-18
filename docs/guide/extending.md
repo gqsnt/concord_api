@@ -60,7 +60,7 @@ A `Limit` keeps a budget that every call spends; a `when` rule follows a wait th
 | A URL that the API returned, on another host | — | A second description with its own `base`, and `concord::transfer::at(call, url)` ([below](#a-url-that-the-api-returned)). |
 | Below | — | Plain `reqwest`: `Request`, `Response`, `Client`. |
 
-These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset`, the readers of records, `auth::Renewed`, `limit::Limit`, `transfer::at` and the others are in a crate of their own, `concord-extras`, and every file in it except `tower.rs` is an example worth reading. Only the `tower` adapter uses a hidden helper of the core, for the response URL. That helper is not a public extension point. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods.
+These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `concord::page::Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset`, the readers of records, `auth::Renewed`, `limit::Limit`, `transfer::at` and the others are in a crate of their own, `concord-extras`, and every file in it except `tower.rs` is an example worth reading. Only the `tower` adapter uses a hidden helper of the core, for the response URL. That helper is not a public extension point. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods.
 
 ## A writer of bodies
 
@@ -118,11 +118,11 @@ impl Reader<String> for Upper {
 A pager is a function from the call that fetched a page, and its response, to the next call. In `paginate`, an input of the endpoint is passed as a `Slot`, which stands for the input on the call rather than its value: the pager reads it on the call that fetched the page, and sets it on the next one.
 
 ```rust
-use concord::page::{Call, IntoItems, Slot};
+use concord::page::{IntoItems, Slot};
 use concord::Answer;
 
 /// The next page starts one page further: `paginate next_page(page);`.
-pub fn next_page<C: Call, S: Slot<C, Value = u32>>(page: S) -> impl Fn(C, &Answer<C::Value>) -> Option<C>
+pub fn next_page<C: concord::page::Call, S: Slot<C, Value = u32>>(page: S) -> impl Fn(C, &Answer<C::Value>) -> Option<C>
 where
     C::Value: IntoItems,
 {
@@ -341,4 +341,14 @@ impl riot::Matches {
 }
 ```
 
-In another crate, your own trait implemented for `riot::Matches` does the same.
+To add a method to one call, write an `impl` for that call type in the crate that holds the description.
+
+```rust
+impl riot::Call<riot::matches::Ids> {
+    pub fn ranked_solo(self) -> Self {
+        self.queue(420)
+    }
+}
+```
+
+In another crate, your own trait implemented for `riot::Matches` does the same. To add a method to one call there, implement your trait for `riot::Call<riot::matches::Ids>`.

@@ -41,6 +41,20 @@ where
     })
 }
 
+/// Build an owning pager before handing off the original call.
+#[rustfmt::skip] // Keep the function name on its own line in diagnostics about the pager bound.
+pub fn pages_with_pager<C, N, F>(
+    first: C,
+    make: impl FnOnce() -> F,
+) -> Pages<C::Value, C::Problem>
+where
+    C: Call,
+    N: IntoNext<C>,
+    F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
+{
+    pages(first, make())
+}
+
 struct Sent {
     // A streaming body cannot be cloned or compared. Its absence here always
     // means different, without inspecting or consuming any of its bytes.
@@ -248,7 +262,7 @@ pub struct SecretUrl {
 /// without its fragment, independently of whether the other request kept its marks.
 /// Stream bodies cannot be compared as bytes and are never treated as equal here.
 /// The page machine compares repeatable source plans separately, using bodyless heads.
-pub fn same_page_request(
+pub(super) fn same_page_request(
     left: &reqwest::Request,
     right: &reqwest::Request,
     secret_query: &[&str],

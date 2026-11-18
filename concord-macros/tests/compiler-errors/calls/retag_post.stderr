@@ -1,0 +1,16 @@
+error[E0616]: field `__data` of struct `api::Call` is private
+  --> tests/compiler-errors/calls/retag_post.rs:18:22
+   |
+18 |         __data: post.__data,
+   |                      ^^^^^^ private field
+   |
+help: a method `__data` also exists, call it with parentheses
+   |
+18 |         __data: post.__data(),
+   |                            ++
+
+error[E0616]: field `__options` of struct `api::Call` is private
+  --> tests/compiler-errors/calls/retag_post.rs:19:25
+   |
+19 |         __options: post.__options,
+   |                         ^^^^^^^^^ private field

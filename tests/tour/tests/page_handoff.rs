@@ -34,21 +34,21 @@ async fn c10_10_tour_calls_run_the_generic_prepare_handoff() {
     let feed = tour::Feed::new().with_transport(script.clone());
     let riot = tour::Riot::new("key").with_transport(script.clone());
     assert!(
-        send_page::<tour::tasks::List>(build_page(tasks.list()).unwrap())
+        send_page::<tour::tasks::Call<tour::tasks::List>>(build_page(tasks.list()).unwrap())
             .await
             .unwrap()
             .value()
             .is_empty()
     );
     assert!(
-        send_page::<tour::feed::List>(build_page(feed.list()).unwrap())
+        send_page::<tour::feed::Call<tour::feed::List>>(build_page(feed.list()).unwrap())
             .await
             .unwrap()
             .value()
             .data
             .is_empty()
     );
-    assert!(send_page::<tour::riot::matches::Ids>(
+    assert!(send_page::<tour::riot::Call<tour::riot::matches::Ids>>(
         build_page(riot.matches(tour::Europe).ids(tour::Puuid::from("p"))).unwrap()
     )
     .await
@@ -176,7 +176,9 @@ async fn c10_10_page_preparation_sends_the_same_request_and_keeps_the_full_answe
         .starting_after("cursor");
     let prepared = build_page(call.clone()).unwrap();
     let url = prepared.request.url().clone();
-    let answer = send_page::<tour::feed::List>(prepared).await.unwrap();
+    let answer = send_page::<tour::feed::Call<tour::feed::List>>(prepared)
+        .await
+        .unwrap();
     assert_eq!(answer.status(), 201);
     assert_eq!(answer.headers().get("x-kept"), Some("yes"));
     assert!(answer.value().data.is_empty());

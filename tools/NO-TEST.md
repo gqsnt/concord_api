@@ -12,4 +12,4 @@ C1.22: Timeout inheritance is checked by `c1_3_table1_idle_timeout`, `c1_13_tabl
 
 C3.8: Shared try handling is checked by the `c3_2_` replay tests, `c3_6_` raw-send tests, and `c4_` retry tests in the core and conformance suites, on both hand-written and generated clients.
 
-C10.1: Absolute paths and shadowed names are checked by `c1_12_prelude_and_crate_names_may_be_shadowed`, `c1_12_internal_locals_are_hygienic`, and `every_helper_is_hygienic_for_all_call_shapes`, with the same conformance tests compiled against both client implementations.
+C10.1: Absolute paths and shadowed names are checked by `c1_12_internal_locals_are_hygienic` and by `c1_12_prelude_and_crate_names_may_be_shadowed`, which compiles the request and send paths in `concord-macros/tests/accepted/shadow.rs`. The same conformance tests compile against both client implementations.

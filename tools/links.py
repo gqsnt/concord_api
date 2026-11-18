@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check local files and GitHub heading anchors in every tracked Markdown file.
+"""Reject tracked symbolic links and check local links in tracked Markdown.
 
 Use --anchors=warn while headings are being edited. Missing files always fail.
 Web URLs and GitHub source-line anchors are not checked.
@@ -7,6 +7,7 @@ Web URLs and GitHub source-line anchors are not checked.
 
 import argparse
 import html
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -112,8 +113,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--anchors", choices=("error", "warn"), default="error")
     args = parser.parse_args(argv)
-    tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
-    pages = [ROOT / name for name in tracked if name.endswith(".md")]
+    tracked = subprocess.check_output(["git", "ls-files", "--stage", "-z"], cwd=ROOT)
+    pages, symlinks = set(), set()
+    for entry in tracked.split(b"\0")[:-1]:
+        metadata, name = entry.split(b"\t", 1)
+        path = ROOT / os.fsdecode(name)
+        if metadata.split()[0] == b"120000" or path.is_symlink():
+            symlinks.add(path)
+        elif path.suffix == ".md":
+            pages.add(path)
+    for path in sorted(symlinks):
+        print(f"SYMLINK: {path.relative_to(ROOT)} is tracked by Git")
+    pages = sorted(pages - symlinks)
     cache = {}
     broken = [item for page in pages for item in check(page, cache)]
     for kind, message in broken:
@@ -122,7 +133,7 @@ def main(argv=None):
     headings = sum(kind == "anchor" for kind, _ in broken)
     count = sum(1 for page in pages for _ in links(page))
     print(f"LINKS: {count} links in {len(pages)} pages, {files} broken files, {headings} broken anchors")
-    return int(bool(files or (headings and args.anchors == "error")))
+    return int(bool(symlinks or files or (headings and args.anchors == "error")))
 
 
 if __name__ == "__main__":

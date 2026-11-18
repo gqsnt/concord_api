@@ -224,33 +224,6 @@ fn random(state: &impl BuildHasher, n: u32) -> f64 {
     (hash.finish() >> 11) as f64 / ((1u64 << 53) - 1) as f64
 }
 
-/// The middleware chain, transport, reader, and retries around the whole exchange.
-/// Each try sends a fresh copy of the one finished request.
-pub async fn exchange<'a, P, T, F, Fut>(
-    run: Run,
-    core: &'a Core<P>,
-    options: &'a Options<P>,
-    idempotent: Idempotent,
-    request: reqwest::Request,
-    one_try: F,
-) -> Result<Answer<T>, Error<P>>
-where
-    P: Send + Sync + 'a,
-    T: Send + 'a,
-    F: Fn(reqwest::Response, TryInfo) -> Fut + Send + Sync + 'a,
-    Fut: Future<Output = Result<Answer<T>, Error<P>>> + Send + 'a,
-{
-    exchange_prepared(
-        run,
-        core,
-        options,
-        idempotent,
-        super::call::PreparedRequest::plain(request),
-        one_try,
-    )
-    .await
-}
-
 pub(super) async fn exchange_prepared<'a, P, T, F, Fut>(
     run: Run,
     core: &'a Core<P>,
@@ -281,27 +254,6 @@ where
                 }
             }
         },
-    )
-    .await
-}
-
-/// Raw exchange: retry considers refusal heads but never reads a response body.
-pub async fn exchange_raw<'a, P>(
-    run: Run,
-    core: &'a Core<P>,
-    options: &'a Options<P>,
-    idempotent: Idempotent,
-    request: reqwest::Request,
-) -> Result<reqwest::Response, Error<P>>
-where
-    P: Send + Sync + 'a,
-{
-    exchange_raw_prepared(
-        run,
-        core,
-        options,
-        idempotent,
-        super::call::PreparedRequest::plain(request),
     )
     .await
 }
@@ -574,6 +526,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::__private::call::PreparedRequest;
     use crate::transport::{Transport, TransportError};
     use crate::{Middleware, Next};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -750,12 +703,12 @@ mod tests {
             .unwrap();
         let start = Instant::now();
         let error =
-            exchange::<(), (), _, _>(
+            exchange_prepared::<(), (), _, _>(
                 run,
                 &core,
                 &options,
                 Idempotent::ByMethod,
-                request,
+                PreparedRequest::plain(request),
                 |response, info| async move {
                     Err(crate::__private::refused_plain(response, &info).await)
                 },
@@ -824,14 +777,16 @@ mod tests {
         let options = Options::default();
         let run = Run::start(&core, &options, "contract.reader");
         let start = Instant::now();
-        let result = exchange(
+        let result = exchange_prepared(
             run,
             &core,
             &options,
             Idempotent::ByMethod,
-            draft()
-                .finish_for_send(&core, &options, "contract.reader")
-                .unwrap(),
+            PreparedRequest::plain(
+                draft()
+                    .finish_for_send(&core, &options, "contract.reader")
+                    .unwrap(),
+            ),
             |response, info| async move {
                 crate::__private::read_body::<bytes::Bytes, (), _>(&WaitingReader, response, &info)
                     .await?;
@@ -862,14 +817,16 @@ mod tests {
             }));
         let options = Options::default();
         let run = Run::start(&core, &options, "contract.no_arm");
-        let result: Result<Answer<()>, Error> = exchange(
+        let result: Result<Answer<()>, Error> = exchange_prepared(
             run,
             &core,
             &options,
             Idempotent::ByMethod,
-            draft()
-                .finish_for_send(&core, &options, "contract.no_arm")
-                .unwrap(),
+            PreparedRequest::plain(
+                draft()
+                    .finish_for_send(&core, &options, "contract.no_arm")
+                    .unwrap(),
+            ),
             |response, info| async move { Err(crate::__private::no_arm(response, &info).await) },
         )
         .await;
@@ -1138,14 +1095,16 @@ mod tests {
                 }));
             let options = Options::default();
             let run = Run::start(&core, &options, "contract.log");
-            exchange(
+            exchange_prepared(
                 run,
                 &core,
                 &options,
                 Idempotent::ByMethod,
-                draft()
-                    .finish_for_send(&core, &options, "contract.log")
-                    .unwrap(),
+                PreparedRequest::plain(
+                    draft()
+                        .finish_for_send(&core, &options, "contract.log")
+                        .unwrap(),
+                ),
                 |response, info| async move {
                     if !response.status().is_success() {
                         return Err(crate::__private::refused_plain(response, &info).await);
@@ -1236,21 +1195,26 @@ mod tests {
                     .unwrap();
                 let start = Instant::now();
                 let tries = if raw {
-                    let response =
-                        exchange_raw(run, &core, &options, Idempotent::ByMethod, request)
-                            .await
-                            .unwrap();
+                    let response = exchange_raw_prepared(
+                        run,
+                        &core,
+                        &options,
+                        Idempotent::ByMethod,
+                        PreparedRequest::plain(request),
+                    )
+                    .await
+                    .unwrap();
                     assert_eq!(response.status(), 503);
                     assert_eq!(response.headers()["x-evidence"], "kept");
                     assert_eq!(response.bytes().await.unwrap(), "busy");
                     sends.load(Ordering::SeqCst)
                 } else {
-                    let error = exchange::<(), (), _, _>(
+                    let error = exchange_prepared::<(), (), _, _>(
                         run,
                         &core,
                         &options,
                         Idempotent::ByMethod,
-                        request,
+                        PreparedRequest::plain(request),
                         |response, info| async move {
                             Err(crate::__private::refused_plain(response, &info).await)
                         },
@@ -1295,19 +1259,24 @@ mod tests {
                 .unwrap();
             let work = async {
                 if raw {
-                    let response =
-                        exchange_raw(run, &core, &options, Idempotent::ByMethod, request)
-                            .await
-                            .unwrap();
-                    assert_eq!(response.status(), 503);
-                    assert_eq!(response.bytes().await.unwrap(), "busy");
-                } else {
-                    let error = exchange::<(), (), _, _>(
+                    let response = exchange_raw_prepared(
                         run,
                         &core,
                         &options,
                         Idempotent::ByMethod,
-                        request,
+                        PreparedRequest::plain(request),
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response.status(), 503);
+                    assert_eq!(response.bytes().await.unwrap(), "busy");
+                } else {
+                    let error = exchange_prepared::<(), (), _, _>(
+                        run,
+                        &core,
+                        &options,
+                        Idempotent::ByMethod,
+                        PreparedRequest::plain(request),
                         |response, info| async move {
                             Err(crate::__private::refused_plain(response, &info).await)
                         },

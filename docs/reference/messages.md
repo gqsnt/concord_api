@@ -8,10 +8,44 @@ To find a message, search this page for a few words of the text that you got. At
 
 When Concord rejects a description, the message points at your own token, says what is wrong, and says what to write. There are 46 messages at compile time, and 52 texts at run time. The errors of `concord-extras`, and the causes of a failed repeatable body, add 55 texts of their own, which appear in the chain of `source()` or are returned directly ([the errors of `concord-extras`](#2-when-a-request-is-built-or-answered)).
 
-Some mistakes get no message from this page. A mistake inside your own Rust (`read Jsno;`, a type that does not fit, a struct that holds a `Secret` in `json(x)`, a generic parameter of an enclosing function in a type (E0401: `api!` generates items), `?` in `paginate`, `idempotent`, `idle_timeout` or `middleware`) is reported by `rustc`, in words that the traits of the core provide where they can (the macro, [The messages that are `rustc`'s](../internals/macro.md#the-messages-that-are-rustcs)). A line that is outside the grammar and that no message below names (`body client.f { … }`: the word before the block is a path) gets the parser's own message, at the token where it stopped (`expected ;`). Two checks of the language are also reported by `rustc`, in Concord's words:
+Some mistakes get no message from this page. A mistake inside your own Rust (`read Jsno;`, a type that does not fit, a struct that holds a `Secret` in `json(x)`, a generic parameter of an enclosing function in a type (E0401: `api!` generates items), `?` in `paginate`, `idempotent`, `idle_timeout` or `middleware`) is reported by `rustc`, in words that the traits of the core provide where they can (the macro, [The messages that are `rustc`'s](../internals/macro.md#the-messages-that-are-rustcs)). A line that is outside the grammar and that no message below names (`body client.f { … }`: the word before the block is a path) gets the parser's own message, at the token where it stopped (`expected ;`).
+
+`rustc` reports three more kinds of mistake. The first uses Concord's words, and the other two use the compiler's own.
 
 - **A secret that would follow a change of `base`** ([rule 16](rules.md)): `a secret does not follow a change of base`. At an entry, the note is `` declare this entry again with `override`, or remove it, under the new `base` ``. At a placeholder in a `path` (a `path` cannot be written again or removed), the message is `a secret in a path does not follow a change of base`, and its note is `` declare this `path` under each `base` that needs it, not on an ancestor of those bases ``.
-- **A paginated call that is awaited** ([rule 17](rules.md)): `rustc` reports that it `is not a future`. The `#[must_use]` text of the call says what to write: `.send()` for one page, `.pages()` for all.
+- **A call that does not meet an endpoint's rule.**
+
+  Awaiting a call to an endpoint with `paginate` ([rule 17](rules.md)) gives this error. Use `call.send().await` for one page or `call.pages()` for all pages.
+
+  ```text
+  error[E0277]: `api::Call<List>` is not a future
+  help: remove the `.await`
+  ```
+
+  Calling `pages()` on an endpoint without `paginate` gives this error. Use `call.await` or `call.send().await` to read the response.
+
+  ```text
+  error[E0599]: the method `pages` exists for struct `api::Call<Get>`, but its trait bounds were not satisfied
+  note: trait bound `concord::call::NoPaginate: concord::call::DeclaresPaginate` was not satisfied
+  ```
+
+  Calling `send_if_none_match(etag)` on a `POST` gives this error. Use `call.send().await` to send it. For a conditional read, use `send_if_none_match(etag).await` on a `GET` or `HEAD` call. Other methods that cannot be sent conditionally show `NotGetOrHead` in place of `Post`.
+
+  ```text
+  error[E0599]: the method `send_if_none_match` exists for struct `api::Call<Create>`, but its trait bounds were not satisfied
+  note: trait bound `concord::call::Post: concord::call::IsGetOrHead` was not satisfied
+  ```
+
+  In these examples, both E0599 notes point at the client's name in `pub client Api`. When you call the client from another crate, the errors still name the endpoint's call type, and the E0599 errors still name the unsatisfied bound.
+
+  The `#[must_use]` text appears only when a call is left unused. The method that returns a call and each setter of its endpoint carry the endpoint's text. Shared methods that return a call use the general text on `Call` ([C8.8](contracts.md#c8-secrets-and-pages)).
+
+- **A pager that borrows an input.** The pager must own what it keeps. Copy or clone the needed value before the `move` closure. If the pager only needs `client.root.len()`, compute the length before the closure and move that into it.
+
+  ```text
+  error[E0716]: temporary value dropped while borrowed
+  note: requirement that the value outlives `'static` introduced here
+  ```
 
 ## 1. At compile time
 
@@ -48,7 +82,7 @@ label: reserved for generated methods
 help: rename this input to `send_value` and update its references in the existing `query` placements and expressions; keep the wire keys and fixed text that spell `send`
 ```
 
-`timeout` and `retry` remain legal. Reservations depend on the receiver.
+`timeout` and `retry` remain legal. Reservations depend on the receiver. A child named `endpoint` directly under the client is reserved for the generated endpoint trait. Rename it to `endpoint_item`.
 
 **4.** An input uses `type` or `r#type`.  
 Point: offending identifier.
@@ -127,6 +161,8 @@ error: `Self` has no meaning in a description
 label: `Self` is not the enclosing type here
 help: replace `Self` with the path of the intended type
 ```
+
+Concord cannot see a `Self` that the author's own macro produces inside an expression, and the generated type it names may change between versions, so do not rely on it.
 
 **11.** `path "{idd}";` refers to an undeclared input.  
 Point: literal containing `{idd}`.

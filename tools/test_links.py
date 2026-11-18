@@ -1,4 +1,4 @@
-"""Check Markdown discovery, heading slugs, and the anchor warning policy."""
+"""Check tracked paths, Markdown discovery, heading slugs, and anchor warnings."""
 
 from contextlib import redirect_stdout
 import io
@@ -63,7 +63,12 @@ Setext title
         self.page("page.md", "# Heading\n")
         self.page("untracked.md", "[bad](missing.md)\n")
         with patch.object(links, "ROOT", self.root), patch.object(
-            links.subprocess, "check_output", return_value=b"crate/README.md\0page.md\0Cargo.toml\0"
+            links.subprocess, "check_output",
+            return_value=(
+                b"100644 hash 0\tcrate/README.md\0"
+                b"100644 hash 0\tpage.md\0"
+                b"100644 hash 0\tCargo.toml\0"
+            ),
         ) as tracked, redirect_stdout(io.StringIO()) as output:
             self.assertEqual(links.main(["--anchors=warn"]), 0)
             self.assertEqual(links.main([]), 1)
@@ -72,6 +77,14 @@ Setext title
             self.page("crate/README.md", "[bad](missing.md)\n")
             self.assertEqual(links.main(["--anchors=warn"]), 1)
             self.assertIn("1 broken files, 0 broken anchors", output.getvalue())
+
+    def test_tracked_symlink_fails_even_when_checked_out_as_a_plain_file(self):
+        self.page("path with spaces.rs", "target.rs\n")
+        with patch.object(links, "ROOT", self.root), patch.object(
+            links.subprocess, "check_output", return_value=b"120000 hash 0\tpath with spaces.rs\0"
+        ), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(links.main([]), 1)
+            self.assertIn("SYMLINK: path with spaces.rs is tracked by Git", output.getvalue())
 
 
 if __name__ == "__main__":

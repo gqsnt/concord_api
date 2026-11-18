@@ -16,63 +16,56 @@ impl Writer<'_> {
             let depth = node.modules.len();
             let vis = self.visibility(depth);
             let field_vis = Self::field_visibility(depth);
-            let ty = Ident::new(&name::type_name(&node.node.name.to_string()), node.node.name.span());
+            let ty = Ident::new(
+                &name::type_name(&node.node.name.to_string()),
+                node.node.name.span(),
+            );
             let supers = (1..depth).map(|_| ident("super")).collect::<Vec<_>>();
             let parent_id = ident(&format!("__Node{parent}"));
             let parent_ty = emit!(<() as #(#supers::)* __Types>::#parent_id);
             let fields = node.inputs.iter().map(|input| {
                 let field = &input.input.name;
                 let id = self.input_id(input);
-                emit!(#field_vis #field: <() as #(#supers::)* __Types>::#id,)
+                let ty = stored(input.input, emit!(<() as #(#supers::)* __Types>::#id));
+                emit!(#field_vis #field: #ty,)
             });
-            let endpoint = self.endpoints.get(&(node.node as *const Node));
-            let options = endpoint.map(|_| emit!(
-                #field_vis __options: ::concord::__private::Options<<() as #(#supers::)* __Types>::__Problem>,
-            ));
-            let kind = if endpoint.is_some() { "call" } else { "handle" };
-            let item_doc = format!("The {kind} `{}`.",node.node.name);
+            if matches!(node.node.kind, NodeKind::Endpoint(_)) {
+                return self.endpoint_declaration(index);
+            }
+            let item_doc = format!("The handle `{}`.", node.node.name);
             let children = if matches!(node.node.kind, NodeKind::Scope) {
                 let module = &node.node.name;
                 let children = self.declarations(index);
                 emit!(#(#attrs)* #[doc = #item_doc] #vis mod #module { #children })
-            } else { TokenStream::new() };
-            let must_use = endpoint.map(|e| if e.pager.is_some() {
-                emit!(#[must_use = "await `.send()` for one page, or use `.pages()` for all pages"])
-            } else { emit!(#[must_use = "a call does nothing until sent or awaited"]) });
+            } else {
+                TokenStream::new()
+            };
             emit! {
-                #(#attrs)* #[doc = #item_doc] #must_use
-                #vis struct #ty { #field_vis __parent: #parent_ty, #(#fields)* #options }
+                #(#attrs)* #[doc = #item_doc]
+                #vis struct #ty { #field_vis __parent: #parent_ty, #(#fields)* }
                 #children
             }
         });
-        let slots = (parent == 0).then(|| self.write_slots());
-        emit!(#(#children)* #slots)
-    }
-
-    fn write_slots(&self) -> TokenStream {
-        let vis = emit!(pub(super));
-        let vis = &vis;
-        let slots = self
-            .nodes
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| {
-                self.endpoints
-                    .get(&(n.node as *const Node))
-                    .is_some_and(|e| e.pager.is_some())
-            })
-            .flat_map(|(index, node)| {
-                node.inputs.iter().map(move |input| {
-                    let slot = self.slot(index, input);
-                    let cfg = &node.cfg;
-                    emit! {
-                        #(#cfg)* #[doc(hidden)]
-                        #[derive(::core::clone::Clone, ::core::marker::Copy)]
-                        #vis struct #slot;
-                    }
-                })
+        let slots = (parent == 0).then(|| {
+            let has_slots = self.nodes.iter().any(|node| {
+                !node.inputs.is_empty()
+                    && self
+                        .endpoints
+                        .get(&(node.node as *const Node))
+                        .is_some_and(|endpoint| endpoint.pager.is_some())
             });
-        emit!(#(#slots)*)
+            if has_slots {
+                // All paged endpoints with inputs may be disabled by `cfg`.
+                emit!(
+                    #[allow(dead_code)]
+                    #[doc(hidden)]
+                    pub(super) struct __PagingKey;
+                )
+            } else {
+                TokenStream::new()
+            }
+        });
+        emit!(#(#children)* #slots)
     }
 
     pub(super) fn implementation(&self, index: usize) -> TokenStream {
@@ -82,10 +75,13 @@ impl Writer<'_> {
         };
         let ty = &node.implementation;
         let cfg = &node.cfg;
+        if matches!(node.node.kind, NodeKind::Endpoint(_)) {
+            return self.endpoint_methods(index);
+        }
         let setters=node.inputs.iter().filter(|i|i.input.optional.is_some()).map(|input| {
             let name=&input.input.name;
             let attrs:Vec<_>=input.input.attrs.iter().filter(|a|!a.path().is_ident("doc")).collect();
-            let stored=stored(input.input);
+            let stored=stored(input.input, input.input.ty.to_token_stream());
             let docs=self.setter_doc(input.input);
             let argument=quote::quote_spanned!(input.input.ty.span()=> #name: impl ::concord::arg::Arg<#stored>);
             let allow=node.deprecated.then(||emit!(#[allow(deprecated)]));
@@ -130,24 +126,49 @@ impl Writer<'_> {
                     .map(|i| {
                         let name = &i.input.name;
                         let ty = &i.input.ty;
-                        quote::quote_spanned!(ty.span()=> #name: impl ::concord::arg::Arg<#ty>)
+                        quote::quote_spanned!(i.input.ty.span()=> #name: impl ::concord::arg::Arg<#ty>)
                     });
-                let fields = child.inputs.iter().map(|i| {
+                let value = |i: &flat::InputLine<'_>| {
                     let name = &i.input.name;
                     if i.input.optional.is_some() {
-                        emit!(#name: ::core::option::Option::None)
+                        emit!(::core::option::Option::None)
                     } else {
-                        emit!(#name: ::concord::arg::Arg::into_input(#name))
+                        emit!(::concord::arg::Arg::into_input(#name))
                     }
+                };
+                let fields = child.inputs.iter().map(|i| {
+                    let name = &i.input.name;
+                    let value = value(i);
+                    emit!(#name: #value)
                 });
-                let options = matches!(child.node.kind, NodeKind::Endpoint(_))
-                    .then(|| emit!(__options: ::concord::__private::Options::default(),));
                 // The body only constructs our own item; it contains no authored expression.
                 let allow = child.deprecated.then(|| emit!(#[allow(deprecated)]));
+                let endpoint = matches!(child.node.kind, NodeKind::Endpoint(_));
+                let return_type = if endpoint {
+                    let root = &self.root;
+                    emit!(#root::Call<#path>)
+                } else {
+                    path.clone()
+                };
+                let construct = if endpoint {
+                    let root = &self.root;
+                    let data = self.data_path(child_index);
+                    let state = if self.tuple_data(child_index) {
+                        let inputs = child.inputs.iter().map(value);
+                        emit!(::concord::__private::CallData::new(::core::clone::Clone::clone(self), (#(#inputs,)*)))
+                    } else {
+                        emit!(#data { __parent: ::core::clone::Clone::clone(self), #(#fields,)* })
+                    };
+                    emit!(#root::Call::__new(#state))
+                } else {
+                    emit!(#path { __parent: ::core::clone::Clone::clone(self), #(#fields,)* })
+                };
+                let must_use = self.endpoints.get(&(child.node as *const Node))
+                    .map(|endpoint| docs::call_must_use(endpoint.pager.is_some()));
                 emit! {
-                    #(#attrs)* #docs #allow
-                    pub fn #name(&self, #(#args),*) -> #path {
-                        #path { __parent: ::core::clone::Clone::clone(self), #(#fields,)* #options }
+                    #(#attrs)* #docs #allow #must_use
+                    pub fn #name(&self, #(#args),*) -> #return_type {
+                        #construct
                     }
                 }
             })
@@ -159,24 +180,16 @@ impl Writer<'_> {
         };
         let methods = emit!(#client #setters #children);
         let methods = (!methods.is_empty()).then(|| emit!(#(#cfg)* impl #ty { #methods }));
-        let endpoint = self.endpoints.get(&(node.node as *const Node));
-        let endpoint_methods = endpoint.map(|e| self.endpoint(index, e));
-        let debug_name = if index == 0 || endpoint.is_some() {
+        let debug_name = if index == 0 {
             name::type_name(&node.node.name.to_string())
         } else {
             node.modules
                 .iter()
                 .map(ToString::to_string)
-                .chain(std::iter::once(name::type_name(
-                    &node.node.name.to_string(),
-                )))
+                .chain([name::type_name(&node.node.name.to_string())])
                 .collect::<Vec<_>>()
                 .join("::")
         };
-        let endpoint_field = endpoint.map(|e| {
-            let path = &e.path;
-            emit!(.field("endpoint",&#path))
-        });
         let root = &self.root;
         let clone_fields = node.inputs.iter().map(|input| {
             let field = &input.input.name;
@@ -188,20 +201,17 @@ impl Writer<'_> {
         } else {
             emit!(__parent: ::core::clone::Clone::clone(&self.__parent),)
         };
-        let clone_options =
-            endpoint.map(|_| emit!(__options: ::core::clone::Clone::clone(&self.__options),));
         let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
         emit! {
             #methods
             #(#cfg)* #allow impl ::core::clone::Clone for #ty {
-                fn clone(&self) -> Self { Self { #clone_state #(#clone_fields)* #clone_options } }
+                fn clone(&self) -> Self { Self { #clone_state #(#clone_fields)* } }
             }
             #(#cfg)* impl ::core::fmt::Debug for #ty {
                 fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    __f.debug_struct(#debug_name) #endpoint_field .finish_non_exhaustive()
+                    __f.debug_struct(#debug_name) .finish_non_exhaustive()
                 }
             }
-            #endpoint_methods
         }
     }
 
@@ -217,7 +227,7 @@ impl Writer<'_> {
             .map(|i| {
                 let name = &i.input.name;
                 let ty = &i.input.ty;
-                quote::quote_spanned!(ty.span()=> #name: impl ::concord::arg::Arg<#ty>)
+                quote::quote_spanned!(i.input.ty.span()=> #name: impl ::concord::arg::Arg<#ty>)
             });
         let locals = node.inputs.iter().map(|i| {
             let name = &i.input.name;

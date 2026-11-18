@@ -172,12 +172,12 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`files::Result`]<[`bool`]>.
-        pub fn exists(&self, id: impl ::concord::arg::Arg<DocId>) -> files::Exists {
-            files::Exists {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn exists(&self, id: impl ::concord::arg::Arg<DocId>) -> files::Call<files::Exists> {
+            files::Call::__new(files::__ExistsInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Plain text, not JSON.
@@ -191,12 +191,12 @@ const _: () = {
         /// - `repo`: [`String`], &[`String`], or &[`str`]. The repository whose README should be read.
         ///
         /// `.await` returns [`files::Result`]<[`String`]>.
-        pub fn readme(&self, repo: impl ::concord::arg::Arg<String>) -> files::Readme {
-            files::Readme {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn readme(&self, repo: impl ::concord::arg::Arg<String>) -> files::Call<files::Readme> {
+            files::Call::__new(files::__ReadmeInputs {
                 __client: self.clone(),
                 repo: repo.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// A large file, as it comes.
@@ -210,12 +210,12 @@ const _: () = {
         /// - `id`: [`FileId`] or &[`FileId`]. The identifier of the file to download.
         ///
         /// `.await` returns [`files::Result`]<[`concord::ByteStream`]>.
-        pub fn download(&self, id: impl ::concord::arg::Arg<FileId>) -> files::Download {
-            files::Download {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn download(&self, id: impl ::concord::arg::Arg<FileId>) -> files::Call<files::Download> {
+            files::Call::__new(files::__DownloadInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An upload, on another host.
@@ -236,17 +236,17 @@ const _: () = {
         /// a one-shot body still cannot be sent again.
         ///
         /// `.await` returns [`files::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
+        #[must_use = "a call does nothing until sent or awaited"]
         pub fn upload(
             &self,
             name: impl ::concord::arg::Arg<String>,
             file: impl ::concord::arg::Arg<::concord::Body>,
-        ) -> files::Upload {
-            files::Upload {
+        ) -> files::Call<files::Upload> {
+            files::Call::__new(files::__UploadInputs {
                 __client: self.clone(),
                 name: name.into_input(),
                 file: file.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// A body made of several inputs. A `cursor` that was not set is left out.
@@ -268,13 +268,13 @@ const _: () = {
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
         /// `.await` returns [`files::Result`]<[`Page`]>.
-        pub fn search(&self, text: impl ::concord::arg::Arg<String>) -> files::Search {
-            files::Search {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn search(&self, text: impl ::concord::arg::Arg<String>) -> files::Call<files::Search> {
+            files::Call::__new(files::__SearchInputs {
                 __client: self.clone(),
                 text: text.into_input(),
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
     }
 
@@ -292,7 +292,7 @@ const _: () = {
     //     path "{id}";
     //     status { 2xx => true, 404 => false }
     // }
-    impl files::Exists {
+    impl files::Call<files::Exists> {
         fn __build_draft(&self) -> files::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::HEAD);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -301,9 +301,9 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -314,7 +314,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
                 let key = client.key;
                 __draft.header(
@@ -342,9 +342,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> files::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "files.exists")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "files.exists")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "files.exists")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "files.exists")
             }
         }
 
@@ -362,8 +362,8 @@ const _: () = {
             let __value = match __status {
                 ::concord::http::StatusCode::NOT_FOUND => {
                     // The arms of the endpoint: the owner in reach, then its inputs.
-                    let client = __Client { key: &self.__client.key };
-                    let id = &self.id;
+                    let client = __Client { key: &self.__inputs.__client.key };
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<bool, ::concord::error::Fail<()>> {
                         ::core::result::Result::Ok({ false })
@@ -372,8 +372,8 @@ const _: () = {
                 }
                 __status if __status.is_success() => {
                     // The arms of the endpoint: the owner in reach, then its inputs.
-                    let client = __Client { key: &self.__client.key };
-                    let id = &self.id;
+                    let client = __Client { key: &self.__inputs.__client.key };
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<bool, ::concord::error::Fail<()>> {
                         ::core::result::Result::Ok({ true })
@@ -388,7 +388,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> files::Result<::concord::__private::Prepared<bool, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -396,7 +396,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -407,23 +407,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl files::Endpoint for files::Exists {
+        type Value = bool;
+    }
+
+    call_spec!(
+        files,
         files::Exists,
+        files::__ExistsInputs,
         bool,
         (),
-        files::Result,
-        "[`files::Result`]<[`bool`]>",
-        awaitable,
-        conditional
+        "Exists"
     );
-
-    impl ::std::fmt::Debug for files::Exists {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Exists")
-                .field("endpoint", &"files.exists")
-                .finish_non_exhaustive()
-        }
-    }
+    impl files::__spec::Awaitable for files::Exists {}
+    impl files::__spec::Conditional for files::Exists {}
 
     // /// Plain text, not JSON.
     // GET readme(
@@ -433,7 +430,7 @@ const _: () = {
     //     path "{repo}/readme";
     //     read Text;
     // }
-    impl files::Readme {
+    impl files::Call<files::Readme> {
         fn __build_draft(&self) -> files::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -442,9 +439,9 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let repo = &self.repo;
+                let repo = &self.__inputs.repo;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "repo",
                     &(&::concord::__private::ValueRef(repo)).adapt(),
@@ -456,7 +453,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
                 let key = client.key;
                 __draft.header(
@@ -484,9 +481,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> files::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "files.readme")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "files.readme")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "files.readme")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "files.readme")
             }
         }
 
@@ -506,8 +503,8 @@ const _: () = {
                 __status if __status.is_success() => {
                     ::concord::__private::read_body(
                         &{
-                            let client = __Client { key: &self.__client.key };
-                            let repo = &self.repo;
+                            let client = __Client { key: &self.__inputs.__client.key };
+                            let repo = &self.__inputs.repo;
                             (|| ::concord::__private::reader::<_, _>(Text))()
                         },
                         __response,
@@ -523,7 +520,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> files::Result<::concord::__private::Prepared<String, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -531,7 +528,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -542,23 +539,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl files::Endpoint for files::Readme {
+        type Value = String;
+    }
+
+    call_spec!(
+        files,
         files::Readme,
+        files::__ReadmeInputs,
         String,
         (),
-        files::Result,
-        "[`files::Result`]<[`String`]>",
-        awaitable,
-        conditional
+        "Readme"
     );
-
-    impl ::std::fmt::Debug for files::Readme {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Readme")
-                .field("endpoint", &"files.readme")
-                .finish_non_exhaustive()
-        }
-    }
+    impl files::__spec::Awaitable for files::Readme {}
+    impl files::__spec::Conditional for files::Readme {}
 
     // /// A large file, as it comes.
     // GET download(
@@ -569,7 +563,7 @@ const _: () = {
     //     read Stream;
     //     idle_timeout std::time::Duration::from_secs(120);
     // }
-    impl files::Download {
+    impl files::Call<files::Download> {
         fn __build_draft(&self) -> files::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -579,9 +573,9 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -592,7 +586,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
                 let key = client.key;
                 __draft.header(
@@ -620,9 +614,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> files::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "files.download")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "files.download")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "files.download")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "files.download")
             }
         }
 
@@ -642,8 +636,8 @@ const _: () = {
                 __status if __status.is_success() => {
                     ::concord::__private::read_body(
                         &{
-                            let client = __Client { key: &self.__client.key };
-                            let id = &self.id;
+                            let client = __Client { key: &self.__inputs.__client.key };
+                            let id = &self.__inputs.id;
                             (|| ::concord::__private::reader::<_, _>(Stream))()
                         },
                         __response,
@@ -661,7 +655,7 @@ const _: () = {
             mut self,
         ) -> files::Result<::concord::__private::Prepared<::concord::ByteStream, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -670,9 +664,9 @@ const _: () = {
             #[allow(unused_variables, clippy::redundant_closure_call)]
             let __idle_timeout = {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 (|| -> ::std::time::Duration { std::time::Duration::from_secs(120) })()
             };
             self.__options.description_idle_timeout(__idle_timeout);
@@ -680,7 +674,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -691,23 +685,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl files::Endpoint for files::Download {
+        type Value = ::concord::ByteStream;
+    }
+
+    call_spec!(
+        files,
         files::Download,
+        files::__DownloadInputs,
         ::concord::ByteStream,
         (),
-        files::Result,
-        "[`files::Result`]<[`concord::ByteStream`]>",
-        awaitable,
-        conditional
+        "Download"
     );
-
-    impl ::std::fmt::Debug for files::Download {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Download")
-                .field("endpoint", &"files.download")
-                .finish_non_exhaustive()
-        }
-    }
+    impl files::__spec::Awaitable for files::Download {}
+    impl files::__spec::Conditional for files::Download {}
 
     // /// An upload, on another host.
     // PUT upload(
@@ -722,7 +713,7 @@ const _: () = {
     //     body file;
     //     idempotent false;
     // }
-    impl files::Upload {
+    impl files::Call<files::Upload> {
         fn __build_draft(&self) -> files::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::PUT);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -732,10 +723,10 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let name = &self.name;
-                let file = &self.file;
+                let name = &self.__inputs.name;
+                let file = &self.__inputs.file;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "name",
                     &(&::concord::__private::ValueRef(name)).adapt(),
@@ -750,7 +741,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
                 let key = client.key;
                 let __entry = "tour".to_owned();
@@ -777,10 +768,10 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let name = &self.name;
-                let file = &self.file;
+                let name = &self.__inputs.name;
+                let file = &self.__inputs.file;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ file }))();
                 let __body = match __body {
@@ -800,9 +791,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> files::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "files.upload")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "files.upload")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "files.upload")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "files.upload")
             }
         }
 
@@ -825,7 +816,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> files::Result<::concord::__private::Prepared<(), ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -833,16 +824,16 @@ const _: () = {
             #[allow(unused_variables, clippy::redundant_closure_call)]
             let __idempotent = {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let name = &self.name;
-                let file = &self.file;
+                let name = &self.__inputs.name;
+                let file = &self.__inputs.file;
                 (|| ::concord::__private::idempotent(false))()
             };
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -853,23 +844,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        files::Upload,
-        (),
-        (),
-        files::Result,
-        "[`files::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>",
-        awaitable,
-        unconditional
-    );
-
-    impl ::std::fmt::Debug for files::Upload {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Upload")
-                .field("endpoint", &"files.upload")
-                .finish_non_exhaustive()
-        }
+    impl files::Endpoint for files::Upload {
+        type Value = ();
     }
+
+    call_spec!(
+        files,
+        files::Upload,
+        files::__UploadInputs,
+        (),
+        (),
+        "Upload"
+    );
+    impl files::__spec::Awaitable for files::Upload {}
 
     // /// A body made of several inputs. A `cursor` that was not set is left out.
     // POST search(
@@ -882,17 +869,34 @@ const _: () = {
     //     body json { text; cursor; }
     // }
     /// The options of this endpoint.
-    impl files::Search {
+    #[doc(hidden)]
+    impl files::Call<files::Search> {
         /// Continue the search after this cursor.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. When not given, the JSON member is absent.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl files::Search {
+        /// Option `cursor` of `search`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Continue the search after this cursor.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it. When not given, the JSON member is absent.
+        pub fn cursor(
+            __call: files::Call<files::Search>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> files::Call<files::Search> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl files::Call<files::Search> {
         fn __build_draft(&self) -> files::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -904,7 +908,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
                 let key = client.key;
                 __draft.header(
@@ -929,10 +933,10 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client {
-                    key: &self.__client.key,
+                    key: &self.__inputs.__client.key,
                 };
-                let text = &self.text;
-                let cursor = &self.cursor;
+                let text = &self.__inputs.text;
+                let cursor = &self.__inputs.cursor;
                 // Every entry uses the same adapter and insertion path, in the order written.
                 let __value0 = ::concord::__private::ValueRef(text);
                 let __value1 = ::concord::__private::ValueRef(cursor);
@@ -947,9 +951,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> files::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, "files.search")
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, "files.search")
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, "files.search")
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, "files.search")
             }
         }
 
@@ -969,7 +973,7 @@ const _: () = {
                 __status if __status.is_success() => {
                     ::concord::__private::read_body(
                         &{
-                            let client = __Client { key: &self.__client.key };
+                            let client = __Client { key: &self.__inputs.__client.key };
                             let key = client.key;
                             (|| ::concord::__private::reader::<Page, _>(Json))()
                         },
@@ -986,7 +990,7 @@ const _: () = {
 
         fn __prepare_inner(self) -> files::Result<::concord::__private::Prepared<Page, ()>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -994,7 +998,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -1005,21 +1009,18 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl files::Endpoint for files::Search {
+        type Value = Page;
+    }
+
+    call_spec!(
+        files,
         files::Search,
+        files::__SearchInputs,
         Page,
         (),
-        files::Result,
-        "[`files::Result`]<[`Page`]>",
-        awaitable,
-        unconditional
+        "Search"
     );
+    impl files::__spec::Awaitable for files::Search {}
 
-    impl ::std::fmt::Debug for files::Search {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Search")
-                .field("endpoint", &"files.search")
-                .finish_non_exhaustive()
-        }
-    }
 };

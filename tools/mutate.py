@@ -25,6 +25,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA = REPO_ROOT / "tools" / "mutations"
 ROOT = REPO_ROOT / "target" / "mutants"
 DEFAULT_PACKAGES = ("concord-core", "concord-extras", "concord-api", "tour", "conformance")
+EXTRA_TEST_TARGETS = {
+    "macro-unit": ("concord-macros", "--lib"),
+    "macro-compiler": ("concord-macros", "--test", "compiler", "--test", "call_rules",
+                       "--test", "call_surface"),
+    "generated-tour": ("tour-gen", "--lib", "--tests"),
+}
+EXTRA_CHECKS = ("surface", "docs-core", "docs-extras", "docs-pages", "allocations",
+                "macro-growth", "macro-unused-calls", *EXTRA_TEST_TARGETS)
 RUN_LOCK_FD = None
 from sockets import cases as socket_cases
 
@@ -58,7 +66,7 @@ def catalog():
         if "requires_sockets" in item and not isinstance(item["requires_sockets"], bool):
             raise RunnerError(f"{path}: requires_sockets must be a boolean")
         if "checks" in item and (not isinstance(item["checks"], list) or
-                any(check not in ("surface", "docs-core", "docs-extras", "docs-pages", "allocations", "macro-growth") for check in item["checks"])):
+                any(check not in EXTRA_CHECKS for check in item["checks"])):
             raise RunnerError(f"{path}: unknown extra check")
         ident = item["id"]
         if not re.fullmatch(r"M\d{2,}", ident) or path.stem != ident or ident in seen:
@@ -275,6 +283,18 @@ class Worker:
             elif check == "macro-growth":
                 command = ["cargo", "test", "--offline", "--locked", "-p", "concord-macros",
                            "--lib", "name::growth::", "--", "--test-threads=1"]
+            elif check == "macro-unused-calls":
+                command = ["cargo", "test", "--offline", "--locked", "-p", "concord-macros",
+                           "--lib", "c8_8_each_factory_and_setter_declares_its_unused_call_message",
+                           "--", "--test-threads=1"]
+            elif check in EXTRA_TEST_TARGETS:
+                command = ["cargo", "test", "--offline", "--locked", "--all-features", "-p",
+                           *EXTRA_TEST_TARGETS[check], "--", "--test-threads=1"]
+                if check == "macro-unit":
+                    # Formatting-only differences in generated text do not catch a behavior change.
+                    command.extend(["--skip", "tasks_expansion_is_readable_and_stable"])
+                for name in (() if self.args.with_sockets else SOCKET_TESTS) + tuple(self.args.skip_test):
+                    command.extend(["--skip", name])
             else:
                 package = {"docs-core": "concord-core", "docs-extras": "concord-extras"}[check]
                 command = ["cargo", "test", "--offline", "--locked", "-p", package, "--all-features", "--doc"]

@@ -1,0 +1,15 @@
+error: `call` is reserved by Concord
+       label: reserved for generated methods
+       help: rename this child to `call_item`
+ --> tests/compiler-errors/calls/reserved_endpoint.rs:4:15
+  |
+4 |         scope call {}
+  |               ^^^^
+
+error: `endpoint` is reserved by Concord
+       label: reserved for the generated endpoint trait
+       help: rename this child to `endpoint_item`
+ --> tests/compiler-errors/calls/reserved_endpoint.rs:3:15
+  |
+3 |         scope endpoint {}
+  |               ^^^^^^^^

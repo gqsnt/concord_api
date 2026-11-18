@@ -1,0 +1,15 @@
+error[E0119]: conflicting implementations of trait `IntoFuture` for type `api::Call<List>`
+  --> tests/compiler-errors/calls/add_await_to_paged.rs:2:1
+   |
+ 2 | / concord::api! {
+ 3 | |     pub client Api {
+ 4 | |         base "https://calls.test/";
+ 5 | |         POST create();
+...  |
+13 | | }
+   | |_^ conflicting implementation for `api::Call<List>`
+14 |   impl std::future::IntoFuture for api::Call<api::List> {
+   |   ----------------------------------------------------- first implementation here
+   |
+   = note: upstream crates may add a new impl of trait `concord::call::AwaitWithoutPaginate` for type `concord::call::Paged` in future versions
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

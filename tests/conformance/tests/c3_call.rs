@@ -113,7 +113,7 @@ async fn c3_1_an_edit_runs_once_for_send_raw_send_full_and_send_if_none_match() 
 type Sent = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), concord::Error>>>>;
 
 /// A way of sending `tasks.get`.
-type Way = fn(tour::tasks::Get) -> Sent;
+type Way = fn(tour::tasks::Call<tour::tasks::Get>) -> Sent;
 
 // C3.2 ------------------------------------------------------------------------------
 

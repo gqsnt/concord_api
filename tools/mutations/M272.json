@@ -1,0 +1,12 @@
+{
+  "id": "M272",
+  "area": "deprecated setter",
+  "contract": "C1.12",
+  "description": "Omit the endpoint's deprecation from its fluent setter.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "            let chained = emit! {\n                #attrs #editor_doc #must_use #[allow(deprecated)]",
+  "replace": "            let cfg = &node.cfg;\n            let doc_attrs = node.node.attrs.iter().filter(|attr| {\n                attr.path().is_ident(\"doc\") && matches!(attr.meta, syn::Meta::List(_))\n            });\n            let chained = emit! {\n                #(#cfg)* #(#doc_attrs)* #editor_doc #must_use #[allow(deprecated)]",
+  "checks": [
+    "macro-unit"
+  ]
+}

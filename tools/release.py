@@ -6,7 +6,10 @@ from pathlib import Path
 import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-STEPS = ("gate", "docs-audit", "doc-examples", "panics", "package", "features-all", "mutants")
+STEPS = (
+    "gate", "docs-audit", "doc-examples", "call-doc-search", "call-editor",
+    "panics", "package", "features-all", "mutants",
+)
 
 
 def main(argv=None):

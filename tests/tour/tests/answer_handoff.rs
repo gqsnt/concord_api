@@ -25,23 +25,23 @@ fn handoff<C: Call>() {
 
 #[test]
 fn every_tour_call_provides_answer_context_and_raw_preparation_handoffs() {
-    handoff::<tour::tasks::List>();
-    handoff::<tour::tasks::Create>();
-    handoff::<tour::tasks::Get>();
-    handoff::<tour::tasks::Delete>();
-    handoff::<tour::riot::matches::Ids>();
-    handoff::<tour::riot::matches::Get>();
-    handoff::<tour::riot::account::ByRiotId>();
-    handoff::<tour::riot::account::Me>();
-    handoff::<tour::files::Grant>();
-    handoff::<tour::files::Exists>();
-    handoff::<tour::files::Readme>();
-    handoff::<tour::files::Download>();
-    handoff::<tour::files::Upload>();
-    handoff::<tour::files::Search>();
-    handoff::<tour::feed::List>();
-    handoff::<tour::feed::ByCursor>();
-    handoff::<tour::feed::Linked>();
+    handoff::<tour::tasks::Call<tour::tasks::List>>();
+    handoff::<tour::tasks::Call<tour::tasks::Create>>();
+    handoff::<tour::tasks::Call<tour::tasks::Get>>();
+    handoff::<tour::tasks::Call<tour::tasks::Delete>>();
+    handoff::<tour::riot::Call<tour::riot::matches::Ids>>();
+    handoff::<tour::riot::Call<tour::riot::matches::Get>>();
+    handoff::<tour::riot::Call<tour::riot::account::ByRiotId>>();
+    handoff::<tour::riot::Call<tour::riot::account::Me>>();
+    handoff::<tour::files::Call<tour::files::Grant>>();
+    handoff::<tour::files::Call<tour::files::Exists>>();
+    handoff::<tour::files::Call<tour::files::Readme>>();
+    handoff::<tour::files::Call<tour::files::Download>>();
+    handoff::<tour::files::Call<tour::files::Upload>>();
+    handoff::<tour::files::Call<tour::files::Search>>();
+    handoff::<tour::feed::Call<tour::feed::List>>();
+    handoff::<tour::feed::Call<tour::feed::ByCursor>>();
+    handoff::<tour::feed::Call<tour::feed::Linked>>();
 }
 
 #[test]

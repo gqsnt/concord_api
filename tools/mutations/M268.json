@@ -1,0 +1,12 @@
+{
+  "id": "M268",
+  "area": "shared Call documentation",
+  "contract": "C10.4",
+  "description": "Show endpoint-specific setters on the shared Call page.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "#impl_attrs #[doc(hidden)] impl #ty { #(#chained)* }",
+  "replace": "#impl_attrs impl #ty { #(#chained)* }",
+  "checks": [
+    "macro-compiler"
+  ]
+}

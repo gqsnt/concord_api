@@ -18,13 +18,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::time::Instant;
 
-fn match_get(script: &Script) -> tour::riot::matches::Get {
+fn match_get(script: &Script) -> tour::riot::Call<tour::riot::matches::Get> {
     riot(script)
         .matches(tour::Europe)
         .get(tour::MatchId::from("EUW1_1"))
 }
 
-fn by_riot_id(script: &Script) -> tour::riot::account::ByRiotId {
+fn by_riot_id(script: &Script) -> tour::riot::Call<tour::riot::account::ByRiotId> {
     riot(script)
         .account(tour::Europe)
         .by_riot_id("Faker", "KR1")

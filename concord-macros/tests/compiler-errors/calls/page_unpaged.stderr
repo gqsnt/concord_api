@@ -1,0 +1,19 @@
+error[E0599]: the method `pages` exists for struct `api::Call<Get>`, but its trait bounds were not satisfied
+  --> tests/compiler-errors/calls/page_unpaged.rs:16:30
+   |
+ 4 |     pub client Api {
+   |                --- method `pages` not found for this struct
+...
+16 |     let _ = Api::new().get().pages();
+   |                              ^^^^^ method cannot be called on `api::Call<Get>` due to unsatisfied trait bounds
+   |
+  ::: $WORKSPACE/concord-core/src/call.rs
+   |
+   | pub struct NoPaginate;
+   | --------------------- doesn't satisfy `_: DeclaresPaginate`
+   |
+note: trait bound `concord::call::NoPaginate: concord::call::DeclaresPaginate` was not satisfied
+  --> tests/compiler-errors/calls/page_unpaged.rs:4:16
+   |
+ 4 |     pub client Api {
+   |                ^^^

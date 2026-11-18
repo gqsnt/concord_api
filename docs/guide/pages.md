@@ -82,13 +82,13 @@ let mut pages = stripe.customers().list().email("a@b.example").limit(50).pages()
 **Your own pager is written like the shipped ones, and it can reject a page.** A page that says "there is more" but gives no cursor is not the end of the list. The pager reports this, and the pages end with an error instead of looking complete. Its failure type is `concord::Fail`.
 
 ```rust
-use concord::page::{Call, Slot};
+use concord::page::Slot;
 use concord::{Answer, Fail};
 
 /// `paginate more(start_cursor);`: the next cursor, as long as the page says that there is more.
 pub fn more<C, S, T>(cursor: S) -> impl Fn(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + 'static
 where
-    C: Call<Value = Batch<T>>,
+    C: concord::page::Call<Value = Batch<T>>,
     S: Slot<C, Value = String>,
 {
     move |call, answer| match (&answer.value().next_cursor, answer.value().has_more) {
@@ -99,7 +99,7 @@ where
 }
 ```
 
-`Slot` stands for one input of the call: `get` reads it on a call, and `set` returns the call with it changed. `Call` adds one method for APIs that hand out URLs: `call.at_url(url)`, the same call with the path and the query of that URL. It never changes the origin: a URL at an origin other than the one the call builds is a Build error, in pages and outside them. A URL on another host is a call of another description ([a URL that the API returned](extending.md#a-url-that-the-api-returned)). A pager that cannot fail returns an `Option<C>`. A pager that fails with the API's problem produces a Refused error, with the status of the page that arrived; one that fails with `concord::mismatch(…)` produces a Mismatch. The fields of a call are not public: a pager reads an input through its slot, or sets it with its setter. The shipped pagers are in [`concord-extras/src/page.rs`](../../concord-extras/src/page.rs): they use these, and `concord::page::fragmentless` (a URL without its fragment), which is public too. For a shorter pager of your own, without failure, see [a pager](extending.md#a-pager).
+`Slot` stands for one input of the call: `get` reads it on a call, and `set` returns the call with it changed. `concord::page::Call` adds one method for APIs that hand out URLs: `call.at_url(url)`, the same call with the path and the query of that URL. It never changes the origin: a URL at an origin other than the one the call builds is a Build error, in pages and outside them. A URL on another host is a call of another description ([a URL that the API returned](extending.md#a-url-that-the-api-returned)). A pager that cannot fail returns an `Option<C>`. A pager that fails with the API's problem produces a Refused error, with the status of the page that arrived; one that fails with `concord::mismatch(…)` produces a Mismatch. The fields of a call are not public: a pager reads an input through its slot, or sets it with its setter. The shipped pagers are in [`concord-extras/src/page.rs`](../../concord-extras/src/page.rs): they use these, and `concord::page::fragmentless` (a URL without its fragment), which is public too. For a shorter pager of your own, without failure, see [a pager](extending.md#a-pager).
 
 ## What holds for every page
 

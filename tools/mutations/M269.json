@@ -1,0 +1,12 @@
+{
+  "id": "M269",
+  "area": "pager completion eligibility",
+  "contract": "C8.6, C10.4",
+  "description": "Move the pager bound to the method so unpaged calls can have pages in completion.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "            where E::Paging: ::concord::call::DeclaresPaginate {\n                #pages_doc\n                pub fn pages(self) -> ::concord::Pages<E::Value #problem> {",
+  "replace": "            {\n                #pages_doc\n                pub fn pages(self) -> ::concord::Pages<E::Value #problem>\n                where E::Paging: ::concord::call::DeclaresPaginate {",
+  "checks": [
+    "macro-unit"
+  ]
+}

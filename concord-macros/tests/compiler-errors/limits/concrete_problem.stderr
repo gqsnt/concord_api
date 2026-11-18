@@ -2,33 +2,7 @@ error[E0277]: `Rc<String>` cannot be shared between threads safely
  --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
 2 | problem std::rc::Rc<String>;
-  |         ^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be shared between threads safely
-  |
-  = help: the trait `Sync` is not implemented for `Rc<String>`
-note: required by a bound in `__Types::__Problem`
- --> tests/compiler-errors/limits/concrete_problem.rs:2:9
-  |
-2 | problem std::rc::Rc<String>;
-  |         ^^^ required by this bound in `__Types::__Problem`
-
-error[E0277]: `Rc<String>` cannot be sent between threads safely
- --> tests/compiler-errors/limits/concrete_problem.rs:2:9
-  |
-2 | problem std::rc::Rc<String>;
-  |         ^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be sent between threads safely
-  |
-  = help: the trait `Send` is not implemented for `Rc<String>`
-note: required by a bound in `__Types::__Problem`
- --> tests/compiler-errors/limits/concrete_problem.rs:2:9
-  |
-2 | problem std::rc::Rc<String>;
-  |         ^^^ required by this bound in `__Types::__Problem`
-
-error[E0277]: `Rc<String>` cannot be shared between threads safely
- --> tests/compiler-errors/limits/concrete_problem.rs:2:9
-  |
-2 | problem std::rc::Rc<String>;
-  |         ^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be shared between threads safely
+  |         ^^^ `Rc<String>` cannot be shared between threads safely
   |
   = help: the trait `Sync` is not implemented for `Rc<String>`
 note: required by a bound in `concord::page::Call::Problem`
@@ -36,12 +10,13 @@ note: required by a bound in `concord::page::Call::Problem`
   |
   |     type Problem: Send + Sync + 'static;
   |                          ^^^^ required by this bound in `Call::Problem`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Rc<String>` cannot be sent between threads safely
  --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
 2 | problem std::rc::Rc<String>;
-  |         ^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be sent between threads safely
+  |         ^^^ `Rc<String>` cannot be sent between threads safely
   |
   = help: the trait `Send` is not implemented for `Rc<String>`
 note: required by a bound in `concord::page::Call::Problem`
@@ -49,22 +24,35 @@ note: required by a bound in `concord::page::Call::Problem`
   |
   |     type Problem: Send + Sync + 'static;
   |                   ^^^^ required by this bound in `Call::Problem`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Rc<String>` cannot be shared between threads safely
+ --> tests/compiler-errors/limits/concrete_problem.rs:2:9
+  |
+2 | problem std::rc::Rc<String>;
+  |         ^^^ `Rc<String>` cannot be shared between threads safely
+  |
+  = help: the trait `Sync` is not implemented for `Rc<String>`
+note: required by a bound in `__Types::__Problem`
+ --> tests/compiler-errors/limits/concrete_problem.rs:2:9
+  |
+2 | problem std::rc::Rc<String>;
+  |         ^^^ required by this bound in `__Types::__Problem`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Rc<String>` cannot be sent between threads safely
  --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
 2 | problem std::rc::Rc<String>;
-  |         ^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be sent between threads safely
+  |         ^^^ `Rc<String>` cannot be sent between threads safely
   |
   = help: the trait `Send` is not implemented for `Rc<String>`
-note: required by a bound in `concord::__private::refused`
- --> $WORKSPACE/concord-core/src/__private/answer.rs
+note: required by a bound in `__Types::__Problem`
+ --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
-  | pub fn refused<'a, P, R>(
-  |        ------- required by a bound in this function
-...
-  |     P: Send + 'a,
-  |        ^^^^ required by this bound in `refused`
+2 | problem std::rc::Rc<String>;
+  |         ^^^ required by this bound in `__Types::__Problem`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Rc<String>` cannot be sent between threads safely
  --> tests/compiler-errors/limits/concrete_problem.rs:1:59
@@ -82,11 +70,11 @@ help: the trait `concord::Reader<T>` is conditionally implemented for `Json`
   |         |                             unsatisfied requirement introduced here: `Rc<String>: Send`
   |         unsatisfied requirement introduced here: `Rc<String>: serde_core::de::DeserializeOwned`
   = note: required for `Json` to implement `concord::Reader<Rc<String>>`
-note: required by a bound in `__reader`
- --> tests/compiler-errors/limits/concrete_problem.rs:1:59
+note: required by a bound in `concord::__private::reader_for_problem`
+ --> $WORKSPACE/concord-core/src/__private/answer.rs
   |
-1 | concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                                                           ^^^^^^^ required by this bound in `__reader`
+  | pub fn reader_for_problem<T, R: Reader<T>>(value: R) -> impl Reader<T> {
+  |                                 ^^^^^^^^^ required by this bound in `reader_for_problem`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Rc<String>: serde::Deserialize<'de>` is not satisfied
@@ -109,56 +97,69 @@ error[E0277]: the trait bound `Rc<String>: serde::Deserialize<'de>` is not satis
           and $N others
   = note: required for `Rc<String>` to implement `serde_core::de::DeserializeOwned`
   = note: required for `Json` to implement `concord::Reader<Rc<String>>`
-note: required by a bound in `__reader`
- --> tests/compiler-errors/limits/concrete_problem.rs:1:59
+note: required by a bound in `concord::__private::reader_for_problem`
+ --> $WORKSPACE/concord-core/src/__private/answer.rs
   |
-1 | concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                                                           ^^^^^^^ required by this bound in `__reader`
+  | pub fn reader_for_problem<T, R: Reader<T>>(value: R) -> impl Reader<T> {
+  |                                 ^^^^^^^^^ required by this bound in `reader_for_problem`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Rc<String>` cannot be sent between threads safely
  --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
-1 | / concord::api! { client C { base "https://span.test"; read concord::Json;
-2 | | problem std::rc::Rc<String>;
-  | |         ^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be sent between threads safely
-3 | | GET get(); } }
-  | |______________- required by a bound introduced by this call
+2 | problem std::rc::Rc<String>;
+  |         ^^^ `Rc<String>` cannot be sent between threads safely
   |
   = help: the trait `Send` is not implemented for `Rc<String>`
-note: required by a bound in `concord::__private::Draft::prepare`
+note: required by a bound in `concord::__private::answer_empty`
+ --> $WORKSPACE/concord-core/src/__private/answer.rs
+  |
+  | pub async fn answer_empty<P: Send>(
+  |                              ^^^^ required by this bound in `answer_empty`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Rc<String>` cannot be sent between threads safely
+ --> tests/compiler-errors/limits/concrete_problem.rs:2:9
+  |
+2 | problem std::rc::Rc<String>;
+  |         ^^^ `Rc<String>` cannot be sent between threads safely
+  |
+  = help: the trait `Send` is not implemented for `Rc<String>`
+note: required by a bound in `concord::__private::prepare_call`
  --> $WORKSPACE/concord-core/src/__private/build.rs
   |
-  |     pub fn prepare<T, P, F, Fut>(
-  |            ------- required by a bound in this associated function
+  | pub fn prepare_call<T, P, C, F, Fut>(
+  |        ------------ required by a bound in this function
 ...
-  |         P: Send + Sync + 'static,
-  |            ^^^^ required by this bound in `Draft::prepare`
+  |     P: Send + Sync + 'static,
+  |        ^^^^ required by this bound in `prepare_call`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Rc<String>` cannot be shared between threads safely
  --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
-1 | / concord::api! { client C { base "https://span.test"; read concord::Json;
-2 | | problem std::rc::Rc<String>;
-  | |         ^^^^^^^^^^^^^^^^^^^ `Rc<String>` cannot be shared between threads safely
-3 | | GET get(); } }
-  | |______________- required by a bound introduced by this call
+2 | problem std::rc::Rc<String>;
+  |         ^^^ `Rc<String>` cannot be shared between threads safely
   |
   = help: the trait `Sync` is not implemented for `Rc<String>`
-note: required by a bound in `concord::__private::Draft::prepare`
+note: required by a bound in `concord::__private::prepare_call`
  --> $WORKSPACE/concord-core/src/__private/build.rs
   |
-  |     pub fn prepare<T, P, F, Fut>(
-  |            ------- required by a bound in this associated function
+  | pub fn prepare_call<T, P, C, F, Fut>(
+  |        ------------ required by a bound in this function
 ...
-  |         P: Send + Sync + 'static,
-  |                   ^^^^ required by this bound in `Draft::prepare`
+  |     P: Send + Sync + 'static,
+  |               ^^^^ required by this bound in `prepare_call`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0599]: the method `send_raw` exists for struct `concord::__private::Prepared<(), Rc<String>>`, but its trait bounds were not satisfied
- --> tests/compiler-errors/limits/concrete_problem.rs:1:24
+error[E0599]: the method `send` exists for struct `concord::__private::Prepared<Option<<E as Endpoint>::Value>, Rc<String>>`, but its trait bounds were not satisfied
+ --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
-1 |   concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                          ^ method cannot be called on `concord::__private::Prepared<(), Rc<String>>` due to unsatisfied trait bounds
+1 | / concord::api! { client C { base "https://span.test"; read concord::Json;
+2 | | problem std::rc::Rc<String>;
+  | |        -^^^ method cannot be called due to unsatisfied trait bounds
+  | |________|
+  |
   |
  ::: $RUST/alloc/src/rc.rs
   |
@@ -171,75 +172,16 @@ error[E0599]: the method `send_raw` exists for struct `concord::__private::Prepa
   = note: the following trait bounds were not satisfied:
           `Rc<String>: Send`
           `Rc<String>: Sync`
-  = note: this error originates in the macro `$crate::call_methods` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `Rc<String>` cannot be sent between threads safely
- --> tests/compiler-errors/limits/concrete_problem.rs:1:24
+error[E0599]: the method `send_raw` exists for struct `concord::__private::Prepared<<E as Endpoint>::Value, Rc<String>>`, but its trait bounds were not satisfied
+ --> tests/compiler-errors/limits/concrete_problem.rs:2:9
   |
-1 | concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                        ^ `Rc<String>` cannot be sent between threads safely
+1 | / concord::api! { client C { base "https://span.test"; read concord::Json;
+2 | | problem std::rc::Rc<String>;
+  | |        -^^^ method cannot be called due to unsatisfied trait bounds
+  | |________|
   |
-  = help: the trait `Send` is not implemented for `Rc<String>`
-note: required by a bound in `concord::__private::Prepared::<T, P>::conditional`
- --> $WORKSPACE/concord-core/src/__private/call.rs
-  |
-  | impl<T: Send + 'static, P: Send + Sync + 'static> Prepared<T, P> {
-  |                            ^^^^ required by this bound in `Prepared::<T, P>::conditional`
-...
-  |     pub fn conditional(self) -> Prepared<Option<T>, P> {
-  |            ----------- required by a bound in this associated function
-  = note: this error originates in the macro `$crate::call_methods` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: `Rc<String>` cannot be shared between threads safely
- --> tests/compiler-errors/limits/concrete_problem.rs:1:24
-  |
-1 | concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                        ^ `Rc<String>` cannot be shared between threads safely
-  |
-  = help: the trait `Sync` is not implemented for `Rc<String>`
-note: required by a bound in `concord::__private::Prepared::<T, P>::conditional`
- --> $WORKSPACE/concord-core/src/__private/call.rs
-  |
-  | impl<T: Send + 'static, P: Send + Sync + 'static> Prepared<T, P> {
-  |                                   ^^^^ required by this bound in `Prepared::<T, P>::conditional`
-...
-  |     pub fn conditional(self) -> Prepared<Option<T>, P> {
-  |            ----------- required by a bound in this associated function
-  = note: this error originates in the macro `$crate::call_methods` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: `Rc<String>` cannot be sent between threads safely
- --> tests/compiler-errors/limits/concrete_problem.rs:1:24
-  |
-1 | concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                        ^ `Rc<String>` cannot be sent between threads safely
-  |
-  = help: the trait `Send` is not implemented for `Rc<String>`
-note: required by a bound in `concord::__private::Prepared<T, P>`
- --> $WORKSPACE/concord-core/src/__private/call.rs
-  |
-  | impl<T: Send + 'static, P: Send + Sync + 'static> Prepared<T, P> {
-  |                            ^^^^ required by this bound in `Prepared<T, P>`
-  = note: this error originates in the macro `$crate::call_methods` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: `Rc<String>` cannot be shared between threads safely
- --> tests/compiler-errors/limits/concrete_problem.rs:1:24
-  |
-1 | concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                        ^ `Rc<String>` cannot be shared between threads safely
-  |
-  = help: the trait `Sync` is not implemented for `Rc<String>`
-note: required by a bound in `concord::__private::Prepared<T, P>`
- --> $WORKSPACE/concord-core/src/__private/call.rs
-  |
-  | impl<T: Send + 'static, P: Send + Sync + 'static> Prepared<T, P> {
-  |                                   ^^^^ required by this bound in `Prepared<T, P>`
-  = note: this error originates in the macro `$crate::call_methods` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0599]: the method `send` exists for struct `concord::__private::Prepared<Option<()>, Rc<String>>`, but its trait bounds were not satisfied
- --> tests/compiler-errors/limits/concrete_problem.rs:1:24
-  |
-1 |   concord::api! { client C { base "https://span.test"; read concord::Json;
-  |                          ^ method cannot be called due to unsatisfied trait bounds
   |
  ::: $RUST/alloc/src/rc.rs
   |
@@ -252,4 +194,4 @@ error[E0599]: the method `send` exists for struct `concord::__private::Prepared<
   = note: the following trait bounds were not satisfied:
           `Rc<String>: Send`
           `Rc<String>: Sync`
-  = note: this error originates in the macro `$crate::call_methods` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

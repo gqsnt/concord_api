@@ -1,0 +1,12 @@
+{
+  "id": "M261",
+  "area": "conditional POST",
+  "contract": "C5.12, C10.10",
+  "description": "Give POST the conditional mode used for GET and HEAD.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "                \"POST\" => ident(\"Post\"),",
+  "replace": "                \"POST\" => ident(\"GetOrHead\"),",
+  "checks": [
+    "macro-compiler"
+  ]
+}

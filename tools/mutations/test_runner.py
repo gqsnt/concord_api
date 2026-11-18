@@ -155,6 +155,21 @@ with (root / 'lock').open('a') as lock:
         for ident in ("M255", "M256", "M257", "M258"):
             self.assertIn("macro-growth", by_id[ident].get("checks", ()), ident)
 
+    def test_call_mutations_select_test_targets_without_changing_default_packages(self):
+        self.assertNotIn("concord-macros", mutate.DEFAULT_PACKAGES)
+        self.assertNotIn("tour-gen", mutate.DEFAULT_PACKAGES)
+        self.assertEqual(mutate.EXTRA_TEST_TARGETS, {
+            "macro-unit": ("concord-macros", "--lib"),
+            "macro-compiler": ("concord-macros", "--test", "compiler", "--test", "call_rules",
+                               "--test", "call_surface"),
+            "generated-tour": ("tour-gen", "--lib", "--tests"),
+        })
+        by_id = {item["id"]: item for item in mutate.catalog()}
+        self.assertEqual(by_id["M263"]["checks"], ["macro-unit"])
+        self.assertEqual(by_id["M271"]["checks"], ["macro-compiler"])
+        self.assertEqual(by_id["M275"]["checks"], ["generated-tour"])
+        self.assertEqual(by_id["M280"]["checks"], ["macro-unused-calls"])
+
     def test_listing_needs_no_baseline_build(self):
         with patch.object(sys, "argv", ["mutate.py", "--list"]), redirect_stdout(io.StringIO()), patch.object(mutate, "run") as run:
             self.assertEqual(mutate.main(), 0)

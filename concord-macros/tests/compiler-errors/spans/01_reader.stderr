@@ -21,9 +21,9 @@ help: the trait `concord::Reader<u32>` is not implemented for `Bad`
             `Text` implements `concord::Reader<String>`
             `concord::Binary` implements `concord::Reader<concord::bytes::Bytes>`
             `concord::read::Stream` implements `concord::Reader<ByteStream>`
-note: required by a bound in `__reader`
- --> tests/compiler-errors/spans/01_reader.rs:3:6
+note: required by a bound in `concord::__private::reader_for_response`
+ --> $WORKSPACE/concord-core/src/__private/answer.rs
   |
-3 | read Bad;
-  |      ^^^ required by this bound in `__reader`
+  | pub fn reader_for_response<T, R: Reader<T>>(value: R) -> impl Reader<T> {
+  |                                  ^^^^^^^^^ required by this bound in `reader_for_response`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

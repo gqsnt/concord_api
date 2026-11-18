@@ -1,0 +1,12 @@
+{
+  "id": "M271",
+  "area": "unused setter result guidance",
+  "contract": "C8.8",
+  "description": "Remove the endpoint-specific unused-call message from the fluent setter.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "#attrs #editor_doc #must_use #[allow(deprecated)]",
+  "replace": "#attrs #editor_doc #[allow(deprecated)]",
+  "checks": [
+    "macro-compiler"
+  ]
+}

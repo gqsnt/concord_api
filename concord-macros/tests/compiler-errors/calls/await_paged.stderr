@@ -1,0 +1,17 @@
+error[E0277]: `api::Call<List>` is not a future
+  --> tests/compiler-errors/calls/await_paged.rs:16:31
+   |
+16 |     let _ = Api::new().list().await;
+   |                               ^^^^^ `api::Call<List>` is not a future
+   |
+help: the trait `IntoFuture` is not implemented for `api::Call<List>`
+  --> tests/compiler-errors/calls/await_paged.rs:4:16
+   |
+ 4 |     pub client Api {
+   |                ^^^
+   = note: api::Call<List> must be a future or must implement `IntoFuture` to be awaited
+help: remove the `.await`
+   |
+16 -     let _ = Api::new().list().await;
+16 +     let _ = Api::new().list();
+   |

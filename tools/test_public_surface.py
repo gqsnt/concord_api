@@ -5,11 +5,11 @@ import tomllib
 import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 class ReleaseContracts(unittest.TestCase):
-    def test_helper_has_the_whole_shared_call_surface(self):
-        text = (REPO_ROOT / "concord-core/src/__private/call.rs").read_text().split("#[cfg(test)]")[0]
+    def test_generator_writes_the_whole_shared_call_surface(self):
+        text = (REPO_ROOT / "concord-macros/src/write/call.rs").read_text()
         for method in ("send", "send_full", "send_raw", "send_if_none_match", "with_retry", "with_timeout", "with_idle_timeout", "request", "into_request", "edit_request", "read_response", "__prepare_if_none_match", "answered_from", "at_url", "into_future"):
             self.assertIn("fn " + method + "(", text)
-        self.assertIn("$($pages)*", text)
+        self.assertIn("fn pages(", text)
     def test_body_writers_use_one_public_documented_door(self):
         text = (REPO_ROOT / "concord-core/src/body.rs").read_text()
         start = text.index("/// A bounded serialization")
@@ -39,8 +39,10 @@ class ReleaseContracts(unittest.TestCase):
     def test_contract_names_identify_the_behavior_they_prove(self):
         for name in ("__private/call.rs", "__private/build.rs"):
             text = (REPO_ROOT / "concord-core/src" / name).read_text()
-            self.assertNotRegex(text, r"fn c10_9_(?:call_methods|.*helper.*hygienic)|fn c2_5_literal_segments")
+            self.assertNotRegex(text, r"fn c2_5_literal_segments")
             self.assertNotRegex(text, r"fn c\d+_\d+_[ad]\d+_")
+        compiler_tests = (REPO_ROOT / "concord-macros/tests/compiler.rs").read_text()
+        self.assertIn("fn c1_12_internal_locals_are_hygienic(", compiler_tests)
         body_tests = (REPO_ROOT / "concord-core/tests/prop_read.rs").read_text()
         self.assertNotRegex(body_tests, r"fn c\d+_\d+_[ad]\d+_")
         # Frame joining and announced-size allocation are whole-body contracts (C5.4).

@@ -12,13 +12,18 @@ Use this page when a description does not compile or a call fails. Find the mess
 
 | You see | Why | How to fix it |
 |---|---|---|
-| The call `is not a future`, at `.await` | The endpoint has `paginate`, so its call cannot be awaited directly; this stops anyone from mistaking one page for the whole list. | `.send().await` for one page, `.pages()` for all of them ([pages](pages.md)). |
+| ``error[E0277]: `api::Call<List>` is not a future``. `` help: remove the `.await` ``. | The endpoint has `paginate`. | Use `call.send().await` for one page or `call.pages()` for all pages. |
+| ``error[E0599]: the method `pages` exists for struct `api::Call<Get>`, but its trait bounds were not satisfied``. ``note: trait bound `concord::call::NoPaginate: concord::call::DeclaresPaginate` was not satisfied``. | The endpoint has no `paginate`. | Use `call.await` or `call.send().await`. |
+| ``error[E0599]: the method `send_if_none_match` exists for struct `api::Call<Create>`, but its trait bounds were not satisfied``. ``note: trait bound `concord::call::Post: concord::call::IsGetOrHead` was not satisfied``. | Only `GET` and `HEAD` calls can use that method. | Use `call.send().await` for this call. Use `send_if_none_match(etag).await` on a `GET` or `HEAD` call for a conditional read. |
+| `error[E0716]: temporary value dropped while borrowed` at `paginate`. ``note: requirement that the value outlives `'static` introduced here``. | The pager borrows an input that it must own. | Copy or clone what the pager needs before the `move` closure ([a pager of your own](pages.md#a-pager-of-your-own)). |
 | ``the trait bound `NewTask: Clone` is not satisfied``, ``required by a bound in `__Types::__Input0` `` | The type of an input must be `Clone + Send + Sync + 'static`. | `#[derive(Clone)]` on the type ([a signature](describing-an-api.md#a-signature)). |
 | ``cannot find value `Jsno` in this scope`` (E0425), at `read Jsno;` | What follows `read` is a Rust value, and it is misspelled or not imported. | `read Json;` and `use concord::Json;`. |
 | `` `Bad` cannot read a `u32` ``, with the note `` declare `read Json;` with `use concord::Json;`, or implement `concord::Reader<u32>` for `Bad` `` | The value after `read` is not a reader for the return type. | Use a shipped reader, or implement `concord::Reader<T>` for your type ([reading a success](responses-and-errors.md#reading-a-success)). |
 | `let bindings cannot shadow constants` (E0530), or `` `__response` is interpreted as a constant `` | A `const` or a `static` in the module where `api!` is invoked has a name that begins with `__` (those names are reserved for Concord), or the name of an input. | Rename the constant, or the input ([rule 4](../reference/rules.md)). |
 | `a secret does not follow a change of base` | An entry that holds a `Secret` is inherited under another `base`. | `override` the entry, or `remove` it, under the new `base` ([a secret stays with its base](credentials.md#a-secret-stays-with-its-base)). |
 | The return type does not implement `Deserialize`, although an arm builds it | An arm for one exact 2xx status (`200 { body, headers } => …`) leaves the other 2xx statuses to the simple rule, which reads them into the return type. | An arm for the whole class: `2xx { body, headers } => …` ([when a status means something](responses-and-errors.md#when-a-status-means-something)). |
+
+In these examples, both E0599 notes point at the client's name in `pub client Api`. Both errors still name the call type and the bound when you call the client from another crate ([the messages](../reference/messages.md)).
 
 ## The call failed
 

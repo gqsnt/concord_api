@@ -106,6 +106,61 @@ impl Draft {
             body: None,
         }
     }
+    /// Start a draft whose base is a single literal.
+    #[inline(always)]
+    pub fn from_literal(method: http::Method, base: &'static str) -> Draft {
+        let mut draft = Self::new(method);
+        draft.base(&[Piece::Lit(""), Piece::Lit(base)]);
+        draft
+    }
+
+    /// Place a base made of a literal prefix, one adapted hole and a literal suffix.
+    #[inline(always)]
+    pub fn base_value(
+        &mut self,
+        prefix: &'static str,
+        name: &'static str,
+        value: impl Value,
+        suffix: &'static str,
+    ) {
+        self.base(&[
+            Piece::Lit(""),
+            Piece::Lit(prefix),
+            Piece::Val(name, &value),
+            Piece::Lit(suffix),
+        ]);
+    }
+
+    /// Place a run of fixed segments, in description order.
+    #[inline(always)]
+    pub fn literal_path(&mut self, segments: &[&'static str]) {
+        for segment in segments {
+            self.segment(&[Piece::Lit(segment)]);
+        }
+    }
+
+    /// Place a single adapted path hole, keeping its trailing separator.
+    #[inline(always)]
+    pub fn segment_value(&mut self, name: &'static str, value: impl Value, trailing: bool) {
+        let hole = Piece::Val(name, &value);
+        if trailing {
+            self.segment(&[hole, Piece::Lit("/")]);
+        } else {
+            self.segment(&[hole]);
+        }
+    }
+
+    /// Place an already adapted single-value query entry.
+    #[inline(always)]
+    pub fn query_value(&mut self, key: &'static str, name: &'static str, value: impl Value) {
+        self.query(key, &[Piece::Val(name, &value)]);
+    }
+
+    /// Place an already adapted single-value header entry.
+    #[inline(always)]
+    pub fn header_value(&mut self, key: &'static str, name: &'static str, value: impl Value) {
+        self.header(key, &[Piece::Val(name, &value)]);
+    }
     /// A failed entry expression, retaining its name and the author's source.
     pub fn entry_error<P>(
         endpoint: &'static str,
@@ -225,8 +280,7 @@ impl Draft {
         options: &Options<P>,
         endpoint: &'static str,
     ) -> Result<reqwest::Request, Error<P>> {
-        self.finish_marked(core, options, endpoint, false)
-            .map(|(request, _)| request)
+        self.finish_request(core, options, endpoint, false)
     }
     /// Finish for sending, claiming all composed one-shot streams before any byte is polled.
     /// Relative `at_url` resolution and origin checks precede all caller edits.
@@ -236,11 +290,23 @@ impl Draft {
         options: &Options<P>,
         endpoint: &'static str,
     ) -> Result<reqwest::Request, Error<P>> {
-        self.finish_marked(core, options, endpoint, true)
-            .map(|(request, _)| request)
+        self.finish_request(core, options, endpoint, true)
     }
-    /// Finish once, retaining secret annotations for preparation and page comparison.
-    pub(super) fn finish_marked<P>(
+    /// Finish a generated draft for inspection or for export.
+    #[inline(always)]
+    pub fn finish_request<P>(
+        self,
+        core: &Core<P>,
+        options: &Options<P>,
+        endpoint: &'static str,
+        take: bool,
+    ) -> Result<reqwest::Request, Error<P>> {
+        self.finish_prepared(core, options, endpoint, take)
+            .map(|(request, _)| request.request)
+    }
+    /// Finish a request and expose its secret placements for assertions.
+    #[cfg(test)]
+    fn finish_marked<P>(
         self,
         core: &Core<P>,
         options: &Options<P>,
@@ -557,6 +623,51 @@ pub fn build_error<P>(
     source: Box<dyn std::error::Error + Send + Sync>,
 ) -> Error<P> {
     Error::build_source(endpoint, source)
+}
+
+/// The error type of an authored request expression.
+type BuildSource = Box<dyn std::error::Error + Send + Sync>;
+
+/// Evaluate an entry in a `Result` context and attach its wire key to any error.
+#[inline]
+pub fn evaluate_entry<T, P>(
+    endpoint: &'static str,
+    key: &'static str,
+    make: impl FnOnce() -> Result<T, BuildSource>,
+) -> Result<T, Error<P>> {
+    make().map_err(|source| Draft::entry_error(endpoint, key, source))
+}
+
+/// Evaluate a body expression in a `Result` context.
+#[inline]
+pub fn evaluate_body<T, P>(
+    endpoint: &'static str,
+    make: impl FnOnce() -> Result<T, BuildSource>,
+) -> Result<T, Error<P>> {
+    make().map_err(|source| build_error(endpoint, source))
+}
+
+/// Retain the call for the existing attempt reader, cloning it at each attempt.
+#[inline]
+pub fn prepare_call<T, P, C, F, Fut>(
+    draft: Draft,
+    run: Run,
+    core: Core<P>,
+    options: Options<P>,
+    idempotent: Idempotent,
+    call: C,
+    read: F,
+) -> Result<Prepared<T, P>, Error<P>>
+where
+    T: Send + 'static,
+    P: Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
+    F: Fn(C, reqwest::Response, TryInfo) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<Answer<T>, Error<P>>> + Send + 'static,
+{
+    draft.prepare(run, core, options, idempotent, move |response, info| {
+        read(call.clone(), response, info)
+    })
 }
 fn parsed_base(base: &Base) -> Result<BuiltBase, BuildFailure> {
     reqwest::Url::parse(&base.to_string())

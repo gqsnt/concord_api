@@ -43,6 +43,8 @@ pub mod answer;
 pub mod arg;
 pub mod base;
 pub mod body;
+#[doc(hidden)]
+pub mod call;
 pub mod error;
 pub mod middleware;
 pub mod page;

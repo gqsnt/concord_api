@@ -1,4 +1,4 @@
-//! C10.2/C10.7 assertions on the hand-written client model.
+//! C10.2/C10.7 assertions on the hand-written client.
 #![cfg(all(feature = "json", feature = "form"))]
 #![allow(clippy::unwrap_used)]
 extern crate self as concord;
@@ -15,7 +15,7 @@ pub mod read {
     pub use concord_core::read::*;
     pub use concord_extras::read::*;
 }
-// Reuse the checked-in model without copying it or adding a dependency cycle.
+// Reuse the hand-written client without copying it or adding a dependency cycle.
 #[path = "../../tests/tour/src/data.rs"]
 mod data;
 pub use data::*;
@@ -177,25 +177,25 @@ fn c10_2_every_model_client_handle_call_and_send_future_holds_contracts() {
     typed::<Riot>();
     typed::<Files>();
     typed::<Feed>();
-    typed::<tasks::List>();
-    typed::<tasks::Create>();
-    typed::<tasks::Get>();
-    typed::<tasks::Delete>();
+    typed::<tasks::Call<tasks::List>>();
+    typed::<tasks::Call<tasks::Create>>();
+    typed::<tasks::Call<tasks::Get>>();
+    typed::<tasks::Call<tasks::Delete>>();
     typed::<riot::Matches>();
     typed::<riot::Account>();
-    typed::<riot::matches::Ids>();
-    typed::<riot::matches::Get>();
-    typed::<riot::account::ByRiotId>();
-    typed::<riot::account::Me>();
-    typed::<files::Grant>();
-    typed::<files::Exists>();
-    typed::<files::Readme>();
-    typed::<files::Download>();
-    typed::<files::Upload>();
-    typed::<files::Search>();
-    typed::<feed::List>();
-    typed::<feed::ByCursor>();
-    typed::<feed::Linked>();
+    typed::<riot::Call<riot::matches::Ids>>();
+    typed::<riot::Call<riot::matches::Get>>();
+    typed::<riot::Call<riot::account::ByRiotId>>();
+    typed::<riot::Call<riot::account::Me>>();
+    typed::<files::Call<files::Grant>>();
+    typed::<files::Call<files::Exists>>();
+    typed::<files::Call<files::Readme>>();
+    typed::<files::Call<files::Download>>();
+    typed::<files::Call<files::Upload>>();
+    typed::<files::Call<files::Search>>();
+    typed::<feed::Call<feed::List>>();
+    typed::<feed::Call<feed::ByCursor>>();
+    typed::<feed::Call<feed::Linked>>();
     fn future<T: std::future::Future + Send + 'static>(_: T) {}
     future(Tasks::new().list().send());
     future(

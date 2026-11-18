@@ -1,0 +1,12 @@
+{
+  "id": "M265",
+  "area": "uninhabited endpoint types",
+  "contract": "C1.11",
+  "description": "Give each endpoint type a unit variant that a caller can construct.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "#vis enum #ty {}",
+  "replace": "#vis enum #ty { /// A value of this endpoint type.\n Constructible }",
+  "checks": [
+    "macro-unit"
+  ]
+}

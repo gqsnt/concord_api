@@ -1,5 +1,8 @@
 //! What this crate compiles is what the pages print, word for word.
+use real_apis::riot::{riot, Puuid, Region, Riot};
 use std::{fs, path::PathBuf};
+
+include!("../fixtures/examples/riot_timed.rs");
 
 const APIS: [&str; 8] = [
     "elasticsearch",
@@ -59,4 +62,23 @@ fn c1_20_every_documented_description_is_accepted_and_compiles() {
             "{api}: a description, the Rust beside it, the calls"
         );
     }
+}
+
+#[tokio::test]
+async fn generic_call_example_sends_two_endpoints() -> riot::Result<()> {
+    let guide = include_str!("../../../docs/guide/calling.md");
+    let example = include_str!("../fixtures/examples/riot_timed.rs");
+    assert!(guide.contains(&format!("```rust\n{example}```")));
+
+    let wire = concord_testkit::Script::new();
+    wire.answer(200)
+        .body(r#"{"puuid":"p-1","gameName":"Ada","tagLine":"EUW"}"#);
+    wire.answer(200).body(r#"["EUW1_10"]"#);
+    let client = Riot::new("test-key").with_transport(wire);
+
+    let account = timed(client.account(Region::Europe).by_riot_id("Ada", "EUW")).await?;
+    assert!(account.is_some());
+    let ids = timed(client.matches(Region::Europe).ids(Puuid::from("p-1"))).await?;
+    assert_eq!(ids.len(), 1);
+    Ok(())
 }

@@ -1,4 +1,4 @@
-//! Writer contracts that are independent of the five tour descriptions.
+//! Contracts for generated clients defined in these tests.
 #![deny(missing_docs)]
 
 #[test]
@@ -51,6 +51,65 @@ fn c10_3_replacements_evaluate_in_tree_order_and_keep_wire_order() {
         request.url().query(),
         Some("first=first&second=second&third=third")
     );
+}
+
+#[tokio::test]
+async fn c3_1_send_raw_builds_the_generated_request_once() {
+    use std::sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    };
+
+    concord::api! {
+        client Counted(builds: Arc<AtomicU32>) {
+            base "https://counted.test";
+            GET get() { query { "build" = client.builds.fetch_add(1, Ordering::SeqCst); } }
+        }
+    }
+    let builds = Arc::new(AtomicU32::new(0));
+    let client = Counted::new(builds.clone()).with_transport(concord::fake(|request| {
+        assert_eq!(request.url().query(), Some("build=0"));
+        Ok(concord::reply(200, ""))
+    }));
+    assert_eq!(client.get().send_raw().await.unwrap().status(), 200);
+    assert_eq!(builds.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn c5_6_c5_11_shared_response_uses_the_resolved_reader() {
+    concord::api! {
+        client Formats {
+            base "https://formats.test";
+            read concord::Json;
+            problem String read concord::Text;
+            GET json() -> String;
+            GET text() -> String { read concord::Text; }
+        }
+    }
+    let client = Formats::new();
+    let body = r#""value""#;
+    assert_eq!(
+        client
+            .json()
+            .read_response(concord::reply(200, body))
+            .await
+            .unwrap(),
+        "value"
+    );
+    assert_eq!(
+        client
+            .text()
+            .read_response(concord::reply(200, body))
+            .await
+            .unwrap(),
+        body
+    );
+    let refusal = client
+        .text()
+        .read_response(concord::reply(404, body))
+        .await
+        .unwrap_err();
+    assert_eq!(refusal.problem().map(String::as_str), Some(body));
 }
 
 #[test]

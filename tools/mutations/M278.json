@@ -1,0 +1,12 @@
+{
+  "id": "M278",
+  "area": "shared success reader",
+  "contract": "C5.2, C5.11",
+  "description": "Use an inherited client reader for a success body when an endpoint of the same output type overrides it.",
+  "file": "concord-macros/src/write/answer.rs",
+  "find": "        let reader = self.reader(\n            index,\n            line,\n            read_type.clone(),\n            &ident(\"reader_for_response\"),\n        );",
+  "replace": "        let line = self.model.endpoints.iter()\n            .filter(|entry| entry.read_type == endpoint.read_type)\n            .filter_map(|entry| entry.reader.as_ref())\n            .find(|reader| matches!(reader.origin.placed.kind, NodeKind::Client))\n            .unwrap_or(line);\n        let reader = self.reader(\n            index,\n            line,\n            read_type.clone(),\n            &ident(\"reader_for_response\"),\n        );",
+  "checks": [
+    "generated-tour"
+  ]
+}

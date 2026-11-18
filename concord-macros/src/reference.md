@@ -652,7 +652,9 @@ For `pub client Shop`, with a scope `books` and an endpoint `get` in it:
 | `with_retry`, `with_timeout`, `with_idle_timeout`, `with_base`, `with_transport`, `with_middleware` | The client's settings. Each returns the changed client. |
 | `shop.books()` | A method for each child. A setter for each optional input of the client. |
 | `shop::Books` | The handle of the scope. |
-| `shop::books::Get` | The call. `.await` (or `send()`) sends it; `send_full()`, `send_raw()`, `request()`, `into_request()`, `edit_request(…)`, `read_response(…)`, `with_retry`, `with_timeout`, `with_idle_timeout`; `send_if_none_match(etag)` on a `GET` or `HEAD`; with `paginate`, `pages()` and no `.await`. Calls are `Send + Sync + Clone`. |
+| `shop::books::Get` | The endpoint type. Its page shows the request, inputs, options and what a send returns. |
+| `shop::Call<shop::books::Get>` | The value returned by `Books::get`. `.await` (or `send()`) sends it; `send_full()`, `send_raw()`, `request()`, `into_request()`, `edit_request(…)`, `read_response(…)`, `with_retry`, `with_timeout`, `with_idle_timeout`; `send_if_none_match(etag)` on a `GET` or `HEAD`; with `paginate`, `pages()` and no `.await`. Calls are `Send + Sync + Clone`. |
+| `shop::Endpoint` | The client's sealed trait. Each endpoint type implements it, with the value of a successful send as `Value`. |
 | `shop::Error` | `concord::Error<P>`, where `P` is the `problem` type (`()` without one). Every endpoint returns this error type. |
 | `shop::Result<T>` | `Result<T, shop::Error>`. |
 | `shop::Retry` | `concord::Retry<P>`, the policy type that `with_retry` accepts. It is only the type: it holds none of the author's retry rules. |
@@ -698,7 +700,7 @@ neither may take the name of a method that the receiver already has:
 | Receiver | Its children and its optional inputs may not be named |
 |---|---|
 | Any | `clone`, and any name that starts with `with_` |
-| The client | `new`, `call`; and a child of the client also not `error`, `result` or `retry` (`shop::Error`, `shop::Result`, `shop::Retry`) |
+| The client | `new`, `call` (reserved for later; a scope with that name would also generate `shop::Call`); and a child of the client also not `endpoint`, `error`, `result` or `retry` (`shop::Endpoint`, `shop::Error`, `shop::Result`, `shop::Retry`) |
 | A scope | `call` |
 | An endpoint (optional inputs) | `send`, `send_full`, `send_raw`, `send_if_none_match`, `request`, `into_request`, `edit_request`, `read_response`, `pages`, `at_url`, `into_future` |
 

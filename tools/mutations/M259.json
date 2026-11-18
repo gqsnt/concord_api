@@ -1,0 +1,12 @@
+{
+  "id": "M259",
+  "area": "paged awaiting",
+  "contract": "C8.8, C10.3",
+  "description": "Allow an endpoint with a pager to be awaited directly.",
+  "file": "concord-core/src/call.rs",
+  "find": "impl AwaitWithoutPaginate for NoPaginate {}",
+  "replace": "impl AwaitWithoutPaginate for NoPaginate {}\nimpl AwaitWithoutPaginate for Paged {}",
+  "checks": [
+    "macro-compiler"
+  ]
+}

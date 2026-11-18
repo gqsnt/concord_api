@@ -91,10 +91,10 @@ fn calls_and_handles_are_send_and_clone(shapes: Shapes, error: shapes::Error) {
     let wrapped: shapes::Wrapped = shapes.wrapped();
     cloneable(&wrapped);
     owned_send(wrapped.clone());
-    let find: shapes::wrapped::Find = wrapped.find(1);
+    let find: shapes::Call<shapes::wrapped::Find> = wrapped.find(1);
     cloneable(&find);
     owned_send(find.clone().send());
-    let upload: shapes::Upload = shapes.upload(Body::new("abc", "text/plain"));
+    let upload: shapes::Call<shapes::Upload> = shapes.upload(Body::new("abc", "text/plain"));
     owned_send(upload.send());
     let problem: Option<&ShapesProblem> = error.problem();
 }

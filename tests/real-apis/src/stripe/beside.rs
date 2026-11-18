@@ -1,4 +1,4 @@
-use concord::page::{Call, Slot};
+use concord::page::Slot;
 use concord::{Answer, Fail, Headers};
 use serde::Deserialize;
 use std::time::Duration;
@@ -54,7 +54,7 @@ pub trait Object {
 }
 
 /// The next call, none at the end, or a Mismatch.
-pub type NextPage<C> = Result<Option<C>, Fail<<C as Call>::Problem>>;
+pub type NextPage<C> = Result<Option<C>, Fail<<C as concord::page::Call>::Problem>>;
 
 /// `paginate by_object_id(starting_after, ending_before);`. The next page starts after the last
 /// object; when the caller went back with `ending_before`, it ends before the first one.
@@ -62,7 +62,7 @@ pub type NextPage<C> = Result<Option<C>, Fail<<C as Call>::Problem>>;
 pub fn by_object_id<C, A, B, T>(after: A, before: B)
     -> impl Fn(C, &Answer<C::Value>) -> NextPage<C> + Send + 'static
 where
-    C: Call<Value = List<T>>,
+    C: concord::page::Call<Value = List<T>>,
     A: Slot<C, Value = String>,
     B: Slot<C, Value = String>,
     T: Object,

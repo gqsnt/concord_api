@@ -6,7 +6,8 @@
 //! Await any other call to receive its documented result.
 //!
 //! Calls and handles own their inputs, are cheap to clone, and are [`Send`] + [`Sync`].
-//! Their types follow the API tree, such as [`riot::Matches`] and [`riot::matches::Ids`].
+//! Handles and endpoint types follow the API tree. For example, [`riot::Matches`]
+//! returns [`riot::Call`] values whose endpoint types include [`riot::matches::Ids`].
 
 // Each client has a hidden trait for its input and problem types. Its implementation
 // stays beside the authored code, where every type name resolves. Generated fields

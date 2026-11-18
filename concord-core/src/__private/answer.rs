@@ -1,10 +1,93 @@
 use std::fmt;
 use std::future::Future;
 
-use crate::answer::{Headers, KnownKind, KnownOutcome};
+use crate::answer::{Answer, Headers, KnownKind, KnownOutcome};
 use crate::error::{Error, Fail, Kept, MismatchFailure};
 use crate::read::{Incoming, Reader};
 use crate::transport::TryInfo;
+
+/// The response evidence retained for an answer or a status arm.
+pub fn answer_head(response: &reqwest::Response) -> (reqwest::Url, http::StatusCode, Headers) {
+    (
+        response.url().clone(),
+        response.status(),
+        Headers::from(response.headers().clone()),
+    )
+}
+
+/// Finish a successful response using the evidence captured before reading it.
+pub fn frame_answer<T, P>(
+    url: reqwest::Url,
+    status: http::StatusCode,
+    headers: Headers,
+    value: T,
+) -> Result<Answer<T>, Error<P>> {
+    Ok(Answer::new(status, headers, value).with_response_url(url))
+}
+
+/// The fallback for an endpoint without custom status arms.
+pub trait Refusal<P>: Send {
+    /// Read the refusal, creating any problem reader on this branch only.
+    fn refuse(
+        self,
+        response: reqwest::Response,
+        info: TryInfo,
+    ) -> impl Future<Output = Error<P>> + Send;
+}
+
+/// Refuse a response without a typed problem.
+#[derive(Debug)]
+pub struct PlainRefusal;
+
+impl<P: Send> Refusal<P> for PlainRefusal {
+    async fn refuse(self, response: reqwest::Response, info: TryInfo) -> Error<P> {
+        refused_plain(response, &info).await
+    }
+}
+
+/// Refuse a response using a lazily constructed reader.
+pub struct ProblemRefusal<F>(pub F);
+
+impl<F> fmt::Debug for ProblemRefusal<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProblemRefusal").finish_non_exhaustive()
+    }
+}
+
+impl<P: Send, R: Reader<P>, F: FnOnce() -> R + Send> Refusal<P> for ProblemRefusal<F> {
+    async fn refuse(self, response: reqwest::Response, info: TryInfo) -> Error<P> {
+        refused(&(self.0)(), response, &info).await
+    }
+}
+
+/// Read and frame an ordinary successful response, or read the refusal.
+pub async fn answer_read<T: Send, U, P: Send, R: Reader<T>>(
+    response: reqwest::Response,
+    info: TryInfo,
+    reader: impl FnOnce() -> R + Send,
+    wrap: impl FnOnce(T) -> U + Send,
+    refusal: impl Refusal<P>,
+) -> Result<Answer<U>, Error<P>> {
+    if !response.status().is_success() {
+        return Err(refusal.refuse(response, info).await);
+    }
+    let (url, status, headers) = answer_head(&response);
+    let value = read_body(&reader(), response, &info).await?;
+    frame_answer(url, status, headers, wrap(value))
+}
+
+/// Frame a successful response from an endpoint that ignores the body.
+pub async fn answer_empty<P: Send>(
+    response: reqwest::Response,
+    info: TryInfo,
+    refusal: impl Refusal<P>,
+) -> Result<Answer<()>, Error<P>> {
+    if !response.status().is_success() {
+        return Err(refusal.refuse(response, info).await);
+    }
+    let (url, status, headers) = answer_head(&response);
+    frame_answer(url, status, headers, ())
+}
 
 /// Checks a reader at the expression that named it, inside a plain closure.
 ///
@@ -21,6 +104,18 @@ use crate::transport::TryInfo;
 /// ```
 pub fn reader<T, R: Reader<T>>(reader: R) -> CheckedReader<T, R> {
     CheckedReader(reader, std::marker::PhantomData)
+}
+
+/// Check the reader at its declaration and hide its concrete type from the response framing.
+#[inline]
+pub fn reader_for_response<T, R: Reader<T>>(value: R) -> impl Reader<T> {
+    reader(value)
+}
+
+/// Check the reader for the type declared in a problem statement.
+#[inline]
+pub fn reader_for_problem<T, R: Reader<T>>(value: R) -> impl Reader<T> {
+    reader(value)
 }
 
 /// Carries the read type through inference, and cannot implement `Try`.

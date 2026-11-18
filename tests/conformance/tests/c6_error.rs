@@ -29,7 +29,7 @@ fn chain(error: &dyn std::error::Error) -> String {
     text
 }
 
-fn match_get(script: &Script) -> tour::riot::matches::Get {
+fn match_get(script: &Script) -> tour::riot::Call<tour::riot::matches::Get> {
     riot(script)
         .matches(tour::Europe)
         .get(tour::MatchId::from("EUW1_1"))

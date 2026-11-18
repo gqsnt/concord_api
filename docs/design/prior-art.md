@@ -25,7 +25,7 @@ In the "Source" column, **checked** means read in the library's source, at the v
 | A response built in memory, for a test | `reqwest::Response: From<http::Response<T>>` | checked (`reqwest` 0.13.5) |
 | The status rule kept separate from decoding | `reqwest` (`error_for_status` then `json`), `ureq` | checked |
 | Retry as a value on the client; the author says what is safe to repeat | `tower::retry::Policy` separates "may this be retried" from "can it be cloned"; Stripe's libraries retry a `POST` that carries an `Idempotency-Key` | checked, for `tower` (0.5.3) |
-| One struct for each operation, setters, then send | AWS SDK for Rust, `octocrab`, `progenitor` | |
+| A typed call, setters, then send | AWS SDK for Rust, `octocrab`, `progenitor` | |
 | The method at the start of the line | Every API reference (`GET /users`); Retrofit's `@GET`; `axum`'s `get(handler)` | |
 | A value serialized by one serializer, wherever it is placed | Smithy fixes the wire form of a value for each place. Retrofit added string converters in 2016, because `toString()` was not enough. | reported |
 | A list repeats its key | The default of OpenAPI 3 (`style: form`, `explode: true`); `requests` | reported |

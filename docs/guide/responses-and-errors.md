@@ -327,6 +327,6 @@ Without the last variant, the day Riot adds a queue, every response that contain
 
 ## What the macro generates for an endpoint
 
-See [the macro page](../internals/macro.md) for how the macro works inside: the steps from a description to code, where the generated items live, how your own names reach your Rust code, and the list of what is generated. [`tests/tour/src/riot.rs`](../../tests/tour/src/riot.rs) shows the same thing as real code: the Riot client of the tour, written by hand the way the macro generates it, with its description in a comment above it.
+See [the macro page](../internals/macro.md) for how the macro works inside: the steps from a description to code, where the generated items live, how your own names reach your Rust code, and the list of what is generated. [`tests/tour/src/riot.rs`](../../tests/tour/src/riot.rs) shows the same thing as real code: the Riot client of the tour, written by hand with the same public types and methods, with its description in a comment above it.
 
 Two points are worth remembering. **The whole request is built in one function**, from the root to the leaf: what an endpoint inherits is resolved when the macro runs, and `request()` shows the result. **Every right side is copied as written:** `Json` after `read`, `json(task)` after `body`, the expression of an arm. The macro does not look inside them, your names and your imports are in scope, and the compiler checks each one against a trait of the core.

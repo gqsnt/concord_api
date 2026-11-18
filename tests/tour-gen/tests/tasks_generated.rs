@@ -59,6 +59,40 @@ async fn c8_6_generated_feed_cursor_pages_run_the_shipped_pager() {
 }
 
 #[tokio::test]
+async fn c8_6_a_pager_factory_can_take_owned_data_from_the_client_view() {
+    use concord::page::Slot;
+
+    concord::api! {
+        client CursorClient(root: String) {
+            base "https://pages.test";
+            read concord::Json;
+            GET list(cursor?: String) -> Vec<u32> {
+                query { cursor; }
+                paginate {
+                    let next = (*client.root).clone();
+                    move |call, page| {
+                        (page.value().first() == Some(&1)).then(|| cursor.set(call, next.clone()))
+                    }
+                };
+            }
+        }
+    }
+    let client = CursorClient::new("next").with_transport(concord::fake(|request| {
+        let body = match request.url().query() {
+            None => "[1]",
+            Some("cursor=next") => "[2]",
+            query => panic!("unexpected page query {query:?}"),
+        };
+        Ok(concord::http::Response::new(body).into())
+    }));
+    let mut pages = client.list().pages();
+    drop(client);
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![1]));
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![2]));
+    assert_eq!(pages.try_next().await.unwrap(), None);
+}
+
+#[tokio::test]
 async fn c5_2_generated_riot_preserves_scopes_and_the_option_arm() {
     let riot = tour::Riot::new("key");
     let request = riot

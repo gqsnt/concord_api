@@ -150,7 +150,7 @@ fn clean<E: 'static>(case: &str, error: &concord::Error<E>) {
 
 /// `shapes.guarded` with a secret in its path, its query and a header, and a value in its
 /// query.
-fn guarded(shapes: &tour::Shapes) -> tour::shapes::Guarded {
+fn guarded(shapes: &tour::Shapes) -> tour::shapes::Call<tour::shapes::Guarded> {
     shapes
         .guarded(Secret::new(SECRET))
         .query_key(Secret::new(SECRET))

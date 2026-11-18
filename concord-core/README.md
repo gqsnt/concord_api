@@ -4,7 +4,7 @@ The core of Concord: the traits, and the engine of the clients that `concord::ap
 Concord is the crate `concord-api`, used as `concord` in code.
 
 It has no built-in format, authentication scheme or pager. It holds the traits that they are built on:
-`Reader`, `Transport`, `Middleware`, the pager's `Call` and `Slot`, and the values `Body`,
+`Reader`, `Transport`, `Middleware`, the pager's `concord::page::Call` and `Slot`, and the values `Body`,
 `Secret`, `Base`, `Retry`, `Error`. The engine builds each request, sends it through the
 middleware and the transport, retries when the policy says so, enforces the two timeouts,
 reads the response and walks through the pages.

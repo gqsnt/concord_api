@@ -41,13 +41,3 @@ fn c12_12_mime_contracts_separate_construction_errors_from_streaming_failures() 
     assert!(writers.contains("Repeatable MIME parts are streamed; opening, reading or boundary failures are Transport errors (C12.13)."));
     assert!(!writers.contains("A successful body is buffered"));
 }
-#[test]
-fn c12_14_generated_edit_docs_explain_detection_limits_and_actual_body_ownership() {
-    let helper = include_str!("../src/__private/call.rs");
-    for line in [
-        "/// Reading it, removing it or a detected replacement is a Build error.",
-        "/// Wrappers and look-alikes cannot always be detected; edits must leave the body alone.",
-        "/// If building succeeds, each attempt receives the declared repeatable body as a fresh stream.",
-    ] { assert!(helper.contains(line),"missing generated edit documentation: {line}"); }
-    assert!(!helper.contains("/// replacing or removing it is a Build error."));
-}

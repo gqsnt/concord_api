@@ -37,6 +37,9 @@
 //!
 //! - The language, with an example for each statement: [`api!`].
 //! - The code that the macro generates, shown on a real page: [`sample`] (in the documentation only).
+//!   [`sample::library::Call`] documents the shared
+//!   methods. [`sample::library::books::Titles`] documents the request, inputs, options and
+//!   result of `Books::titles`, which returns `Call<Titles>`.
 //! - A whole client that shows nine behaviours without opening a socket: `examples/bookshop`
 //!   (`cargo run --example bookshop`). Each boundary below appears there.
 //!
@@ -88,6 +91,8 @@ pub use concord_macros::api;
 
 #[doc(hidden)]
 pub use concord_core::__private;
+#[doc(hidden)]
+pub use concord_core::call;
 
 /// A request body, including a file reopened at each authorized attempt.
 ///
@@ -284,29 +289,33 @@ pub mod tower {
 
 #[cfg(test)]
 mod package_tests {
+    fn version(line: &str) -> Option<&str> {
+        let (_, rest) = line.split_once("version = \"")?;
+        rest.split_once('"').map(|(version, _)| version)
+    }
+
+    fn dependency_version<'a>(manifest: &'a str, name: &str) -> Option<&'a str> {
+        let inline = format!("{name} =");
+        let dependency = manifest.lines().find(|line| line.starts_with(&inline));
+        if let Some(line) = dependency {
+            return version(line);
+        }
+        let table = format!("[dependencies.{name}]");
+        let (_, body) = manifest.split_once(&table)?;
+        body.lines()
+            .take_while(|line| !line.starts_with('['))
+            .find_map(version)
+    }
+
     #[test]
     fn c10_9_core_and_macros_are_pinned_to_the_same_exact_release() {
         let manifest = include_str!("../Cargo.toml");
-        let mut versions = Vec::new();
         for name in ["concord-core", "concord-macros"] {
-            let dependency = manifest
-                .lines()
-                .find(|line| line.starts_with(&format!("{name} =")))
-                .unwrap();
-            let version = dependency
-                .split("version = \"")
-                .nth(1)
-                .unwrap()
-                .split('"')
-                .next()
-                .unwrap();
-            assert!(version.starts_with('='));
-            versions.push(version);
+            assert_eq!(
+                dependency_version(manifest, name),
+                Some(concat!("=", env!("CARGO_PKG_VERSION"))),
+                "{name}"
+            );
         }
-        assert_eq!(versions.first(), versions.get(1));
-        assert_eq!(
-            versions.first().copied(),
-            Some(concat!("=", env!("CARGO_PKG_VERSION")))
-        );
     }
 }

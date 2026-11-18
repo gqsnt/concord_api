@@ -179,7 +179,9 @@ impl<'ast> Visit<'ast> for Tour<'_, '_> {
         let Some(endpoint) = self.model.endpoints.iter().find(|endpoint| {
             let (module, name) = endpoint.path.rsplit_once('.').unwrap();
             let expected = format!("{}::{}", module.replace('.', "::"), name::type_name(name));
-            flat::tokens(&implementation.self_ty).replace(' ', "") == expected
+            let root = module.split('.').next().unwrap();
+            flat::tokens(&implementation.self_ty).replace(' ', "")
+                == format!("{root}::Call<{expected}>")
         }) else {
             return;
         };
@@ -213,58 +215,57 @@ impl<'ast> Visit<'ast> for Tour<'_, '_> {
             }
         }
     }
-    fn visit_macro(&mut self, invocation: &'ast syn::Macro) {
-        if !invocation
-            .path
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "call_methods")
-        {
-            return;
+    fn visit_file(&mut self, file: &'ast syn::File) {
+        struct Conditional<'a>(&'a mut BTreeSet<String>);
+        impl<'ast> Visit<'ast> for Conditional<'_> {
+            fn visit_item_impl(&mut self, item: &'ast syn::ItemImpl) {
+                if item.trait_.as_ref().is_some_and(|(_, path, _)| {
+                    path.segments.last().unwrap().ident == "Conditional"
+                }) {
+                    assert!(self.0.insert(flat::tokens(&item.self_ty).replace(' ', "")));
+                }
+            }
         }
-        use syn::parse::Parser as _;
-        let (call, conditional) = (|input: syn::parse::ParseStream<'_>| {
-            let call: syn::Type = input.parse()?;
-            input.parse::<syn::Token![,]>()?;
-            let _: syn::Type = input.parse()?;
-            input.parse::<syn::Token![,]>()?;
-            let _: syn::Type = input.parse()?;
-            input.parse::<syn::Token![,]>()?;
-            let _: syn::Path = input.parse()?;
-            input.parse::<syn::Token![,]>()?;
-            let _: syn::LitStr = input.parse()?;
-            input.parse::<syn::Token![,]>()?;
-            let _: syn::Ident = input.parse()?;
-            input.parse::<syn::Token![,]>()?;
-            let conditional: syn::Ident = input.parse()?;
-            let _: proc_macro2::TokenStream = input.parse()?;
-            Ok((flat::tokens(&call).replace(' ', ""), conditional))
-        })
-        .parse2(invocation.tokens.clone())
-        .unwrap();
-        let endpoint = self
-            .model
-            .endpoints
-            .iter()
-            .find(|endpoint| {
-                let (module, name) = endpoint.path.rsplit_once('.').unwrap();
-                call == format!("{}::{}", module.replace('.', "::"), name::type_name(name))
-            })
-            .unwrap();
-        let crate::ast::NodeKind::Endpoint(method) = &endpoint.node.kind else {
-            panic!();
-        };
-        let method = method
-            .custom
-            .as_ref()
-            .map_or_else(|| method.keyword.to_string(), syn::LitStr::value);
-        assert_eq!(
-            conditional == "conditional",
-            matches!(method.as_str(), "GET" | "HEAD"),
-            "{}: method supplies __prepare_if_none_match eligibility",
-            endpoint.path
-        );
-        assert!(self.conditional.insert(endpoint.path.clone()));
+        let mut conditional = BTreeSet::new();
+        Conditional(&mut conditional).visit_file(file);
+        let mut present = BTreeSet::new();
+        struct EndpointTypes<'a>(&'a mut BTreeSet<String>);
+        impl<'ast> Visit<'ast> for EndpointTypes<'_> {
+            fn visit_item_impl(&mut self, item: &'ast syn::ItemImpl) {
+                if item
+                    .trait_
+                    .as_ref()
+                    .is_some_and(|(_, path, _)| path.segments.last().unwrap().ident == "Endpoint")
+                {
+                    assert!(self.0.insert(flat::tokens(&item.self_ty).replace(' ', "")));
+                }
+            }
+        }
+        EndpointTypes(&mut present).visit_file(file);
+        assert!(conditional.is_subset(&present));
+        for endpoint in &self.model.endpoints {
+            let (module, method) = endpoint.path.rsplit_once('.').unwrap();
+            let endpoint_type =
+                format!("{}::{}", module.replace('.', "::"), name::type_name(method));
+            if !present.contains(&endpoint_type) {
+                continue;
+            }
+            let crate::ast::NodeKind::Endpoint(method) = &endpoint.node.kind else {
+                panic!()
+            };
+            let method = method
+                .custom
+                .as_ref()
+                .map_or_else(|| method.keyword.to_string(), syn::LitStr::value);
+            assert_eq!(
+                conditional.contains(&endpoint_type),
+                matches!(method.as_str(), "GET" | "HEAD"),
+                "{}: method supplies __prepare_if_none_match eligibility",
+                endpoint.path
+            );
+            assert!(self.conditional.insert(endpoint.path.clone()));
+        }
+        visit::visit_file(self, file);
     }
 }
 

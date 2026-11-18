@@ -19,7 +19,7 @@ concord::api! {
 let open = Tasks::new().list().done(false).await?;
 ```
 
-An endpoint's signature becomes the method that the caller sees; the block that follows it describes the HTTP request that the call sends. `Json` reads a response and `json` writes a body. Both are ordinary Rust items, not keywords: the macro has no built-in data format, so your own function or type can take their place.
+An endpoint's signature becomes the method that the caller sees; the block that follows it describes the HTTP request that the call sends. For example, `Tasks::list` returns `tasks::Call<tasks::List>`. `Json` reads a response and `json` writes a body. Both are ordinary Rust items, not keywords: the macro has no built-in data format, so your own function or type can take their place.
 
 ## What you get
 

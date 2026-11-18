@@ -11,7 +11,7 @@ description = "The core of Concord: the traits and the engine that runs a call. 
 readme = "README.md"
 keywords = ["http", "client", "api", "rest"]
 categories = ["web-programming::http-client"]
-include = ["/src/**", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
+include = ["/src/**", "/tests/support/call_helpers.rs", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
 autobenches = false # The opt-in tools/measure package owns the allocator harness.
 
 # docs.rs builds the pages with every feature on: `cargo doc --all-features`.

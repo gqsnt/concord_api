@@ -1,0 +1,12 @@
+{
+  "id": "M260",
+  "area": "unpaged eligibility",
+  "contract": "C8.6, C10.3",
+  "description": "Give an endpoint without a pager the paged mode.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "            \"NoPaginate\"\n",
+  "replace": "            \"Paged\"\n",
+  "checks": [
+    "macro-unit"
+  ]
+}

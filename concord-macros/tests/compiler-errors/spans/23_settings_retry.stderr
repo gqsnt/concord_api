@@ -29,4 +29,4 @@ note: method defined here
   |
 1 | concord::api! { client C { base "https://span.test"; GET get(); } }
   |                        ^
-  = note: this error originates in the macro `$crate::call_methods` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

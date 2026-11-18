@@ -1,0 +1,12 @@
+{
+  "id": "M267",
+  "area": "equivalent endpoint setters",
+  "contract": "C1.11, C10.3",
+  "description": "Ignore the count value passed to the fluent setter of top while the associated setter still applies it.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "            let chained = emit! {\n                #attrs #editor_doc #must_use #[allow(deprecated)]\n                pub fn #name(self, #argument) -> Self { #marker::#name(self, #name) }",
+  "replace": "            let update = if node.node.name == \"top\" && name == \"count\" {\n                emit!(let _ = #name; self)\n            } else {\n                emit!(#marker::#name(self, #name))\n            };\n            let chained = emit! {\n                #attrs #editor_doc #must_use #[allow(deprecated)]\n                pub fn #name(self, #argument) -> Self { #update }",
+  "checks": [
+    "generated-tour"
+  ]
+}

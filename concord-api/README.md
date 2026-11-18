@@ -2,7 +2,7 @@
 
 Concord turns one nested description of an HTTP API into a typed Rust client.
 You write the API as a tree in `concord::api!`: a base, scopes, endpoints, and where each input goes on the wire.
-The macro generates a client type, one method for each endpoint, and one error type; `reqwest` sends the requests.
+The macro generates a client type, one method for each endpoint, and one error type; `reqwest` sends the requests. An endpoint method returns the client's `Call<E>`, where `E` is the endpoint's type.
 
 This is a release candidate, not on crates.io yet. Until it is, add it as a Git dependency:
 

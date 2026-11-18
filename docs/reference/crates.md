@@ -55,16 +55,17 @@ A description needs an ordinary `use` line for what its right-hand sides name: `
 
 ## What a generated client has
 
-Five test clients show it: `Tasks` and `Riot` from [the tour](../guide/tour.md), and `Files`, `Feed` and `Shapes`, which have the shapes that the tests of a call need. The macro generates them in [`tests/tour-gen/src/`](../../tests/tour-gen/src) from their descriptions; [`tests/tour/src/`](../../tests/tour/src) holds the same clients written by hand, exactly as the macro generates them.
+Five test clients show it: `Tasks` and `Riot` from [the tour](../guide/tour.md), and `Files`, `Feed` and `Shapes`, which have the shapes that the tests of a call need. The macro generates them in [`tests/tour-gen/src/`](../../tests/tour-gen/src) from their descriptions; [`tests/tour/src/`](../../tests/tour/src) holds the same clients written by hand, with the public types and methods the macro generates.
 
 | On | Methods |
 |---|---|
 | A client | `new(required inputs)`; one method for each optional input, scope and endpoint; `with_retry`, `with_timeout`, `with_idle_timeout`, `with_base`, `with_transport`, `with_middleware` |
-| The module of a client (`riot`) | `riot::Error` (`concord::Error<RiotProblem>`), `riot::Result<T>`, `riot::Retry` (`concord::Retry<RiotProblem>`) |
+| The module of a client (`riot`) | `riot::Call<E>`, the sealed trait `riot::Endpoint` with `Value`, `riot::Error` (`concord::Error<RiotProblem>`), `riot::Result<T>`, `riot::Retry` (`concord::Retry<RiotProblem>`) |
 | A handle (a scope) | One method for each optional input, scope and endpoint |
-| A call | One method for each optional input. `.await` and `send()` (with `paginate`: `send()` only, for one page); `send_full()`; `send_raw()`; `send_if_none_match(etag)` on a `GET` or a `HEAD`; `request()`, `into_request()`; `edit_request(…)`; `at_url(url)` (through `concord::page::Call`); `read_response(response)`; `with_retry`, `with_timeout`, `with_idle_timeout`; `pages()` when the endpoint has `paginate`, and then `.pages().items()` |
+| An endpoint type (`riot::matches::Ids`) | An associated function for each option. Its page documents the endpoint. |
+| A call (`riot::Call<riot::matches::Ids>`) | One method for each optional input. `.await` and `send()` (with `paginate`: `send()` only, for one page); `send_full()`; `send_raw()`; `send_if_none_match(etag)` on a `GET` or a `HEAD`; `request()`, `into_request()`; `edit_request(…)`; `at_url(url)` (through `concord::page::Call`); `read_response(response)`; `with_retry`, `with_timeout`, `with_idle_timeout`; `pages()` when the endpoint has `paginate`, and then `.pages().items()` |
 
-A minor version adds no name to a call, a handle or a client unless the name starts with `with_` ([contracts](contracts.md) C1.6). A generated type is defined at its position in the tree and has no other name: `riot::Matches`, `riot::matches::Ids`. An author's type reaches it through one hidden trait for each client (the macro, [Where the generated items live, and how they reach the author's types](../internals/macro.md#where-the-generated-items-live-and-how-they-reach-the-authors-types)). `send()`, `send_full()` and `send_raw()` return a `concord::Sending<T, E>`: a named future, so that the documentation of a client reads plainly.
+A minor version adds no name to a call, a handle or a client unless the name starts with `with_` ([contracts](contracts.md) C1.6). A handle or an endpoint type is defined at its position in the tree and has no other name: `riot::Matches`, `riot::matches::Ids`. Every endpoint method returns the client's `Call<E>`, with the endpoint's type as `E`. An author's type reaches the generated items through one hidden trait for each client (the macro, [Where the generated items live, and how they reach the author's types](../internals/macro.md#where-the-generated-items-live-and-how-they-reach-the-authors-types)). `send()`, `send_full()` and `send_raw()` return a `concord::Sending<T, E>`: a named future, so that the documentation of a client reads plainly.
 
 ## Concord's own HTTP client
 

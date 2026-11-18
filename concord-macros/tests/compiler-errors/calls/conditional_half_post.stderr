@@ -1,0 +1,19 @@
+error[E0599]: the method `__prepare_if_none_match` exists for struct `api::Call<Create>`, but its trait bounds were not satisfied
+  --> tests/compiler-errors/calls/conditional_half_post.rs:16:33
+   |
+ 4 |     pub client Api {
+   |                --- method `__prepare_if_none_match` not found for this struct
+...
+16 |     let _ = Api::new().create().__prepare_if_none_match("tag");
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^ method cannot be called on `api::Call<Create>` due to unsatisfied trait bounds
+   |
+  ::: $WORKSPACE/concord-core/src/call.rs
+   |
+   | pub struct Post;
+   | --------------- doesn't satisfy `concord::call::Post: concord::call::IsGetOrHead`
+   |
+note: trait bound `concord::call::Post: concord::call::IsGetOrHead` was not satisfied
+  --> tests/compiler-errors/calls/conditional_half_post.rs:4:16
+   |
+ 4 |     pub client Api {
+   |                ^^^

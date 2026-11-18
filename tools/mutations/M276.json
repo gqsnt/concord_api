@@ -1,0 +1,12 @@
+{
+  "id": "M276",
+  "area": "request wire order",
+  "contract": "C10.3",
+  "description": "Write surviving request entries in evaluation order, moving overridden keys.",
+  "file": "concord-macros/src/write/request.rs",
+  "find": "        names.sort_by_key(|(position, _)| *position);\n",
+  "replace": "",
+  "checks": [
+    "generated-tour"
+  ]
+}

@@ -77,7 +77,8 @@ When a rule rejects something, the message names what to write to allow it (a ke
 | An endpoint with no return type, under an arm that would read a body | A return type, or `remove` for that arm. |
 | A secret inherited under another `base` | For an entry: `override` to write it again, or `remove`, under the new base. For a placeholder in a `path`: to write that `path` under each `base` that needs it. |
 | A short entry in `headers` whose name contains `_` | The entry to write instead: `"user-agent" = user_agent;`. |
-| A paginated call that is awaited directly | The message is `rustc`'s own. The `#[must_use]` text of the call says what to write: `.send()` for one page, `.pages()` for all. |
+| A paginated call that is awaited directly | The message is `rustc`'s own: the call `is not a future`. Use `.send().await` for one page or `.pages()` for all. |
+| A call left unused | The method that returns a call and each setter of its endpoint carry the endpoint's text. Shared methods that return a call use the general text on `Call` ([C8.8](../reference/contracts.md#c8-secrets-and-pages)). |
 | A path value that is `..` | The input that supplied it. Nothing is sent. |
 | A body over the size limit | That the limit belongs to the reader: `.limit(…)` changes it. |
 | No response in time | The timeout that expired: `with_idle_timeout` or `with_timeout` changes it. |

@@ -358,7 +358,7 @@ async fn c7_5_a_client_of_the_user_that_follows_redirects_does_it_below_the_midd
 // C7.6, table 7.1: `timeout` --------------------------------------------------------
 
 /// The call of a cell: `tasks.get` with a `timeout` of 60 s and no silence that ends first.
-fn get_60(client: tour::Tasks) -> tour::tasks::Get {
+fn get_60(client: tour::Tasks) -> tour::tasks::Call<tour::tasks::Get> {
     client.get(7).with_timeout(secs(60)).with_idle_timeout(LONG)
 }
 

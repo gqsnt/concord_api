@@ -497,12 +497,12 @@ const _: () = {
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the item.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn again(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Again {
-            shapes::Again {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn again(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Again> {
+            shapes::Call::__new(shapes::__AgainInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Replace an item. This `PUT` may not be repeated.
@@ -520,17 +520,17 @@ const _: () = {
         /// response status with `Retry::not_applied_on`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
+        #[must_use = "a call does nothing until sent or awaited"]
         pub fn replace(
             &self,
             id: impl ::concord::arg::Arg<u64>,
             item: impl ::concord::arg::Arg<Item>,
-        ) -> shapes::Replace {
-            shapes::Replace {
+        ) -> shapes::Call<shapes::Replace> {
+            shapes::Call::__new(shapes::__ReplaceInputs {
                 __client: self.clone(),
                 id: id.into_input(),
                 item: item.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Note when each expression of a send runs.
@@ -546,12 +546,12 @@ const _: () = {
         /// Retry: whether this call may be sent again is decided from its inputs, for each send.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn order(&self, trace: impl ::concord::arg::Arg<Trace>) -> shapes::Order {
-            shapes::Order {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn order(&self, trace: impl ::concord::arg::Arg<Trace>) -> shapes::Call<shapes::Order> {
+            shapes::Call::__new(shapes::__OrderInputs {
                 __client: self.clone(),
                 trace: trace.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Upload a body that the caller gives: bytes, or a stream.
@@ -570,12 +570,12 @@ const _: () = {
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn upload(&self, body: impl ::concord::arg::Arg<::concord::Body>) -> shapes::Upload {
-            shapes::Upload {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn upload(&self, body: impl ::concord::arg::Arg<::concord::Body>) -> shapes::Call<shapes::Upload> {
+            shapes::Call::__new(shapes::__UploadInputs {
                 __client: self.clone(),
                 body: body.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item, or the conflict that holds it.
@@ -591,12 +591,12 @@ const _: () = {
         /// Status: `409`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
-        pub fn outcome(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Outcome {
-            shapes::Outcome {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn outcome(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Outcome> {
+            shapes::Call::__new(shapes::__OutcomeInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Check that the service answers.
@@ -606,11 +606,11 @@ const _: () = {
         /// Request: `HEAD https://shapes.example.com/ping`.
         ///
         /// `.await` returns [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
-        pub fn ping(&self) -> shapes::Ping {
-            shapes::Ping {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn ping(&self) -> shapes::Call<shapes::Ping> {
+            shapes::Call::__new(shapes::__PingInputs {
                 __client: self.clone(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Whether an item is present. Only a `204` says yes.
@@ -628,12 +628,12 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`shapes::Result`]<[`bool`]>.
-        pub fn present(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Present {
-            shapes::Present {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn present(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Present> {
+            shapes::Call::__new(shapes::__PresentInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Create an item, and keep where it was put.
@@ -656,12 +656,12 @@ const _: () = {
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
         /// `.await` returns [`shapes::Result`]<[`Receipt`]>.
-        pub fn create(&self, item: impl ::concord::arg::Arg<Item>) -> shapes::Create {
-            shapes::Create {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn create(&self, item: impl ::concord::arg::Arg<Item>) -> shapes::Call<shapes::Create> {
+            shapes::Call::__new(shapes::__CreateInputs {
                 __client: self.clone(),
                 item: item.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item, on the host of a tenant.
@@ -675,12 +675,12 @@ const _: () = {
         /// - `tenant`: [`String`], &[`String`], or &[`str`]. The tenant: one label of the host.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn hosted(&self, tenant: impl ::concord::arg::Arg<String>) -> shapes::Hosted {
-            shapes::Hosted {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn hosted(&self, tenant: impl ::concord::arg::Arg<String>) -> shapes::Call<shapes::Hosted> {
+            shapes::Call::__new(shapes::__HostedInputs {
                 __client: self.clone(),
                 tenant: tenant.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Search with a number, and a filter that a query cannot hold.
@@ -698,13 +698,13 @@ const _: () = {
         /// - `.filter(filter)`: accepts [`Filter`], &[`Filter`], or an [`Option`]<[`Filter`]>. `None` clears it. A struct: a query refuses it when the request is built.
         ///
         /// `.await` returns [`shapes::Result`]<[`Vec`]<[`Item`]>>.
-        pub fn search(&self, ratio: impl ::concord::arg::Arg<f64>) -> shapes::Search {
-            shapes::Search {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn search(&self, ratio: impl ::concord::arg::Arg<f64>) -> shapes::Call<shapes::Search> {
+            shapes::Call::__new(shapes::__SearchInputs {
                 __client: self.clone(),
                 ratio: ratio.into_input(),
                 filter: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Send an item with a length written by hand, in a body that may fail.
@@ -724,17 +724,17 @@ const _: () = {
         /// response status with `Retry::not_applied_on`; all other retry checks still apply.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
+        #[must_use = "a call does nothing until sent or awaited"]
         pub fn measured(
             &self,
             item: impl ::concord::arg::Arg<Item>,
             length: impl ::concord::arg::Arg<u64>,
-        ) -> shapes::Measured {
-            shapes::Measured {
+        ) -> shapes::Call<shapes::Measured> {
+            shapes::Call::__new(shapes::__MeasuredInputs {
                 __client: self.clone(),
                 item: item.into_input(),
                 length: length.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item, asked with a number that is parsed when the request is built.
@@ -748,12 +748,12 @@ const _: () = {
         /// - `raw`: [`String`], &[`String`], or &[`str`]. The number, as text.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn parsed(&self, raw: impl ::concord::arg::Arg<String>) -> shapes::Parsed {
-            shapes::Parsed {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn parsed(&self, raw: impl ::concord::arg::Arg<String>) -> shapes::Call<shapes::Parsed> {
+            shapes::Call::__new(shapes::__ParsedInputs {
                 __client: self.clone(),
                 raw: raw.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Counts by name.
@@ -763,11 +763,11 @@ const _: () = {
         /// Request: `GET https://shapes.example.com/counts`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Tally`]>.
-        pub fn counts(&self) -> shapes::Counts {
-            shapes::Counts {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn counts(&self) -> shapes::Call<shapes::Counts> {
+            shapes::Call::__new(shapes::__CountsInputs {
                 __client: self.clone(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item, read only when the answer is labelled JSON.
@@ -777,11 +777,11 @@ const _: () = {
         /// Request: `GET https://shapes.example.com/strict`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn strict(&self) -> shapes::Strict {
-            shapes::Strict {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn strict(&self) -> shapes::Call<shapes::Strict> {
+            shapes::Call::__new(shapes::__StrictInputs {
                 __client: self.clone(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item, read by a reader whose message is long.
@@ -791,11 +791,11 @@ const _: () = {
         /// Request: `GET https://shapes.example.com/long-message`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn long_message(&self) -> shapes::LongMessage {
-            shapes::LongMessage {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn long_message(&self) -> shapes::Call<shapes::LongMessage> {
+            shapes::Call::__new(shapes::__LongMessageInputs {
                 __client: self.clone(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Items in an envelope.
@@ -818,12 +818,12 @@ const _: () = {
         /// - `trace`: [`Trace`] or &[`Trace`]. What the reader notes.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn noted(&self, trace: impl ::concord::arg::Arg<Trace>) -> shapes::Noted {
-            shapes::Noted {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn noted(&self, trace: impl ::concord::arg::Arg<Trace>) -> shapes::Call<shapes::Noted> {
+            shapes::Call::__new(shapes::__NotedInputs {
                 __client: self.clone(),
                 trace: trace.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item; a missing one is made of what was asked.
@@ -840,17 +840,17 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
+        #[must_use = "a call does nothing until sent or awaited"]
         pub fn titled(
             &self,
             id: impl ::concord::arg::Arg<u64>,
             title: impl ::concord::arg::Arg<String>,
-        ) -> shapes::Titled {
-            shapes::Titled {
+        ) -> shapes::Call<shapes::Titled> {
+            shapes::Call::__new(shapes::__TitledInputs {
                 __client: self.clone(),
                 id: id.into_input(),
                 title: title.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item, or the conflict that holds it, asked by an input named `body`.
@@ -866,12 +866,12 @@ const _: () = {
         /// Status: `409`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
-        pub fn held(&self, body: impl ::concord::arg::Arg<u64>) -> shapes::Held {
-            shapes::Held {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn held(&self, body: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Held> {
+            shapes::Call::__new(shapes::__HeldInputs {
                 __client: self.clone(),
                 body: body.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item. A refusal is read by the arm of the endpoint, and ends with its problem.
@@ -887,12 +887,12 @@ const _: () = {
         /// Status: `4xx`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn refusal(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Refusal {
-            shapes::Refusal {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn refusal(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Refusal> {
+            shapes::Call::__new(shapes::__RefusalInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items behind three keys: one in the path, one in the query, one in a header.
@@ -916,15 +916,15 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn guarded(&self, path_key: impl ::concord::arg::Arg<Secret>) -> shapes::Guarded {
-            shapes::Guarded {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn guarded(&self, path_key: impl ::concord::arg::Arg<Secret>) -> shapes::Call<shapes::Guarded> {
+            shapes::Call::__new(shapes::__GuardedInputs {
                 __client: self.clone(),
                 path_key: path_key.into_input(),
                 query_key: ::core::option::Option::None,
                 header_key: ::core::option::Option::None,
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items whose cursor goes in a header.
@@ -942,12 +942,12 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn headed(&self) -> shapes::Headed {
-            shapes::Headed {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn headed(&self) -> shapes::Call<shapes::Headed> {
+            shapes::Call::__new(shapes::__HeadedInputs {
                 __client: self.clone(),
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items asked with a body of entries: a token and the cursor.
@@ -964,13 +964,13 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn posted(&self) -> shapes::Posted {
-            shapes::Posted {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn posted(&self) -> shapes::Call<shapes::Posted> {
+            shapes::Call::__new(shapes::__PostedInputs {
                 __client: self.clone(),
                 token: ::core::option::Option::None,
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items asked with a body that the caller gives: bytes, or a stream.
@@ -990,13 +990,13 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn streamed(&self, file: impl ::concord::arg::Arg<::concord::Body>) -> shapes::Streamed {
-            shapes::Streamed {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn streamed(&self, file: impl ::concord::arg::Arg<::concord::Body>) -> shapes::Call<shapes::Streamed> {
+            shapes::Call::__new(shapes::__StreamedInputs {
                 __client: self.clone(),
                 file: file.into_input(),
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items asked with a body that is a new stream for each send.
@@ -1012,12 +1012,12 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn renewed(&self) -> shapes::Renewed {
-            shapes::Renewed {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn renewed(&self) -> shapes::Call<shapes::Renewed> {
+            shapes::Call::__new(shapes::__RenewedInputs {
                 __client: self.clone(),
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items on a host whose first label is a key.
@@ -1037,13 +1037,13 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn keyed_host(&self, host_key: impl ::concord::arg::Arg<Secret>) -> shapes::KeyedHost {
-            shapes::KeyedHost {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn keyed_host(&self, host_key: impl ::concord::arg::Arg<Secret>) -> shapes::Call<shapes::KeyedHost> {
+            shapes::Call::__new(shapes::__KeyedHostInputs {
                 __client: self.clone(),
                 host_key: host_key.into_input(),
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items whose pager moves the tenant, which stands in the host.
@@ -1063,13 +1063,13 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn roaming(&self, tenant: impl ::concord::arg::Arg<String>) -> shapes::Roaming {
-            shapes::Roaming {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn roaming(&self, tenant: impl ::concord::arg::Arg<String>) -> shapes::Call<shapes::Roaming> {
+            shapes::Call::__new(shapes::__RoamingInputs {
                 __client: self.clone(),
                 tenant: tenant.into_input(),
                 cursor: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items that start at an offset.
@@ -1085,12 +1085,12 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Vec`]<[`Item`]>>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn offset(&self) -> shapes::Offset {
-            shapes::Offset {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn offset(&self) -> shapes::Call<shapes::Offset> {
+            shapes::Call::__new(shapes::__OffsetInputs {
                 __client: self.clone(),
                 start: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items asked by their number.
@@ -1106,12 +1106,12 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Vec`]<[`Item`]>>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn numbered(&self) -> shapes::Numbered {
-            shapes::Numbered {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn numbered(&self) -> shapes::Call<shapes::Numbered> {
+            shapes::Call::__new(shapes::__NumberedInputs {
                 __client: self.clone(),
                 page: ::core::option::Option::None,
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Pages of items whose page gives the address of the next one.
@@ -1123,11 +1123,11 @@ const _: () = {
         /// `.send().await` returns [`shapes::Result`]<[`Batch`]>.
         ///
         /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
-        pub fn addressed(&self) -> shapes::Addressed {
-            shapes::Addressed {
+        #[must_use = "await `.send()` for one page, or use `.pages()` for all pages"]
+        pub fn addressed(&self) -> shapes::Call<shapes::Addressed> {
+            shapes::Call::__new(shapes::__AddressedInputs {
                 __client: self.clone(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Remove an item. An accepted removal is not done; a missing item is removed.
@@ -1145,12 +1145,12 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
-        pub fn remove(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Remove {
-            shapes::Remove {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn remove(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Remove> {
+            shapes::Call::__new(shapes::__RemoveInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item, or the conflict that holds it. An accepted change is a conflict too.
@@ -1166,12 +1166,12 @@ const _: () = {
         /// Status: `202`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>.
-        pub fn settled(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Settled {
-            shapes::Settled {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn settled(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Settled> {
+            shapes::Call::__new(shapes::__SettledInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// A part of a file, as it comes, or none when there is nothing to send.
@@ -1189,12 +1189,12 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Option`]<[`concord::ByteStream`]>>.
-        pub fn part(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Part {
-            shapes::Part {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn part(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::Part> {
+            shapes::Call::__new(shapes::__PartInputs {
                 __client: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Files whose answers carry a seal.
@@ -1255,12 +1255,12 @@ const _: () = {
         /// Status: `2xx`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Item`]>.
-        pub fn get(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Get {
-            shapes::wrapped::Get {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn get(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::wrapped::Get> {
+            shapes::Call::__new(shapes::__WrappedGetInputs {
                 __scope: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// The envelope itself.
@@ -1274,12 +1274,12 @@ const _: () = {
         /// - `id`: [`u64`] or &[`u64`]. The identifier of the item.
         ///
         /// `.await` returns [`shapes::Result`]<[`Envelope`]<[`Item`]>>.
-        pub fn raw(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Raw {
-            shapes::wrapped::Raw {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn raw(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::wrapped::Raw> {
+            shapes::Call::__new(shapes::__WrappedRawInputs {
                 __scope: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// An item out of its envelope, or none.
@@ -1297,12 +1297,12 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`shapes::Result`]<[`Option`]<[`Item`]>>.
-        pub fn find(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Find {
-            shapes::wrapped::Find {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn find(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::wrapped::Find> {
+            shapes::Call::__new(shapes::__WrappedFindInputs {
                 __scope: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Touch an item. An accepted touch is not done; a missing item is fine.
@@ -1320,12 +1320,12 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>.
-        pub fn touch(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Touch {
-            shapes::wrapped::Touch {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn touch(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::wrapped::Touch> {
+            shapes::Call::__new(shapes::__WrappedTouchInputs {
                 __scope: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
 
         /// Whether an item is held. Only a `204` says yes.
@@ -1343,12 +1343,12 @@ const _: () = {
         /// Status: `404`.
         ///
         /// `.await` returns [`shapes::Result`]<[`bool`]>.
-        pub fn holds(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::wrapped::Holds {
-            shapes::wrapped::Holds {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn holds(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::wrapped::Holds> {
+            shapes::Call::__new(shapes::__WrappedHoldsInputs {
                 __scope: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
     }
 
@@ -1385,12 +1385,12 @@ const _: () = {
         /// Status: `2xx`.
         ///
         /// `.await` returns [`shapes::Result`]<[`concord::ByteStream`]>.
-        pub fn file(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::sealed::File {
-            shapes::sealed::File {
+        #[must_use = "a call does nothing until sent or awaited"]
+        pub fn file(&self, id: impl ::concord::arg::Arg<u64>) -> shapes::Call<shapes::sealed::File> {
+            shapes::Call::__new(shapes::__SealedFileInputs {
                 __scope: self.clone(),
                 id: id.into_input(),
-                __options: ::concord::__private::Options::default(),
-            }
+            })
         }
     }
 
@@ -1409,7 +1409,7 @@ const _: () = {
     //     idempotent;
     // }
 
-    impl shapes::Again {
+    impl shapes::Call<shapes::Again> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -1419,7 +1419,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -1431,9 +1431,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -1481,7 +1481,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -1490,7 +1490,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -1501,23 +1501,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Again {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Again,
+        shapes::__AgainInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        unconditional
+        "Again"
     );
-
-    impl ::std::fmt::Debug for shapes::Again {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Again")
-                .field("endpoint", &"shapes.again")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Again {}
 
     // /// Replace an item. This `PUT` may not be repeated.
     // PUT replace(
@@ -1531,7 +1527,7 @@ const _: () = {
     //     idempotent false;
     // }
 
-    impl shapes::Replace {
+    impl shapes::Call<shapes::Replace> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::PUT);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -1541,8 +1537,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
-                let item = &self.item;
+                let id = &self.__inputs.id;
+                let item = &self.__inputs.item;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -1551,8 +1547,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
-                let item = &self.item;
+                let id = &self.__inputs.id;
+                let item = &self.__inputs.item;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ json(item) }))();
                 let __body = match __body {
@@ -1572,9 +1568,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -1622,7 +1618,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -1630,14 +1626,14 @@ const _: () = {
             #[allow(unused_variables, clippy::redundant_closure_call)]
             let __idempotent = {
                 let client = __Client;
-                let id = &self.id;
-                let item = &self.item;
+                let id = &self.__inputs.id;
+                let item = &self.__inputs.item;
                 (|| ::concord::__private::idempotent(false))()
             };
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -1648,23 +1644,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Replace {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Replace,
+        shapes::__ReplaceInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        unconditional
+        "Replace"
     );
-
-    impl ::std::fmt::Debug for shapes::Replace {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Replace")
-                .field("endpoint", &"shapes.replace")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Replace {}
 
     // /// Note when each expression of a send runs.
     // POST order(
@@ -1677,7 +1669,7 @@ const _: () = {
     //     idle_timeout trace.idle_timeout();
     // }
 
-    impl shapes::Order {
+    impl shapes::Call<shapes::Order> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -1687,7 +1679,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let trace = &self.trace;
+                let trace = &self.__inputs.trace;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __entry = (|| ::std::result::Result::Ok({ trace.note("query") }))();
                 let __entry = match __entry {
@@ -1716,9 +1708,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -1766,7 +1758,7 @@ const _: () = {
             mut self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -1775,20 +1767,20 @@ const _: () = {
             #[allow(unused_variables, clippy::redundant_closure_call)]
             let __idle_timeout = {
                 let client = __Client;
-                let trace = &self.trace;
+                let trace = &self.__inputs.trace;
                 (|| -> ::std::time::Duration { trace.idle_timeout() })()
             };
             self.__options.description_idle_timeout(__idle_timeout);
             #[allow(unused_variables, clippy::redundant_closure_call)]
             let __idempotent = {
                 let client = __Client;
-                let trace = &self.trace;
+                let trace = &self.__inputs.trace;
                 (|| ::concord::__private::idempotent(trace.idempotent()))()
             };
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -1799,23 +1791,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Order {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Order,
+        shapes::__OrderInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        unconditional
+        "Order"
     );
-
-    impl ::std::fmt::Debug for shapes::Order {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Order")
-                .field("endpoint", &"shapes.order")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Order {}
 
     // /// Upload a body that the caller gives: bytes, or a stream.
     // POST upload(
@@ -1826,7 +1814,7 @@ const _: () = {
     //     body body;
     // }
 
-    impl shapes::Upload {
+    impl shapes::Call<shapes::Upload> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -1836,7 +1824,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let body = &self.body;
+                let body = &self.__inputs.body;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ body }))();
                 let __body = match __body {
@@ -1856,9 +1844,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -1906,7 +1894,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -1914,7 +1902,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -1925,23 +1913,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Upload {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Upload,
+        shapes::__UploadInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        unconditional
+        "Upload"
     );
-
-    impl ::std::fmt::Debug for shapes::Upload {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Upload")
-                .field("endpoint", &"shapes.upload")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Upload {}
 
     // /// An item, or the conflict that holds it.
     // GET outcome(
@@ -1952,7 +1936,7 @@ const _: () = {
     //     status { 409 { body } => Err(body) }
     // }
 
-    impl shapes::Outcome {
+    impl shapes::Call<shapes::Outcome> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -1962,7 +1946,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -1974,9 +1958,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -2005,7 +1989,7 @@ const _: () = {
                     .await?;
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = |body| -> ::std::result::Result<
                         Result<Item, Conflict>,
@@ -2045,7 +2029,7 @@ const _: () = {
         ) -> shapes::Result<::concord::__private::Prepared<Result<Item, Conflict>, ShapesProblem>>
         {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -2053,7 +2037,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -2064,30 +2048,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        shapes::Outcome,
-        Result<Item, Conflict>,
-        ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>",
-        awaitable,
-        conditional
-    );
-
-    impl ::std::fmt::Debug for shapes::Outcome {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Outcome")
-                .field("endpoint", &"shapes.outcome")
-                .finish_non_exhaustive()
-        }
+    impl shapes::Endpoint for shapes::Outcome {
+        type Value = Result<Item, Conflict>;
     }
+
+    call_spec!(shapes, shapes::Outcome, shapes::__OutcomeInputs, Result<Item, Conflict>, ShapesProblem, "Outcome");
+    impl shapes::__spec::Awaitable for shapes::Outcome {}
+    impl shapes::__spec::Conditional for shapes::Outcome {}
 
     // /// Check that the service answers.
     // HEAD ping() {
     //     path "ping";
     // }
 
-    impl shapes::Ping {
+    impl shapes::Call<shapes::Ping> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::HEAD);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -2100,9 +2074,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -2139,7 +2113,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<(), ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -2147,7 +2121,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -2158,23 +2132,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Ping {
+        type Value = ();
+    }
+
+    call_spec!(
+        shapes,
         shapes::Ping,
+        shapes::__PingInputs,
         (),
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>",
-        awaitable,
-        conditional
+        "Ping"
     );
-
-    impl ::std::fmt::Debug for shapes::Ping {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Ping")
-                .field("endpoint", &"shapes.ping")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Ping {}
+    impl shapes::__spec::Conditional for shapes::Ping {}
 
     // /// Whether an item is present. Only a `204` says yes.
     // HEAD present(
@@ -2185,7 +2156,7 @@ const _: () = {
     //     status { 204 => true, 404 => false }
     // }
 
-    impl shapes::Present {
+    impl shapes::Call<shapes::Present> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::HEAD);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -2195,7 +2166,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -2207,9 +2178,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -2229,7 +2200,7 @@ const _: () = {
                 ::concord::http::StatusCode::NO_CONTENT => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm =
                         || -> ::std::result::Result<bool, ::concord::Fail<ShapesProblem>> {
@@ -2240,7 +2211,7 @@ const _: () = {
                 ::concord::http::StatusCode::NOT_FOUND => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm =
                         || -> ::std::result::Result<bool, ::concord::Fail<ShapesProblem>> {
@@ -2271,7 +2242,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<bool, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -2279,7 +2250,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -2290,23 +2261,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Present {
+        type Value = bool;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Present,
+        shapes::__PresentInputs,
         bool,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`bool`]>",
-        awaitable,
-        conditional
+        "Present"
     );
-
-    impl ::std::fmt::Debug for shapes::Present {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Present")
-                .field("endpoint", &"shapes.present")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Present {}
+    impl shapes::__spec::Conditional for shapes::Present {}
 
     // /// Create an item, and keep where it was put.
     // POST create(
@@ -2325,7 +2293,7 @@ const _: () = {
     //     }
     // }
 
-    impl shapes::Create {
+    impl shapes::Call<shapes::Create> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -2335,7 +2303,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let item = &self.item;
+                let item = &self.__inputs.item;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ json(item) }))();
                 let __body = match __body {
@@ -2355,9 +2323,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -2377,7 +2345,7 @@ const _: () = {
                 ::concord::http::StatusCode::CREATED => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let item = &self.item;
+                    let item = &self.__inputs.item;
                     #[allow(unused_braces)]
                     let __arm = |headers: &::concord::Headers,
                                  status: ::concord::http::StatusCode|
@@ -2402,7 +2370,7 @@ const _: () = {
                 ::concord::http::StatusCode::ACCEPTED => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let item = &self.item;
+                    let item = &self.__inputs.item;
                     #[allow(unused_braces)]
                     let __arm = |code: ::concord::http::StatusCode| -> ::std::result::Result<
                         Receipt,
@@ -2420,7 +2388,7 @@ const _: () = {
                 __status if __status.is_redirection() => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let item = &self.item;
+                    let item = &self.__inputs.item;
                     #[allow(unused_braces)]
                     let __arm =
                         || -> ::std::result::Result<Receipt, ::concord::Fail<ShapesProblem>> {
@@ -2461,7 +2429,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Receipt, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -2469,7 +2437,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -2480,23 +2448,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Create {
+        type Value = Receipt;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Create,
+        shapes::__CreateInputs,
         Receipt,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Receipt`]>",
-        awaitable,
-        unconditional
+        "Create"
     );
-
-    impl ::std::fmt::Debug for shapes::Create {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Create")
-                .field("endpoint", &"shapes.create")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Create {}
 
     // /// An item, on the host of a tenant.
     // GET hosted(
@@ -2507,13 +2471,13 @@ const _: () = {
     //     path "tenant";
     // }
 
-    impl shapes::Hosted {
+    impl shapes::Call<shapes::Hosted> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let tenant = &self.tenant;
+                let tenant = &self.__inputs.tenant;
                 __draft.base(&[
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
@@ -2530,9 +2494,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -2580,7 +2544,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -2588,7 +2552,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -2599,23 +2563,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Hosted {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Hosted,
+        shapes::__HostedInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "Hosted"
     );
-
-    impl ::std::fmt::Debug for shapes::Hosted {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Hosted")
-                .field("endpoint", &"shapes.hosted")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Hosted {}
+    impl shapes::__spec::Conditional for shapes::Hosted {}
 
     // /// Search with a number, and a filter that a query cannot hold.
     // GET search(
@@ -2628,17 +2589,34 @@ const _: () = {
     //     query { ratio; filter; }
     // }
     /// The options of this endpoint.
-    impl shapes::Search {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Search> {
         /// A struct: a query refuses it when the request is built.
         ///
         /// Accepts [`Filter`], &[`Filter`], or an [`Option`]<[`Filter`]>. `None` clears it.
         pub fn filter(mut self, filter: impl ::concord::arg::Arg<::core::option::Option<Filter>>) -> Self {
-            self.filter = filter.into_input();
+            self.__inputs.filter = filter.into_input();
             self
         }
     }
 
     impl shapes::Search {
+        /// Option `filter` of `search`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// A struct: a query refuses it when the request is built.
+        ///
+        /// Accepts [`Filter`], &[`Filter`], or an [`Option`]<[`Filter`]>. `None` clears it.
+        pub fn filter(
+            __call: shapes::Call<shapes::Search>,
+            filter: impl ::concord::arg::Arg<::core::option::Option<Filter>>,
+        ) -> shapes::Call<shapes::Search> {
+            __call.filter(filter)
+        }
+    }
+
+    impl shapes::Call<shapes::Search> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -2648,8 +2626,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let ratio = &self.ratio;
-                let filter = &self.filter;
+                let ratio = &self.__inputs.ratio;
+                let filter = &self.__inputs.filter;
                 __draft.query(
                     "ratio",
                     &[::concord::__private::Piece::Val(
@@ -2661,8 +2639,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let ratio = &self.ratio;
-                let filter = &self.filter;
+                let ratio = &self.__inputs.ratio;
+                let filter = &self.__inputs.filter;
                 __draft.query(
                     "filter",
                     &[::concord::__private::Piece::Val(
@@ -2677,9 +2655,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -2727,7 +2705,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Vec<Item>, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -2735,7 +2713,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -2746,23 +2724,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Search {
+        type Value = Vec<Item>;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Search,
+        shapes::__SearchInputs,
         Vec<Item>,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Vec`]<[`Item`]>>",
-        awaitable,
-        conditional
+        "Search"
     );
-
-    impl ::std::fmt::Debug for shapes::Search {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Search")
-                .field("endpoint", &"shapes.search")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Search {}
+    impl shapes::__spec::Conditional for shapes::Search {}
 
     // /// Send an item with a length written by hand, in a body that may fail.
     // POST measured(
@@ -2776,7 +2751,7 @@ const _: () = {
     //     body checked(item);
     // }
 
-    impl shapes::Measured {
+    impl shapes::Call<shapes::Measured> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -2786,8 +2761,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let item = &self.item;
-                let length = &self.length;
+                let item = &self.__inputs.item;
+                let length = &self.__inputs.length;
                 __draft.header(
                     "content-length",
                     &[::concord::__private::Piece::Val(
@@ -2799,8 +2774,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let item = &self.item;
-                let length = &self.length;
+                let item = &self.__inputs.item;
+                let length = &self.__inputs.length;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ checked(item) }))();
                 let __body = match __body {
@@ -2820,9 +2795,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -2870,7 +2845,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -2878,7 +2853,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -2889,23 +2864,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Measured {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Measured,
+        shapes::__MeasuredInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        unconditional
+        "Measured"
     );
-
-    impl ::std::fmt::Debug for shapes::Measured {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Measured")
-                .field("endpoint", &"shapes.measured")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Measured {}
 
     // /// An item, asked with a number that is parsed when the request is built.
     // GET parsed(
@@ -2916,7 +2887,7 @@ const _: () = {
     //     query { "n" = raw.parse::<u32>()?; }
     // }
 
-    impl shapes::Parsed {
+    impl shapes::Call<shapes::Parsed> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -2926,7 +2897,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let raw = &self.raw;
+                let raw = &self.__inputs.raw;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __entry = (|| ::std::result::Result::Ok({ raw.parse::<u32>()? }))();
                 let __entry = match __entry {
@@ -2955,9 +2926,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -3005,7 +2976,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3013,7 +2984,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3024,30 +2995,27 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Parsed {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Parsed,
+        shapes::__ParsedInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "Parsed"
     );
-
-    impl ::std::fmt::Debug for shapes::Parsed {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Parsed")
-                .field("endpoint", &"shapes.parsed")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Parsed {}
+    impl shapes::__spec::Conditional for shapes::Parsed {}
 
     // /// Counts by name.
     // GET counts() -> Tally {
     //     path "counts";
     // }
 
-    impl shapes::Counts {
+    impl shapes::Call<shapes::Counts> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3060,9 +3028,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -3110,7 +3078,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Tally, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3118,7 +3086,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3129,23 +3097,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Counts {
+        type Value = Tally;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Counts,
+        shapes::__CountsInputs,
         Tally,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Tally`]>",
-        awaitable,
-        conditional
+        "Counts"
     );
-
-    impl ::std::fmt::Debug for shapes::Counts {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Counts")
-                .field("endpoint", &"shapes.counts")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Counts {}
+    impl shapes::__spec::Conditional for shapes::Counts {}
 
     // /// An item, read only when the answer is labelled JSON.
     // GET strict() -> Item {
@@ -3153,7 +3118,7 @@ const _: () = {
     //     read Json.strict();
     // }
 
-    impl shapes::Strict {
+    impl shapes::Call<shapes::Strict> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3166,9 +3131,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -3216,7 +3181,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3224,7 +3189,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3235,23 +3200,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Strict {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Strict,
+        shapes::__StrictInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "Strict"
     );
-
-    impl ::std::fmt::Debug for shapes::Strict {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Strict")
-                .field("endpoint", &"shapes.strict")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Strict {}
+    impl shapes::__spec::Conditional for shapes::Strict {}
 
     // /// An item, read by a reader whose message is long.
     // GET long_message() -> Item {
@@ -3259,7 +3221,7 @@ const _: () = {
     //     read Chatty;
     // }
 
-    impl shapes::LongMessage {
+    impl shapes::Call<shapes::LongMessage> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3272,9 +3234,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -3322,7 +3284,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3330,7 +3292,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3341,23 +3303,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::LongMessage {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::LongMessage,
+        shapes::__LongMessageInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "LongMessage"
     );
-
-    impl ::std::fmt::Debug for shapes::LongMessage {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("LongMessage")
-                .field("endpoint", &"shapes.long_message")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::LongMessage {}
+    impl shapes::__spec::Conditional for shapes::LongMessage {}
 
     // /// An item, out of its envelope.
     // GET get(
@@ -3367,7 +3326,7 @@ const _: () = {
     //     path "{id}";
     // }
 
-    impl shapes::wrapped::Get {
+    impl shapes::Call<shapes::wrapped::Get> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3378,7 +3337,7 @@ const _: () = {
             {
                 let client = __Client;
                 let wrapped = __Wrapped;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -3391,13 +3350,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
@@ -3458,7 +3417,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3466,7 +3425,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3477,23 +3436,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::wrapped::Get {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::wrapped::Get,
+        shapes::__WrappedGetInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "Get"
     );
-
-    impl ::std::fmt::Debug for shapes::wrapped::Get {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Get")
-                .field("endpoint", &"shapes.wrapped.get")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::wrapped::Get {}
+    impl shapes::__spec::Conditional for shapes::wrapped::Get {}
 
     // /// The envelope itself.
     // GET raw(
@@ -3504,7 +3460,7 @@ const _: () = {
     //     status { remove 2xx }
     // }
 
-    impl shapes::wrapped::Raw {
+    impl shapes::Call<shapes::wrapped::Raw> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3516,7 +3472,7 @@ const _: () = {
             {
                 let client = __Client;
                 let wrapped = __Wrapped;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -3529,13 +3485,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
@@ -3587,7 +3543,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Envelope<Item>, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3595,7 +3551,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3606,23 +3562,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::wrapped::Raw {
+        type Value = Envelope<Item>;
+    }
+
+    call_spec!(
+        shapes,
         shapes::wrapped::Raw,
+        shapes::__WrappedRawInputs,
         Envelope<Item>,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Envelope`]<[`Item`]>>",
-        awaitable,
-        conditional
+        "Raw"
     );
-
-    impl ::std::fmt::Debug for shapes::wrapped::Raw {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Raw")
-                .field("endpoint", &"shapes.wrapped.raw")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::wrapped::Raw {}
+    impl shapes::__spec::Conditional for shapes::wrapped::Raw {}
 
     // /// An item out of its envelope, or none.
     // GET find(
@@ -3633,7 +3586,7 @@ const _: () = {
     //     status { override 2xx { body } => Some(unpack(body)?), 404 => None }
     // }
 
-    impl shapes::wrapped::Find {
+    impl shapes::Call<shapes::wrapped::Find> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3645,7 +3598,7 @@ const _: () = {
             {
                 let client = __Client;
                 let wrapped = __Wrapped;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -3658,13 +3611,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
@@ -3688,7 +3641,7 @@ const _: () = {
                     // The arm of the endpoint: the owners in reach, then its inputs.
                     let client = __Client;
                     let wrapped = __Wrapped;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<
                         Option<Item>,
@@ -3710,7 +3663,7 @@ const _: () = {
                     // The arm of the endpoint: the owners in reach, then its inputs.
                     let client = __Client;
                     let wrapped = __Wrapped;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = |body| -> ::std::result::Result<
                         Option<Item>,
@@ -3740,7 +3693,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Option<Item>, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3748,7 +3701,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3759,23 +3712,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::wrapped::Find {
+        type Value = Option<Item>;
+    }
+
+    call_spec!(
+        shapes,
         shapes::wrapped::Find,
+        shapes::__WrappedFindInputs,
         Option<Item>,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Option`]<[`Item`]>>",
-        awaitable,
-        conditional
+        "Find"
     );
-
-    impl ::std::fmt::Debug for shapes::wrapped::Find {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Find")
-                .field("endpoint", &"shapes.wrapped.find")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::wrapped::Find {}
+    impl shapes::__spec::Conditional for shapes::wrapped::Find {}
 
     // /// Touch an item. An accepted touch is not done; a missing item is fine.
     // HEAD touch(
@@ -3788,7 +3738,7 @@ const _: () = {
     //         404 => (),
     //     }
     // }
-    impl shapes::wrapped::Touch {
+    impl shapes::Call<shapes::wrapped::Touch> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::HEAD);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3800,7 +3750,7 @@ const _: () = {
             {
                 let client = __Client;
                 let wrapped = __Wrapped;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -3813,13 +3763,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
@@ -3843,7 +3793,7 @@ const _: () = {
                     // `override 202`: the endpoint's own arm; the owners in reach, then its inputs.
                     let client = __Client;
                     let wrapped = __Wrapped;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     // An arm under no arrow gives `()`: the author's expression is copied as written.
                     #[allow(unused_braces, clippy::unit_arg, clippy::unused_unit)]
                     let __arm = || -> ::std::result::Result<(), ::concord::Fail<ShapesProblem>> {
@@ -3855,7 +3805,7 @@ const _: () = {
                     // The arm of the endpoint: the owners in reach, then its inputs.
                     let client = __Client;
                     let wrapped = __Wrapped;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     // An arm under no arrow gives `()`: the author's expression is copied as written.
                     #[allow(unused_braces, clippy::unit_arg, clippy::unused_unit)]
                     let __arm = || -> ::std::result::Result<(), ::concord::Fail<ShapesProblem>> {
@@ -3884,7 +3834,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<(), ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -3892,7 +3842,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -3903,23 +3853,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::wrapped::Touch {
+        type Value = ();
+    }
+
+    call_spec!(
+        shapes,
         shapes::wrapped::Touch,
+        shapes::__WrappedTouchInputs,
         (),
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>",
-        awaitable,
-        conditional
+        "Touch"
     );
-
-    impl ::std::fmt::Debug for shapes::wrapped::Touch {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Touch")
-                .field("endpoint", &"shapes.wrapped.touch")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::wrapped::Touch {}
+    impl shapes::__spec::Conditional for shapes::wrapped::Touch {}
 
     // /// Whether an item is held. Only a `204` says yes.
     // HEAD holds(
@@ -3929,7 +3876,7 @@ const _: () = {
     //     path "holds/{id}";
     //     status { override 204 => true, 404 => false }
     // }
-    impl shapes::wrapped::Holds {
+    impl shapes::Call<shapes::wrapped::Holds> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::HEAD);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -3941,7 +3888,7 @@ const _: () = {
             {
                 let client = __Client;
                 let wrapped = __Wrapped;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -3954,13 +3901,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
@@ -3984,7 +3931,7 @@ const _: () = {
                     // `override 204`: the endpoint's own arm; the owners in reach, then its inputs.
                     let client = __Client;
                     let wrapped = __Wrapped;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<bool, ::concord::Fail<ShapesProblem>> {
                         ::std::result::Result::Ok({ true })
@@ -3995,7 +3942,7 @@ const _: () = {
                     // The arm of the endpoint: the owners in reach, then its inputs.
                     let client = __Client;
                     let wrapped = __Wrapped;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<bool, ::concord::Fail<ShapesProblem>> {
                         ::std::result::Result::Ok({ false })
@@ -4027,7 +3974,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<bool, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -4035,7 +3982,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -4046,23 +3993,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::wrapped::Holds {
+        type Value = bool;
+    }
+
+    call_spec!(
+        shapes,
         shapes::wrapped::Holds,
+        shapes::__WrappedHoldsInputs,
         bool,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`bool`]>",
-        awaitable,
-        conditional
+        "Holds"
     );
-
-    impl ::std::fmt::Debug for shapes::wrapped::Holds {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Holds")
-                .field("endpoint", &"shapes.wrapped.holds")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::wrapped::Holds {}
+    impl shapes::__spec::Conditional for shapes::wrapped::Holds {}
 
     // /// An item, read by a reader that notes each answer it reads.
     // GET noted(
@@ -4073,7 +4017,7 @@ const _: () = {
     //     read { trace.note("read"); Json };
     // }
 
-    impl shapes::Noted {
+    impl shapes::Call<shapes::Noted> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -4086,9 +4030,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -4110,7 +4054,7 @@ const _: () = {
                         // The endpoint's `read`: the owner in reach, then its inputs.
                         &{
                             let client = __Client;
-                            let trace = &self.trace;
+                            let trace = &self.__inputs.trace;
                             (|| {
                                 ::concord::__private::reader::<Item, _>({
                                     trace.note("read");
@@ -4144,7 +4088,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -4152,7 +4096,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -4163,23 +4107,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Noted {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Noted,
+        shapes::__NotedInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "Noted"
     );
-
-    impl ::std::fmt::Debug for shapes::Noted {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Noted")
-                .field("endpoint", &"shapes.noted")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Noted {}
+    impl shapes::__spec::Conditional for shapes::Noted {}
 
     // /// An item; a missing one is made of what was asked.
     // GET titled(
@@ -4192,7 +4133,7 @@ const _: () = {
     //     status { 404 => Item { id: *id, title: title.clone() } }
     // }
 
-    impl shapes::Titled {
+    impl shapes::Call<shapes::Titled> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -4202,8 +4143,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
-                let title = &self.title;
+                let id = &self.__inputs.id;
+                let title = &self.__inputs.title;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -4215,9 +4156,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -4237,8 +4178,8 @@ const _: () = {
                 ::concord::http::StatusCode::NOT_FOUND => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
-                    let title = &self.title;
+                    let id = &self.__inputs.id;
+                    let title = &self.__inputs.title;
                     #[allow(unused_braces)]
                     let __arm =
                         || -> ::std::result::Result<Item, ::concord::Fail<ShapesProblem>> {
@@ -4282,7 +4223,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -4290,7 +4231,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -4301,23 +4242,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Titled {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Titled,
+        shapes::__TitledInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "Titled"
     );
-
-    impl ::std::fmt::Debug for shapes::Titled {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Titled")
-                .field("endpoint", &"shapes.titled")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Titled {}
+    impl shapes::__spec::Conditional for shapes::Titled {}
 
     // /// An item, or the conflict that holds it, asked by an input named `body`.
     // GET held(
@@ -4333,7 +4271,7 @@ const _: () = {
     //     }
     // }
 
-    impl shapes::Held {
+    impl shapes::Call<shapes::Held> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -4343,7 +4281,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let body = &self.body;
+                let body = &self.__inputs.body;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "body",
                     &(&::concord::__private::ValueRef(body)).adapt(),
@@ -4355,9 +4293,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -4388,7 +4326,7 @@ const _: () = {
                     // The arm of the endpoint: the owner in reach, then its inputs; then
                     // the arm's own field, `body` renamed `answer`, beside the input `body`.
                     let client = __Client;
-                    let body = &self.body;
+                    let body = &self.__inputs.body;
                     #[allow(unused_braces)]
                     let __arm = |answer| -> ::std::result::Result<
                         Result<Item, Conflict>,
@@ -4435,7 +4373,7 @@ const _: () = {
         ) -> shapes::Result<::concord::__private::Prepared<Result<Item, Conflict>, ShapesProblem>>
         {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -4443,7 +4381,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -4454,23 +4392,13 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        shapes::Held,
-        Result<Item, Conflict>,
-        ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>",
-        awaitable,
-        conditional
-    );
-
-    impl ::std::fmt::Debug for shapes::Held {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Held")
-                .field("endpoint", &"shapes.held")
-                .finish_non_exhaustive()
-        }
+    impl shapes::Endpoint for shapes::Held {
+        type Value = Result<Item, Conflict>;
     }
+
+    call_spec!(shapes, shapes::Held, shapes::__HeldInputs, Result<Item, Conflict>, ShapesProblem, "Held");
+    impl shapes::__spec::Awaitable for shapes::Held {}
+    impl shapes::__spec::Conditional for shapes::Held {}
 
     // /// An item. A refusal is read by the arm of the endpoint, and ends with its problem.
     // GET refusal(
@@ -4481,7 +4409,7 @@ const _: () = {
     //     status { 4xx { body } => Err::<_, ShapesProblem>(body)? }
     // }
 
-    impl shapes::Refusal {
+    impl shapes::Call<shapes::Refusal> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -4491,7 +4419,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[
                     ::concord::__private::Piece::Val(
                         "id",
@@ -4505,9 +4433,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -4547,7 +4475,7 @@ const _: () = {
                     .await?;
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = |body| -> ::std::result::Result<
                         Item,
@@ -4575,7 +4503,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Item, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -4583,7 +4511,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -4594,23 +4522,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Refusal {
+        type Value = Item;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Refusal,
+        shapes::__RefusalInputs,
         Item,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Item`]>",
-        awaitable,
-        conditional
+        "Refusal"
     );
-
-    impl ::std::fmt::Debug for shapes::Refusal {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Refusal")
-                .field("endpoint", &"shapes.refusal")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Refusal {}
+    impl shapes::__spec::Conditional for shapes::Refusal {}
 
     // /// Pages of items behind three keys: one in the path, one in the query, one in a header.
     // GET guarded(
@@ -4629,57 +4554,86 @@ const _: () = {
     //     paginate next_batch(cursor);
     // }
 
-    impl ::concord::page::Slot<shapes::Guarded> for shapes::__GuardedPathKey {
+    impl ::concord::page::Slot<shapes::Call<shapes::Guarded>> for shapes::__GuardedPathKey {
         type Value = Secret;
-        fn get<'a>(&self, __call: &'a shapes::Guarded) -> ::core::option::Option<&'a Self::Value> {
-            ::core::option::Option::Some(&__call.path_key)
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Guarded>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            ::core::option::Option::Some(&__call.__inputs.path_key)
         }
-        fn set(&self, mut __call: shapes::Guarded, __value: Self::Value) -> shapes::Guarded {
-            __call.path_key = __value;
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Guarded>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Guarded> {
+            __call.__inputs.path_key = __value;
             __call
         }
     }
 
-    impl ::concord::page::Slot<shapes::Guarded> for shapes::__GuardedQueryKey {
+    impl ::concord::page::Slot<shapes::Call<shapes::Guarded>> for shapes::__GuardedQueryKey {
         type Value = Secret;
-        fn get<'a>(&self, __call: &'a shapes::Guarded) -> ::core::option::Option<&'a Self::Value> {
-            __call.query_key.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Guarded>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.query_key.as_ref()
         }
-        fn set(&self, mut __call: shapes::Guarded, __value: Self::Value) -> shapes::Guarded {
-            __call.query_key = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Guarded>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Guarded> {
+            __call.__inputs.query_key = ::core::option::Option::Some(__value);
             __call
         }
     }
 
-    impl ::concord::page::Slot<shapes::Guarded> for shapes::__GuardedHeaderKey {
+    impl ::concord::page::Slot<shapes::Call<shapes::Guarded>> for shapes::__GuardedHeaderKey {
         type Value = Secret;
-        fn get<'a>(&self, __call: &'a shapes::Guarded) -> ::core::option::Option<&'a Self::Value> {
-            __call.header_key.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Guarded>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.header_key.as_ref()
         }
-        fn set(&self, mut __call: shapes::Guarded, __value: Self::Value) -> shapes::Guarded {
-            __call.header_key = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Guarded>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Guarded> {
+            __call.__inputs.header_key = ::core::option::Option::Some(__value);
             __call
         }
     }
 
-    impl ::concord::page::Slot<shapes::Guarded> for shapes::__GuardedCursor {
+    impl ::concord::page::Slot<shapes::Call<shapes::Guarded>> for shapes::__GuardedCursor {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::Guarded) -> ::core::option::Option<&'a Self::Value> {
-            __call.cursor.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Guarded>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.cursor.as_ref()
         }
-        fn set(&self, mut __call: shapes::Guarded, __value: Self::Value) -> shapes::Guarded {
-            __call.cursor = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Guarded>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Guarded> {
+            __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Guarded {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Guarded> {
         /// A key written as the query pair `key`.
         ///
         /// Accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it.
         pub fn query_key(mut self, query_key: impl ::concord::arg::Arg<::core::option::Option<Secret>>) -> Self {
-            self.query_key = query_key.into_input();
+            self.__inputs.query_key = query_key.into_input();
             self
         }
 
@@ -4687,7 +4641,7 @@ const _: () = {
         ///
         /// Accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it.
         pub fn header_key(mut self, header_key: impl ::concord::arg::Arg<::core::option::Option<Secret>>) -> Self {
-            self.header_key = header_key.into_input();
+            self.__inputs.header_key = header_key.into_input();
             self
         }
 
@@ -4695,12 +4649,54 @@ const _: () = {
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl shapes::Guarded {
+        /// Option `query_key` of `guarded`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// A key written as the query pair `key`.
+        ///
+        /// Accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it.
+        pub fn query_key(
+            __call: shapes::Call<shapes::Guarded>,
+            query_key: impl ::concord::arg::Arg<::core::option::Option<Secret>>,
+        ) -> shapes::Call<shapes::Guarded> {
+            __call.query_key(query_key)
+        }
+        /// Option `header_key` of `guarded`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// A key written in the header `x-key`.
+        ///
+        /// Accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it.
+        pub fn header_key(
+            __call: shapes::Call<shapes::Guarded>,
+            header_key: impl ::concord::arg::Arg<::core::option::Option<Secret>>,
+        ) -> shapes::Call<shapes::Guarded> {
+            __call.header_key(header_key)
+        }
+        /// Option `cursor` of `guarded`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The cursor of the page.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn cursor(
+            __call: shapes::Call<shapes::Guarded>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> shapes::Call<shapes::Guarded> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl shapes::Call<shapes::Guarded> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -4710,10 +4706,10 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let path_key = &self.path_key;
-                let query_key = &self.query_key;
-                let header_key = &self.header_key;
-                let cursor = &self.cursor;
+                let path_key = &self.__inputs.path_key;
+                let query_key = &self.__inputs.query_key;
+                let header_key = &self.__inputs.header_key;
+                let cursor = &self.__inputs.cursor;
                 __draft.segment(&[
                     ::concord::__private::Piece::Val(
                         "path_key",
@@ -4724,10 +4720,10 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let path_key = &self.path_key;
-                let query_key = &self.query_key;
-                let header_key = &self.header_key;
-                let cursor = &self.cursor;
+                let path_key = &self.__inputs.path_key;
+                let query_key = &self.__inputs.query_key;
+                let header_key = &self.__inputs.header_key;
+                let cursor = &self.__inputs.cursor;
                 __draft.query(
                     "key",
                     &[
@@ -4741,10 +4737,10 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let path_key = &self.path_key;
-                let query_key = &self.query_key;
-                let header_key = &self.header_key;
-                let cursor = &self.cursor;
+                let path_key = &self.__inputs.path_key;
+                let query_key = &self.__inputs.query_key;
+                let header_key = &self.__inputs.header_key;
+                let cursor = &self.__inputs.cursor;
                 __draft.query(
                     "cursor",
                     &[
@@ -4758,10 +4754,10 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let path_key = &self.path_key;
-                let query_key = &self.query_key;
-                let header_key = &self.header_key;
-                let cursor = &self.cursor;
+                let path_key = &self.__inputs.path_key;
+                let query_key = &self.__inputs.query_key;
+                let header_key = &self.__inputs.header_key;
+                let cursor = &self.__inputs.cursor;
                 __draft.header(
                     "x-key",
                     &[
@@ -4778,9 +4774,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -4828,7 +4824,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -4836,7 +4832,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -4847,45 +4843,37 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Guarded {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Guarded,
+        shapes::__GuardedInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let (path_key, query_key, header_key, cursor) = (
-                        shapes::__GuardedPathKey,
-                        shapes::__GuardedQueryKey,
-                        shapes::__GuardedHeaderKey,
-                        shapes::__GuardedCursor,
-                    );
-                    next_batch(cursor)
-                })
-            }
-
-        }
+        "Guarded"
     );
-
-    impl ::std::fmt::Debug for shapes::Guarded {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Guarded")
-                .field("endpoint", &"shapes.guarded")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Guarded {
+        fn pages(call: shapes::Call<shapes::Guarded>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let (path_key, query_key, header_key, cursor) = (
+                    shapes::__GuardedPathKey,
+                    shapes::__GuardedQueryKey,
+                    shapes::__GuardedHeaderKey,
+                    shapes::__GuardedCursor,
+                );
+                next_batch(cursor)
+            })
         }
     }
+    impl shapes::__spec::Conditional for shapes::Guarded {}
 
     // /// Pages of items whose cursor goes in a header.
     // GET headed(
@@ -4897,29 +4885,53 @@ const _: () = {
     //     paginate next_batch(cursor);
     // }
 
-    impl ::concord::page::Slot<shapes::Headed> for shapes::__HeadedCursor {
+    impl ::concord::page::Slot<shapes::Call<shapes::Headed>> for shapes::__HeadedCursor {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::Headed) -> ::core::option::Option<&'a Self::Value> {
-            __call.cursor.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Headed>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.cursor.as_ref()
         }
-        fn set(&self, mut __call: shapes::Headed, __value: Self::Value) -> shapes::Headed {
-            __call.cursor = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Headed>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Headed> {
+            __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Headed {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Headed> {
         /// The cursor of the page, sent as `x-cursor`.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl shapes::Headed {
+        /// Option `cursor` of `headed`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The cursor of the page, sent as `x-cursor`.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn cursor(
+            __call: shapes::Call<shapes::Headed>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> shapes::Call<shapes::Headed> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl shapes::Call<shapes::Headed> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -4929,7 +4941,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let cursor = &self.cursor;
+                let cursor = &self.__inputs.cursor;
                 __draft.header(
                     "x-cursor",
                     &[
@@ -4946,9 +4958,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -4996,7 +5008,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -5004,7 +5016,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -5015,40 +5027,32 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Headed {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Headed,
+        shapes::__HeadedInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let cursor = shapes::__HeadedCursor;
-                    next_batch(cursor)
-                })
-            }
-
-        }
+        "Headed"
     );
-
-    impl ::std::fmt::Debug for shapes::Headed {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Headed")
-                .field("endpoint", &"shapes.headed")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Headed {
+        fn pages(call: shapes::Call<shapes::Headed>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let cursor = shapes::__HeadedCursor;
+                next_batch(cursor)
+            })
         }
     }
+    impl shapes::__spec::Conditional for shapes::Headed {}
 
     // /// Pages of items asked with a body of entries: a token and the cursor.
     // POST posted(
@@ -5062,35 +5066,50 @@ const _: () = {
     //     paginate next_batch(cursor);
     // }
 
-    impl ::concord::page::Slot<shapes::Posted> for shapes::__PostedToken {
+    impl ::concord::page::Slot<shapes::Call<shapes::Posted>> for shapes::__PostedToken {
         type Value = Secret;
-        fn get<'a>(&self, __call: &'a shapes::Posted) -> ::core::option::Option<&'a Self::Value> {
-            __call.token.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Posted>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.token.as_ref()
         }
-        fn set(&self, mut __call: shapes::Posted, __value: Self::Value) -> shapes::Posted {
-            __call.token = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Posted>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Posted> {
+            __call.__inputs.token = ::core::option::Option::Some(__value);
             __call
         }
     }
 
-    impl ::concord::page::Slot<shapes::Posted> for shapes::__PostedCursor {
+    impl ::concord::page::Slot<shapes::Call<shapes::Posted>> for shapes::__PostedCursor {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::Posted) -> ::core::option::Option<&'a Self::Value> {
-            __call.cursor.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Posted>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.cursor.as_ref()
         }
-        fn set(&self, mut __call: shapes::Posted, __value: Self::Value) -> shapes::Posted {
-            __call.cursor = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Posted>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Posted> {
+            __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Posted {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Posted> {
         /// A token written in the body.
         ///
         /// Accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it.
         pub fn token(mut self, token: impl ::concord::arg::Arg<::core::option::Option<Secret>>) -> Self {
-            self.token = token.into_input();
+            self.__inputs.token = token.into_input();
             self
         }
 
@@ -5098,12 +5117,41 @@ const _: () = {
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl shapes::Posted {
+        /// Option `token` of `posted`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// A token written in the body.
+        ///
+        /// Accepts [`Secret`], &[`Secret`], [`String`], &[`str`], or an [`Option`]<[`Secret`]>. `None` clears it.
+        pub fn token(
+            __call: shapes::Call<shapes::Posted>,
+            token: impl ::concord::arg::Arg<::core::option::Option<Secret>>,
+        ) -> shapes::Call<shapes::Posted> {
+            __call.token(token)
+        }
+        /// Option `cursor` of `posted`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The cursor of the page, written in the body.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn cursor(
+            __call: shapes::Call<shapes::Posted>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> shapes::Call<shapes::Posted> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl shapes::Call<shapes::Posted> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -5113,8 +5161,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let token = &self.token;
-                let cursor = &self.cursor;
+                let token = &self.__inputs.token;
+                let cursor = &self.__inputs.cursor;
                 // Every entry uses the same adapter and insertion path.
                 let __value0 = ::concord::__private::ValueRef(token);
                 let __value1 = ::concord::__private::ValueRef(cursor);
@@ -5129,9 +5177,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -5179,7 +5227,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -5187,7 +5235,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -5198,41 +5246,32 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Posted {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Posted,
+        shapes::__PostedInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, unconditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let (token, cursor) = (
-                        shapes::__PostedToken,
-                        shapes::__PostedCursor,
-                    );
-                    next_batch(cursor)
-                })
-            }
-
-        }
+        "Posted"
     );
-
-    impl ::std::fmt::Debug for shapes::Posted {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Posted")
-                .field("endpoint", &"shapes.posted")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Posted {
+        fn pages(call: shapes::Call<shapes::Posted>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let (token, cursor) = (
+                    shapes::__PostedToken,
+                    shapes::__PostedCursor,
+                );
+                next_batch(cursor)
+            })
         }
     }
 
@@ -5249,40 +5288,71 @@ const _: () = {
     //     paginate next_batch(cursor);
     // }
 
-    impl ::concord::page::Slot<shapes::Streamed> for shapes::__StreamedFile {
+    impl ::concord::page::Slot<shapes::Call<shapes::Streamed>> for shapes::__StreamedFile {
         type Value = ::concord::Body;
-        fn get<'a>(&self, __call: &'a shapes::Streamed) -> ::core::option::Option<&'a Self::Value> {
-            ::core::option::Option::Some(&__call.file)
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Streamed>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            ::core::option::Option::Some(&__call.__inputs.file)
         }
-        fn set(&self, mut __call: shapes::Streamed, __value: Self::Value) -> shapes::Streamed {
-            __call.file = __value;
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Streamed>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Streamed> {
+            __call.__inputs.file = __value;
             __call
         }
     }
 
-    impl ::concord::page::Slot<shapes::Streamed> for shapes::__StreamedCursor {
+    impl ::concord::page::Slot<shapes::Call<shapes::Streamed>> for shapes::__StreamedCursor {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::Streamed) -> ::core::option::Option<&'a Self::Value> {
-            __call.cursor.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Streamed>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.cursor.as_ref()
         }
-        fn set(&self, mut __call: shapes::Streamed, __value: Self::Value) -> shapes::Streamed {
-            __call.cursor = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Streamed>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Streamed> {
+            __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Streamed {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Streamed> {
         /// The cursor of the page.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl shapes::Streamed {
+        /// Option `cursor` of `streamed`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The cursor of the page.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn cursor(
+            __call: shapes::Call<shapes::Streamed>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> shapes::Call<shapes::Streamed> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl shapes::Call<shapes::Streamed> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -5292,8 +5362,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let file = &self.file;
-                let cursor = &self.cursor;
+                let file = &self.__inputs.file;
+                let cursor = &self.__inputs.cursor;
                 __draft.query(
                     "cursor",
                     &[
@@ -5307,8 +5377,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let file = &self.file;
-                let cursor = &self.cursor;
+                let file = &self.__inputs.file;
+                let cursor = &self.__inputs.cursor;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ file }))();
                 let __body = match __body {
@@ -5328,9 +5398,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -5378,7 +5448,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -5386,7 +5456,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -5397,41 +5467,32 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Streamed {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Streamed,
+        shapes::__StreamedInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, unconditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let (file, cursor) = (
-                        shapes::__StreamedFile,
-                        shapes::__StreamedCursor,
-                    );
-                    next_batch(cursor)
-                })
-            }
-
-        }
+        "Streamed"
     );
-
-    impl ::std::fmt::Debug for shapes::Streamed {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Streamed")
-                .field("endpoint", &"shapes.streamed")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Streamed {
+        fn pages(call: shapes::Call<shapes::Streamed>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let (file, cursor) = (
+                    shapes::__StreamedFile,
+                    shapes::__StreamedCursor,
+                );
+                next_batch(cursor)
+            })
         }
     }
 
@@ -5446,29 +5507,53 @@ const _: () = {
     //     paginate next_batch(cursor);
     // }
 
-    impl ::concord::page::Slot<shapes::Renewed> for shapes::__RenewedCursor {
+    impl ::concord::page::Slot<shapes::Call<shapes::Renewed>> for shapes::__RenewedCursor {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::Renewed) -> ::core::option::Option<&'a Self::Value> {
-            __call.cursor.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Renewed>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.cursor.as_ref()
         }
-        fn set(&self, mut __call: shapes::Renewed, __value: Self::Value) -> shapes::Renewed {
-            __call.cursor = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Renewed>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Renewed> {
+            __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Renewed {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Renewed> {
         /// The cursor of the page.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl shapes::Renewed {
+        /// Option `cursor` of `renewed`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The cursor of the page.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn cursor(
+            __call: shapes::Call<shapes::Renewed>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> shapes::Call<shapes::Renewed> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl shapes::Call<shapes::Renewed> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::POST);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -5478,7 +5563,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let cursor = &self.cursor;
+                let cursor = &self.__inputs.cursor;
                 __draft.query(
                     "cursor",
                     &[
@@ -5492,7 +5577,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let cursor = &self.cursor;
+                let cursor = &self.__inputs.cursor;
                 #[allow(unused_braces, clippy::redundant_closure_call)]
                 let __body = (|| ::std::result::Result::Ok({ stream() }))();
                 let __body = match __body {
@@ -5512,9 +5597,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -5562,7 +5647,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -5570,7 +5655,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -5581,38 +5666,29 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Renewed {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Renewed,
+        shapes::__RenewedInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, unconditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let cursor = shapes::__RenewedCursor;
-                    next_batch(cursor)
-                })
-            }
-
-        }
+        "Renewed"
     );
-
-    impl ::std::fmt::Debug for shapes::Renewed {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Renewed")
-                .field("endpoint", &"shapes.renewed")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Renewed {
+        fn pages(call: shapes::Call<shapes::Renewed>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let cursor = shapes::__RenewedCursor;
+                next_batch(cursor)
+            })
         }
     }
 
@@ -5629,47 +5705,78 @@ const _: () = {
     //     paginate next_batch(cursor);
     // }
 
-    impl ::concord::page::Slot<shapes::KeyedHost> for shapes::__KeyedHostHostKey {
+    impl ::concord::page::Slot<shapes::Call<shapes::KeyedHost>> for shapes::__KeyedHostHostKey {
         type Value = Secret;
-        fn get<'a>(&self, __call: &'a shapes::KeyedHost) -> ::core::option::Option<&'a Self::Value> {
-            ::core::option::Option::Some(&__call.host_key)
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::KeyedHost>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            ::core::option::Option::Some(&__call.__inputs.host_key)
         }
-        fn set(&self, mut __call: shapes::KeyedHost, __value: Self::Value) -> shapes::KeyedHost {
-            __call.host_key = __value;
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::KeyedHost>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::KeyedHost> {
+            __call.__inputs.host_key = __value;
             __call
         }
     }
 
-    impl ::concord::page::Slot<shapes::KeyedHost> for shapes::__KeyedHostCursor {
+    impl ::concord::page::Slot<shapes::Call<shapes::KeyedHost>> for shapes::__KeyedHostCursor {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::KeyedHost) -> ::core::option::Option<&'a Self::Value> {
-            __call.cursor.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::KeyedHost>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.cursor.as_ref()
         }
-        fn set(&self, mut __call: shapes::KeyedHost, __value: Self::Value) -> shapes::KeyedHost {
-            __call.cursor = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::KeyedHost>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::KeyedHost> {
+            __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::KeyedHost {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::KeyedHost> {
         /// The cursor of the page.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl shapes::KeyedHost {
+        /// Option `cursor` of `keyed_host`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The cursor of the page.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn cursor(
+            __call: shapes::Call<shapes::KeyedHost>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> shapes::Call<shapes::KeyedHost> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl shapes::Call<shapes::KeyedHost> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let host_key = &self.host_key;
-                let cursor = &self.cursor;
+                let host_key = &self.__inputs.host_key;
+                let cursor = &self.__inputs.cursor;
                 __draft.base(&[
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
@@ -5683,8 +5790,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let host_key = &self.host_key;
-                let cursor = &self.cursor;
+                let host_key = &self.__inputs.host_key;
+                let cursor = &self.__inputs.cursor;
                 __draft.query(
                     "cursor",
                     &[
@@ -5701,9 +5808,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -5751,7 +5858,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -5759,7 +5866,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -5770,43 +5877,35 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::KeyedHost {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::KeyedHost,
+        shapes::__KeyedHostInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let (host_key, cursor) = (
-                        shapes::__KeyedHostHostKey,
-                        shapes::__KeyedHostCursor,
-                    );
-                    next_batch(cursor)
-                })
-            }
-
-        }
+        "KeyedHost"
     );
-
-    impl ::std::fmt::Debug for shapes::KeyedHost {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("KeyedHost")
-                .field("endpoint", &"shapes.keyed_host")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::KeyedHost {
+        fn pages(call: shapes::Call<shapes::KeyedHost>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let (host_key, cursor) = (
+                    shapes::__KeyedHostHostKey,
+                    shapes::__KeyedHostCursor,
+                );
+                next_batch(cursor)
+            })
         }
     }
+    impl shapes::__spec::Conditional for shapes::KeyedHost {}
 
     // /// Pages of items whose pager moves the tenant, which stands in the host.
     // GET roaming(
@@ -5821,47 +5920,78 @@ const _: () = {
     //     paginate move |call, page| page.value().next.clone().map(|next| tenant.set(call, next));
     // }
 
-    impl ::concord::page::Slot<shapes::Roaming> for shapes::__RoamingTenant {
+    impl ::concord::page::Slot<shapes::Call<shapes::Roaming>> for shapes::__RoamingTenant {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::Roaming) -> ::core::option::Option<&'a Self::Value> {
-            ::core::option::Option::Some(&__call.tenant)
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Roaming>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            ::core::option::Option::Some(&__call.__inputs.tenant)
         }
-        fn set(&self, mut __call: shapes::Roaming, __value: Self::Value) -> shapes::Roaming {
-            __call.tenant = __value;
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Roaming>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Roaming> {
+            __call.__inputs.tenant = __value;
             __call
         }
     }
 
-    impl ::concord::page::Slot<shapes::Roaming> for shapes::__RoamingCursor {
+    impl ::concord::page::Slot<shapes::Call<shapes::Roaming>> for shapes::__RoamingCursor {
         type Value = String;
-        fn get<'a>(&self, __call: &'a shapes::Roaming) -> ::core::option::Option<&'a Self::Value> {
-            __call.cursor.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Roaming>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.cursor.as_ref()
         }
-        fn set(&self, mut __call: shapes::Roaming, __value: Self::Value) -> shapes::Roaming {
-            __call.cursor = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Roaming>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Roaming> {
+            __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Roaming {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Roaming> {
         /// The cursor of the page.
         ///
         /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
         pub fn cursor(mut self, cursor: impl ::concord::arg::Arg<::core::option::Option<String>>) -> Self {
-            self.cursor = cursor.into_input();
+            self.__inputs.cursor = cursor.into_input();
             self
         }
     }
 
     impl shapes::Roaming {
+        /// Option `cursor` of `roaming`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The cursor of the page.
+        ///
+        /// Accepts [`String`], &[`String`], &[`str`], or an [`Option`]<[`String`]>. `None` clears it.
+        pub fn cursor(
+            __call: shapes::Call<shapes::Roaming>,
+            cursor: impl ::concord::arg::Arg<::core::option::Option<String>>,
+        ) -> shapes::Call<shapes::Roaming> {
+            __call.cursor(cursor)
+        }
+    }
+
+    impl shapes::Call<shapes::Roaming> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let tenant = &self.tenant;
-                let cursor = &self.cursor;
+                let tenant = &self.__inputs.tenant;
+                let cursor = &self.__inputs.cursor;
                 __draft.base(&[
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
@@ -5875,8 +6005,8 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let tenant = &self.tenant;
-                let cursor = &self.cursor;
+                let tenant = &self.__inputs.tenant;
+                let cursor = &self.__inputs.cursor;
                 __draft.query(
                     "cursor",
                     &[
@@ -5893,9 +6023,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -5943,7 +6073,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -5951,7 +6081,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -5962,43 +6092,35 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Roaming {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Roaming,
+        shapes::__RoamingInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let (tenant, cursor) = (
-                        shapes::__RoamingTenant,
-                        shapes::__RoamingCursor,
-                    );
-                    move |call, page| page.value().next.clone().map(|next| tenant.set(call, next))
-                })
-            }
-
-        }
+        "Roaming"
     );
-
-    impl ::std::fmt::Debug for shapes::Roaming {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Roaming")
-                .field("endpoint", &"shapes.roaming")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Roaming {
+        fn pages(call: shapes::Call<shapes::Roaming>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let (tenant, cursor) = (
+                    shapes::__RoamingTenant,
+                    shapes::__RoamingCursor,
+                );
+                move |call, page| page.value().next.clone().map(|next| tenant.set(call, next))
+            })
         }
     }
+    impl shapes::__spec::Conditional for shapes::Roaming {}
 
     // /// Pages of items that start at an offset.
     // GET offset(
@@ -6010,29 +6132,53 @@ const _: () = {
     //     paginate by_offset(start);
     // }
 
-    impl ::concord::page::Slot<shapes::Offset> for shapes::__OffsetStart {
+    impl ::concord::page::Slot<shapes::Call<shapes::Offset>> for shapes::__OffsetStart {
         type Value = u32;
-        fn get<'a>(&self, __call: &'a shapes::Offset) -> ::core::option::Option<&'a Self::Value> {
-            __call.start.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Offset>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.start.as_ref()
         }
-        fn set(&self, mut __call: shapes::Offset, __value: Self::Value) -> shapes::Offset {
-            __call.start = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Offset>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Offset> {
+            __call.__inputs.start = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Offset {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Offset> {
         /// The index of the first item.
         ///
         /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
         pub fn start(mut self, start: impl ::concord::arg::Arg<::core::option::Option<u32>>) -> Self {
-            self.start = start.into_input();
+            self.__inputs.start = start.into_input();
             self
         }
     }
 
     impl shapes::Offset {
+        /// Option `start` of `offset`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The index of the first item.
+        ///
+        /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
+        pub fn start(
+            __call: shapes::Call<shapes::Offset>,
+            start: impl ::concord::arg::Arg<::core::option::Option<u32>>,
+        ) -> shapes::Call<shapes::Offset> {
+            __call.start(start)
+        }
+    }
+
+    impl shapes::Call<shapes::Offset> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -6042,7 +6188,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let start = &self.start;
+                let start = &self.__inputs.start;
                 __draft.query(
                     "start",
                     &[
@@ -6059,9 +6205,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -6109,7 +6255,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Vec<Item>, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -6117,7 +6263,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -6128,40 +6274,32 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Offset {
+        type Value = Vec<Item>;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Offset,
+        shapes::__OffsetInputs,
         Vec<Item>,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Vec`]<[`Item`]>>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Vec`]<[`Item`]> pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Vec`]<[`Item`]>>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let start = shapes::__OffsetStart;
-                    by_offset(start)
-                })
-            }
-
-        }
+        "Offset"
     );
-
-    impl ::std::fmt::Debug for shapes::Offset {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Offset")
-                .field("endpoint", &"shapes.offset")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Offset {
+        fn pages(call: shapes::Call<shapes::Offset>) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let start = shapes::__OffsetStart;
+                by_offset(start)
+            })
         }
     }
+    impl shapes::__spec::Conditional for shapes::Offset {}
 
     // /// Pages of items asked by their number.
     // GET numbered(
@@ -6173,29 +6311,53 @@ const _: () = {
     //     paginate by_page(page, 1);
     // }
 
-    impl ::concord::page::Slot<shapes::Numbered> for shapes::__NumberedPage {
+    impl ::concord::page::Slot<shapes::Call<shapes::Numbered>> for shapes::__NumberedPage {
         type Value = u32;
-        fn get<'a>(&self, __call: &'a shapes::Numbered) -> ::core::option::Option<&'a Self::Value> {
-            __call.page.as_ref()
+        fn get<'a>(
+            &self,
+            __call: &'a shapes::Call<shapes::Numbered>,
+        ) -> ::core::option::Option<&'a Self::Value> {
+            __call.__inputs.page.as_ref()
         }
-        fn set(&self, mut __call: shapes::Numbered, __value: Self::Value) -> shapes::Numbered {
-            __call.page = ::core::option::Option::Some(__value);
+        fn set(
+            &self,
+            mut __call: shapes::Call<shapes::Numbered>,
+            __value: Self::Value,
+        ) -> shapes::Call<shapes::Numbered> {
+            __call.__inputs.page = ::core::option::Option::Some(__value);
             __call
         }
     }
 
     /// The options of this endpoint.
-    impl shapes::Numbered {
+    #[doc(hidden)]
+    impl shapes::Call<shapes::Numbered> {
         /// The number of the page; the first is 1.
         ///
         /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
         pub fn page(mut self, page: impl ::concord::arg::Arg<::core::option::Option<u32>>) -> Self {
-            self.page = page.into_input();
+            self.__inputs.page = page.into_input();
             self
         }
     }
 
     impl shapes::Numbered {
+        /// Option `page` of `numbered`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// The number of the page; the first is 1.
+        ///
+        /// Accepts [`u32`], &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.
+        pub fn page(
+            __call: shapes::Call<shapes::Numbered>,
+            page: impl ::concord::arg::Arg<::core::option::Option<u32>>,
+        ) -> shapes::Call<shapes::Numbered> {
+            __call.page(page)
+        }
+    }
+
+    impl shapes::Call<shapes::Numbered> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -6205,7 +6367,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let page = &self.page;
+                let page = &self.__inputs.page;
                 __draft.query(
                     "page",
                     &[
@@ -6222,9 +6384,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -6272,7 +6434,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Vec<Item>, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -6280,7 +6442,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -6291,40 +6453,32 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Numbered {
+        type Value = Vec<Item>;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Numbered,
+        shapes::__NumberedInputs,
         Vec<Item>,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Vec`]<[`Item`]>>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Vec`]<[`Item`]> pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Vec`]<[`Item`]>>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    #[allow(unused_variables)]
-                    let page = shapes::__NumberedPage;
-                    by_page(page, 1)
-                })
-            }
-
-        }
+        "Numbered"
     );
-
-    impl ::std::fmt::Debug for shapes::Numbered {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Numbered")
-                .field("endpoint", &"shapes.numbered")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Numbered {
+        fn pages(call: shapes::Call<shapes::Numbered>) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                #[allow(unused_variables)]
+                let page = shapes::__NumberedPage;
+                by_page(page, 1)
+            })
         }
     }
+    impl shapes::__spec::Conditional for shapes::Numbered {}
 
     // /// Pages of items whose page gives the address of the next one.
     // GET addressed() -> Batch {
@@ -6332,7 +6486,7 @@ const _: () = {
     //     paginate by_next_url(Batch::next_url);
     // }
 
-    impl shapes::Addressed {
+    impl shapes::Call<shapes::Addressed> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -6345,9 +6499,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -6395,7 +6549,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Batch, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -6403,7 +6557,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -6414,38 +6568,30 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Addressed {
+        type Value = Batch;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Addressed,
+        shapes::__AddressedInputs,
         Batch,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Batch`]>",
-        paged, conditional,
-        pages {
-            /// Iterate over [`Batch`] pages.
-            ///
-            /// `try_next().await` returns [`shapes::Result`]<[`Option`]<[`Batch`]>>.
-            /// Each page is one call. Nothing is asked until iteration starts.
-            pub fn pages(self) -> ::concord::Pages<Batch, ShapesProblem> {
-                // The owner in reach, then each input as its place; the expression is
-                // copied as written.
-                ::concord::__private::pages(self, {
-                    #[allow(unused_variables)]
-                    let client = __Client;
-                    by_next_url(Batch::next_url)
-                })
-            }
-
-        }
+        "Addressed"
     );
-
-    impl ::std::fmt::Debug for shapes::Addressed {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Addressed")
-                .field("endpoint", &"shapes.addressed")
-                .finish_non_exhaustive()
+    impl shapes::__spec::Paged for shapes::Addressed {
+        fn pages(call: shapes::Call<shapes::Addressed>) -> ::concord::Pages<Batch, ShapesProblem> {
+            // The owner in reach, then each input as its place; the expression is
+            // copied as written.
+            ::concord::__private::pages(call, {
+                #[allow(unused_variables)]
+                let client = __Client;
+                by_next_url(Batch::next_url)
+            })
         }
     }
+    impl shapes::__spec::Conditional for shapes::Addressed {}
 
     // /// Remove an item. An accepted removal is not done; a missing item is removed.
     // DELETE remove(
@@ -6458,7 +6604,7 @@ const _: () = {
     //         404 => (),
     //     }
     // }
-    impl shapes::Remove {
+    impl shapes::Call<shapes::Remove> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::DELETE);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -6468,7 +6614,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -6480,9 +6626,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -6502,7 +6648,7 @@ const _: () = {
                 ::concord::http::StatusCode::ACCEPTED => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     // An arm under no arrow gives `()`: the author's expression is copied as written.
                     #[allow(unused_braces, clippy::unit_arg, clippy::unused_unit)]
                     let __arm = || -> ::std::result::Result<(), ::concord::Fail<ShapesProblem>> {
@@ -6513,7 +6659,7 @@ const _: () = {
                 ::concord::http::StatusCode::NOT_FOUND => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     // An arm under no arrow gives `()`: the author's expression is copied as written.
                     #[allow(unused_braces, clippy::unit_arg, clippy::unused_unit)]
                     let __arm = || -> ::std::result::Result<(), ::concord::Fail<ShapesProblem>> {
@@ -6541,7 +6687,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<(), ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -6549,7 +6695,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -6560,23 +6706,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Remove {
+        type Value = ();
+    }
+
+    call_spec!(
+        shapes,
         shapes::Remove,
+        shapes::__RemoveInputs,
         (),
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`()`](https://doc.rust-lang.org/std/primitive.unit.html)>",
-        awaitable,
-        unconditional
+        "Remove"
     );
-
-    impl ::std::fmt::Debug for shapes::Remove {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Remove")
-                .field("endpoint", &"shapes.remove")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Remove {}
 
     // /// An item, or the conflict that holds it. An accepted change is a conflict too.
     // GET settled(
@@ -6586,7 +6728,7 @@ const _: () = {
     //     path "settled/{id}";
     //     status { 202 => Err(Conflict { message: "pending".to_owned() }) }
     // }
-    impl shapes::Settled {
+    impl shapes::Call<shapes::Settled> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -6596,7 +6738,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -6608,9 +6750,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -6630,7 +6772,7 @@ const _: () = {
                 ::concord::http::StatusCode::ACCEPTED => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<Result<Item, Conflict>, ::concord::Fail<ShapesProblem>> {
                         ::std::result::Result::Ok({ Err(Conflict {
@@ -6670,7 +6812,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Result<Item, Conflict>, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -6678,7 +6820,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -6689,23 +6831,13 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
-        shapes::Settled,
-        Result<Item, Conflict>,
-        ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Result`]<[`Item`], [`Conflict`]>>",
-        awaitable,
-        conditional
-    );
-
-    impl ::std::fmt::Debug for shapes::Settled {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Settled")
-                .field("endpoint", &"shapes.settled")
-                .finish_non_exhaustive()
-        }
+    impl shapes::Endpoint for shapes::Settled {
+        type Value = Result<Item, Conflict>;
     }
+
+    call_spec!(shapes, shapes::Settled, shapes::__SettledInputs, Result<Item, Conflict>, ShapesProblem, "Settled");
+    impl shapes::__spec::Awaitable for shapes::Settled {}
+    impl shapes::__spec::Conditional for shapes::Settled {}
 
     // /// A part of a file, as it comes, or none when there is nothing to send.
     // GET part(
@@ -6716,7 +6848,7 @@ const _: () = {
     //     read Stream;
     //     status { 204 => None, 404 => None }
     // }
-    impl shapes::Part {
+    impl shapes::Call<shapes::Part> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -6726,7 +6858,7 @@ const _: () = {
             #[allow(unused_variables)]
             {
                 let client = __Client;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -6738,9 +6870,9 @@ const _: () = {
         fn __build_request(&self, __take: bool) -> shapes::Result<::concord::reqwest::Request> {
             let __draft = self.__build_draft()?;
             if __take {
-                __draft.finish_for_send(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish_for_send(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             } else {
-                __draft.finish(&self.__client.__core, &self.__options, Self::__ENDPOINT)
+                __draft.finish(&self.__inputs.__client.__core, &self.__options, Self::__ENDPOINT)
             }
         }
 
@@ -6760,7 +6892,7 @@ const _: () = {
                 ::concord::http::StatusCode::NO_CONTENT => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<Option<concord::ByteStream>, ::concord::Fail<ShapesProblem>> {
                         ::std::result::Result::Ok({ None })
@@ -6770,7 +6902,7 @@ const _: () = {
                 ::concord::http::StatusCode::NOT_FOUND => {
                     // The arm of the endpoint: the owner in reach, then its inputs.
                     let client = __Client;
-                    let id = &self.id;
+                    let id = &self.__inputs.id;
                     #[allow(unused_braces)]
                     let __arm = || -> ::std::result::Result<Option<concord::ByteStream>, ::concord::Fail<ShapesProblem>> {
                         ::std::result::Result::Ok({ None })
@@ -6782,7 +6914,7 @@ const _: () = {
                     ::concord::__private::read_body(
                         &{
                             let client = __Client;
-                            let id = &self.id;
+                            let id = &self.__inputs.id;
                             (|| ::concord::__private::reader::<concord::ByteStream, _>(Stream))()
                         },
                         __response,
@@ -6810,7 +6942,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<Option<concord::ByteStream>, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__client.__core,
+                &self.__inputs.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -6818,7 +6950,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__client.__core.clone(),
+                self.__inputs.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -6829,23 +6961,20 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::Part {
+        type Value = Option<concord::ByteStream>;
+    }
+
+    call_spec!(
+        shapes,
         shapes::Part,
+        shapes::__PartInputs,
         Option<concord::ByteStream>,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`Option`]<[`concord::ByteStream`]>>",
-        awaitable,
-        conditional
+        "Part"
     );
-
-    impl ::std::fmt::Debug for shapes::Part {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("Part")
-                .field("endpoint", &"shapes.part")
-                .finish_non_exhaustive()
-        }
-    }
+    impl shapes::__spec::Awaitable for shapes::Part {}
+    impl shapes::__spec::Conditional for shapes::Part {}
 
     // /// A file, as it comes, once the seal of its answer is checked.
     // GET file(
@@ -6855,7 +6984,7 @@ const _: () = {
     //     path "{id}";
     //     read Stream;
     // }
-    impl shapes::sealed::File {
+    impl shapes::Call<shapes::sealed::File> {
         fn __build_draft(&self) -> shapes::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::new(::concord::http::Method::GET);
             __draft.base(&[::concord::__private::Piece::Lit(
@@ -6866,7 +6995,7 @@ const _: () = {
             {
                 let client = __Client;
                 let sealed = __Sealed;
-                let id = &self.id;
+                let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
                     &(&::concord::__private::ValueRef(id)).adapt(),
@@ -6879,13 +7008,13 @@ const _: () = {
             let __draft = self.__build_draft()?;
             if __take {
                 __draft.finish_for_send(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
             } else {
                 __draft.finish(
-                    &self.__scope.__client.__core,
+                    &self.__inputs.__scope.__client.__core,
                     &self.__options,
                     Self::__ENDPOINT,
                 )
@@ -6912,7 +7041,7 @@ const _: () = {
                         &{
                             let client = __Client;
                             let sealed = __Sealed;
-                            let id = &self.id;
+                            let id = &self.__inputs.id;
                             (|| ::concord::__private::reader::<_, _>(Stream))()
                         },
                         __response,
@@ -6956,7 +7085,7 @@ const _: () = {
             self,
         ) -> shapes::Result<::concord::__private::Prepared<concord::ByteStream, ShapesProblem>> {
             let __run = ::concord::__private::Run::start(
-                &self.__scope.__client.__core,
+                &self.__inputs.__scope.__client.__core,
                 &self.__options,
                 Self::__ENDPOINT,
             );
@@ -6964,7 +7093,7 @@ const _: () = {
             let __draft = self.__build_draft()?;
             __draft.prepare(
                 __run,
-                self.__scope.__client.__core.clone(),
+                self.__inputs.__scope.__client.__core.clone(),
                 self.__options.clone(),
                 __idempotent,
                 move |__response, __info| {
@@ -6975,21 +7104,19 @@ const _: () = {
         }
     }
 
-    ::concord::__private::call_methods!(
+    impl shapes::Endpoint for shapes::sealed::File {
+        type Value = concord::ByteStream;
+    }
+
+    call_spec!(
+        shapes,
         shapes::sealed::File,
+        shapes::__SealedFileInputs,
         concord::ByteStream,
         ShapesProblem,
-        shapes::Result,
-        "[`shapes::Result`]<[`concord::ByteStream`]>",
-        awaitable,
-        conditional
+        "File"
     );
+    impl shapes::__spec::Awaitable for shapes::sealed::File {}
+    impl shapes::__spec::Conditional for shapes::sealed::File {}
 
-    impl ::std::fmt::Debug for shapes::sealed::File {
-        fn fmt(&self, __f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            __f.debug_struct("File")
-                .field("endpoint", &"shapes.sealed.file")
-                .finish_non_exhaustive()
-        }
-    }
 };

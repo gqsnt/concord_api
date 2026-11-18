@@ -151,18 +151,18 @@ async fn function_pager(feed: &Feed) -> feed::Result<()> {
 
 // These are the only public names of the generated types; no flat aliases exist.
 fn tree_names(
-    ids: riot::matches::Ids,
+    ids: riot::Call<riot::matches::Ids>,
     matches: riot::Matches,
     account: riot::Account,
     error: riot::Error,
 ) {
-    let _: riot::matches::Ids = ids;
+    let _: riot::Call<riot::matches::Ids> = ids;
     let _: riot::Matches = matches;
     let _: riot::Account = account;
     let _: riot::Error = error;
-    let _: tasks::Get = Tasks::new().get(1);
-    let _: files::Exists = Files::new("test-key").exists(DocId::from("readme"));
-    let _: feed::List = Feed::new().list();
+    let _: tasks::Call<tasks::Get> = Tasks::new().get(1);
+    let _: files::Call<files::Exists> = Files::new("test-key").exists(DocId::from("readme"));
+    let _: feed::Call<feed::List> = Feed::new().list();
 }
 
 fn owned_send<T: Send + 'static>(value: T) {}
@@ -195,7 +195,7 @@ fn c10_2_ownership_and_arguments() {
     let call = Tasks::new().list().done(&false).done(Some(true)).done(None);
     owned_send(call.send());
     let token = Secret::from("user-token");
-    let me: riot::account::Me = Riot::new("key").account(Europe).me(&token);
+    let me: riot::Call<riot::account::Me> = Riot::new("key").account(Europe).me(&token);
     owned_send(me.send_full());
     let name = String::from("Faker");
     let account = Riot::new("key").account(Europe).by_riot_id(&name, "KR1");
@@ -239,7 +239,7 @@ fn client_settings(http: reqwest::Client, base: concord::Base) {
     cloneable(&feed);
 }
 
-async fn surface_taskslist(call: tasks::List) -> tasks::Result<()> {
+async fn surface_taskslist(call: tasks::Call<tasks::List>) -> tasks::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -267,7 +267,7 @@ async fn surface_taskslist(call: tasks::List) -> tasks::Result<()> {
     Ok(())
 }
 
-async fn surface_taskscreate(call: tasks::Create) -> tasks::Result<()> {
+async fn surface_taskscreate(call: tasks::Call<tasks::Create>) -> tasks::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -295,7 +295,7 @@ async fn surface_taskscreate(call: tasks::Create) -> tasks::Result<()> {
     Ok(())
 }
 
-async fn surface_tasksget(call: tasks::Get) -> tasks::Result<()> {
+async fn surface_tasksget(call: tasks::Call<tasks::Get>) -> tasks::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -323,7 +323,7 @@ async fn surface_tasksget(call: tasks::Get) -> tasks::Result<()> {
     Ok(())
 }
 
-async fn surface_tasksdelete(call: tasks::Delete) -> tasks::Result<()> {
+async fn surface_tasksdelete(call: tasks::Call<tasks::Delete>) -> tasks::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -351,7 +351,7 @@ async fn surface_tasksdelete(call: tasks::Delete) -> tasks::Result<()> {
     Ok(())
 }
 
-async fn surface_riotmatchesids(call: riot::matches::Ids) -> riot::Result<()> {
+async fn surface_riotmatchesids(call: riot::Call<riot::matches::Ids>) -> riot::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -380,7 +380,7 @@ async fn surface_riotmatchesids(call: riot::matches::Ids) -> riot::Result<()> {
     Ok(())
 }
 
-async fn surface_riotmatchesget(call: riot::matches::Get) -> riot::Result<()> {
+async fn surface_riotmatchesget(call: riot::Call<riot::matches::Get>) -> riot::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -409,7 +409,9 @@ async fn surface_riotmatchesget(call: riot::matches::Get) -> riot::Result<()> {
     Ok(())
 }
 
-async fn surface_riotaccountbyriotid(call: riot::account::ByRiotId) -> riot::Result<()> {
+async fn surface_riotaccountbyriotid(
+    call: riot::Call<riot::account::ByRiotId>,
+) -> riot::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -438,7 +440,7 @@ async fn surface_riotaccountbyriotid(call: riot::account::ByRiotId) -> riot::Res
     Ok(())
 }
 
-async fn surface_riotaccountme(call: riot::account::Me) -> riot::Result<()> {
+async fn surface_riotaccountme(call: riot::Call<riot::account::Me>) -> riot::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -467,7 +469,7 @@ async fn surface_riotaccountme(call: riot::account::Me) -> riot::Result<()> {
     Ok(())
 }
 
-async fn surface_filesexists(call: files::Exists) -> files::Result<()> {
+async fn surface_filesexists(call: files::Call<files::Exists>) -> files::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -495,7 +497,7 @@ async fn surface_filesexists(call: files::Exists) -> files::Result<()> {
     Ok(())
 }
 
-async fn surface_filesreadme(call: files::Readme) -> files::Result<()> {
+async fn surface_filesreadme(call: files::Call<files::Readme>) -> files::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -523,7 +525,7 @@ async fn surface_filesreadme(call: files::Readme) -> files::Result<()> {
     Ok(())
 }
 
-async fn surface_filesdownload(call: files::Download) -> files::Result<()> {
+async fn surface_filesdownload(call: files::Call<files::Download>) -> files::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -552,7 +554,7 @@ async fn surface_filesdownload(call: files::Download) -> files::Result<()> {
     Ok(())
 }
 
-async fn surface_filesupload(call: files::Upload) -> files::Result<()> {
+async fn surface_filesupload(call: files::Call<files::Upload>) -> files::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -580,7 +582,7 @@ async fn surface_filesupload(call: files::Upload) -> files::Result<()> {
     Ok(())
 }
 
-async fn surface_filessearch(call: files::Search) -> files::Result<()> {
+async fn surface_filessearch(call: files::Call<files::Search>) -> files::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -608,7 +610,7 @@ async fn surface_filessearch(call: files::Search) -> files::Result<()> {
     Ok(())
 }
 
-async fn surface_feedlist(call: feed::List) -> feed::Result<()> {
+async fn surface_feedlist(call: feed::Call<feed::List>) -> feed::Result<()> {
     let call = call
         .with_retry(Retry::none())
         .with_timeout(Duration::from_secs(10))
@@ -798,7 +800,7 @@ async fn ordinary_pager_functions(feed: &Feed) -> feed::Result<()> {
         let _ = item;
     }
     let call = concord::page::Call::at_url(feed.linked(), "/linked-items?page=2");
-    let _: feed::Linked = call.clone();
+    let _: feed::Call<feed::Linked> = call.clone();
     let _: Page = call.send().await?;
     Ok(())
 }
@@ -1199,7 +1201,7 @@ async fn read_independent_responses() -> Result<(), AnyError> {
     Ok(())
 }
 
-fn read_response_is_send(call: &tasks::List, response: reqwest::Response) {
+fn read_response_is_send(call: &tasks::Call<tasks::List>, response: reqwest::Response) {
     fn send<F: std::future::Future<Output = tasks::Result<Vec<Task>>> + Send>(_: F) {}
     send(call.read_response(response));
 }
