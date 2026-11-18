@@ -38,7 +38,7 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 ///    the call that fetched the page, this page is the last. Nothing else is read.
 /// 2. **What the page states.** Every statement ([`has_more`](Paging::has_more), and the total of
 ///    [`by_offset_total`]) is read, once, in the order written, whatever the others say. If one
-///    cannot be read, its failure is the result (the first written, when several fail). Otherwise,
+///    cannot be read (a total that is not a number of items), its failure is the result. Otherwise,
 ///    if one says "no more" and another "more", the pages end with a Mismatch
 ///    (`the page's statements disagree on whether more items follow`). If all say "no more", this
 ///    page is the last. The order of the methods does not matter for statements that read only
@@ -765,6 +765,36 @@ mod tests {
         type Problem = u8;
         fn at_url(self, _: &str) -> Probe {
             self
+        }
+    }
+
+    /// Two statements that both fail: the first written is the result, in either order, and both
+    /// are read once. No public construction has two that can fail, so this is a private test.
+    #[test]
+    fn c8_6_of_two_failing_statements_the_first_written_is_the_result() {
+        for reverse in [false, true] {
+            let mut pager = Paging::from_fn(|call: Probe, _: &Answer<Vec<u32>>| Some(call));
+            let seen = Arc::new(AtomicUsize::new(0));
+            for problem in [!reverse, reverse] {
+                let visits = seen.clone();
+                pager.parts().statements.push(Box::new(move |_, _| {
+                    visits.fetch_add(1, SeqCst);
+                    if problem {
+                        Err(Fail::from(7))
+                    } else {
+                        Err(mismatch("the second failure"))
+                    }
+                }));
+            }
+            let page = Answer::new(StatusCode::OK, Headers::from(HeaderMap::new()), vec![1]);
+            let failure = pager.next_call(Probe, &page).unwrap_err();
+            let first = if reverse {
+                "Fail(mismatch)"
+            } else {
+                "Fail(problem)"
+            };
+            assert_eq!(format!("{failure:?}"), first);
+            assert_eq!(seen.load(SeqCst), 2);
         }
     }
 
