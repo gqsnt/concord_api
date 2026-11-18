@@ -202,6 +202,28 @@ fn c10_2_ownership_and_arguments() {
     owned_send(account.send());
 }
 
+// A list in the query: its key once for each item, in their order; an empty list or `None`
+// writes no pair.
+#[test]
+fn c2_6_a_list_option_writes_its_key_once_for_each_item() {
+    let query = |call: tasks::Call<tasks::List>| {
+        let request: reqwest::Request = call.request().unwrap();
+        request.url().query().map(str::to_owned)
+    };
+    let tasks = Tasks::new();
+    assert_eq!(
+        query(tasks.list().done(false).tags(["home", "work"])).as_deref(),
+        Some("done=false&tags=home&tags=work")
+    );
+    let tags = vec![String::from("a b")];
+    assert_eq!(
+        query(tasks.list().tags(&tags)).as_deref(),
+        Some("tags=a%20b")
+    );
+    assert_eq!(query(tasks.list().tags(&["x"][..]).tags(None)), None);
+    assert_eq!(query(tasks.list().tags(Vec::<String>::new())), None);
+}
+
 // Every client has the same five settings, including text and parsed bases.
 fn client_settings(http: reqwest::Client, base: concord::Base) {
     let tasks = Tasks::new()

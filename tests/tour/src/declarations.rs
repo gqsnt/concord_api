@@ -37,6 +37,7 @@ pub mod tasks {
     pub struct __ListInputs {
         pub(super) __client: super::Tasks,
         pub(super) done: <() as __Types>::__Input0,
+        pub(super) tags: <() as __Types>::__Input1,
     }
 
     #[doc(hidden)]
@@ -44,7 +45,7 @@ pub mod tasks {
     #[allow(missing_debug_implementations)]
     pub struct __CreateInputs {
         pub(super) __client: super::Tasks,
-        pub(super) task: <() as __Types>::__Input1,
+        pub(super) task: <() as __Types>::__Input2,
     }
 
     #[doc(hidden)]
@@ -52,7 +53,7 @@ pub mod tasks {
     #[allow(missing_debug_implementations)]
     pub struct __GetInputs {
         pub(super) __client: super::Tasks,
-        pub(super) id: <() as __Types>::__Input2,
+        pub(super) id: <() as __Types>::__Input3,
     }
 
     #[doc(hidden)]
@@ -60,7 +61,7 @@ pub mod tasks {
     #[allow(missing_debug_implementations)]
     pub struct __DeleteInputs {
         pub(super) __client: super::Tasks,
-        pub(super) id: <() as __Types>::__Input3,
+        pub(super) id: <() as __Types>::__Input4,
     }
 
     #[doc(hidden)]
@@ -69,6 +70,7 @@ pub mod tasks {
         type __Input1: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static;
         type __Input2: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static;
         type __Input3: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static;
+        type __Input4: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static;
         type __Problem: ::std::marker::Send + ::std::marker::Sync + 'static;
     }
 
@@ -105,6 +107,7 @@ pub mod tasks {
     /// Options:
     ///
     /// - `tasks::List::done(__call: tasks::Call<tasks::List>, done: impl concord::arg::Arg<Option<bool>>) -> tasks::Call<tasks::List>`: accepts [`bool`], &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it. Filter tasks by completion state.
+    /// - `tasks::List::tags(__call: tasks::Call<tasks::List>, tags: impl concord::arg::Arg<Option<Vec<String>>>) -> tasks::Call<tasks::List>`: accepts [`Vec`]<[`String`]>, &[`Vec`]<[`String`]>, a slice or an array of [`String`] or &[`str`], or an [`Option`]<[`Vec`]<[`String`]>>. `None` clears it. Keep only tasks that carry every one of these tags.
     ///
     /// `.await` returns [`tasks::Result`](crate::tasks::Result)<[`Vec`]<[`Task`](crate::Task)>>.
     ///

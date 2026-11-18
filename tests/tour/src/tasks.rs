@@ -26,8 +26,10 @@ const _: () = {
     //     GET list(
     //         /// Filter tasks by completion state.
     //         done?: bool,
+    //         /// Keep only tasks that carry every one of these tags.
+    //         tags?: Vec<String>,
     //     ) -> Vec<Task> {
-    //         query { done; }
+    //         query { done; tags; }
     //     }
     //     /// Create a task with a title.
     //     POST create(
@@ -53,9 +55,10 @@ const _: () = {
     // }
     impl tasks::__Types for () {
         type __Input0 = ::core::option::Option<bool>;
-        type __Input1 = NewTask;
-        type __Input2 = u64;
+        type __Input1 = ::core::option::Option<Vec<String>>;
+        type __Input2 = NewTask;
         type __Input3 = u64;
+        type __Input4 = u64;
         type __Problem = ();
     }
 
@@ -122,6 +125,7 @@ const _: () = {
         /// Options:
         ///
         /// - `.done(false)`: accepts [`bool`], &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it. Filter tasks by completion state.
+        /// - `.tags(["home"])`: accepts [`Vec`]<[`String`]>, &[`Vec`]<[`String`]>, a slice or an array of [`String`] or &[`str`], or an [`Option`]<[`Vec`]<[`String`]>>. `None` clears it. Keep only tasks that carry every one of these tags.
         ///
         /// `.await` returns [`tasks::Result`]<[`Vec`]<[`Task`]>>.
         #[must_use = "a call does nothing until sent or awaited"]
@@ -129,6 +133,7 @@ const _: () = {
             tasks::Call::__new(tasks::__ListInputs {
                 __client: self.clone(),
                 done: ::core::option::Option::None,
+                tags: ::core::option::Option::None,
             })
         }
 
@@ -203,8 +208,10 @@ const _: () = {
     // GET list(
     //     /// Filter tasks by completion state.
     //     done?: bool,
+    //     /// Keep only tasks that carry every one of these tags.
+    //     tags?: Vec<String>,
     // ) -> Vec<Task> {
-    //     query { done; }
+    //     query { done; tags; }
     // }
     /// The options of this endpoint.
     #[doc(hidden)]
@@ -214,6 +221,14 @@ const _: () = {
         /// Accepts [`bool`], &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it.
         pub fn done(mut self, done: impl ::concord::arg::Arg<::core::option::Option<bool>>) -> Self {
             self.__inputs.done = done.into_input();
+            self
+        }
+
+        /// Keep only tasks that carry every one of these tags.
+        ///
+        /// Accepts [`Vec`]<[`String`]>, &[`Vec`]<[`String`]>, a slice or an array of [`String`] or &[`str`], or an [`Option`]<[`Vec`]<[`String`]>>. `None` clears it.
+        pub fn tags(mut self, tags: impl ::concord::arg::Arg<::core::option::Option<Vec<String>>>) -> Self {
+            self.__inputs.tags = tags.into_input();
             self
         }
     }
@@ -232,6 +247,20 @@ const _: () = {
         ) -> tasks::Call<tasks::List> {
             __call.done(done)
         }
+
+        /// Option `tags` of `list`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Keep only tasks that carry every one of these tags.
+        ///
+        /// Accepts [`Vec`]<[`String`]>, &[`Vec`]<[`String`]>, a slice or an array of [`String`] or &[`str`], or an [`Option`]<[`Vec`]<[`String`]>>. `None` clears it.
+        pub fn tags(
+            __call: tasks::Call<tasks::List>,
+            tags: impl ::concord::arg::Arg<::core::option::Option<Vec<String>>>,
+        ) -> tasks::Call<tasks::List> {
+            __call.tags(tags)
+        }
     }
 
     impl tasks::Call<tasks::List> {
@@ -249,6 +278,14 @@ const _: () = {
                     &[::concord::__private::Piece::Val(
                         "done",
                         &(&::concord::__private::ValueRef(done)).adapt(),
+                    )],
+                );
+                let tags = &self.__inputs.tags;
+                __draft.query(
+                    "tags",
+                    &[::concord::__private::Piece::Val(
+                        "tags",
+                        &(&::concord::__private::ValueRef(tags)).adapt(),
                     )],
                 );
             }
