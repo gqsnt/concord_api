@@ -175,6 +175,12 @@ impl BodyClock for Run {
         })
     }
 
+    fn expired(&self) -> Option<BodyTimeout> {
+        self.total
+            .filter(|(end, _)| Instant::now() >= *end)
+            .map(|(_, length)| BodyTimeout::Total(length))
+    }
+
     fn record(&self, evidence: KnownOutcome<'_>) {
         *self
             .known

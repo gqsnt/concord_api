@@ -18,6 +18,12 @@ pub trait BodyClock: Send + Sync {
     /// Start watching one wait; the returned future must not borrow the clock.
     fn wait(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = BodyTimeout> + Send>>;
 
+    /// The call's deadline, when it has passed: checked without waiting, by a reader that
+    /// yields between pieces of work that are always ready. `None` by default.
+    fn expired(&self) -> Option<BodyTimeout> {
+        None
+    }
+
     /// Copy progressive evidence before the engine can cancel a known outcome.
     /// The engine clears this per-try evidence before starting another try.
     fn record(&self, evidence: KnownOutcome<'_>);

@@ -59,37 +59,6 @@ pub trait Reader<T>: Send + Sync {
     fn read(&self, body: Incoming) -> impl Future<Output = Result<T, ReadError>> + Send;
 }
 
-/// A reader of `T` for a client whose problem type is `P`: what the generated code requires of
-/// the value of `read`.
-///
-/// Every [`Reader`] is one, for every problem type, and you implement `Reader`, not this
-/// trait. A reader whose value holds the client's own error, such as a mapped reader of records
-/// (`RecordStream<T, concord::Error<P>>`), implements `ReaderFor` for that problem type only:
-/// so a stream whose error names another problem type than the client's does not compile.
-///
-/// ```
-/// # use concord_core as concord;
-/// use concord::read::{ReaderFor, Reader};
-///
-/// fn for_any_client<R: Reader<String>>(reader: R) -> impl ReaderFor<String, u16> {
-///     reader
-/// }
-/// ```
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` cannot read a `{T}`",
-    note = "the value of `read` must be a reader of the endpoint's type: one of `concord::read`, or a type that implements `concord::Reader<{T}>`"
-)]
-pub trait ReaderFor<T, P>: Send + Sync {
-    /// Reads the body, as [`Reader::read`] does.
-    fn read_for(&self, body: Incoming) -> impl Future<Output = Result<T, ReadError>> + Send;
-}
-
-impl<T, P, R: Reader<T>> ReaderFor<T, P> for R {
-    fn read_for(&self, body: Incoming) -> impl Future<Output = Result<T, ReadError>> + Send {
-        self.read(body)
-    }
-}
-
 impl<T, R: Reader<T>> Reader<T> for &R {
     fn read(&self, body: Incoming) -> impl Future<Output = Result<T, ReadError>> + Send {
         (**self).read(body)
@@ -1060,6 +1029,32 @@ impl ByteStream {
         Wait(self)
     }
 
+    /// Returns the call's timeout error when the call's deadline (`with_timeout`) has passed,
+    /// without waiting, and ends the stream; `Ok(())` otherwise, and always for a body read
+    /// with no deadline.
+    ///
+    /// The deadline is watched while a read waits for bytes. A reader that does work which is
+    /// always ready (it skips records that keep arriving, and yields to the runtime between
+    /// them) calls this before it yields, so that the deadline ends it even when no read waits.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn late(body: &mut concord::ByteStream) -> bool {
+    ///     body.check_deadline().is_err()
+    /// }
+    /// ```
+    pub fn check_deadline(&mut self) -> Result<(), StreamError> {
+        let expired = self.clock.as_ref().and_then(|clock| clock.expired());
+        match expired {
+            Some(timeout) if self.body.is_some() => {
+                self.body = None;
+                self.waiting = None;
+                Err(self.error(BodyFailure::Timeout(timeout)))
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Returns the status of the response that this body belongs to.
     pub fn status(&self) -> http::StatusCode {
         self.status
@@ -1198,9 +1193,9 @@ impl ByteStream {
     /// A [`RecordBody`] is the only way to make the call's error for a record: its count of
     /// records is the framer's own, and each of its errors consumes it, so that a body gives
     /// at most one error, and a reader cannot report a fault of another body or a number of its
-    /// own as this body's record. A reader of records that implements [`ReaderFor`] for the
-    /// client's problem type receives `P` from the endpoint, so a refusal holds the client's
-    /// problem type.
+    /// own as this body's record. The generated code checks that an endpoint's declared
+    /// `RecordStream<T, concord::Error<P>>` names the client's own problem type, so a refusal
+    /// that reaches a caller holds the client's problem type, whatever reader made it.
     ///
     /// ```no_run
     /// # use concord_core as concord;
@@ -1221,12 +1216,18 @@ impl ByteStream {
 /// only way to make the call's own error for one of them.
 ///
 /// A framer calls [`start_record`](RecordBody::start_record) when a record begins (a line, an
-/// event block, counting blocks that dispatch nothing), and reads the bytes with
-/// [`bytes`](RecordBody::bytes). A fault is reported with [`fail`](RecordBody::fail), and the
-/// API's own error with [`refuse`](RecordBody::refuse); both consume the body, which is released
-/// when the error is made. The error names the record by this count, never by a number that the
-/// reader supplies. A failure of the bytes themselves is the [`StreamError`] that `bytes()`
-/// returned: `?` converts it into the call's error.
+/// event block, counting blocks that dispatch nothing), and takes the bytes chunk by chunk with
+/// [`next_chunk`](RecordBody::next_chunk) or [`poll_chunk`](RecordBody::poll_chunk). The body
+/// never hands out its stream, so the chunks, the head and the count always belong to one
+/// response. A fault is reported with [`fail`](RecordBody::fail), and the API's own error with
+/// [`refuse`](RecordBody::refuse); both consume the body, which is released when the error is
+/// made. The error names the record by this count, never by a number that the reader supplies.
+/// A failure of the bytes themselves is the [`StreamError`] that a chunk returned: `?` converts
+/// it into the call's error.
+///
+/// What the body cannot check stays the framer's own: a framer that calls `start_record` at the
+/// wrong times, or gives [`RecordFault::at`] a wrong line and column, reports wrongly what it
+/// saw.
 ///
 /// `Debug` prints the status, the names of the headers and the count.
 ///
@@ -1234,13 +1235,13 @@ impl ByteStream {
 /// # use concord_core as concord;
 /// use concord::read::{RecordBody, RecordFault};
 ///
-/// /// A reader of lines of your own: each line is one record.
+/// /// A reader of lines of your own: each chunk is one record here.
 /// async fn next_line<P>(mut body: RecordBody<P>) -> Result<(RecordBody<P>, Vec<u8>), concord::Error<P>> {
 ///     body.start_record();
-///     let line = Vec::new();
-///     match body.bytes().try_next().await? {
+///     match body.next_chunk().await? {
 ///         Some(chunk) if chunk.len() > 4096 => Err(body.fail(RecordFault::too_large())),
-///         _ => Ok((body, line)),
+///         Some(chunk) => Ok((body, chunk.to_vec())),
+///         None => Err(body.fail(RecordFault::unfinished())),
 ///     }
 /// }
 /// ```
@@ -1251,16 +1252,47 @@ pub struct RecordBody<P> {
 }
 
 impl<P> RecordBody<P> {
-    /// Returns the body's bytes, to read them as they arrive.
+    /// Returns the next chunk of the body, or `None` at its end, as
+    /// [`ByteStream::try_next`] does: dropping the future loses no byte and stops its idle
+    /// timer.
     ///
     /// ```no_run
     /// # use concord_core as concord;
-    /// fn bytes(body: &mut concord::read::RecordBody<()>) -> &mut concord::ByteStream {
-    ///     body.bytes()
+    /// async fn chunk(body: &mut concord::read::RecordBody<()>) -> Result<usize, concord::Error> {
+    ///     Ok(body.next_chunk().await?.map_or(0, |chunk| chunk.len()))
     /// }
     /// ```
-    pub fn bytes(&mut self) -> &mut ByteStream {
-        &mut self.stream
+    pub fn next_chunk(
+        &mut self,
+    ) -> impl Future<Output = Result<Option<Bytes>, StreamError>> + Send + '_ {
+        self.stream.try_next()
+    }
+
+    /// Polls the next chunk of the body, as the `Stream` implementation of [`ByteStream`]
+    /// does, for a framer that is itself polled.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// use std::task::{Context, Poll};
+    /// fn poll(body: &mut concord::read::RecordBody<()>, cx: &mut Context<'_>) -> bool {
+    ///     matches!(body.poll_chunk(cx), Poll::Ready(None))
+    /// }
+    /// ```
+    pub fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, StreamError>>> {
+        Pin::new(&mut self.stream).poll_next(cx)
+    }
+
+    /// Returns the call's timeout error when the call's deadline has passed, without waiting:
+    /// see [`ByteStream::check_deadline`].
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn late(body: &mut concord::read::RecordBody<()>) -> bool {
+    ///     body.check_deadline().is_err()
+    /// }
+    /// ```
+    pub fn check_deadline(&mut self) -> Result<(), StreamError> {
+        self.stream.check_deadline()
     }
 
     /// Counts one more record: the record that begins now, and that a later error names.

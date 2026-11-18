@@ -4,7 +4,7 @@
 #[cfg(feature = "json")]
 use super::JsonLines;
 use super::{RecordError, RecordStream, Sse, SseEvent};
-use concord_core::read::{Incoming, ReadError, Reader, ReaderFor, RecordBody, RecordFault};
+use concord_core::read::{Incoming, ReadError, Reader, RecordBody, RecordFault};
 use std::fmt;
 
 /// What a mapping does with a record that fits: yield a value, skip the record, or end the
@@ -370,7 +370,7 @@ enum End {
 }
 
 // The finished reader. Its type is never written by an author: the two words return it as an
-// `impl ReaderFor`.
+// `impl Reader`.
 #[derive(Clone)]
 struct Mapped<R, F> {
     reader: R,
@@ -462,7 +462,7 @@ impl<F> TryMap<Sse, F> {
     /// ```
     pub fn until_last_record<T, P>(
         self,
-    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    ) -> impl Reader<RecordStream<T, concord_core::Error<P>>> + Clone + fmt::Debug
     where
         F: FnMut(SseEvent) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
         T: Send + 'static,
@@ -485,7 +485,7 @@ impl<F> TryMap<Sse, F> {
     /// ```
     pub fn until_end_of_body<T, P>(
         self,
-    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    ) -> impl Reader<RecordStream<T, concord_core::Error<P>>> + Clone + fmt::Debug
     where
         F: FnMut(SseEvent) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
         T: Send + 'static,
@@ -518,7 +518,7 @@ impl<F> TryMap<JsonLines, F> {
     /// ```
     pub fn until_last_record<T, P>(
         self,
-    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    ) -> impl Reader<RecordStream<T, concord_core::Error<P>>> + Clone + fmt::Debug
     where
         F: FnMut(JsonLine) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
         T: Send + 'static,
@@ -539,7 +539,7 @@ impl<F> TryMap<JsonLines, F> {
     /// ```
     pub fn until_end_of_body<T, P>(
         self,
-    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    ) -> impl Reader<RecordStream<T, concord_core::Error<P>>> + Clone + fmt::Debug
     where
         F: FnMut(JsonLine) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
         T: Send + 'static,
@@ -557,7 +557,7 @@ impl<F> TryMap<JsonLines, F> {
     }
 }
 
-impl<T, P, F> ReaderFor<RecordStream<T, concord_core::Error<P>>, P> for Mapped<Sse, F>
+impl<T, P, F> Reader<RecordStream<T, concord_core::Error<P>>> for Mapped<Sse, F>
 where
     T: Send + 'static,
     P: Send + 'static,
@@ -565,7 +565,7 @@ where
 {
     // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
     #[allow(clippy::unimplemented)]
-    async fn read_for(
+    async fn read(
         &self,
         body: Incoming,
     ) -> Result<RecordStream<T, concord_core::Error<P>>, ReadError> {
@@ -581,7 +581,7 @@ where
 }
 
 #[cfg(feature = "json")]
-impl<T, P, F> ReaderFor<RecordStream<T, concord_core::Error<P>>, P> for Mapped<JsonLines, F>
+impl<T, P, F> Reader<RecordStream<T, concord_core::Error<P>>> for Mapped<JsonLines, F>
 where
     T: Send + 'static,
     P: Send + 'static,
@@ -589,7 +589,7 @@ where
 {
     // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
     #[allow(clippy::unimplemented)]
-    async fn read_for(
+    async fn read(
         &self,
         body: Incoming,
     ) -> Result<RecordStream<T, concord_core::Error<P>>, ReadError> {

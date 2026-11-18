@@ -9,6 +9,7 @@ mod build;
 mod call;
 mod client;
 mod data;
+mod output;
 mod page;
 mod run;
 mod value;
@@ -24,6 +25,7 @@ pub use call::{
 };
 pub use client::{Core, Options};
 pub use data::{CallData, InputSlot};
+pub use output::{CarriedProblem, CarriesProblem, OrdinaryOutput, Output, ProblemIs, SameProblem};
 #[cfg(test)]
 use page::same_page_request;
 pub use page::{pages, pages_with_pager, without_fragment, SecretUrl};

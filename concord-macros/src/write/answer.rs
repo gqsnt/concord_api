@@ -36,6 +36,21 @@ impl Writer<'_> {
             Span::mixed_site().located_at(endpoint.node.name.span()),
         );
         let receiver = emit!(__value: &Self::Data<()>);
+        // The same check for every endpoint: a declared type whose value holds a client's
+        // error must name this client's problem type; any other type passes.
+        let problem = self.problem_alias();
+        let declared = endpoint
+            .node
+            .output
+            .as_ref()
+            .map_or_else(|| endpoint.node.name.span(), |output| output.ty.span());
+        let output_check = emit_at!(declared=>
+            #[allow(unused_imports)]
+            use ::concord::__private::{CarriedProblem as _, OrdinaryOutput as _};
+            // The reference selects the path: a type that carries a problem takes the first.
+            #[allow(clippy::needless_borrow)]
+            (&::concord::__private::Output::<#read_type>::new()).problem::<#problem>();
+        );
         if endpoint.arms.is_empty() {
             let body = self.shared_answer(index, endpoint, read_type);
             let reader = if endpoint.node.output.is_some() {
@@ -50,7 +65,7 @@ impl Writer<'_> {
             return emit_at!(endpoint.node.name.span()=>
                 fn #read_answer(#receiver, __response: ::concord::reqwest::Response, __info: ::concord::transport::TryInfo)
                     -> #future
-                { #body }
+                { #output_check #body }
             );
         }
         let arms = endpoint
@@ -70,7 +85,7 @@ impl Writer<'_> {
         emit_at!(endpoint.node.name.span()=>
             async fn #read_answer(#receiver, __response: ::concord::reqwest::Response, __info: ::concord::transport::TryInfo)
                 -> #root::Result<::concord::Answer<#output>>
-            { #body }
+            { #output_check #body }
         )
     }
 

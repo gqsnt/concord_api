@@ -821,6 +821,11 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
+            #[allow(unused_imports)]
+            use ::concord::__private::{CarriedProblem as _, OrdinaryOutput as _};
+            #[allow(clippy::needless_borrow)]
+            (&::concord::__private::Output::<Self::Value>::new())
+                .problem::<__DeclaredProblem>();
             ::concord::__private::answer_read(
                 __response,
                 __info,
@@ -877,6 +882,11 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
+            #[allow(unused_imports)]
+            use ::concord::__private::{CarriedProblem as _, OrdinaryOutput as _};
+            #[allow(clippy::needless_borrow)]
+            (&::concord::__private::Output::<Self::Value>::new())
+                .problem::<__DeclaredProblem>();
             ::concord::__private::answer_read(
                 __response,
                 __info,
@@ -928,6 +938,11 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
+            #[allow(unused_imports)]
+            use ::concord::__private::{CarriedProblem as _, OrdinaryOutput as _};
+            #[allow(clippy::needless_borrow)]
+            (&::concord::__private::Output::<Self::Value>::new())
+                .problem::<__DeclaredProblem>();
             ::concord::__private::answer_read(
                 __response,
                 __info,
@@ -979,6 +994,11 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
+            #[allow(unused_imports)]
+            use ::concord::__private::{CarriedProblem as _, OrdinaryOutput as _};
+            #[allow(clippy::needless_borrow)]
+            (&::concord::__private::Output::<Self::Value>::new())
+                .problem::<__DeclaredProblem>();
             ::concord::__private::answer_empty(
                 __response,
                 __info,
