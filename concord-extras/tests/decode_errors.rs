@@ -4,7 +4,7 @@
 #[path = "../src/json_decode.rs"]
 #[allow(dead_code)]
 mod json_decode;
-use concord::page::{Call, IntoItems, Slot};
+use concord::page::{Call, IntoItems, Pager, Slot};
 use concord::{http, Answer, Headers};
 use concord_core as concord;
 use concord_extras::page::*;
@@ -70,7 +70,9 @@ fn answer(n: usize, links: &[&[u8]]) -> Answer<Batch> {
     Answer::new(http::StatusCode::OK, Headers::from(h), Batch { n })
 }
 fn link(fields: &[&[u8]]) -> Result<Option<String>, concord::Fail<()>> {
-    by_link()(List::default(), &answer(1, fields)).map(|x| x.map(|c| c.url))
+    by_link()
+        .next_call(List::default(), &answer(1, fields))
+        .map(|x| x.map(|c| c.url))
 }
 
 #[test]
@@ -143,9 +145,9 @@ fn link_quoted_obs_text_is_not_required_to_be_utf8() {
 
 #[test]
 fn counting_pagers_exhaust_u8_boundaries_and_custom_list() {
-    let offset = by_offset(At);
-    let limited = by_offset_limit(At, Limit);
-    let page = by_page(At, 3);
+    let mut offset = by_offset(At);
+    let mut limited = by_offset_limit(At, Limit);
+    let mut page = by_page(At, 3);
     for at in 0..=255u8 {
         for n in [0, 1, 2, 254, 255, 256, usize::MAX] {
             let call = List {
@@ -154,7 +156,7 @@ fn counting_pagers_exhaust_u8_boundaries_and_custom_list() {
                 ..List::default()
             };
             let ans = answer(n, &[]);
-            let actual = offset(call.clone(), &ans);
+            let actual = offset.next_call(call.clone(), &ans);
             if n == 0 {
                 assert!(actual.unwrap().is_none());
             } else if n <= usize::from(255 - at) {
@@ -162,7 +164,7 @@ fn counting_pagers_exhaust_u8_boundaries_and_custom_list() {
             } else {
                 assert!(actual.is_err());
             }
-            let actual = limited(call.clone(), &ans);
+            let actual = limited.next_call(call.clone(), &ans);
             if n < 4 {
                 assert!(actual.unwrap().is_none());
             } else if n <= usize::from(255 - at) {
@@ -170,7 +172,7 @@ fn counting_pagers_exhaust_u8_boundaries_and_custom_list() {
             } else {
                 assert!(actual.is_err());
             }
-            let actual = page(call, &ans);
+            let actual = page.next_call(call, &ans);
             if n == 0 {
                 assert!(actual.unwrap().is_none());
             } else if at == 255 {
@@ -181,18 +183,23 @@ fn counting_pagers_exhaust_u8_boundaries_and_custom_list() {
         }
     }
     assert_eq!(
-        offset(List::default(), &answer(2, &[]))
+        offset
+            .next_call(List::default(), &answer(2, &[]))
             .unwrap()
             .unwrap()
             .at,
         Some(2)
     );
     assert_eq!(
-        page(List::default(), &answer(2, &[])).unwrap().unwrap().at,
+        page.next_call(List::default(), &answer(2, &[]))
+            .unwrap()
+            .unwrap()
+            .at,
         Some(4)
     );
     assert_eq!(
-        limited(List::default(), &answer(2, &[]))
+        limited
+            .next_call(List::default(), &answer(2, &[]))
             .unwrap()
             .unwrap()
             .at,
@@ -214,9 +221,13 @@ fn fragment_split_preserves_all_nonfragment_bytes() {
         ("/日本#一", "/日本"),
     ] {
         assert_eq!(concord::__private::without_fragment(input), expected);
-        let pager = by_next_url(move |_: &Batch| Some(input));
+        let mut pager = by_next_url(move |_: &Batch| Some(input));
         assert_eq!(
-            pager(List::default(), &answer(0, &[])).unwrap().url,
+            pager
+                .next_call(List::default(), &answer(0, &[]))
+                .unwrap()
+                .unwrap()
+                .url,
             expected
         );
         assert_eq!(

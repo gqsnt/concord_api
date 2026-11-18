@@ -1,10 +1,10 @@
 //! Lists that span several responses.
 //!
-//! A pager is a function from the call and its response to the next call: any
-//! `Fn(C, &Answer<C::Value>) -> Option<C>`, or the same wrapped in a `Result`. The
-//! client's author chooses one with `paginate`. `concord`'s `by_offset`, `by_offset_limit`,
-//! `by_page`, `by_cursor`, `by_link` and `by_next_url` are six functions that return one,
-//! built with [`Call`] and [`Slot`]; your own pager is built in the same way.
+//! A pager decides the next call from the call and its response: any [`Pager`], which every
+//! closure `|call, page| …` that returns `Option<C>`, or the same wrapped in a `Result`, already
+//! is. The client's author chooses one with `paginate`. `concord`'s `by_offset`,
+//! `by_offset_limit`, `by_page`, `by_cursor`, `by_link` and `by_next_url` are six functions that
+//! return one, built with [`Call`] and [`Slot`]; your own pager is built in the same way.
 
 /// Borrows a URL reference without its fragment, before resolving or comparing a next page.
 /// No URL parsing, decoding or allocation occurs. A percent-encoded `#` remains
@@ -375,6 +375,68 @@ impl<C: Call> IntoNext<C> for Option<C> {
 impl<C: Call> IntoNext<C> for Result<Option<C>, Fail<C::Problem>> {
     fn into_next(self) -> Result<Option<C>, Fail<C::Problem>> {
         self
+    }
+}
+
+/// What `paginate` takes: from the call that fetched a page and that page, the next call,
+/// the end (`None`), or a failure.
+///
+/// Every closure that returns `Option<C>`, or `Result<Option<C>, Fail<C::Problem>>`, is a pager,
+/// and so is what `concord`'s six pagers return. A type of your own implements it to keep state
+/// or to wrap another pager, which it can then call:
+///
+/// ```
+/// # use concord_core as concord;
+/// use concord::page::{Call, Pager};
+/// use concord::{Answer, Fail};
+///
+/// /// Stops after `left` pages, whatever the pager inside says.
+/// pub struct AtMost<P> { pub pager: P, pub left: u32 }
+///
+/// impl<C: Call, P: Pager<C>> Pager<C> for AtMost<P> {
+///     fn next_call(&mut self, call: C, page: &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> {
+///         self.left = self.left.saturating_sub(1);
+///         if self.left == 0 {
+///             return Ok(None);
+///         }
+///         self.pager.next_call(call, page)
+///     }
+/// }
+/// ```
+///
+/// A pager is called once for each page, before that page is handed to the caller. It lives as
+/// long as the `Pages` that `.pages()` returned, so its state is that of one walk through the list.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a pager for this endpoint",
+    note = "a pager is a closure `|call, page| …` that returns the next call, or a value such as `by_cursor(…)`"
+)]
+pub trait Pager<C: Call>: Send + 'static {
+    /// Returns the next call, `None` when this page is the last, or the failure that ends the
+    /// pages after this page.
+    ///
+    /// # Errors
+    ///
+    /// `Fail::from(problem)` becomes a Refused error with that problem; `concord::mismatch(…)`
+    /// a Mismatch. Both are returned by the `try_next()` after the page that arrived.
+    fn next_call(
+        &mut self,
+        call: C,
+        page: &crate::Answer<C::Value>,
+    ) -> Result<Option<C>, Fail<C::Problem>>;
+}
+
+impl<C, F, N> Pager<C> for F
+where
+    C: Call,
+    F: FnMut(C, &crate::Answer<C::Value>) -> N + Send + 'static,
+    N: IntoNext<C>,
+{
+    fn next_call(
+        &mut self,
+        call: C,
+        page: &crate::Answer<C::Value>,
+    ) -> Result<Option<C>, Fail<C::Problem>> {
+        self(call, page).into_next()
     }
 }
 

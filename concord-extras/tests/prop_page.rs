@@ -1,5 +1,6 @@
 //! C8.6 arbitrary Link octets and continuation URLs.
 #![allow(clippy::unwrap_used)]
+use concord_core::page::Pager;
 use concord_core::{
     __private::{Core, Draft, Options, Piece},
     http::{HeaderMap, HeaderValue, Method, StatusCode},
@@ -39,13 +40,13 @@ proptest! {
             }
         }
         let answer = Answer::new(StatusCode::OK, headers.into(), url.clone());
-        if let Ok(Some(next)) = by_link()(NextCall::default(), &answer) {
+        if let Ok(Some(next)) = by_link().next_call(NextCall::default(), &answer) {
             prop_assert!(!next.0.contains('#'));
             if let Err(e) = build(next) {
                 prop_assert_eq!(e.kind(), concord_core::error::Kind::Build);
             }
         }
-        let next = by_next_url(|v: &String| Some(v.clone()))(NextCall::default(), &answer).unwrap();
+        let next = by_next_url(|v: &String| Some(v.clone())).next_call(NextCall::default(), &answer).unwrap().unwrap();
         prop_assert_eq!(next.0.as_str(), url.split('#').next().unwrap());
         if let Ok(request) = build(next) {
             prop_assert_eq!(
@@ -70,7 +71,7 @@ proptest! {
         let mut headers = HeaderMap::new();
         headers.append("link", HeaderValue::from_str(&link).unwrap());
         let answer = Answer::new(StatusCode::OK, headers.into(), String::new());
-        let found = by_link()(NextCall::default(), &answer).unwrap();
+        let found = by_link().next_call(NextCall::default(), &answer).unwrap();
         prop_assert_eq!(found.map(|c| c.0), (!anchor).then(|| format!("/{target}")));
     }
 }

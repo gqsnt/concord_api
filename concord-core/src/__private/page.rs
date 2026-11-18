@@ -3,7 +3,7 @@ use super::Prepared;
 use super::{Call, RequestSecrets};
 use crate::answer::Answer;
 use crate::error::{BuildFailure, Error, MismatchFailure};
-use crate::page::{IntoNext, PageSource, Pages};
+use crate::page::{IntoNext, PageSource, Pager, Pages};
 use crate::{Headers, Sending};
 use std::future::Future;
 use std::pin::Pin;
@@ -41,18 +41,20 @@ where
     })
 }
 
-/// Build an owning pager before handing off the original call.
+/// Build an owning pager before handing off the original call. The macro writes a closure of
+/// the statement through a helper with an `FnMut` bound first, so that its parameters are
+/// inferred; every other expression reaches this bound as it is.
 #[rustfmt::skip] // Keep the function name on its own line in diagnostics about the pager bound.
-pub fn pages_with_pager<C, N, F>(
+pub fn pages_with_pager<C, P>(
     first: C,
-    make: impl FnOnce() -> F,
+    make: impl FnOnce() -> P,
 ) -> Pages<C::Value, C::Problem>
 where
     C: Call,
-    N: IntoNext<C>,
-    F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
+    P: Pager<C>,
 {
-    pages(first, make())
+    let mut pager = make();
+    pages(first, move |call: C, answer: &Answer<C::Value>| pager.next_call(call, answer))
 }
 
 struct Sent {

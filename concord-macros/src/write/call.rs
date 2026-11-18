@@ -373,11 +373,17 @@ impl Writer<'_> {
                 true,
                 expression.span(),
             );
+            // A closure, also in parentheses or as the tail of a block, keeps an `FnMut` bound
+            // that infers its parameters; any other expression is a `Pager` as it is.
             let mut unwrapped = expression;
             loop {
                 match unwrapped {
                     syn::Expr::Paren(paren) => unwrapped = &paren.expr,
                     syn::Expr::Group(group) => unwrapped = &group.expr,
+                    syn::Expr::Block(block) if block.label.is_none() => match block.block.stmts.last() {
+                        Some(syn::Stmt::Expr(tail, None)) => unwrapped = tail,
+                        _ => break,
+                    },
                     _ => break,
                 }
             }
