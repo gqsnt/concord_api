@@ -1,0 +1,22 @@
+error[E0034]: multiple applicable items in scope
+  --> tests/pagers/refused/glob_import_two_next_calls.rs:28:200
+   |
+28 | ...t.as_ref().map(|_| call); move |call, page| f.next_call(call, page) }; }
+   |                                                  ^^^^^^^^^ multiple `next_call` found
+   |
+note: candidate #1 is defined in an impl of the trait `LocalMove` for the type `F`
+  --> tests/pagers/refused/glob_import_two_next_calls.rs:21:5
+   |
+21 |     fn next_call(&mut self, call: probe::Call<probe::List>, page: &Answer<Page>) -> Option<probe::Call<probe::List>> { self(call, pa...
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: candidate #2 is defined in an impl of the trait `concord::page::Pager` for the type `F`
+help: disambiguate the method for candidate #1
+   |
+28 -         GET list(after?: String) -> Page { query { after; } paginate { let mut f = |call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.as_ref().map(|_| call); move |call, page| f.next_call(call, page) }; }
+28 +         GET list(after?: String) -> Page { query { after; } paginate { let mut f = |call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.as_ref().map(|_| call); move |call, page| LocalMove::next_call(&mut f, call, page) }; }
+   |
+help: disambiguate the method for candidate #2
+   |
+28 -         GET list(after?: String) -> Page { query { after; } paginate { let mut f = |call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.as_ref().map(|_| call); move |call, page| f.next_call(call, page) }; }
+28 +         GET list(after?: String) -> Page { query { after; } paginate { let mut f = |call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.as_ref().map(|_| call); move |call, page| concord::page::Pager::next_call(&mut f, call, page) }; }
+   |

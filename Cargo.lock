@@ -203,6 +203,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-attr-probe"
+version = "0.0.0"
+
+[[package]]
 name = "concord-core"
 version = "5.0.0-rc.1"
 dependencies = [
@@ -253,6 +257,7 @@ name = "concord-macros"
 version = "5.0.0-rc.1"
 dependencies = [
  "concord-api",
+ "concord-attr-probe",
  "prettyplease",
  "proc-macro2",
  "quote",

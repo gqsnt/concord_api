@@ -81,17 +81,22 @@ fn problem_needs_alias(ty: &syn::Type) -> bool {
 /// removing parentheses, it is a path, a call or a method call; or a plain block, an `if`/`else` or
 /// a `match` whose every value position is such a form again; and nowhere in the whole expression
 /// is there a closure literal or a macro invocation in a value position, a `return`, a `break` with
-/// a value, a loop, a label, or a `#[cfg]` or `#[cfg_attr]` attribute. Everything else takes the
-/// path of earlier releases, unchanged. No name is interpreted.
+/// a value, a loop, a label, or a `#[cfg]` or `#[cfg_attr]` attribute; and, at any depth (nested
+/// closures, `async` blocks and blocks included), no attribute of any kind, no macro invocation of
+/// any kind (also in a pattern or a type) and no item. Everything else takes the path of earlier
+/// releases, unchanged. No name is interpreted.
 ///
-/// "Nowhere" leaves out the bodies of nested closures, `async` blocks and items, whose `return`s
-/// and loops cannot give the expression its value. A macro is refused anywhere else, since it may
-/// expand to a `return` or a `break`; `?` is an early `return`.
+/// So everything in a certain expression is plain Rust that the macro has read. The `return`s,
+/// `?`s, loops and labels of a nested closure or `async` block cannot give the expression its
+/// value, and are allowed there.
 fn certain_pager(expr: &syn::Expr) -> bool {
     certain_form(expr) && {
-        let mut scan = Uncertain(false);
+        let mut scan = Uncertain {
+            found: false,
+            nested: false,
+        };
         scan.visit_expr(expr);
-        !scan.0
+        !scan.found
     }
 }
 
@@ -146,33 +151,54 @@ fn closure_in_value_position(expr: &syn::Expr) -> bool {
     }
 }
 
-/// Finds what could give the expression a value that the forms above do not show.
-struct Uncertain(bool);
+/// Finds what could give the expression a value that the forms above do not show, and what the
+/// macro cannot read.
+struct Uncertain {
+    found: bool,
+    /// Inside a nested closure or `async` block: its exits are its own.
+    nested: bool,
+}
+impl Uncertain {
+    fn nested(&mut self, visit: impl FnOnce(&mut Self)) {
+        let outer = std::mem::replace(&mut self.nested, true);
+        visit(self);
+        self.nested = outer;
+    }
+}
 impl<'ast> Visit<'ast> for Uncertain {
     fn visit_expr(&mut self, expr: &'ast syn::Expr) {
         match expr {
+            syn::Expr::Closure(closure) => {
+                self.nested(|this| visit::visit_expr_closure(this, closure))
+            }
+            syn::Expr::Async(block) => self.nested(|this| visit::visit_expr_async(this, block)),
             syn::Expr::Return(_)
             | syn::Expr::Try(_)
-            | syn::Expr::Macro(_)
             | syn::Expr::Loop(_)
             | syn::Expr::While(_)
-            | syn::Expr::ForLoop(_) => self.0 = true,
-            syn::Expr::Break(exit) if exit.expr.is_some() || exit.label.is_some() => self.0 = true,
-            syn::Expr::Block(block) if block.label.is_some() => self.0 = true,
-            // A closure is a value only where `certain_form` looks; there it is not certain.
-            syn::Expr::Closure(_) | syn::Expr::Async(_) => {}
+            | syn::Expr::ForLoop(_)
+                if !self.nested =>
+            {
+                self.found = true
+            }
+            syn::Expr::Break(exit)
+                if !self.nested && (exit.expr.is_some() || exit.label.is_some()) =>
+            {
+                self.found = true
+            }
+            syn::Expr::Block(block) if !self.nested && block.label.is_some() => self.found = true,
             _ => visit::visit_expr(self, expr),
         }
     }
-    fn visit_stmt_macro(&mut self, _: &'ast syn::StmtMacro) {
-        self.0 = true;
+    fn visit_macro(&mut self, _: &'ast syn::Macro) {
+        self.found = true;
     }
-    fn visit_attribute(&mut self, attr: &'ast syn::Attribute) {
-        if attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr") {
-            self.0 = true;
-        }
+    fn visit_attribute(&mut self, _: &'ast syn::Attribute) {
+        self.found = true;
     }
-    fn visit_item(&mut self, _: &'ast syn::Item) {}
+    fn visit_item(&mut self, _: &'ast syn::Item) {
+        self.found = true;
+    }
 }
 
 impl Writer<'_> {

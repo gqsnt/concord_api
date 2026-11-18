@@ -75,8 +75,10 @@ where
 /// inferred as in [`pages_with_pager`] through this trait's `FnMut` supertrait; its own bound only
 /// words the error for a pager value.
 #[diagnostic::on_unimplemented(
-    message = "`paginate` reads this expression as a closure, and its value is `{Self}`",
-    note = "a pager that is not a closure becomes one with `.into_fn()`, written after the pager: `by_cursor(…).into_fn()`, `my_pager!(…).into_fn()`; or write the pager as a call or a path, alone or in a plain block, `if` or `match`"
+    message = "`paginate` reads this expression as a closure, and its value is `{Self}`, which is not a closure",
+    label = "a closure is needed here",
+    note = "if the value is a pager, write `.into_fn()` after a `Paging<…>` (`by_cursor(…).into_fn()`) or `Paging::from_pager(…).into_fn()` around a pager of yours; or write the pager as a call or a path, alone or at each tail of a plain block, `if` or `match`",
+    note = "if it is not, it is neither a closure nor a pager, and `paginate` cannot use it"
 )]
 pub trait InferredPager<C: Call, N>: FnMut(C, &Answer<C::Value>) -> N {}
 impl<C, F, N> InferredPager<C, N> for F
