@@ -278,8 +278,9 @@ impl RenewalError {
     /// the request that carries the refresh token left the process. The cause is shared
     /// and never printed.
     ///
-    /// `Rotating` then saves the pair it had before the exchange again, and the next call
-    /// exchanges the same refresh token. Use it only when nothing was written to the
+    /// `Rotating` then saves the pair it had before the exchange again, without a usable
+    /// expiry, and the next call exchanges the same refresh token; no owner sends that
+    /// access token again. Use it only when nothing was written to the
     /// connection: a check of your own that fails before the call to the token endpoint,
     /// or a refusal that you know happened before the request was handed to the network.
     ///
@@ -588,24 +589,39 @@ impl Renewed {
     /// Sets a function that recognises a response that rejects the token although its
     /// status is not `401`: an API that reports a revoked or expired token inside a `200`.
     ///
-    /// Once the body of a response has been read to its end, the function receives its
-    /// status, its headers and its body, as a [`Seen`], if the body holds at most 64 KiB.
-    /// When it returns `true`, the token that the request carried is rejected as after a
-    /// `401`: only if it is still the current token, so an answer that arrives after a
-    /// renewal never discards the newer token, and the next call gets a new one. This
-    /// happens before the reader decodes the body, so before the call returns. The
-    /// response is returned unchanged, and the call that received it is not sent again:
-    /// `after_401` retries a `401` only. A `401` always rejects the token, and the
-    /// function is not called for it.
+    /// The function receives the status, the headers and the whole body of a response, as
+    /// a [`Seen`], once the body has been read to its end, and only when the response's
+    /// final URL, as the transport reports it, is at the origin of the credential's base,
+    /// and the body holds at most 64 KiB and exactly the length that the response
+    /// announced: an incomplete or over-long body is never shown. When it returns `true`,
+    /// the token that the request carried is rejected as after a `401`: only if it is
+    /// still the current token, so an answer that arrives after a renewal never discards
+    /// the newer token, and the next call gets a new one. The response is returned
+    /// unchanged, and the call that received it is not sent again: `after_401` retries a
+    /// `401` only. A `401` always rejects the token, and the function is not called for it.
     ///
-    /// The function sees the body once, and the credential then drops it: it keeps and
-    /// prints nothing of it. A body that is not read to its end is not shown: a call
-    /// dropped, a reader that stops early, an endpoint that does not read its body. The
-    /// function must return promptly; a panic rejects nothing, and its payload is
-    /// dropped. Without this function, a response passes through untouched. With it,
-    /// every frame of the body passes through as it is read, and only the size hint is
-    /// lost: a raw response without a `Content-Length` header reports no
-    /// `content_length()`. Configuring a clone changes every clone.
+    /// When the function runs depends on how the body is read. For a value or a problem
+    /// that the reader decodes, as the body ends, before it is decoded, so before the call
+    /// returns. For a stream of records (`JsonLines`, `Sse`), when the stream ends after its
+    /// last record; never for a stream dropped half-way. For `send_raw()`, when the caller
+    /// has read the body to its end; never if it does not. A call given to `transfer::at`
+    /// is read like any call. A body that is not read to its end is never shown: a dropped
+    /// call, a reader that stops early, an endpoint that does not read its body.
+    ///
+    /// The response is attributed to the token that this credential placed. A layer that
+    /// runs after it and removes or replaces the `Authorization` header owns that change.
+    ///
+    /// Watching costs something, also when the function never matches: every response
+    /// through the credential from its origin is observed, and up to 64 KiB of its body is
+    /// copied into one buffer, dropped once the function has seen it, or as soon as the body
+    /// is longer. Frames, trailers, the size hint and the end of the body pass through
+    /// unchanged. Without this function, a response is not touched.
+    ///
+    /// The function must return promptly. A panic in it rejects nothing, and its payload is
+    /// dropped, but Rust's panic hook still prints the panic message: never put text of the
+    /// body in a panic message. Nothing bounds a server that rejects every response: each
+    /// call then renews once, bounded by `renewal_timeout`. Configuring a clone changes
+    /// every clone.
     ///
     /// ```no_run
     /// #[derive(serde::Deserialize)]
@@ -672,7 +688,7 @@ impl Middleware for Renewed {
             Some(rejects) => {
                 let inner = Arc::downgrade(&self.inner);
                 let generation = Arc::downgrade(&generation);
-                rejection::watch(response, rejects, move || {
+                rejection::watch(response, self.inner.origin.as_ref(), rejects, move || {
                     if let (Some(inner), Some(generation)) = (inner.upgrade(), generation.upgrade())
                     {
                         inner.discard(&generation);

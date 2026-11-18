@@ -287,7 +287,9 @@ pub enum RotationError {
     /// No known refresh token is safe to use and no replacement is known: for example the
     /// store holds a `Refreshing` marker or an empty refresh token, or an exchange failed
     /// or returned an invalid one. An exchange that failed with `RenewalError::NotSent`
-    /// leads here only if saving the previous pair again failed. The application must
+    /// leads here only if saving the previous pair again failed, or if a panic destroyed
+    /// the exchange's future, which the caller then sees as `RenewalError::Panicked`. The
+    /// application must
     /// recover the account with the provider.
     NeedsReauthorization,
     /// The driver was not polled while this call waited.
@@ -552,9 +554,16 @@ impl fmt::Debug for RotationDriver {
 /// never sends that access token. When the outcome of an exchange is uncertain, the
 /// account must be authorized again. An exchange that fails with
 /// [`RenewalError::NotSent`] states that its request never left: the pair from before the
-/// exchange is saved again over the marker, then becomes current again, the waiting
-/// calls fail with that error without being sent, and the next call exchanges the same
-/// refresh token. If that save fails, the marker stays, as after any failed exchange. No
+/// exchange is saved again over the marker, without a usable expiry (its `expires_at()`
+/// is `None`), because its access token was being replaced. Once that save succeeds, the
+/// pair is current again; the waiting calls fail with that error without being sent, and
+/// the next call, in this instance or in any owner that loads the store later, exchanges
+/// the same refresh token before it sends an access token. If that save fails, this
+/// instance stays blocked, as after any failed exchange, and its next call receives
+/// `NeedsReauthorization`; the store holds either the marker or the restored pair,
+/// and an owner that loads it later requires a new authorization, or exchanges. If a
+/// panic destroys the exchange's future, nothing is saved again, the waiting calls
+/// receive `RenewalError::Panicked`, and the marker stays. No
 /// store can commit the server's issuance and the local save atomically: a crash between
 /// the two can lose a token.
 ///
@@ -692,22 +701,25 @@ impl Rotating {
     /// its status is not `401`: an API that reports a revoked or expired token inside a
     /// `200`.
     ///
-    /// It works as [`Renewed::rejected_when`](super::Renewed::rejected_when). Once the
-    /// body of a response has been read to its end, the function receives its status, its
-    /// headers and its body, as a [`Seen`](super::Seen), if the body holds at most 64 KiB.
-    /// When it returns `true`, the access token that the request carried is rejected as
-    /// after a `401`: only if it is still the current token, so an answer that arrives
-    /// after a renewal never discards the newer pair, and the next call runs an exchange.
-    /// This happens before the reader decodes the body, so before the call returns. The
-    /// response is returned unchanged, and the call that received it is not sent again:
-    /// `after_401` retries a `401` only. A `401` always rejects the token, and the
-    /// function is not called for it.
+    /// It works as [`Renewed::rejected_when`](super::Renewed::rejected_when): the same
+    /// [`Seen`](super::Seen), shown at the same moments, for a response from the origin of
+    /// the credential's base whose whole body, of at most 64 KiB and of the announced
+    /// length, has been read. When it returns `true`, the access token that the request
+    /// carried is rejected as after a `401`: only if it is still the current token, so an
+    /// answer that arrives after a renewal never discards the newer pair, and the next call
+    /// runs an exchange. The response is returned unchanged, and the call that received it
+    /// is not sent again: `after_401` retries a `401` only. A `401` always rejects the
+    /// token, and the function is not called for it.
     ///
-    /// The function sees the body once, and the credential then drops it: it keeps and
-    /// prints nothing of it. A body that is not read to its end is not shown. The function
-    /// must return promptly; a panic rejects nothing, and its payload is dropped. Without
-    /// this function, a response passes through untouched; with it, only the size hint of
-    /// the body is lost. Configuring a clone changes every clone.
+    /// Watching costs something, also when the function never matches: every response
+    /// through the credential from its origin is observed, and up to 64 KiB of its body is
+    /// copied into one buffer, dropped once the function has seen it, or as soon as the body
+    /// is longer. Frames, trailers, the size hint and the end of the body pass through
+    /// unchanged; without this function, a response is not touched. The function must
+    /// return promptly; a panic in it rejects nothing, but Rust's panic hook still prints
+    /// the panic message: never put text of the body in a panic message. Nothing bounds a
+    /// server that rejects every response: each call then runs one exchange, and waits for
+    /// it at most `renewal_timeout`. Configuring a clone changes every clone.
     ///
     /// ```no_run
     /// #[derive(serde::Deserialize)]
@@ -786,7 +798,7 @@ impl Middleware for Rotating {
             Some(rejects) => {
                 let inner = Arc::downgrade(&self.inner);
                 let generation = Arc::downgrade(&access.generation);
-                super::rejection::watch(response, rejects, move || {
+                super::rejection::watch(response, self.inner.origin.as_ref(), rejects, move || {
                     if let (Some(inner), Some(generation)) = (inner.upgrade(), generation.upgrade())
                     {
                         inner.reject(&generation);

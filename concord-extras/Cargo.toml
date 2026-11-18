@@ -54,7 +54,7 @@ concord = { package = "concord-api", path = "../concord-api", default-features =
 [features]
 default = ["json", "form"]
 # Shared expiring credentials.
-auth = ["dep:tokio", "dep:futures-util"]
+auth = ["dep:tokio", "dep:futures-util", "dep:http-body"]
 # Single-use refresh tokens and an application-polled renewal future.
 rotating = ["auth", "tokio/sync"]
 # Request-signing helpers and Signature Version 4 middleware.

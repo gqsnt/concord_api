@@ -3347,3 +3347,208 @@ async fn c12_8_a_body_of_unknown_length_is_shown_only_up_to_64_kib() {
     drop(api);
     task.await.unwrap().unwrap();
 }
+
+// A restored pair is never sent again as an access token.
+
+fn stored_expiry(store: &MemoryStore) -> Option<SystemTime> {
+    match &store.0.lock().unwrap().record {
+        Stored::Ready(pair) => pair.expires_at(),
+        Stored::Refreshing => panic!("expected a saved pair"),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_after_a_restore_the_next_call_exchanges_even_after_a_late_401() {
+    let rig = Rig::new(Stored::Ready(pair("old", "r0", 100)));
+    rig.resource.answer(401).after(sec(5));
+    rig.resource.answer(200).body("after restore");
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth.clone());
+    let task = tokio::spawn(driver);
+    let delayed = tokio::spawn({
+        let api = api.clone();
+        async move { api.get().await }
+    });
+    ticks().await;
+    rig.sent(0, 1);
+    // Renew early, so that the next call exchanges while the first one waits.
+    drop(auth.clone().early_by(sec(101)));
+    let gate = Arc::new(tokio::sync::Notify::new());
+    rig.store.0.lock().unwrap().gate_save = Some((2, gate.clone()));
+    let waiting = tokio::spawn({
+        let api = api.clone();
+        async move { api.get().await }
+    });
+    ticks().await;
+    rig.store.marker();
+    // The 401 arrives while the previous pair is being saved again.
+    assert!(delayed.await.unwrap().unwrap_err().is_status(401));
+    drop(auth.early_by(sec(0)));
+    gate.notify_one();
+    assert!(not_sent(&waiting.await.unwrap().unwrap_err()));
+    rig.store.ready("old", "r0");
+    assert_eq!(stored_expiry(&rig.store), None);
+    assert_eq!(api.get().await.unwrap(), "after restore");
+    header(&rig.resource, 1, "Bearer a1");
+    rig.sent(2, 2);
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_an_owner_that_loads_a_restored_pair_exchanges_it() {
+    let rig = Rig::new(Stored::Ready(pair("old", "r0", 3600)));
+    rig.resource.answer(401);
+    rig.resource.answer(200).body("restart");
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(api.get().await.unwrap_err().is_status(401));
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    rig.store.ready("old", "r0");
+    assert_eq!(stored_expiry(&rig.store), None);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+
+    let (auth, driver) = rig.auth();
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap(), "restart");
+    header(&rig.resource, 1, "Bearer a1");
+    rig.sent(2, 2);
+    rig.store.ready("a1", "r1");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_a_panic_dropping_an_exchange_not_sent_reports_the_panic_and_keeps_the_block() {
+    let rig = Rig::new(expired());
+    let (auth, driver) = Rotating::new(&base(), rig.store.clone(), |_| CompletedExchangeDrop {
+        complete: false,
+        work: Box::pin(async { Err(RenewalError::not_sent(std::io::Error::other("offline"))) }),
+    });
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_renewal(&api.get().await.unwrap_err(), |e| {
+        matches!(e, RenewalError::Panicked)
+    });
+    assert!(matches!(
+        cause(&api.get().await.unwrap_err()),
+        RotationError::NeedsReauthorization
+    ));
+    rig.store.marker();
+    rig.events(&["load", "mark"]);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_a_restore_that_wrote_before_failing_leaves_a_pair_the_next_owner_exchanges() {
+    let rig = Rig::new(Stored::Ready(pair("old", "r0", 3600)));
+    {
+        let mut s = rig.store.0.lock().unwrap();
+        s.fail_save = Some(2);
+        s.ambiguous = true;
+    }
+    rig.resource.answer(401);
+    rig.resource.answer(200).body("ok");
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(api.get().await.unwrap_err().is_status(401));
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    // This instance stays blocked; the store holds the pair, without a usable expiry.
+    assert!(matches!(
+        cause(&api.get().await.unwrap_err()),
+        RotationError::NeedsReauthorization
+    ));
+    rig.store.ready("old", "r0");
+    assert_eq!(stored_expiry(&rig.store), None);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+
+    let (auth, driver) = rig.auth();
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap(), "ok");
+    header(&rig.resource, 1, "Bearer a1");
+    rig.sent(2, 2);
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_late_rejection_keeps_the_newer_token_while_an_older_request_is_alive() {
+    for rotating in [false, true] {
+        let rig = Rig::new(Stored::Ready(pair("old", "r0", 100)));
+        rig.issue("replacement", "r1", 0);
+        let mut task = None;
+        let renewals = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let api = if rotating {
+            let (auth, driver) = rig.auth();
+            task = Some(tokio::spawn(driver));
+            rig.client(auth.rejected_when(rejected))
+        } else {
+            let auth = concord::auth::Renewed::new(&base(), {
+                let renewals = renewals.clone();
+                move || {
+                    renewals.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async { concord::auth::AccessToken::expires_in("replacement", sec(200)) }
+                }
+            })
+            .with_token(concord::auth::AccessToken::expires_in("old", sec(200)).unwrap())
+            .unwrap();
+            Data::new()
+                .with_transport(rig.resource.clone())
+                .with_middleware(auth.rejected_when(rejected))
+        };
+        rig.resource.answer(200).after(sec(20)).body("holder");
+        rig.resource.answer(200).after(sec(2)).body("rejected");
+        rig.resource.answer(200).body("rejected");
+        rig.resource.answer(200).body("ok");
+        rig.resource.answer(200).body("still ok");
+        // The holder keeps the old generation alive across the whole sequence.
+        let holder = tokio::spawn({
+            let api = api.clone();
+            async move { api.get().await }
+        });
+        ticks().await;
+        let late = tokio::spawn({
+            let api = api.clone();
+            async move { api.get().await }
+        });
+        ticks().await;
+        assert_eq!(api.get().await.unwrap(), "rejected");
+        assert_eq!(api.get().await.unwrap(), "ok");
+        assert_eq!(late.await.unwrap().unwrap(), "rejected");
+        assert_eq!(api.get().await.unwrap(), "still ok");
+        header(&rig.resource, 3, "Bearer replacement");
+        header(&rig.resource, 4, "Bearer replacement");
+        assert!(!holder.is_finished());
+        holder.abort();
+        let _ = holder.await;
+        drop(api);
+        if let Some(task) = task {
+            task.await.unwrap().unwrap();
+            rig.sent(1, 5);
+        } else {
+            assert_eq!(renewals.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+}
