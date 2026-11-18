@@ -357,7 +357,9 @@ impl Bucket {
     ///
     /// The list describes every window of the bucket, in order: a window's position
     /// identifies it across responses and the windows set with [`window`](Self::window).
-    /// The header helpers keep that order by sorting rolling periods. A list that is
+    /// So the order must stay the same from one response to the next: an API that changes the
+    /// order of its windows between reports is read wrongly. The header helpers keep that
+    /// order by sorting rolling periods. A list that is
     /// incompatible, too large or invalid is ignored as a whole. What is learned can
     /// only tighten an active window, taking into account the cost of other requests in
     /// progress; an older reset is ignored. No result fails the request that received

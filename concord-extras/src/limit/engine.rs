@@ -1062,8 +1062,9 @@ mod reset_property {
     #[derive(Clone, Debug)]
     enum Step {
         Advance(u64),
-        /// A call, whose head arrives `late` seconds after it is sent (zero: at once).
-        Call(Reply, u64),
+        /// A call, whose head arrives `late` seconds after it is sent (zero: at once), and
+        /// whose learner, when `slow`, ends only after a whole window, past its own reset.
+        Call(Reply, u64, bool),
     }
 
     /// One to eight positions, most often one to three, where changes of number are likely.
@@ -1081,8 +1082,12 @@ mod reset_property {
         ];
         prop_oneof![
             1 => (1..=3u64).prop_map(Step::Advance),
-            4 => (reply, prop_oneof![3 => Just(0u64), 1 => 1..=6u64])
-                .prop_map(|(reply, late)| Step::Call(reply, late)),
+            4 => (
+                reply,
+                prop_oneof![3 => Just(0u64), 1 => 1..=6u64],
+                proptest::bool::weighted(0.1),
+            )
+                .prop_map(|(reply, late, slow)| Step::Call(reply, late, slow)),
         ]
     }
 
@@ -1111,8 +1116,11 @@ mod reset_property {
         /// Calls the server received in each of its windows.
         received: BTreeMap<u64, u64>,
         written: Vec<Written>,
-        /// Heads still to arrive: when, and what they teach.
-        heads: Vec<(Instant, Teach)>,
+        /// Heads still to arrive: when, what they teach, and whether their learner is slow.
+        heads: Vec<(Instant, Teach, bool)>,
+        /// The number of positions of a window declared on the bucket, which every report
+        /// keeps: the API's list of windows matches its declaration.
+        declared: Option<usize>,
         /// Calls admitted on the refill of each dated reset, at each position: a window is a
         /// position of the list that the learner returns.
         paid: BTreeMap<(usize, SystemTime), u64>,
@@ -1139,12 +1147,12 @@ mod reset_property {
             vec![window; width]
         }
 
-        fn arrive(&mut self) {
+        async fn arrive(&mut self) {
             let now = Instant::now();
             let (due, later): (Vec<_>, Vec<_>) =
-                self.heads.drain(..).partition(|(at, _)| *at <= now);
+                self.heads.drain(..).partition(|(at, _, _)| *at <= now);
             self.heads = later;
-            for (_, teach) in due {
+            for (_, teach, slow) in due {
                 let windows = match teach {
                     Teach::Dated(written, width) => self.windows(&written, width),
                     // Seconds to the reset, counted from the head, as an undated learner counts.
@@ -1153,7 +1161,11 @@ mod reset_property {
                     }
                     Teach::Nothing => Vec::new(),
                 };
-                self.account.learn(&windows, 1, now);
+                // A slow learner returns its windows only after their resets have passed.
+                if slow {
+                    tokio::time::advance(Duration::from_secs(PERIOD)).await;
+                }
+                self.account.learn(&windows, 1, Instant::now());
                 self.account.in_flight = self.account.in_flight.saturating_sub(1);
                 self.account.in_use = self.account.in_use.saturating_sub(1);
             }
@@ -1165,15 +1177,15 @@ mod reset_property {
             while let Some(next) = self
                 .heads
                 .iter()
-                .map(|(at, _)| *at)
+                .map(|(at, _, _)| *at)
                 .filter(|at| *at <= end)
                 .min()
             {
                 tokio::time::advance(next.saturating_duration_since(Instant::now())).await;
-                self.arrive();
+                self.arrive().await;
             }
             tokio::time::advance(end.saturating_duration_since(Instant::now())).await;
-            self.arrive();
+            self.arrive().await;
         }
 
         fn admissible(&mut self) -> bool {
@@ -1190,8 +1202,14 @@ mod reset_property {
                 && wait.required.is_zero()
         }
 
-        fn call(&mut self, reply: &Reply, late: u64) {
-            self.arrive();
+        async fn call(&mut self, reply: &Reply, late: u64, slow: bool) {
+            let reply = &match (self.declared, reply) {
+                (Some(width), Reply::Dated(_)) => Reply::Dated(width),
+                (Some(width), Reply::Undated(_)) => Reply::Undated(width),
+                (Some(width), Reply::Replay(back, _)) => Reply::Replay(*back, Some(width)),
+                _ => reply.clone(),
+            };
+            self.arrive().await;
             if !self.admissible() {
                 return;
             }
@@ -1253,22 +1271,55 @@ mod reset_property {
                 },
             };
             let at = now + Duration::from_secs(late);
-            self.heads.push((at, teach));
+            self.heads.push((at, teach, slow));
             if late == 0 {
-                self.arrive();
+                self.arrive().await;
             }
         }
     }
 
-    fn run(capacity: u64, steps: &[Step]) -> Result<(), TestCaseError> {
+    /// Admits a call on known windows, without answering it: false when it is not admitted,
+    /// or only as a call that learns.
+    fn known_admission(run: &mut Run) -> bool {
+        let now = Instant::now();
+        if run.account.windows.is_empty()
+            || !run.admissible()
+            || run.account.windows.iter().any(History::is_unknown)
+        {
+            return false;
+        }
+        for window in &mut run.account.windows {
+            window.debit(1, now);
+        }
+        run.account.in_flight += 1;
+        run.account.in_use += 1;
+        true
+    }
+
+    fn run(capacity: u64, declared: Option<u64>, steps: &[Step]) -> Result<(), TestCaseError> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()
             .map_err(|error| TestCaseError::fail(error.to_string()))?;
         runtime.block_on(async {
+            // A window declared on the bucket before any head, read from the dated reader:
+            // `left` of the first server window, until its reset.
+            let first = declared.map(|left| {
+                let left = left.min(capacity);
+                let mut window =
+                    Window::fixed(capacity, Duration::from_secs(PERIOD)).remaining(left);
+                window.reset_at = Some(Run::reset(0));
+                (window, left)
+            });
+            let declared_windows: Vec<Window> =
+                first.iter().map(|(window, _)| window.clone()).collect();
+            let mut received = BTreeMap::new();
+            if let Some((_, left)) = &first {
+                received.insert(0, capacity - left);
+            }
             let mut run = Run {
-                account: Account::new(&[], Instant::now()),
+                account: Account::new(&declared_windows, Instant::now()),
                 selected: Selected {
                     id: (0, "k".into()),
                     definition: Bucket::new(|_| Some("k".into())),
@@ -1276,7 +1327,8 @@ mod reset_property {
                 },
                 start: Instant::now(),
                 capacity,
-                received: BTreeMap::new(),
+                received,
+                declared: first.as_ref().map(|_| 1),
                 written: Vec::new(),
                 heads: Vec::new(),
                 paid: BTreeMap::new(),
@@ -1284,7 +1336,7 @@ mod reset_property {
             for step in steps {
                 match step {
                     Step::Advance(seconds) => run.advance(Duration::from_secs(*seconds)).await,
-                    Step::Call(reply, late) => run.call(reply, *late),
+                    Step::Call(reply, late, slow) => run.call(reply, *late, *slow).await,
                 }
                 for ((at, reset), calls) in &run.paid {
                     prop_assert!(
@@ -1294,8 +1346,32 @@ mod reset_property {
                 }
             }
             // Every head arrives; once every reset named has passed, a call leaves at once.
+            // (A declared fixed window whose refill is spent waits for a newer reset from a
+            // response, as documented: nothing is due to it.)
             run.advance(Duration::from_secs(4 * PERIOD + 8)).await;
-            prop_assert!(run.admissible(), "a refill that was due was not granted");
+            if run.declared.is_none() {
+                prop_assert!(run.admissible(), "a refill that was due was not granted");
+            }
+            // A response tells the truth for the key's positions; once its reset has passed,
+            // the whole capacity reported leaves together, on known windows.
+            let seconds = run.now_seconds();
+            let window = seconds / PERIOD;
+            let truth = Written {
+                date: seconds,
+                reset: Run::reset(window),
+                left: capacity.saturating_sub(run.received.get(&window).copied().unwrap_or(0)),
+                width: run.account.windows.len().max(1),
+            };
+            let windows = run.windows(&truth, truth.width);
+            run.account.learn(&windows, 0, Instant::now());
+            let reset = (window + 1) * PERIOD + 1;
+            run.advance(Duration::from_secs(reset - run.now_seconds())).await;
+            for leaving in 1..=capacity {
+                prop_assert!(
+                    known_admission(&mut run),
+                    "after the reset, call {leaving} of the {capacity} reported did not leave"
+                );
+            }
             Ok(())
         })
     }
@@ -1309,9 +1385,15 @@ mod reset_property {
             failure_persistence: None,
             ..ProptestConfig::default()
         };
-        let cases = (2..=4u64, proptest::collection::vec(step(), 1..64));
+        let cases = (
+            2..=4u64,
+            proptest::option::weighted(0.25, 0..=4u64),
+            proptest::collection::vec(step(), 1..64),
+        );
         let mut runner = proptest::test_runner::TestRunner::new(config);
-        if let Err(failure) = runner.run(&cases, |(capacity, steps)| run(capacity, &steps)) {
+        if let Err(failure) = runner.run(&cases, |(capacity, declared, steps)| {
+            run(capacity, declared, &steps)
+        }) {
             panic!("{failure}");
         }
     }
