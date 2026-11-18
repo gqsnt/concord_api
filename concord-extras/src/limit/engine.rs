@@ -1013,3 +1013,283 @@ mod tests {
         assert_eq!(script.requests().len(), 0);
     }
 }
+
+#[cfg(test)]
+mod reset_property {
+    //! For one key, under random reports: no dated reset pays out more than its capacity, and a
+    //! refill that is due is granted.
+    use super::*;
+    use proptest::prelude::*;
+    use std::collections::BTreeMap;
+    use std::time::UNIX_EPOCH;
+
+    /// The server's windows: each lasts PERIOD seconds of the faked clock.
+    const PERIOD: u64 = 4;
+    /// 2030-01-01T00:00:00Z, the server's clock when the test starts.
+    const START: u64 = 1_893_456_000;
+
+    #[derive(Clone, Debug)]
+    enum Reply {
+        /// The truth, with a reset dated by the server, for `width` positions.
+        Dated(usize),
+        /// The truth, as a window without a date.
+        Undated(usize),
+        /// Nothing that teaches.
+        Headerless,
+        /// An earlier dated reply again, counted back from the latest, with the number of
+        /// positions it had or another.
+        Replay(usize, Option<usize>),
+    }
+
+    #[derive(Clone, Debug)]
+    enum Step {
+        Advance(u64),
+        /// A call, whose head arrives `late` seconds after it is sent (zero: at once).
+        Call(Reply, u64),
+    }
+
+    /// One to eight positions, most often one to three, where changes of number are likely.
+    fn width() -> impl Strategy<Value = usize> {
+        prop_oneof![4 => 1..=3usize, 1 => 1..=8usize]
+    }
+
+    fn step() -> impl Strategy<Value = Step> {
+        let reply = prop_oneof![
+            3 => width().prop_map(Reply::Dated),
+            2 => width().prop_map(Reply::Undated),
+            3 => Just(Reply::Headerless),
+            3 => (0..4usize, proptest::option::of(width()))
+                .prop_map(|(back, width)| Reply::Replay(back, width)),
+        ];
+        prop_oneof![
+            1 => (1..=3u64).prop_map(Step::Advance),
+            4 => (reply, prop_oneof![3 => Just(0u64), 1 => 1..=6u64])
+                .prop_map(|(reply, late)| Step::Call(reply, late)),
+        ]
+    }
+
+    /// One dated reply as the server wrote it.
+    #[derive(Clone)]
+    struct Written {
+        date: u64,
+        reset: SystemTime,
+        left: u64,
+        width: usize,
+    }
+
+    /// What a head teaches, read when it arrives, as a learner reads it.
+    enum Teach {
+        Dated(Written, usize),
+        /// A window without a date: what is left and the seconds to its reset, as written.
+        Undated(u64, Duration, usize),
+        Nothing,
+    }
+
+    struct Run {
+        account: Account,
+        selected: Selected,
+        start: Instant,
+        capacity: u64,
+        /// Calls the server received in each of its windows.
+        received: BTreeMap<u64, u64>,
+        written: Vec<Written>,
+        /// Heads still to arrive: when, and what they teach.
+        heads: Vec<(Instant, Teach)>,
+        /// Calls admitted on the refill of each dated reset, at each position: a window is a
+        /// position of the list that the learner returns.
+        paid: BTreeMap<(usize, SystemTime), u64>,
+    }
+
+    impl Run {
+        fn now_seconds(&self) -> u64 {
+            Instant::now().duration_since(self.start).as_secs()
+        }
+
+        /// The reset of the server's window at a time, a millisecond for each window apart so
+        /// that two windows never share an instant.
+        fn reset(window: u64) -> SystemTime {
+            UNIX_EPOCH
+                + Duration::from_secs(START + (window + 1) * PERIOD)
+                + Duration::from_millis(window)
+        }
+
+        fn windows(&self, written: &Written, width: usize) -> Vec<Window> {
+            let server = UNIX_EPOCH + Duration::from_secs(START + written.date);
+            let until = written.reset.duration_since(server).unwrap_or_default();
+            let mut window = Window::fixed(self.capacity, until).remaining(written.left);
+            window.reset_at = Some(written.reset);
+            vec![window; width]
+        }
+
+        fn arrive(&mut self) {
+            let now = Instant::now();
+            let (due, later): (Vec<_>, Vec<_>) =
+                self.heads.drain(..).partition(|(at, _)| *at <= now);
+            self.heads = later;
+            for (_, teach) in due {
+                let windows = match teach {
+                    Teach::Dated(written, width) => self.windows(&written, width),
+                    // Seconds to the reset, counted from the head, as an undated learner counts.
+                    Teach::Undated(left, until, width) => {
+                        vec![Window::fixed(self.capacity, until).remaining(left); width]
+                    }
+                    Teach::Nothing => Vec::new(),
+                };
+                self.account.learn(&windows, 1, now);
+                self.account.in_flight = self.account.in_flight.saturating_sub(1);
+                self.account.in_use = self.account.in_use.saturating_sub(1);
+            }
+        }
+
+        /// Moves the clock forward, learning each head at the instant it arrives.
+        async fn advance(&mut self, by: Duration) {
+            let end = Instant::now() + by;
+            while let Some(next) = self
+                .heads
+                .iter()
+                .map(|(at, _)| *at)
+                .filter(|at| *at <= end)
+                .min()
+            {
+                tokio::time::advance(next.saturating_duration_since(Instant::now())).await;
+                self.arrive();
+            }
+            tokio::time::advance(end.saturating_duration_since(Instant::now())).await;
+            self.arrive();
+        }
+
+        fn admissible(&mut self) -> bool {
+            let now = Instant::now();
+            let mut wait = Wait {
+                until: now,
+                required: Duration::ZERO,
+                unknown: false,
+                retry_after: None,
+            };
+            self.account.inspect(&self.selected, now, &mut wait).is_ok()
+                && !wait.unknown
+                && wait.until <= now
+                && wait.required.is_zero()
+        }
+
+        fn call(&mut self, reply: &Reply, late: u64) {
+            self.arrive();
+            if !self.admissible() {
+                return;
+            }
+            let now = Instant::now();
+            // Charge the call to the refill of each dated reset whose window pays it.
+            let mut charged = Vec::new();
+            for (at, window) in self.account.windows.iter_mut().enumerate() {
+                window.available(now);
+                if window.dated && window.refilled && !window.is_unknown() {
+                    if let Some(Some(reset)) = self.account.resets.get(at) {
+                        charged.push((at, *reset));
+                    }
+                }
+            }
+            for reset in charged {
+                *self.paid.entry(reset).or_default() += 1;
+            }
+            for window in &mut self.account.windows {
+                window.debit(1, now);
+            }
+            self.account.in_flight += 1;
+            self.account.in_use += 1;
+            // The server counts the call in its window, and answers with what is left.
+            let seconds = self.now_seconds();
+            let window = seconds / PERIOD;
+            let received = self.received.entry(window).or_default();
+            *received += 1;
+            let truth = Written {
+                date: seconds,
+                reset: Self::reset(window),
+                left: self.capacity.saturating_sub(*received),
+                width: 1,
+            };
+            let teach = match reply {
+                Reply::Dated(width) => {
+                    let written = Written {
+                        width: *width,
+                        ..truth
+                    };
+                    self.written.push(written.clone());
+                    Teach::Dated(written, *width)
+                }
+                Reply::Undated(width) => {
+                    let until = Duration::from_secs((window + 1) * PERIOD - seconds);
+                    Teach::Undated(truth.left, until, *width)
+                }
+                Reply::Headerless => Teach::Nothing,
+                Reply::Replay(back, width) => match self
+                    .written
+                    .len()
+                    .checked_sub(1 + back)
+                    .and_then(|at| self.written.get(at))
+                {
+                    Some(written) => {
+                        let width = width.unwrap_or(written.width);
+                        Teach::Dated(written.clone(), width)
+                    }
+                    None => Teach::Nothing,
+                },
+            };
+            let at = now + Duration::from_secs(late);
+            self.heads.push((at, teach));
+            if late == 0 {
+                self.arrive();
+            }
+        }
+    }
+
+    fn run(capacity: u64, steps: &[Step]) -> Result<(), TestCaseError> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .start_paused(true)
+            .build()
+            .map_err(|error| TestCaseError::fail(error.to_string()))?;
+        runtime.block_on(async {
+            let mut run = Run {
+                account: Account::new(&[], Instant::now()),
+                selected: Selected {
+                    id: (0, "k".into()),
+                    definition: Bucket::new(|_| Some("k".into())),
+                    cost: 1,
+                },
+                start: Instant::now(),
+                capacity,
+                received: BTreeMap::new(),
+                written: Vec::new(),
+                heads: Vec::new(),
+                paid: BTreeMap::new(),
+            };
+            for step in steps {
+                match step {
+                    Step::Advance(seconds) => run.advance(Duration::from_secs(*seconds)).await,
+                    Step::Call(reply, late) => run.call(reply, *late),
+                }
+                for ((at, reset), calls) in &run.paid {
+                    prop_assert!(
+                        *calls <= capacity,
+                        "the refill of {reset:?} at position {at} paid {calls} calls, its capacity is {capacity}"
+                    );
+                }
+            }
+            // Every head arrives; once every reset named has passed, a call leaves at once.
+            run.advance(Duration::from_secs(4 * PERIOD + 8)).await;
+            prop_assert!(run.admissible(), "a refill that was due was not granted");
+            Ok(())
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 4096, failure_persistence: None, ..ProptestConfig::default() })]
+        #[test]
+        fn c11_5_no_dated_reset_pays_out_more_than_its_capacity(
+            capacity in 2..=4u64,
+            steps in proptest::collection::vec(step(), 1..64),
+        ) {
+            run(capacity, &steps)?;
+        }
+    }
+}
