@@ -141,6 +141,8 @@ impl<C: Call> std::fmt::Debug for Paging<C> {
 // What each shipped pager returns is `Send` and `Sync`, as their closures were.
 const _: () = {
     fn send_and_sync<T: Send + Sync>() {}
+    // The assertion is a function that type-checks and is never called.
+    // PANIC-SAFETY: Only an unused-code lint is relaxed, for a compile-time assertion; no panic lint is relaxed.
     #[allow(dead_code)]
     fn paging<C: Call>() {
         send_and_sync::<Paging<C>>();
