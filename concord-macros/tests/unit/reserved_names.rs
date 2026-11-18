@@ -787,6 +787,51 @@ impl Reader<'_> {
         for key in file.keys() {
             assert!(known.contains(&key), "unknown key {key}");
         }
+        // Every nested object too: an unknown key anywhere is a rule the reader cannot apply.
+        let only = |object: &Json, allowed: &[&str], what: &str| {
+            for key in object.keys() {
+                assert!(allowed.contains(&key), "unknown key {key} in {what}");
+            }
+        };
+        for (id, position) in match file.get("positions") {
+            Json::Map(entries) => entries.as_slice(),
+            _ => panic!("positions is an object"),
+        } {
+            only(
+                position,
+                &["what", "probe", "enclosing", "children", "inherits"],
+                id,
+            );
+        }
+        let spelling = file.get("spelling");
+        only(spelling, &["normalization", "name", "client"], "spelling");
+        only(
+            spelling.get("normalization"),
+            &["form", "rule", "examples"],
+            "normalization",
+        );
+        assert_eq!(
+            spelling.get("normalization").get("form").text(),
+            "NFC",
+            "unknown form"
+        );
+        let spelled = ["positions", "first", "characters", "accept", "refuse"];
+        let name_keys = [&spelled[..], &["doubled_underscore", "final_underscore"]].concat();
+        only(spelling.get("name"), &name_keys, "spelling.name");
+        let client_keys = [&spelled[..], &["module_is_keyword"]].concat();
+        only(spelling.get("client"), &client_keys, "spelling.client");
+        let conversions = file.get("conversions");
+        only(conversions, &["type", "module"], "conversions");
+        for key in ["type", "module"] {
+            only(conversions.get(key), &["rule", "examples"], key);
+        }
+        for collision in file.get("collisions").list() {
+            only(
+                collision,
+                &["id", "what", "accept", "refuse"],
+                "a collision",
+            );
+        }
         for reservation in file.get("reserved").list() {
             let kinds = ["names", "prefix", "types", "enclosing", "children"];
             let found = reservation
@@ -1123,4 +1168,26 @@ fn c1_4_c1_6_the_name_check_spells_no_name_outside_its_tables() {
         .filter(|text| !tables.contains(*text) && !suggestions.contains(&text.as_str()))
         .collect();
     assert!(unknown.is_empty(), "names outside the tables: {unknown:?}");
+}
+
+/// The reader of the test obeys the file's own rule for readers: an unknown key, at any
+/// depth, stops it.
+#[test]
+fn c1_4_the_reader_of_the_names_file_stops_on_an_unknown_key_at_any_depth() {
+    let written = fs::read_to_string(path().join("../docs/reference/reserved-names.json")).unwrap();
+    Reader::new(&parse_json(&written));
+    for (anchor, added) in [
+        ("\"name\": { ", "\"ascii_only\": true, "),
+        ("\"normalization\": { ", "\"also\": \"NFKC\", "),
+        ("\"type\": { ", "\"plural\": true, "),
+        ("\"client_input\": { ", "\"also\": [], "),
+    ] {
+        assert_eq!(written.matches(anchor).count(), 1, "{anchor}");
+        let changed = written.replacen(anchor, &format!("{anchor}{added}"), 1);
+        let file = parse_json(&changed);
+        let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Reader::new(&file);
+        }));
+        assert!(stopped.is_err(), "the reader went past {added}");
+    }
 }
