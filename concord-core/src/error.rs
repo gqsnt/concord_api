@@ -648,9 +648,14 @@ impl<E> Error<E> {
     ///
     /// Both waits are recorded when the retry decision is made: this method neither reads the
     /// header again nor calls any rule, and a `Retry-After` date was measured against the
-    /// system clock at that decision. A rule is asked only while another attempt is still
-    /// possible, so after the last attempt, or for a request that may not be repeated, this is
-    /// the `Retry-After` alone.
+    /// system clock at that decision. The `when` rules are asked only when an attempt is left,
+    /// the request can be sent again and may be repeated, the failure is one that a policy may
+    /// retry, and no `unless` rule stopped it; otherwise this is the `Retry-After` alone. A
+    /// recorded wait does not mean that an attempt followed: a wait over 60 seconds, or one
+    /// that would not end before the call's `timeout`, ends the retries.
+    ///
+    /// An error for which no retry decision was made, such as a Build error before the first
+    /// attempt or the error of a pager, returns `None`.
     ///
     /// For the header alone, use [`Headers::retry_after`] on [`headers`](Error::headers): it
     /// reads `Retry-After` when it is called, and knows no rule.

@@ -8,6 +8,8 @@ The work is split three ways. The description states the fact about the API (thi
 
 ## Retries are off until you turn them on
 
+This is Concord's own engine. The HTTP transport beneath it can send a request again on its own ([what is resent without Concord](#what-holds-for-every-retry)).
+
 ```rust
 let riot = Riot::new(key).with_retry(Retry::standard());     // for every call of this client
 let game = asia.get(id).with_retry(Retry::none()).await?;         // for this call only
@@ -141,6 +143,6 @@ To test your own policy on virtual time and check when each attempt happens, see
 | A stream handed to you is outside the attempt | With `read Stream;`, the attempt ends at the head. |
 | When the attempts run out | The last outcome is the result: for example, a Refused error with status 429 and its headers. `e.tries()` says how many attempts were made: an attempt counts once the request is handed to the middleware. |
 | A body that does not decode | Never retried: it would be the same body. |
-| What is resent without Concord | `reqwest` sends an HTTP/2 request again, at most twice, when the server states that it did not process it: a stream refused with `REFUSED_STREAM`, or a graceful `GOAWAY`. It does so only when the body can be copied (bytes in memory, not a stream). The connection pool under `reqwest` also sends a request again, on another connection, when the idle connection that it was given proves to be closed before any byte of the request is written. Both are left as `reqwest` does them ([Concord's own HTTP client](../reference/crates.md#concords-own-http-client)). They happen below the level where Concord counts attempts: `tries()` does not see them, and the policy does not decide them. |
+| What is resent without Concord | By default, with HTTP/2, `reqwest` can send a request again, up to twice and whatever its method, when its body is in memory or empty, after a remote `REFUSED_STREAM` reset or a `GOAWAY` with `NO_ERROR`. It decides on the error alone: a `GOAWAY` leaves unprocessed only the streams above the server's last stream id, so a request that the server processed can be sent again. The connection pool under `reqwest` also sends a request again when a reused connection proved unusable and handed the request back unsent: a request with a streamed body too, with no fixed count, and whatever `builder.retry(…)` says. That case never puts a request on the wire twice. Both are left as `reqwest` does them ([Concord's own HTTP client](../reference/crates.md#concords-own-http-client)). They happen below the level where Concord counts attempts: `tries()` does not see them, and the policy does not decide them. |
 | `send_raw()` | The attempt ends at the head. A head with a status below `400` is final, like a value. A head of `400` or above is checked by the policy, as an error response is, but your rules get no `problem()`, because nothing of the body is read. |
 | The timeouts | The call timeout, `timeout`, when you set one, covers every attempt and every wait between attempts ([timeouts](calling.md#timeouts)). |
