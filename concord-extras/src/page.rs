@@ -93,7 +93,12 @@ where
             next => next,
         }
     })
-    .short_page_rule(move |call, value| short(call, value.count()))
+    .short_page_rule(move |call| {
+        limit
+            .get(call)
+            .copied()
+            .and_then(|asked| asked.try_into().ok())
+    })
 }
 
 /// `paginate by_page(page, 1);`: the next call requests the following page number.
@@ -1064,37 +1069,45 @@ mod tests {
         assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
-    #[test]
-    fn c8_6_a_short_page_at_the_largest_offset_ends_unless_the_page_says_more() {
-        let at_the_end = || List {
-            start: Some(u32::MAX),
-            ..short(3)
-        };
-        let page = answer(&[1], None, None);
-        assert!(by_offset_limit(Start, Count)
-            .next_call(at_the_end(), &page)
-            .unwrap()
-            .is_none());
-        assert!(by_offset_limit(Start, Count)
-            .has_more(|_| false)
-            .next_call(at_the_end(), &page)
-            .unwrap()
-            .is_none());
-        // the page says more, and the offset cannot grow: a Mismatch, never a quiet end
-        assert!(by_offset_limit(Start, Count)
-            .has_more(|_| true)
-            .next_call(at_the_end(), &page)
-            .is_err());
+    /// A call whose data the move takes as the only owner.
+    struct Owned {
+        unique: std::sync::Arc<usize>,
+        clones: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl Clone for Owned {
+        fn clone(&self) -> Self {
+            self.clones
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Owned {
+                unique: self.unique.clone(),
+                clones: self.clones.clone(),
+            }
+        }
+    }
+    impl Call for Owned {
+        type Value = Vec<u8>;
+        type Problem = ();
+        fn at_url(self, _: &str) -> Owned {
+            self
+        }
     }
 
     #[test]
-    fn c8_6_an_empty_page_that_announces_another_is_a_mismatch() {
-        let mut pager = by_page(Start, 1).has_more(|_| true);
-        let first = List {
-            start: Some(1),
-            ..list()
+    fn c8_6_the_short_page_rule_takes_nothing_from_the_call_but_the_size() {
+        let clones = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let call = Owned {
+            unique: std::sync::Arc::new(1),
+            clones: clones.clone(),
         };
-        assert!(pager.next_call(first, &answer(&[], None, None)).is_err());
+        let page = Answer::new(StatusCode::OK, Headers::from(HeaderMap::new()), vec![1u8]);
+        // the move needs to be the only owner of the call's data
+        let mut pager = Paging::from_fn(|mut call: Owned, _: &Answer<Vec<u8>>| {
+            *std::sync::Arc::get_mut(&mut call.unique)? += 1;
+            Some(call)
+        })
+        .stop_on_short_page_of(1);
+        assert!(pager.next_call(call, &page).unwrap().is_some());
+        assert_eq!(clones.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[test]

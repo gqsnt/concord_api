@@ -20,7 +20,8 @@ type Gate<C> = Box<dyn Fn(&C) -> bool + Send>;
 type Statement<C> =
     Box<dyn FnMut(&C, &<C as Call>::Value) -> Result<bool, Fail<<C as Call>::Problem>> + Send>;
 type Move<C> = Box<dyn Pager<C>>;
-type Short<C> = Box<dyn Fn(&C, &<C as Call>::Value) -> bool + Send>;
+/// A short-page rule reads only a size from the call (a `Copy` value), never the call itself.
+type Short<C> = Box<dyn Fn(&C) -> Option<usize> + Send>;
 type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 
 /// A pager with what the page states about it. The six shipped pagers return one; so do
@@ -105,14 +106,15 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 ///
 /// # A `Paging` is not a function
 ///
-/// Before `Paging`, the shipped pagers returned closures. Code that used one as a function stops
-/// compiling, and `rustc` says so in its own words:
+/// Before `Paging`, the shipped pagers returned closures. Code that used one as a function, or
+/// wrote one where `paginate` reads a closure, stops compiling. Find the message here:
 ///
-/// | What `rustc` says | What was written | What to write |
+/// | The message | What was written | What to write |
 /// |---|---|---|
-/// | ``expected function, found `Paging<…>` `` (E0618) | `pager(call, page)` | `pager.next_call(call, page)`, with `use concord::page::Pager;`, from a closure that owns the pager (`let mut pager = by_cursor(…);` and `move \|call, page\| pager.next_call(call, page)`) |
-/// | ``expected an `Fn(…)` closure, found `Paging<…>` `` or the same with `FnMut` (E0277) | `Box<dyn Fn(…)>` or `Box<dyn FnMut(…)>` holding a shipped pager, alone or beside a closure; a function of yours that takes `impl Fn(…)` | [`into_fn`](Paging::into_fn); or a parameter of type `impl Pager<C>`; or `Box<dyn Pager<C>>` for the box |
-/// | ``a macro in `paginate` must expand to a closure, and this one expands to `Paging<…>` `` | `paginate my_pager!(…);`, where the macro writes `by_cursor(…)` | `paginate Paging::from_pager(my_pager!(…));` |
+/// | ``expected function, found `Paging<…>` `` (E0618) | `pager(call, page)` | `pager.next_call(call, page)`, with `use concord::page::Pager;`, from a closure that owns the pager: `let mut pager = by_cursor(…);` then `move \|call, page\| pager.next_call(call, page)`; a function that returns that closure returns `impl FnMut(…)`, not `impl Fn(…)` |
+/// | ``expected an `Fn(…)` closure, found `Paging<…>` ``, or the same with `FnMut` (E0277), at a `Box<dyn Fn(…)>` or `Box<dyn FnMut(…)>` | a shipped pager in a box of a function type, alone or beside a closure | a box of a pager, given its type in a `let`: `let pager: Box<dyn Pager<C>> = if … { Box::new(by_cursor(…)) } else { Box::new(Paging::from_fn(\|call: C, page: &Answer<T>\| …)) }; pager`; the closure names its parameters' types |
+/// | the same E0277, at a bound of a function of yours (`impl FnMut(C, &Answer<T>) -> Option<C>`) | a shipped pager passed to that function | a parameter of type `impl Pager<C>` (and a return of `impl Pager<C>`), called with [`Pager::next_call`]; or [`into_fn`](Paging::into_fn), with the function's types changed to `Result<Option<C>, Fail<C::Problem>>` |
+/// | `` `paginate` reads this expression as a closure, and its value is `Paging<…>` `` | a shipped pager anywhere but a call or a path (alone, or in a plain block, `if` or `match`): from a macro of yours, after a `return` or a `break`, in a `loop` or a labelled block, under `#[cfg]`, behind `*` or `.0` | `.into_fn()` written after the pager: `loop { break by_cursor(…).into_fn(); }`, `my_pager!(…).into_fn()`; or the pager as a call or a path. `Paging::from_pager(…)` does not help there: the expression inside it is still one that `paginate` reads as a closure |
 #[must_use = "a pager does nothing until `paginate` takes it"]
 pub struct Paging<C: Call> {
     // The lock is only ever reached through `&mut self` (`get_mut`): it costs nothing, and it
@@ -129,8 +131,10 @@ struct Parts<C: Call> {
     /// 3. The moves chosen by an input, then the move otherwise.
     or_when_set: Vec<(Gate<C>, Move<C>)>,
     moves: Move<C>,
-    /// 4. The short-page rules, read only when no statement spoke.
+    /// 4. The short-page rules, read only when no statement spoke: each gives a size, and the
+    ///    page is counted once, after the move.
     stop_on_short_page: Vec<Short<C>>,
+    count: Option<fn(&C::Value) -> usize>,
     /// 5. The edits of the next call, in the order written.
     map_next: Vec<Edit<C>>,
 }
@@ -203,6 +207,7 @@ impl<C: Call> Paging<C> {
                 or_when_set: Vec::new(),
                 moves: Box::new(pager),
                 stop_on_short_page: Vec::new(),
+                count: None,
                 map_next: Vec::new(),
             }),
         }
@@ -378,21 +383,15 @@ impl<C: Call> Paging<C> {
     ///     Ok(ids)
     /// }
     /// ```
-    pub fn stop_on_short_page<K>(mut self, count: K, default: K::Value) -> Paging<C>
+    pub fn stop_on_short_page<K>(self, count: K, default: K::Value) -> Paging<C>
     where
         K: Slot<C>,
         K::Value: Copy + TryInto<usize> + Send + 'static,
         C::Value: IntoItems,
     {
-        self.parts()
-            .stop_on_short_page
-            .push(Box::new(move |call, value| {
-                let size = count.get(call).copied().unwrap_or(default);
-                size.try_into()
-                    .ok()
-                    .is_some_and(|size: usize| value.count() < size)
-            }));
-        self
+        self.short_page_rule(move |call| {
+            count.get(call).copied().unwrap_or(default).try_into().ok()
+        })
     }
 
     /// `.stop_on_short_page_of(100)`: as [`stop_on_short_page`](Paging::stop_on_short_page), for
@@ -434,7 +433,7 @@ impl<C: Call> Paging<C> {
     where
         C::Value: IntoItems,
     {
-        self.short_page_rule(move |_, value| value.count() < size)
+        self.short_page_rule(move |_| Some(size))
     }
 
     /// `.only_when_set(page)`: when the call that fetched the page did not set `input`, this page
@@ -566,12 +565,15 @@ impl<C: Call> Paging<C> {
 }
 
 impl<C: Call> Paging<C> {
-    /// Adds a short-page rule: `true` when the page is short.
-    pub(super) fn short_page_rule<F>(mut self, short: F) -> Paging<C>
+    /// Adds a short-page rule: the size below which a page is short, read from the call.
+    pub(super) fn short_page_rule<F>(mut self, size: F) -> Paging<C>
     where
-        F: Fn(&C, &C::Value) -> bool + Send + 'static,
+        F: Fn(&C) -> Option<usize> + Send + 'static,
+        C::Value: IntoItems,
     {
-        self.parts().stop_on_short_page.push(Box::new(short));
+        let parts = self.parts();
+        parts.stop_on_short_page.push(Box::new(size));
+        parts.count = Some(<C::Value as IntoItems>::count);
         self
     }
 }
@@ -618,9 +620,15 @@ impl<C: Call> Pager<C> for Paging<C> {
         if stated == Some(false) {
             return Ok(None);
         }
-        // The short-page rules read the call that fetched the page, after the move has taken it.
-        let fetched =
-            (stated.is_none() && !parts.stop_on_short_page.is_empty()).then(|| call.clone());
+        // 4 reads only the sizes from the call before the move, which takes the call.
+        let size = match stated {
+            None => parts
+                .stop_on_short_page
+                .iter()
+                .filter_map(|size| size(&call))
+                .max(),
+            Some(_) => None,
+        };
         // 3. The move: its failure is the result, also on a short page.
         let mut chosen = parts.or_when_set.iter_mut().filter(|(set, _)| set(&call));
         let next = match (chosen.next(), chosen.next()) {
@@ -628,13 +636,9 @@ impl<C: Call> Pager<C> for Paging<C> {
             (Some((_, other)), None) => other.next_call(call, page)?,
             (None, _) => parts.moves.next_call(call, page)?,
         };
-        // 4. With no statement, a short page ends the list: read after the move.
-        if let Some(fetched) = fetched {
-            if parts
-                .stop_on_short_page
-                .iter()
-                .any(|short| short(&fetched, page.value()))
-            {
+        // 4. With no statement, a short page ends the list: the page is counted after the move.
+        if let (Some(size), Some(count)) = (size, parts.count) {
+            if count(page.value()) < size {
                 return Ok(None);
             }
         }

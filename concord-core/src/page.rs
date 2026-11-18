@@ -406,6 +406,30 @@ impl<C: Call> IntoNext<C> for Result<Option<C>, Fail<C::Problem>> {
 ///
 /// A pager is called once for each page, before that page is handed to the caller. It lives as
 /// long as the `Pages` that `.pages()` returned, so its state is that of one walk through the list.
+///
+/// **A box of your own pager.** `Box<dyn Pager<C>>` is a pager, and so is a box of a closure; a
+/// box of a type of yours is not, and `paginate Box::new(MyPager)` says
+/// ``expected an `FnMut(…)` closure, found `MyPager` ``. Write either a box of the trait, given
+/// its type in a `let`: `paginate { let pager: Box<dyn Pager<_>> = Box::new(MyPager); pager };`,
+/// or the implementation for your box, beside your type:
+///
+/// ```
+/// # use concord_core as concord;
+/// # use concord::page::{Call, Pager};
+/// # use concord::{Answer, Fail};
+/// # pub struct MyPager;
+/// # impl<C: Call> Pager<C> for MyPager {
+/// #     fn next_call(&mut self, _: C, _: &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> { Ok(None) }
+/// # }
+/// impl<C: Call> Pager<C> for Box<MyPager> {
+///     fn next_call(&mut self, call: C, page: &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> {
+///         (**self).next_call(call, page)
+///     }
+/// }
+/// ```
+///
+/// One implementation for every `Box<P>` cannot be written: Rust refuses it beside the one for
+/// closures, since a box of a closure is a closure (E0119).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a pager for this endpoint",
     note = "a pager is a closure `|call, page| …` that returns the next call, or a value such as `by_cursor(…)`"
