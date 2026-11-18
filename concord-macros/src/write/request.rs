@@ -162,6 +162,13 @@ impl Values {
 }
 
 impl Writer<'_> {
+    /// The name of the endpoint, inside its `Endpoint` implementation. The path names the
+    /// trait, so an inherent `NAME` that the author gives the endpoint type is never read.
+    fn endpoint_name(&self) -> TokenStream {
+        let root = &self.root;
+        emit!(<Self as #root::Endpoint>::NAME)
+    }
+
     pub(super) fn request(&self, index: usize, endpoint: &flat::Endpoint<'_>) -> TokenStream {
         let root = &self.root;
         let method = self.request_method(endpoint);
@@ -197,6 +204,7 @@ impl Writer<'_> {
     }
 
     fn request_method(&self, endpoint: &flat::Endpoint<'_>) -> TokenStream {
+        let endpoint_name = self.endpoint_name();
         let NodeKind::Endpoint(method) = &endpoint.node.kind else {
             self.internal(
                 endpoint.node.name.span(),
@@ -207,7 +215,7 @@ impl Writer<'_> {
         if let Some(custom) = &method.custom {
             emit! {
                 ::concord::http::Method::from_bytes(#custom.as_bytes())
-                    .map_err(|__error| ::concord::__private::build_error(Self::__ENDPOINT, ::std::boxed::Box::new(__error)))?
+                    .map_err(|__error| ::concord::__private::build_error(#endpoint_name, ::std::boxed::Box::new(__error)))?
             }
         } else {
             let method = &method.keyword;
@@ -278,6 +286,7 @@ impl Writer<'_> {
     }
 
     fn request_body(&self, index: usize, endpoint: &flat::Endpoint<'_>) -> TokenStream {
+        let endpoint_name = self.endpoint_name();
         match &endpoint.body {
             Some(flat::BodyLine::Expression(line)) => {
                 let bindings = self.bindings(&line.origin, index, emit!(__value), false);
@@ -285,7 +294,7 @@ impl Writer<'_> {
                 let place = emit_at!(expression.span() => __draft.body(__body););
                 emit!({
                     #bindings
-                    let __body = ::concord::__private::evaluate_body(Self::__ENDPOINT, || ::core::result::Result::Ok({ #expression }))?;
+                    let __body = ::concord::__private::evaluate_body(#endpoint_name, || ::core::result::Result::Ok({ #expression }))?;
                     #place
                 })
             }
@@ -302,6 +311,7 @@ impl Writer<'_> {
         function: &syn::ExprPath,
         entries: &[flat::EntryLine<'_>],
     ) -> TokenStream {
+        let endpoint_name = self.endpoint_name();
         let mut setup = TokenStream::new();
         let mut writes = TokenStream::new();
         let mut next = 0;
@@ -337,7 +347,7 @@ impl Writer<'_> {
                     } => {
                         let pieces = pieces(template);
                         (
-                            emit!(::concord::__private::Draft::body_template(Self::__ENDPOINT, #pieces)?),
+                            emit!(::concord::__private::Draft::body_template(#endpoint_name, #pieces)?),
                             template.literal.span(),
                             true,
                         )
@@ -347,7 +357,7 @@ impl Writer<'_> {
                 let value = if template {
                     value
                 } else {
-                    emit!(::concord::__private::evaluate_body(Self::__ENDPOINT, || ::core::result::Result::Ok({ #value }))?)
+                    emit!(::concord::__private::evaluate_body(#endpoint_name, || ::core::result::Result::Ok({ #value }))?)
                 };
                 values.bind(raw.clone(), value);
                 holders.extend(emit!(let #name = ::concord::__private::ValueRef(#raw);));
@@ -427,6 +437,7 @@ impl Writer<'_> {
         values: &mut Values,
         placement: &Ident,
     ) -> Option<TokenStream> {
+        let endpoint_name = self.endpoint_name();
         let raw = ident(&format!("__EntryExpression{index}"));
         let key = flat::key(entry.line.value, false);
         let (name, saved, span) = match &entry.line.value.kind {
@@ -439,7 +450,7 @@ impl Writer<'_> {
                 value: Value::Expression(expr),
                 ..
             } => {
-                values.bind(raw.clone(), emit!(::concord::__private::evaluate_entry(Self::__ENDPOINT, #key, || ::core::result::Result::Ok({ #expr }))?));
+                values.bind(raw.clone(), emit!(::concord::__private::evaluate_entry(#endpoint_name, #key, || ::core::result::Result::Ok({ #expr }))?));
                 (key.clone(), emit!(&#raw), expr.span())
             }
             _ => return None,

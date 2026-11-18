@@ -1437,7 +1437,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.again";
+        const __ENDPOINT: &'static str = <shapes::Again as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1503,6 +1503,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Again {
         type Value = Item;
+        const NAME: &'static str = "shapes.again";
     }
 
     call_spec!(
@@ -1574,7 +1575,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.replace";
+        const __ENDPOINT: &'static str = <shapes::Replace as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1646,6 +1647,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Replace {
         type Value = Item;
+        const NAME: &'static str = "shapes.replace";
     }
 
     call_spec!(
@@ -1714,7 +1716,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.order";
+        const __ENDPOINT: &'static str = <shapes::Order as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1793,6 +1795,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Order {
         type Value = Item;
+        const NAME: &'static str = "shapes.order";
     }
 
     call_spec!(
@@ -1850,7 +1853,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.upload";
+        const __ENDPOINT: &'static str = <shapes::Upload as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1915,6 +1918,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Upload {
         type Value = Item;
+        const NAME: &'static str = "shapes.upload";
     }
 
     call_spec!(
@@ -1964,7 +1968,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.outcome";
+        const __ENDPOINT: &'static str = <shapes::Outcome as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2050,6 +2054,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Outcome {
         type Value = Result<Item, Conflict>;
+        const NAME: &'static str = "shapes.outcome";
     }
 
     call_spec!(shapes, shapes::Outcome, shapes::__OutcomeInputs, Result<Item, Conflict>, ShapesProblem, "Outcome");
@@ -2080,7 +2085,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.ping";
+        const __ENDPOINT: &'static str = <shapes::Ping as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2134,6 +2139,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Ping {
         type Value = ();
+        const NAME: &'static str = "shapes.ping";
     }
 
     call_spec!(
@@ -2184,7 +2190,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.present";
+        const __ENDPOINT: &'static str = <shapes::Present as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2263,6 +2269,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Present {
         type Value = bool;
+        const NAME: &'static str = "shapes.present";
     }
 
     call_spec!(
@@ -2329,7 +2336,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.create";
+        const __ENDPOINT: &'static str = <shapes::Create as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2450,6 +2457,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Create {
         type Value = Receipt;
+        const NAME: &'static str = "shapes.create";
     }
 
     call_spec!(
@@ -2500,7 +2508,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.hosted";
+        const __ENDPOINT: &'static str = <shapes::Hosted as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2565,6 +2573,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Hosted {
         type Value = Item;
+        const NAME: &'static str = "shapes.hosted";
     }
 
     call_spec!(
@@ -2661,7 +2670,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.search";
+        const __ENDPOINT: &'static str = <shapes::Search as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2726,6 +2735,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Search {
         type Value = Vec<Item>;
+        const NAME: &'static str = "shapes.search";
     }
 
     call_spec!(
@@ -2801,7 +2811,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.measured";
+        const __ENDPOINT: &'static str = <shapes::Measured as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2866,6 +2876,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Measured {
         type Value = Item;
+        const NAME: &'static str = "shapes.measured";
     }
 
     call_spec!(
@@ -2932,7 +2943,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.parsed";
+        const __ENDPOINT: &'static str = <shapes::Parsed as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -2997,6 +3008,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Parsed {
         type Value = Item;
+        const NAME: &'static str = "shapes.parsed";
     }
 
     call_spec!(
@@ -3034,7 +3046,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.counts";
+        const __ENDPOINT: &'static str = <shapes::Counts as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3099,6 +3111,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Counts {
         type Value = Tally;
+        const NAME: &'static str = "shapes.counts";
     }
 
     call_spec!(
@@ -3137,7 +3150,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.strict";
+        const __ENDPOINT: &'static str = <shapes::Strict as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3202,6 +3215,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Strict {
         type Value = Item;
+        const NAME: &'static str = "shapes.strict";
     }
 
     call_spec!(
@@ -3240,7 +3254,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.long_message";
+        const __ENDPOINT: &'static str = <shapes::LongMessage as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3305,6 +3319,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::LongMessage {
         type Value = Item;
+        const NAME: &'static str = "shapes.long_message";
     }
 
     call_spec!(
@@ -3363,7 +3378,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.wrapped.get";
+        const __ENDPOINT: &'static str = <shapes::wrapped::Get as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3438,6 +3453,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::wrapped::Get {
         type Value = Item;
+        const NAME: &'static str = "shapes.wrapped.get";
     }
 
     call_spec!(
@@ -3498,7 +3514,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.wrapped.raw";
+        const __ENDPOINT: &'static str = <shapes::wrapped::Raw as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3564,6 +3580,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::wrapped::Raw {
         type Value = Envelope<Item>;
+        const NAME: &'static str = "shapes.wrapped.raw";
     }
 
     call_spec!(
@@ -3624,7 +3641,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.wrapped.find";
+        const __ENDPOINT: &'static str = <shapes::wrapped::Find as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3714,6 +3731,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::wrapped::Find {
         type Value = Option<Item>;
+        const NAME: &'static str = "shapes.wrapped.find";
     }
 
     call_spec!(
@@ -3776,7 +3794,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.wrapped.touch";
+        const __ENDPOINT: &'static str = <shapes::wrapped::Touch as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3855,6 +3873,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::wrapped::Touch {
         type Value = ();
+        const NAME: &'static str = "shapes.wrapped.touch";
     }
 
     call_spec!(
@@ -3914,7 +3933,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.wrapped.holds";
+        const __ENDPOINT: &'static str = <shapes::wrapped::Holds as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -3995,6 +4014,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::wrapped::Holds {
         type Value = bool;
+        const NAME: &'static str = "shapes.wrapped.holds";
     }
 
     call_spec!(
@@ -4036,7 +4056,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.noted";
+        const __ENDPOINT: &'static str = <shapes::Noted as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -4109,6 +4129,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Noted {
         type Value = Item;
+        const NAME: &'static str = "shapes.noted";
     }
 
     call_spec!(
@@ -4162,7 +4183,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.titled";
+        const __ENDPOINT: &'static str = <shapes::Titled as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -4244,6 +4265,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Titled {
         type Value = Item;
+        const NAME: &'static str = "shapes.titled";
     }
 
     call_spec!(
@@ -4299,7 +4321,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.held";
+        const __ENDPOINT: &'static str = <shapes::Held as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -4394,6 +4416,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Held {
         type Value = Result<Item, Conflict>;
+        const NAME: &'static str = "shapes.held";
     }
 
     call_spec!(shapes, shapes::Held, shapes::__HeldInputs, Result<Item, Conflict>, ShapesProblem, "Held");
@@ -4439,7 +4462,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.refusal";
+        const __ENDPOINT: &'static str = <shapes::Refusal as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -4524,6 +4547,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Refusal {
         type Value = Item;
+        const NAME: &'static str = "shapes.refusal";
     }
 
     call_spec!(
@@ -4780,7 +4804,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.guarded";
+        const __ENDPOINT: &'static str = <shapes::Guarded as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -4845,6 +4869,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Guarded {
         type Value = Batch;
+        const NAME: &'static str = "shapes.guarded";
     }
 
     call_spec!(
@@ -4964,7 +4989,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.headed";
+        const __ENDPOINT: &'static str = <shapes::Headed as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -5029,6 +5054,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Headed {
         type Value = Batch;
+        const NAME: &'static str = "shapes.headed";
     }
 
     call_spec!(
@@ -5183,7 +5209,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.posted";
+        const __ENDPOINT: &'static str = <shapes::Posted as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -5248,6 +5274,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Posted {
         type Value = Batch;
+        const NAME: &'static str = "shapes.posted";
     }
 
     call_spec!(
@@ -5404,7 +5431,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.streamed";
+        const __ENDPOINT: &'static str = <shapes::Streamed as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -5469,6 +5496,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Streamed {
         type Value = Batch;
+        const NAME: &'static str = "shapes.streamed";
     }
 
     call_spec!(
@@ -5603,7 +5631,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.renewed";
+        const __ENDPOINT: &'static str = <shapes::Renewed as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -5668,6 +5696,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Renewed {
         type Value = Batch;
+        const NAME: &'static str = "shapes.renewed";
     }
 
     call_spec!(
@@ -5814,7 +5843,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.keyed_host";
+        const __ENDPOINT: &'static str = <shapes::KeyedHost as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -5879,6 +5908,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::KeyedHost {
         type Value = Batch;
+        const NAME: &'static str = "shapes.keyed_host";
     }
 
     call_spec!(
@@ -6029,7 +6059,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.roaming";
+        const __ENDPOINT: &'static str = <shapes::Roaming as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -6094,6 +6124,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Roaming {
         type Value = Batch;
+        const NAME: &'static str = "shapes.roaming";
     }
 
     call_spec!(
@@ -6211,7 +6242,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.offset";
+        const __ENDPOINT: &'static str = <shapes::Offset as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -6276,6 +6307,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Offset {
         type Value = Vec<Item>;
+        const NAME: &'static str = "shapes.offset";
     }
 
     call_spec!(
@@ -6390,7 +6422,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.numbered";
+        const __ENDPOINT: &'static str = <shapes::Numbered as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -6455,6 +6487,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Numbered {
         type Value = Vec<Item>;
+        const NAME: &'static str = "shapes.numbered";
     }
 
     call_spec!(
@@ -6505,7 +6538,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.addressed";
+        const __ENDPOINT: &'static str = <shapes::Addressed as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -6570,6 +6603,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Addressed {
         type Value = Batch;
+        const NAME: &'static str = "shapes.addressed";
     }
 
     call_spec!(
@@ -6632,7 +6666,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.remove";
+        const __ENDPOINT: &'static str = <shapes::Remove as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -6708,6 +6742,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Remove {
         type Value = ();
+        const NAME: &'static str = "shapes.remove";
     }
 
     call_spec!(
@@ -6756,7 +6791,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.settled";
+        const __ENDPOINT: &'static str = <shapes::Settled as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -6833,6 +6868,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Settled {
         type Value = Result<Item, Conflict>;
+        const NAME: &'static str = "shapes.settled";
     }
 
     call_spec!(shapes, shapes::Settled, shapes::__SettledInputs, Result<Item, Conflict>, ShapesProblem, "Settled");
@@ -6876,7 +6912,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.part";
+        const __ENDPOINT: &'static str = <shapes::Part as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -6963,6 +6999,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::Part {
         type Value = Option<concord::ByteStream>;
+        const NAME: &'static str = "shapes.part";
     }
 
     call_spec!(
@@ -7021,7 +7058,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "shapes.sealed.file";
+        const __ENDPOINT: &'static str = <shapes::sealed::File as shapes::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -7106,6 +7143,7 @@ const _: () = {
 
     impl shapes::Endpoint for shapes::sealed::File {
         type Value = concord::ByteStream;
+        const NAME: &'static str = "shapes.sealed.file";
     }
 
     call_spec!(

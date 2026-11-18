@@ -14,3 +14,8 @@ fn c1_11_c8_6_c8_8_calls_keep_their_endpoint_and_eligibility() {
 fn c10_2_clients_handles_calls_and_their_results_are_unpin_whatever_their_inputs() {
     trybuild::TestCases::new().pass("tests/accepted/unpin_inputs.rs");
 }
+
+#[test]
+fn c6_4_endpoint_name_is_public_and_an_inherent_name_does_not_replace_it() {
+    trybuild::TestCases::new().pass("tests/accepted/endpoint_name.rs");
+}

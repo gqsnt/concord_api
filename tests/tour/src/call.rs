@@ -14,8 +14,7 @@ pub(super) mod __spec {
 
     pub trait Spec {
         type Inputs: Clone + Send + Sync + 'static;
-        const NAME: &'static str;
-        const PATH: &'static str;
+        const DEBUG: &'static str;
 
         fn request(call: &Call<Self>, take: bool) -> Result<Request>
         where
@@ -46,6 +45,12 @@ pub(super) mod __spec {
 pub trait Endpoint: __spec::Spec + Sized + Send + Sync + 'static {
     /// The value returned by a successful send.
     type Value: Send + 'static;
+
+    /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
+    /// client, its scopes and the endpoint, joined with `.` (`riot.matches.ids`).
+    ///
+    /// Use it as a key for limits and in logs.
+    const NAME: &'static str;
 }
 
 /// A call to endpoint `E` of this client.
@@ -123,7 +128,7 @@ impl<E: Endpoint> Call<E> {
         response: Response,
     ) -> impl Future<Output = Result<E::Value>> + Send + '_ {
         async move {
-            E::read(self, response, TryInfo::new(E::PATH, 0))
+            E::read(self, response, TryInfo::new(E::NAME, 0))
                 .await
                 .map(Answer::into_value)
         }
@@ -189,8 +194,8 @@ impl<E: Endpoint> Clone for Call<E> {
 
 impl<E: Endpoint> fmt::Debug for Call<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(E::NAME)
-            .field("endpoint", &E::PATH)
+        f.debug_struct(E::DEBUG)
+            .field("endpoint", &E::NAME)
             .finish_non_exhaustive()
     }
 }

@@ -264,7 +264,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.list";
+        const __ENDPOINT: &'static str = <tasks::List as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -317,6 +317,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::List {
         type Value = Vec<Task>;
+        const NAME: &'static str = "tasks.list";
     }
 
     call_spec!(
@@ -372,7 +373,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.create";
+        const __ENDPOINT: &'static str = <tasks::Create as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -425,6 +426,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::Create {
         type Value = Task;
+        const NAME: &'static str = "tasks.create";
     }
 
     call_spec!(
@@ -471,7 +473,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.get";
+        const __ENDPOINT: &'static str = <tasks::Get as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -524,6 +526,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::Get {
         type Value = Task;
+        const NAME: &'static str = "tasks.get";
     }
 
     call_spec!(tasks, tasks::Get, tasks::__GetInputs, Task, (), "Get");
@@ -564,7 +567,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.delete";
+        const __ENDPOINT: &'static str = <tasks::Delete as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -604,6 +607,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::Delete {
         type Value = ();
+        const NAME: &'static str = "tasks.delete";
     }
 
     call_spec!(

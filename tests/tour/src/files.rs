@@ -348,7 +348,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.exists";
+        const __ENDPOINT: &'static str = <files::Exists as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -409,6 +409,7 @@ const _: () = {
 
     impl files::Endpoint for files::Exists {
         type Value = bool;
+        const NAME: &'static str = "files.exists";
     }
 
     call_spec!(
@@ -487,7 +488,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.readme";
+        const __ENDPOINT: &'static str = <files::Readme as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -541,6 +542,7 @@ const _: () = {
 
     impl files::Endpoint for files::Readme {
         type Value = String;
+        const NAME: &'static str = "files.readme";
     }
 
     call_spec!(
@@ -620,7 +622,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.download";
+        const __ENDPOINT: &'static str = <files::Download as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -687,6 +689,7 @@ const _: () = {
 
     impl files::Endpoint for files::Download {
         type Value = ::concord::ByteStream;
+        const NAME: &'static str = "files.download";
     }
 
     call_spec!(
@@ -797,7 +800,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.upload";
+        const __ENDPOINT: &'static str = <files::Upload as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -846,6 +849,7 @@ const _: () = {
 
     impl files::Endpoint for files::Upload {
         type Value = ();
+        const NAME: &'static str = "files.upload";
     }
 
     call_spec!(
@@ -957,7 +961,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.search";
+        const __ENDPOINT: &'static str = <files::Search as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1011,6 +1015,7 @@ const _: () = {
 
     impl files::Endpoint for files::Search {
         type Value = Page;
+        const NAME: &'static str = "files.search";
     }
 
     call_spec!(

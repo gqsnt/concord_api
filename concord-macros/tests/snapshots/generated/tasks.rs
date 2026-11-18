@@ -75,8 +75,11 @@ pub mod tasks {
         type Paging: ::concord::call::PagingMode + __PagesFor<Self>;
         #[doc(hidden)]
         type Conditional: ::concord::call::ConditionalMode;
-        #[doc(hidden)]
-        const __ENDPOINT: &'static str;
+        /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
+        /// client, its scopes and the endpoint, joined with `.` (`riot.matches.ids`).
+        ///
+        /// Use it as a key for limits and in logs.
+        const NAME: &'static str;
         #[doc(hidden)]
         const __DEBUG: &'static str;
         #[doc(hidden)]
@@ -150,7 +153,7 @@ pub mod tasks {
         ) -> ::core::fmt::Result {
             formatter
                 .debug_struct(E::__DEBUG)
-                .field("endpoint", &E::__ENDPOINT)
+                .field("endpoint", &E::NAME)
                 .finish_non_exhaustive()
         }
     }
@@ -172,12 +175,7 @@ pub mod tasks {
         }
         fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
             E::__build_draft(&self.__data)?
-                .finish_request(
-                    E::__core(&self.__data),
-                    &self.__options,
-                    E::__ENDPOINT,
-                    take,
-                )
+                .finish_request(E::__core(&self.__data), &self.__options, E::NAME, take)
         }
         fn __prepare_inner(
             mut self,
@@ -185,7 +183,7 @@ pub mod tasks {
             let run = ::concord::__private::Run::start(
                 E::__core(&self.__data),
                 &self.__options,
-                E::__ENDPOINT,
+                E::NAME,
             );
             let idempotent = E::__settings(&self.__data, &mut self.__options);
             let draft = E::__build_draft(&self.__data)?;
@@ -230,7 +228,7 @@ pub mod tasks {
                 E::__read_answer(
                         &self.__data,
                         response,
-                        ::concord::transport::TryInfo::new(E::__ENDPOINT, 0),
+                        ::concord::transport::TryInfo::new(E::NAME, 0),
                     )
                     .await
                     .map(::concord::Answer::into_value)
@@ -336,6 +334,8 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Vec`](Vec)<[`Task`](super::Task)>>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
+    ///
+    /// Name: `tasks.list` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum List {}
     #[doc(hidden)]
@@ -364,6 +364,8 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Task`](super::Task)>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
+    ///
+    /// Name: `tasks.create` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum Create {}
     #[doc(hidden)]
@@ -390,6 +392,8 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Task`](super::Task)>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
+    ///
+    /// Name: `tasks.get` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum Get {}
     #[doc(hidden)]
@@ -416,6 +420,8 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<`()`>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
+    ///
+    /// Name: `tasks.delete` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum Delete {}
     #[doc(hidden)]
@@ -766,7 +772,7 @@ const _: () = {
         type Value = Vec<Task>;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
-        const __ENDPOINT: &'static str = "tasks.list";
+        const NAME: &'static str = "tasks.list";
         const __DEBUG: &'static str = "List";
         fn __core(
             __value: &Self::Data<()>,
@@ -817,7 +823,7 @@ const _: () = {
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::Post;
-        const __ENDPOINT: &'static str = "tasks.create";
+        const NAME: &'static str = "tasks.create";
         const __DEBUG: &'static str = "Create";
         fn __core(
             __value: &Self::Data<()>,
@@ -835,7 +841,7 @@ const _: () = {
                 let client = __View0;
                 let task = &__value.__inputs.0;
                 let __body = ::concord::__private::evaluate_body(
-                    Self::__ENDPOINT,
+                    <Self as tasks::Endpoint>::NAME,
                     || ::core::result::Result::Ok({ json(task) }),
                 )?;
                 __draft.body(__body);
@@ -869,7 +875,7 @@ const _: () = {
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
-        const __ENDPOINT: &'static str = "tasks.get";
+        const NAME: &'static str = "tasks.get";
         const __DEBUG: &'static str = "Get";
         fn __core(
             __value: &Self::Data<()>,
@@ -918,7 +924,7 @@ const _: () = {
         type Value = ();
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::NotGetOrHead;
-        const __ENDPOINT: &'static str = "tasks.delete";
+        const NAME: &'static str = "tasks.delete";
         const __DEBUG: &'static str = "Delete";
         fn __core(
             __value: &Self::Data<()>,

@@ -137,7 +137,16 @@ impl Writer<'_> {
         let docs = self
             .endpoints
             .get(&(node.node as *const Node))
-            .map(|endpoint| self.endpoint_type_doc(index, endpoint));
+            .map(|endpoint| {
+                let docs = self.endpoint_type_doc(index, endpoint);
+                let name = format!(
+                    " Name: `{}` ([`Endpoint::NAME`]({}{}::Endpoint::NAME)).",
+                    endpoint.path,
+                    "super::".repeat(depth),
+                    self.root
+                );
+                emit!(#docs #[doc = ""] #[doc = #name])
+            });
         emit! {
             #(#attrs)* #docs
             #[allow(missing_debug_implementations)]
@@ -183,8 +192,11 @@ impl Writer<'_> {
                 type Paging: ::concord::call::PagingMode + __PagesFor<Self>;
                 #[doc(hidden)]
                 type Conditional: ::concord::call::ConditionalMode;
-                #[doc(hidden)]
-                const __ENDPOINT: &'static str;
+                /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
+                /// client, its scopes and the endpoint, joined with `.` (`riot.matches.ids`).
+                ///
+                /// Use it as a key for limits and in logs.
+                const NAME: &'static str;
                 #[doc(hidden)]
                 const __DEBUG: &'static str;
                 #[doc(hidden)]
@@ -429,7 +441,7 @@ impl Writer<'_> {
                 type Data<__T: #root::__Types> = #data<__T>;
                 type Value = #output;
                 #modes
-                const __ENDPOINT: &'static str = #path;
+                const NAME: &'static str = #path;
                 const __DEBUG: &'static str = #debug;
                 fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<#problem> { &#core }
                 #settings #request #answer
@@ -485,7 +497,7 @@ impl Writer<'_> {
             }
             impl<E: Endpoint> ::core::fmt::Debug for Call<E> {
                 fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    formatter.debug_struct(E::__DEBUG).field("endpoint", &E::__ENDPOINT).finish_non_exhaustive()
+                    formatter.debug_struct(E::__DEBUG).field("endpoint", &E::NAME).finish_non_exhaustive()
                 }
             }
             impl<E: Endpoint> Call<E> {
@@ -499,11 +511,11 @@ impl Writer<'_> {
                 pub(super) fn __data_mut(&mut self) -> &mut E::Data<()> { &mut self.__data }
 
                 fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
-                    E::__build_draft(&self.__data)?.finish_request(E::__core(&self.__data), &self.__options, E::__ENDPOINT, take)
+                    E::__build_draft(&self.__data)?.finish_request(E::__core(&self.__data), &self.__options, E::NAME, take)
                 }
 
                 fn __prepare_inner(mut self) -> Result<::concord::__private::Prepared<E::Value, __Problem>> {
-                    let run = ::concord::__private::Run::start(E::__core(&self.__data), &self.__options, E::__ENDPOINT);
+                    let run = ::concord::__private::Run::start(E::__core(&self.__data), &self.__options, E::NAME);
                     let idempotent = E::__settings(&self.__data, &mut self.__options);
                     let draft = E::__build_draft(&self.__data)?;
                     #prepare_call(
@@ -525,7 +537,7 @@ impl Writer<'_> {
                 pub fn read_response(&self, response: ::concord::reqwest::Response)
                     -> impl ::core::future::Future<Output = Result<E::Value>> + ::core::marker::Send + '_ {
                     async move {
-                        E::__read_answer(&self.__data, response, ::concord::transport::TryInfo::new(E::__ENDPOINT, 0))
+                        E::__read_answer(&self.__data, response, ::concord::transport::TryInfo::new(E::NAME, 0))
                             .await.map(::concord::Answer::into_value)
                     }
                 }

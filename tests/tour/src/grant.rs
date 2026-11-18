@@ -36,7 +36,7 @@ const _: () = {
     }
 
     impl files::Call<files::Grant> {
-        const __ENDPOINT: &'static str = "files.grant";
+        const __ENDPOINT: &'static str = <files::Grant as files::Endpoint>::NAME;
 
         fn __body(&self) -> ::core::result::Result<::concord::Body, Box<dyn std::error::Error + Send + Sync>> {
             let grant_type = &self.__inputs.grant_type;
@@ -134,6 +134,7 @@ const _: () = {
     }
     impl files::Endpoint for files::Grant {
         type Value = ();
+        const NAME: &'static str = "files.grant";
     }
 
     call_spec!(files, files::Grant, files::__GrantInputs, (), (), "Grant");

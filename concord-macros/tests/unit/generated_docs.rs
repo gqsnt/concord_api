@@ -821,7 +821,7 @@ fn c10_4_request_names_queries_in_wire_order_without_values() {
 }
 
 #[test]
-fn c1_11_c10_4_endpoint_types_have_no_variants_and_only_value_is_documented() {
+fn c1_11_c10_4_endpoint_types_have_no_variants_and_only_value_and_name_are_documented() {
     let file: syn::File = syn::parse2(crate::expand(super::description(include_str!(
         "../support/call_client.rs"
     ))))
@@ -867,7 +867,11 @@ fn c1_11_c10_4_endpoint_types_have_no_variants_and_only_value_is_documented() {
             _ => true,
         })
         .collect();
-    assert!(matches!(visible.as_slice(), [syn::TraitItem::Type(value)] if value.ident == "Value"));
+    assert!(matches!(
+        visible.as_slice(),
+        [syn::TraitItem::Type(value), syn::TraitItem::Const(name)]
+            if value.ident == "Value" && name.ident == "NAME"
+    ));
 }
 
 #[test]

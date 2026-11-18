@@ -1,4 +1,4 @@
-error[E0046]: not all trait items implemented, missing: `Data`, `Paging`, `Conditional`, `__ENDPOINT`, `__DEBUG`, `__core`, `__build_draft`, `__read_answer`
+error[E0046]: not all trait items implemented, missing: `Data`, `Paging`, `Conditional`, `NAME`, `__DEBUG`, `__core`, `__build_draft`, `__read_answer`
   --> tests/compiler-errors/calls/register_endpoint.rs:16:1
    |
  3 | / concord::api! {
@@ -12,14 +12,14 @@ error[E0046]: not all trait items implemented, missing: `Data`, `Paging`, `Condi
    | | `Data` from trait
    | | `Paging` from trait
    | | `Conditional` from trait
-   | | `__ENDPOINT` from trait
+   | | `NAME` from trait
    | | `__DEBUG` from trait
    | | `__core` from trait
    | |_`__build_draft` from trait
    |   `__read_answer` from trait
 15 |   struct Added;
 16 |   impl api::Endpoint for Added {
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `Data`, `Paging`, `Conditional`, `__ENDPOINT`, `__DEBUG`, `__core`, `__build_draft`, `__read_answer` in implementation
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `Data`, `Paging`, `Conditional`, `NAME`, `__DEBUG`, `__core`, `__build_draft`, `__read_answer` in implementation
 
 error[E0277]: the trait bound `Added: Sealed` is not satisfied
   --> tests/compiler-errors/calls/register_endpoint.rs:16:24

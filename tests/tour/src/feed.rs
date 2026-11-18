@@ -279,7 +279,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "feed.list";
+        const __ENDPOINT: &'static str = <feed::List as feed::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -332,6 +332,7 @@ const _: () = {
 
     impl feed::Endpoint for feed::List {
         type Value = Page;
+        const NAME: &'static str = "feed.list";
     }
 
     call_spec!(feed, feed::List, feed::__ListInputs, Page, (), "List");
@@ -419,7 +420,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "feed.by_cursor";
+        const __ENDPOINT: &'static str = <feed::ByCursor as feed::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -472,6 +473,7 @@ const _: () = {
 
     impl feed::Endpoint for feed::ByCursor {
         type Value = Page;
+        const NAME: &'static str = "feed.by_cursor";
     }
 
     call_spec!(
@@ -520,7 +522,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "feed.linked";
+        const __ENDPOINT: &'static str = <feed::Linked as feed::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -573,6 +575,7 @@ const _: () = {
 
     impl feed::Endpoint for feed::Linked {
         type Value = Page;
+        const NAME: &'static str = "feed.linked";
     }
 
     call_spec!(feed, feed::Linked, feed::__LinkedInputs, Page, (), "Linked");

@@ -287,7 +287,10 @@ impl<'ast> Visit<'ast> for Surface {
                         );
                     }
                     syn::TraitItem::Const(item) if !hidden(&item.attrs) => {
-                        self.add(format!("{owner}::{}", item.ident), canonical(item));
+                        // As for a type: the signature is compared, not how its docs are spelled.
+                        let mut item = item.clone();
+                        item.attrs.clear();
+                        self.add(format!("{owner}::{}", item.ident), canonical(&item));
                     }
                     _ => {}
                 }

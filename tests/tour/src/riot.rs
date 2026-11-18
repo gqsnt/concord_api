@@ -756,7 +756,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "riot.matches.ids";
+        const __ENDPOINT: &'static str = <riot::matches::Ids as riot::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -823,6 +823,7 @@ const _: () = {
 
     impl riot::Endpoint for riot::matches::Ids {
         type Value = Vec<MatchId>;
+        const NAME: &'static str = "riot.matches.ids";
     }
 
     call_spec!(
@@ -944,7 +945,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "riot.matches.get";
+        const __ENDPOINT: &'static str = <riot::matches::Get as riot::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1011,6 +1012,7 @@ const _: () = {
 
     impl riot::Endpoint for riot::matches::Get {
         type Value = Match;
+        const NAME: &'static str = "riot.matches.get";
     }
 
     call_spec!(
@@ -1125,7 +1127,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "riot.account.by_riot_id";
+        const __ENDPOINT: &'static str = <riot::account::ByRiotId as riot::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1208,6 +1210,7 @@ const _: () = {
 
     impl riot::Endpoint for riot::account::ByRiotId {
         type Value = Option<Account>;
+        const NAME: &'static str = "riot.account.by_riot_id";
     }
 
     call_spec!(
@@ -1296,7 +1299,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "riot.account.me";
+        const __ENDPOINT: &'static str = <riot::account::Me as riot::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1363,6 +1366,7 @@ const _: () = {
 
     impl riot::Endpoint for riot::account::Me {
         type Value = Account;
+        const NAME: &'static str = "riot.account.me";
     }
 
     call_spec!(
