@@ -170,7 +170,7 @@ impl SignError {
     ///
     /// ```
     /// let error = concord::sign::SignError::failed(std::io::Error::other("private cause"));
-    /// assert_eq!(error.to_string(), "The request proof failed.");
+    /// assert_eq!(error.to_string(), "the request proof failed");
     /// ```
     pub fn failed(cause: impl StdError + Send + Sync + 'static) -> Self {
         Self::Failed(Arc::new(cause))
@@ -206,16 +206,16 @@ impl fmt::Debug for SignError {
 impl fmt::Display for SignError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::StreamingBody => "The request body is a stream and cannot be hashed.",
-            Self::InsecureUnsignedPayload => "An unsigned request payload requires HTTPS.",
-            Self::WrongOrigin => "The request leaves the signing origin.",
-            Self::TooLarge => "The signing input exceeds its size limit.",
-            Self::InvalidRequest => "The request cannot be canonicalized for signing.",
-            Self::InvalidCredentials => "The signing credentials or scope are invalid.",
-            Self::InvalidHeader(_) => "A signing header could not be installed.",
-            Self::InvalidHeaderText(_) => "A signed header is not valid text.",
-            Self::InvalidTime => "The signing time is outside the supported range.",
-            Self::Failed(_) => "The request proof failed.",
+            Self::StreamingBody => "the request body is a stream and cannot be hashed",
+            Self::InsecureUnsignedPayload => "an unsigned request payload requires HTTPS",
+            Self::WrongOrigin => "the request leaves the signing origin",
+            Self::TooLarge => "the signing input exceeds its size limit",
+            Self::InvalidRequest => "the request cannot be canonicalized for signing",
+            Self::InvalidCredentials => "the signing credentials or scope are invalid",
+            Self::InvalidHeader(_) => "a signing header could not be installed",
+            Self::InvalidHeaderText(_) => "a signed header is not valid text",
+            Self::InvalidTime => "the signing time is outside the supported range",
+            Self::Failed(_) => "the request proof failed",
         })
     }
 }

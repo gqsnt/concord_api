@@ -359,3 +359,27 @@ async fn c6_2_every_text_of_the_extras_and_of_a_repeatable_body_is_on_the_messag
     }
     assert_eq!(documented, printed);
 }
+
+/// The style of every text on the page: a first word in lower case unless it is an acronym
+/// (`JSON`, `MIME`), no final period, and no advice after a semicolon.
+#[tokio::test(start_paused = true)]
+async fn c6_2_every_text_of_the_extras_is_written_in_the_style_of_the_page() {
+    let mut printed = repeatable_texts().await;
+    printed.extend(sign_texts());
+    printed.extend(renewal_texts());
+    printed.extend(rotation_texts().await);
+    printed.extend(limit_texts().await);
+    printed.extend(writer_texts());
+    printed.extend(record_texts().await);
+    printed.extend(transfer_texts());
+    for text in &printed {
+        let first = text.split(' ').next().unwrap();
+        let acronym = first.chars().all(|c| c.is_ascii_uppercase());
+        assert!(
+            acronym || !first.starts_with(|c: char| c.is_uppercase()),
+            "a capital at the start: {text}"
+        );
+        assert!(!text.ends_with('.'), "a final period: {text}");
+        assert!(!text.contains(';'), "a semicolon: {text}");
+    }
+}
