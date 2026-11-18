@@ -4594,6 +4594,9 @@ const _: () = {
             __call.__inputs.path_key = __value;
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     impl ::concord::page::Slot<shapes::Call<shapes::Guarded>> for shapes::__GuardedQueryKey {
@@ -4611,6 +4614,9 @@ const _: () = {
         ) -> shapes::Call<shapes::Guarded> {
             __call.__inputs.query_key = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(1)
         }
     }
 
@@ -4630,6 +4636,9 @@ const _: () = {
             __call.__inputs.header_key = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(2)
+        }
     }
 
     impl ::concord::page::Slot<shapes::Call<shapes::Guarded>> for shapes::__GuardedCursor {
@@ -4647,6 +4656,9 @@ const _: () = {
         ) -> shapes::Call<shapes::Guarded> {
             __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(3)
         }
     }
 
@@ -4926,6 +4938,9 @@ const _: () = {
             __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     /// The options of this endpoint.
@@ -5108,6 +5123,9 @@ const _: () = {
             __call.__inputs.token = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     impl ::concord::page::Slot<shapes::Call<shapes::Posted>> for shapes::__PostedCursor {
@@ -5125,6 +5143,9 @@ const _: () = {
         ) -> shapes::Call<shapes::Posted> {
             __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(1)
         }
     }
 
@@ -5331,6 +5352,9 @@ const _: () = {
             __call.__inputs.file = __value;
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     impl ::concord::page::Slot<shapes::Call<shapes::Streamed>> for shapes::__StreamedCursor {
@@ -5348,6 +5372,9 @@ const _: () = {
         ) -> shapes::Call<shapes::Streamed> {
             __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(1)
         }
     }
 
@@ -5551,6 +5578,9 @@ const _: () = {
             __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     /// The options of this endpoint.
@@ -5750,6 +5780,9 @@ const _: () = {
             __call.__inputs.host_key = __value;
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     impl ::concord::page::Slot<shapes::Call<shapes::KeyedHost>> for shapes::__KeyedHostCursor {
@@ -5767,6 +5800,9 @@ const _: () = {
         ) -> shapes::Call<shapes::KeyedHost> {
             __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(1)
         }
     }
 
@@ -5966,6 +6002,9 @@ const _: () = {
             __call.__inputs.tenant = __value;
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     impl ::concord::page::Slot<shapes::Call<shapes::Roaming>> for shapes::__RoamingCursor {
@@ -5983,6 +6022,9 @@ const _: () = {
         ) -> shapes::Call<shapes::Roaming> {
             __call.__inputs.cursor = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(1)
         }
     }
 
@@ -6179,6 +6221,9 @@ const _: () = {
             __call.__inputs.start = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     /// The options of this endpoint.
@@ -6358,6 +6403,9 @@ const _: () = {
         ) -> shapes::Call<shapes::Numbered> {
             __call.__inputs.page = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
         }
     }
 

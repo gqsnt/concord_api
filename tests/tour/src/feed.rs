@@ -71,6 +71,9 @@ const _: () = {
             __call.__inputs.starting_after = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     impl ::concord::page::Slot<feed::Call<feed::ByCursor>> for feed::__ByCursorStartingAfter {
@@ -88,6 +91,9 @@ const _: () = {
         ) -> feed::Call<feed::ByCursor> {
             __call.__inputs.starting_after = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
         }
     }
 

@@ -47,6 +47,9 @@ impl Slot<List> for At {
         c.at = Some(x);
         c
     }
+    fn input(&self) -> concord::page::InputId {
+        concord::page::InputId::new(0)
+    }
 }
 #[derive(Clone, Copy)]
 struct Limit;
@@ -58,6 +61,9 @@ impl Slot<List> for Limit {
     fn set(&self, mut c: List, x: u8) -> List {
         c.limit = Some(x);
         c
+    }
+    fn input(&self) -> concord::page::InputId {
+        concord::page::InputId::new(1)
     }
 }
 // Test-only helper: an invalid HeaderValue fixture must fail the test.

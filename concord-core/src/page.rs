@@ -350,6 +350,28 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
 
     /// Returns the call with this input set.
     fn set(&self, call: C, value: Self::Value) -> C;
+
+    /// Which input of the endpoint this slot names. A slot of yours that forwards to another
+    /// returns the identity of the input it forwards to (`self.0.input()`), whatever it reads
+    /// or where its value lives.
+    fn input(&self) -> InputId;
+}
+
+/// Which input of an endpoint a [`Slot`] names: its position among the inputs of the endpoint,
+/// the number that the generated code gives it. Two slots of one call `C` name one input when
+/// their `InputId`s are equal; the call's type is the endpoint, so the number alone is compared.
+///
+/// `or_when_set` knows an input by it: where the value of an input lives, and its type, are not
+/// which input it is (two inputs may share storage, or take no room at all).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct InputId(usize);
+
+impl InputId {
+    /// The input at `position` among the inputs of the endpoint, in the order the generated code
+    /// numbers them. A slot of your own over a call type of your own numbers its inputs itself.
+    pub const fn new(position: usize) -> InputId {
+        InputId(position)
+    }
 }
 
 /// What a pager may return: `Some(next call)`, `None` at the end, or the same inside a

@@ -389,6 +389,9 @@ mod tests {
             call.start = Some(value);
             call
         }
+        fn input(&self) -> concord_core::page::InputId {
+            concord_core::page::InputId::new(0)
+        }
     }
     #[derive(Clone, Copy)]
     struct Count;
@@ -401,6 +404,9 @@ mod tests {
             call.count = Some(value);
             call
         }
+        fn input(&self) -> concord_core::page::InputId {
+            concord_core::page::InputId::new(1)
+        }
     }
     #[derive(Clone, Copy)]
     struct After;
@@ -412,6 +418,9 @@ mod tests {
         fn set(&self, mut call: List, value: String) -> List {
             call.after = Some(value);
             call
+        }
+        fn input(&self) -> concord_core::page::InputId {
+            concord_core::page::InputId::new(2)
         }
     }
 
@@ -989,6 +998,9 @@ mod tests {
         }
         fn set(&self, _: Positioned, value: Seven) -> Positioned {
             Positioned(Some(value))
+        }
+        fn input(&self) -> concord_core::page::InputId {
+            concord_core::page::InputId::new(0)
         }
     }
     fn page(items: &[u32]) -> Answer<Page> {

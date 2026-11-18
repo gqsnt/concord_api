@@ -137,6 +137,9 @@ const _: () = {
             __call.__inputs.puuid = __value;
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(0)
+        }
     }
 
     impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsStart {
@@ -154,6 +157,9 @@ const _: () = {
         ) -> riot::Call<riot::matches::Ids> {
             __call.__inputs.start = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(1)
         }
     }
 
@@ -173,6 +179,9 @@ const _: () = {
             __call.__inputs.count = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(2)
+        }
     }
 
     impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsQueue {
@@ -191,6 +200,9 @@ const _: () = {
             __call.__inputs.queue = ::core::option::Option::Some(__value);
             __call
         }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(3)
+        }
     }
 
     impl ::concord::page::Slot<riot::Call<riot::matches::Ids>> for riot::__IdsStartTime {
@@ -208,6 +220,9 @@ const _: () = {
         ) -> riot::Call<riot::matches::Ids> {
             __call.__inputs.start_time = ::core::option::Option::Some(__value);
             __call
+        }
+        fn input(&self) -> ::concord::page::InputId {
+            ::concord::page::InputId::new(4)
         }
     }
 

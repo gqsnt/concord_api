@@ -120,7 +120,7 @@ The macro does not rewrite expressions. **It binds names, and then copies the ex
 | Where the expression appears | What the name of an input is bound to |
 |---|---|
 | A template, an entry, `body`, `read`, `idempotent` | A reference to the input. For an optional input (`count?: u32`) that is a `&Option<u32>`. |
-| `paginate` | The input itself, as a slot: a `let` of a zero-sized value that is `Copy` and implements `concord::page::Slot` (get on a call, set on the next). An owner (`client.x`) is still a reference. What the expression returns is a pager, and must own what it holds, so a pager written in place as a closure is a `move` closure; without the keyword, `rustc` says to add it. |
+| `paginate` | The input itself, as a slot: a `let` of a zero-sized value that is `Copy` and implements `concord::page::Slot` (get on a call, set on the next, and `input`: `InputId::new(n)`, with `n` the input's position among the inputs of the endpoint). An owner (`client.x`) is still a reference. What the expression returns is a pager, and must own what it holds, so a pager written in place as a closure is a `move` closure; without the keyword, `rustc` says to add it. |
 | An arm | A reference to the input. Then the names of the arm's own pattern, which may shadow an input (that is Rust's shadowing; a rename, `body: task`, keeps both). |
 
 `client.key` is then plain Rust: a field of a local variable. Because the bindings are references, the core accepts references where it accepts values: `Reader<T>` is implemented for `&R` (without it, `read r;` with an input `r` would not compile).

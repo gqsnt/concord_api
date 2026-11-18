@@ -2,6 +2,12 @@
 
 This page lists what changed in each release of Concord. The five crates (`concord-api`, `concord-core`, `concord-macros`, `concord-extras`, `concord-testkit`) share one version and this single changelog.
 
+## Unreleased
+
+### Breaking changes
+
+- **`concord::page::Slot` has a third required method, `input()`**, which says which input of the endpoint a slot names: a `concord::page::InputId`, its position among the inputs. The slots that `api!` generates implement it. A slot of your own that wraps another returns the `input()` of the slot it wraps (`fn input(&self) -> InputId { self.0.input() }`); one over a call type of your own numbers its inputs with `InputId::new(n)`. `or_when_set` knows an input by it, so two inputs that share storage or take no room are two inputs, and a slot that forwards to one is that one.
+
 ## 5.0.0-rc.1
 
 The first release candidate of Concord 5. It is not on crates.io yet: add it as a Git dependency (`concord-api = { git = "https://github.com/gqsnt/concord_api" }`).
