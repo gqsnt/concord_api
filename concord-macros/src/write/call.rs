@@ -196,9 +196,9 @@ impl Writer<'_> {
                 /// client, its scopes and the endpoint, joined with `.` (`riot.matches.ids`).
                 ///
                 /// Use it as a key for limits and in logs.
-                const NAME: &'static str;
+                const NAME: &'static ::core::primitive::str;
                 #[doc(hidden)]
-                const __DEBUG: &'static str;
+                const __DEBUG: &'static ::core::primitive::str;
                 #[doc(hidden)]
                 fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<__Problem>;
                 #[doc(hidden)]
@@ -441,8 +441,8 @@ impl Writer<'_> {
                 type Data<__T: #root::__Types> = #data<__T>;
                 type Value = #output;
                 #modes
-                const NAME: &'static str = #path;
-                const __DEBUG: &'static str = #debug;
+                const NAME: &'static ::core::primitive::str = #path;
+                const __DEBUG: &'static ::core::primitive::str = #debug;
                 fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<#problem> { &#core }
                 #settings #request #answer
             }

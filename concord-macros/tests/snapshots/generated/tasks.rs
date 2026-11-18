@@ -79,9 +79,9 @@ pub mod tasks {
         /// client, its scopes and the endpoint, joined with `.` (`riot.matches.ids`).
         ///
         /// Use it as a key for limits and in logs.
-        const NAME: &'static str;
+        const NAME: &'static ::core::primitive::str;
         #[doc(hidden)]
-        const __DEBUG: &'static str;
+        const __DEBUG: &'static ::core::primitive::str;
         #[doc(hidden)]
         fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<__Problem>;
         #[doc(hidden)]
@@ -772,8 +772,8 @@ const _: () = {
         type Value = Vec<Task>;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
-        const NAME: &'static str = "tasks.list";
-        const __DEBUG: &'static str = "List";
+        const NAME: &'static ::core::primitive::str = "tasks.list";
+        const __DEBUG: &'static ::core::primitive::str = "List";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {
@@ -823,8 +823,8 @@ const _: () = {
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::Post;
-        const NAME: &'static str = "tasks.create";
-        const __DEBUG: &'static str = "Create";
+        const NAME: &'static ::core::primitive::str = "tasks.create";
+        const __DEBUG: &'static ::core::primitive::str = "Create";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {
@@ -875,8 +875,8 @@ const _: () = {
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
-        const NAME: &'static str = "tasks.get";
-        const __DEBUG: &'static str = "Get";
+        const NAME: &'static ::core::primitive::str = "tasks.get";
+        const __DEBUG: &'static ::core::primitive::str = "Get";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {
@@ -924,8 +924,8 @@ const _: () = {
         type Value = ();
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::NotGetOrHead;
-        const NAME: &'static str = "tasks.delete";
-        const __DEBUG: &'static str = "Delete";
+        const NAME: &'static ::core::primitive::str = "tasks.delete";
+        const __DEBUG: &'static ::core::primitive::str = "Delete";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {

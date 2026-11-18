@@ -19,3 +19,8 @@ fn c10_2_clients_handles_calls_and_their_results_are_unpin_whatever_their_inputs
 fn c6_4_endpoint_name_is_public_and_an_inherent_name_does_not_replace_it() {
     trybuild::TestCases::new().pass("tests/accepted/endpoint_name.rs");
 }
+
+#[test]
+fn c10_1_a_shadowed_primitive_name_does_not_reach_generated_code() {
+    trybuild::TestCases::new().pass("tests/accepted/shadowed_str.rs");
+}
