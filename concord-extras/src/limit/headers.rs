@@ -109,7 +109,9 @@ fn digits(text: &str, from: usize, to: usize) -> Option<u16> {
 
 fn at_nanos(nanos: i128) -> Option<SystemTime> {
     let nanos = u128::try_from(nanos).ok()?;
+    // PANIC-SAFETY: Division and remainder by a nonzero constant cannot overflow or panic.
     let seconds = u64::try_from(nanos / 1_000_000_000).ok()?;
+    // PANIC-SAFETY: Division and remainder by a nonzero constant cannot overflow or panic.
     let fraction = u32::try_from(nanos % 1_000_000_000).ok()?;
     UNIX_EPOCH.checked_add(Duration::new(seconds, fraction))
 }
