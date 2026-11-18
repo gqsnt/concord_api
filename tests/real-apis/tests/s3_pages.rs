@@ -102,7 +102,13 @@ async fn s3_listed_keys_and_prefixes_are_decoded_once() {
     script.answer(200);
     let (objects, bucket) = store(&script);
     let bucket = objects.bucket(bucket);
-    let page = bucket.list_objects().pages().try_next().await.unwrap().unwrap();
+    let page = bucket
+        .list_objects()
+        .pages()
+        .try_next()
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(page.objects[0].key, "a/b+c%20 d");
     assert_eq!(page.common_prefixes[0].prefix, "a/");
     let key = page.objects[0].key.clone();
