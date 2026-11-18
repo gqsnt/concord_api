@@ -217,6 +217,7 @@ fn c1_16_no_empty_impl_is_written() {
     let file: syn::File = syn::parse2(crate::expand(
         r#"pub client Minimal { base "https://minimal.test";
             scope empty {} GET get(); scope nested { POST post(); }
+            #[cfg(not(any()))] scope gated {} #[deprecated] scope old {}
         }"#
         .parse()
         .unwrap(),
@@ -260,25 +261,37 @@ fn c1_16_no_empty_impl_is_written() {
         .any(|bound| compact(bound) == "__sealed::Sealed"));
 
     let mut endpoint_types = BTreeSet::from(["Get".to_owned(), "nested::Post".to_owned()]);
-    // `Unpin` is a marker: its implementations are empty by nature, one for the call
-    // and one for the client and each handle (C10.2).
-    let mut unpinned = BTreeSet::from([
-        "Call<E>".to_owned(),
-        "Minimal".to_owned(),
-        "minimal::Empty".to_owned(),
-        "minimal::Nested".to_owned(),
-    ]);
+    // `Unpin` is a marker: its implementations are empty by nature, one for the call and
+    // one for the client and each handle (C10.2). Each is matched whole: its module, its
+    // attributes, its generics and bounds, and no `where` clause.
+    let mut unpinned = BTreeSet::from(
+        [
+            (
+                "minimal",
+                "impl<E:Endpoint>::core::marker::UnpinforCall<E>{}",
+            ),
+            ("", "impl::core::marker::UnpinforMinimal{}"),
+            ("", "impl::core::marker::Unpinforminimal::Empty{}"),
+            ("", "impl::core::marker::Unpinforminimal::Nested{}"),
+            (
+                "",
+                "#[cfg(not(any()))]impl::core::marker::Unpinforminimal::Gated{}",
+            ),
+            (
+                "",
+                "#[allow(deprecated)]impl::core::marker::Unpinfor__Impl6{}",
+            ),
+        ]
+        .map(|(module, block)| (module.to_owned(), block.to_owned())),
+    );
     for (module, block) in impls(&file)
         .into_iter()
         .filter(|(_, block)| block.items.is_empty())
     {
         if let Some((_, path, _)) = &block.trait_ {
-            if compact(path) == "::core::marker::Unpin" {
-                assert!(
-                    unpinned.remove(&compact(&block.self_ty)),
-                    "{}",
-                    quote!(#block)
-                );
+            if compact(path).ends_with("Unpin") {
+                let whole = (module.clone(), compact(block));
+                assert!(unpinned.remove(&whole), "unexpected {whole:?}");
                 continue;
             }
         }
