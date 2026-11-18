@@ -1,0 +1,15 @@
+error[E0271]: type mismatch resolving `<Option<RecordStream<String, Error<Other>>> as CarriesProblem>::Problem == Problem`
+  --> tests/compiler-errors/problem-type/02_option_alias.rs:10:12
+   |
+10 | GET e() -> Maybe { read Mine; } } }
+   |            ^^^^^ expected `Problem`, found `Other`
+   |
+note: required by a bound in `concord::__private::TypedStream::must_name_the_clients_problem_type`
+  --> $WORKSPACE/concord-core/src/__private/output.rs
+   |
+   |     fn must_name_the_clients_problem_type<P>(&self)
+   |        ---------------------------------- required by a bound in this associated function
+   |     where
+   |         Self::Carrier: CarriesProblem<Problem = P>,
+   |                                       ^^^^^^^^^^^ required by this bound in `TypedStream::must_name_the_clients_problem_type`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

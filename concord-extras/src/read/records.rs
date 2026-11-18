@@ -121,7 +121,7 @@ impl<T, E> RecordStream<T, E> {
 
 // A stream whose error is a client's error carries that client's problem type: the generated
 // code checks it against the problem type of the client that declares the endpoint.
-impl<T, P> concord_core::__private::CarriesProblem for RecordStream<T, concord_core::Error<P>> {
+impl<T, P> concord_core::error::CarriesProblem for RecordStream<T, concord_core::Error<P>> {
     type Problem = P;
 }
 

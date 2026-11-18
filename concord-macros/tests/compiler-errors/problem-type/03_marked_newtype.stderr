@@ -1,0 +1,20 @@
+error[E0271]: type mismatch resolving `<Feed<Other> as CarriesProblem>::Problem == Problem`
+  --> tests/compiler-errors/problem-type/03_marked_newtype.rs:11:12
+   |
+11 | GET e() -> Feed<Other> { read Mine; } } }
+   |            ^^^^ type mismatch resolving `<Feed<Other> as CarriesProblem>::Problem == Problem`
+   |
+note: expected this to be `Problem`
+  --> tests/compiler-errors/problem-type/03_marked_newtype.rs:5:69
+   |
+ 5 | impl<P> concord::error::CarriesProblem for Feed<P> { type Problem = P; }
+   |                                                                     ^
+note: required by a bound in `concord::__private::TypedStream::must_name_the_clients_problem_type`
+  --> $WORKSPACE/concord-core/src/__private/output.rs
+   |
+   |     fn must_name_the_clients_problem_type<P>(&self)
+   |        ---------------------------------- required by a bound in this associated function
+   |     where
+   |         Self::Carrier: CarriesProblem<Problem = P>,
+   |                                       ^^^^^^^^^^^ required by this bound in `TypedStream::must_name_the_clients_problem_type`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -46,10 +46,10 @@ impl Writer<'_> {
             .map_or_else(|| endpoint.node.name.span(), |output| output.ty.span());
         let output_check = emit_at!(declared=>
             #[allow(unused_imports)]
-            use ::concord::__private::{CarriedProblem as _, OrdinaryOutput as _};
+            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
             // The reference selects the path: a type that carries a problem takes the first.
             #[allow(clippy::needless_borrow)]
-            (&::concord::__private::Output::<#read_type>::new()).problem::<#problem>();
+            (&::concord::__private::Output::<#read_type>::new()).must_name_the_clients_problem_type::<#problem>();
         );
         if endpoint.arms.is_empty() {
             let body = self.shared_answer(index, endpoint, read_type);

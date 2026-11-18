@@ -199,6 +199,14 @@ mod reader_note {
     }
 }
 
+/// C11.13: a declared type whose error names another problem type than the client's does not
+/// compile, however it is spelled.
+#[test]
+fn c11_13_a_stream_of_another_problem_type_is_refused_at_the_declared_type() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/compiler-errors/problem-type/*.rs");
+}
+
 #[test]
 fn c1_16_rust_bounds_point_at_author_tokens() {
     trybuild::TestCases::new().compile_fail("tests/compiler-errors/spans/*.rs");

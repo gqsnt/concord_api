@@ -1095,6 +1095,52 @@ impl<P> Fail<P> {
     }
 }
 
+/// A type whose value fails with the error of one client, and so names that client's problem
+/// type.
+///
+/// The generated code checks the declared type of every endpoint: when it implements this
+/// trait, its `Problem` must be the problem type of the client that declares the endpoint, or
+/// the description does not compile. `concord::read::RecordStream<T, concord::Error<P>>`
+/// implements it with `P`. A stream type of your own whose items fail with the client's error
+/// implements it too, and takes part in the same check.
+///
+/// The check does not depend on how a type is spelled: an alias is seen through, and the
+/// wrappers that a return type can have carry the problem of what they wrap (`Option<S>`,
+/// `Result<S, E>` and `Box<S>`, where `S` implements this trait). A newtype, a tuple, or a type
+/// that dereferences to a stream is checked when its author implements this trait, and not
+/// otherwise. An arm that consumes a stream and returns something else exposes no stream
+/// error, and has nothing to check.
+///
+/// ```
+/// # use concord_core as concord;
+/// use concord::error::CarriesProblem;
+///
+/// /// A stream of the author's own, whose items fail with `concord::Error<P>`.
+/// pub struct Changes<P> {
+///     error: Option<concord::Error<P>>,
+/// }
+///
+/// impl<P> CarriesProblem for Changes<P> {
+///     type Problem = P;
+/// }
+/// ```
+pub trait CarriesProblem {
+    /// The problem type that the value's error names.
+    type Problem;
+}
+
+impl<S: CarriesProblem> CarriesProblem for Option<S> {
+    type Problem = S::Problem;
+}
+
+impl<S: CarriesProblem, E> CarriesProblem for Result<S, E> {
+    type Problem = S::Problem;
+}
+
+impl<S: CarriesProblem + ?Sized> CarriesProblem for Box<S> {
+    type Problem = S::Problem;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

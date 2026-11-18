@@ -25,7 +25,7 @@ pub use call::{
 };
 pub use client::{Core, Options};
 pub use data::{CallData, InputSlot};
-pub use output::{CarriedProblem, CarriesProblem, OrdinaryOutput, Output, ProblemIs, SameProblem};
+pub use output::{OrdinaryOutput, Output, TypedStream};
 #[cfg(test)]
 use page::same_page_request;
 pub use page::{pages, pages_with_pager, without_fragment, SecretUrl};
