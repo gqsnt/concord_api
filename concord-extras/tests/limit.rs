@@ -832,6 +832,108 @@ async fn c11_7_body_error_releases_permit_while_raw_body_is_kept() {
     body_ending_releases_permit_before_drop(true).await;
 }
 
+/// A body that gives one frame, then an error, and never reports that it ended.
+struct Breaks(u8);
+
+impl http_body::Body for Breaks {
+    type Data = concord::bytes::Bytes;
+    type Error = std::io::Error;
+
+    fn poll_frame(
+        mut self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        self.0 = self.0.saturating_add(1);
+        match self.0 {
+            1 => std::task::Poll::Ready(Some(Ok(http_body::Frame::data("first".into())))),
+            2 => std::task::Poll::Ready(Some(Err(std::io::Error::other("broken")))),
+            _ => std::task::Poll::Pending,
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_7_a_body_error_releases_permit_even_when_the_body_reports_no_end() {
+    let sent = Arc::new(AtomicUsize::new(0));
+    let transport = concord::fake({
+        let sent = sent.clone();
+        move |_| {
+            Ok(if sent.fetch_add(1, Ordering::SeqCst) == 0 {
+                http::Response::new(concord::reqwest::Body::wrap(Breaks(0))).into()
+            } else {
+                concord::reply(200, "next")
+            })
+        }
+    });
+    let limit = Limit::new().max_in_flight(1);
+    let request = || Request::new(Method::GET, "https://one.test/data".parse().unwrap());
+    let response = limit
+        .handle(request(), TryInfo::new("data", 1), Next::to(&transport))
+        .await
+        .unwrap();
+    let mut raw: http::Response<concord::reqwest::Body> = response.into();
+    let frame = |raw: &mut http::Response<concord::reqwest::Body>| {
+        use http_body::Body as _;
+        futures_util::future::poll_fn(|cx| std::pin::Pin::new(raw.body_mut()).poll_frame(cx))
+            .now_or_never()
+            .flatten()
+    };
+    assert_eq!(
+        frame(&mut raw).unwrap().unwrap().into_data().unwrap(),
+        "first"
+    );
+    let mut next = Box::pin(limit.handle(request(), TryInfo::new("data", 1), Next::to(&transport)));
+    assert!(next.as_mut().now_or_never().is_none());
+    assert!(frame(&mut raw).unwrap().is_err());
+    // The response is kept, and its body has not said that it ended: the error alone frees
+    // the place.
+    assert!(!http_body::Body::is_end_stream(raw.body()));
+    let next = tokio::time::timeout(sec(1), next)
+        .await
+        .expect("the error did not release the permit")
+        .unwrap();
+    assert_eq!(next.status(), 200);
+    assert_eq!(sent.load(Ordering::SeqCst), 2);
+    drop(raw);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_header_over_4096_bytes_teaches_nothing() {
+    // `0` units left, after spaces that the reader trims: 4,096 bytes are read, 4,097 are not.
+    for (padding, waits) in [(4095, true), (4096, false)] {
+        let script = Script::new();
+        let reset = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 10;
+        let left = format!("{}0", " ".repeat(padding));
+        script
+            .answer(200)
+            .header("x-limit", "2")
+            .header("x-left", &left)
+            .header("x-reset", &reset.to_string());
+        script.answer(200);
+        let limit = Limit::new().bucket(
+            Bucket::new(|_| Some("points".into())).learn(remaining("x-limit", "x-left", "x-reset")),
+        );
+        let start = Instant::now();
+        for _ in 0..2 {
+            call(&limit, &script, "a").await.unwrap();
+        }
+        let elapsed = script.requests()[1].at() - start;
+        if waits {
+            assert!(
+                elapsed > sec(9) && elapsed <= sec(10),
+                "{} bytes: {elapsed:?}",
+                left.len()
+            );
+        } else {
+            assert_eq!(elapsed, Duration::ZERO, "{} bytes", left.len());
+        }
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn c11_7_unread_body_and_canceled_pull_hold_permit_until_drop() {
     let script = Script::new();

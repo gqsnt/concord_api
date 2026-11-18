@@ -1,0 +1,9 @@
+{
+  "id": "M325",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "A call charged to several capped keys gives back only the place of the first",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                            keys: selected\n                                .iter()\n                                .map(|selected| selected.id.clone())\n                                .collect(),",
+  "replace": "                            keys: selected\n                                .iter()\n                                .take(1)\n                                .map(|selected| selected.id.clone())\n                                .collect(),"
+}

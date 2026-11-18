@@ -1,0 +1,9 @@
+{
+  "id": "M321",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A dated reset with any byte between the date and the time is accepted",
+  "file": "concord-extras/src/limit/headers.rs",
+  "find": "    if !matches!(bytes.get(10), Some(b'T' | b't' | b' ')) {",
+  "replace": "    if bytes.get(10).is_none() {"
+}

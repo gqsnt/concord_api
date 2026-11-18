@@ -1,0 +1,9 @@
+{
+  "id": "M327",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "A cap of zero on a bucket is accepted instead of refused",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "            || policy\n                .buckets\n                .iter()\n                .any(|bucket| bucket.max_in_flight == Some(0))\n",
+  "replace": ""
+}

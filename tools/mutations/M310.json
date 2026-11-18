@@ -1,0 +1,9 @@
+{
+  "id": "M310",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "A decoder's line and column reach details() swapped",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "            Cause::Decode { line, column } => {\n                body.fail(RecordFault::not_decoded().at(line, column))\n            }",
+  "replace": "            Cause::Decode { line, column } => {\n                body.fail(RecordFault::not_decoded().at(column, line))\n            }"
+}

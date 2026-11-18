@@ -1,0 +1,9 @@
+{
+  "id": "M341",
+  "area": "retry ceiling",
+  "contract": "C4.3",
+  "description": "A sleep that wakes before its deadline starts the next attempt early",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "            || run.expired()\n            || Instant::now() < until\n",
+  "replace": "            || run.expired()\n"
+}

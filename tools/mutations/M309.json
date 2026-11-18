@@ -1,0 +1,9 @@
+{
+  "id": "M309",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "A failure of the body in a typed stream is hidden behind a Mismatch",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "            RecordError::Stream(error) => error.into(),",
+  "replace": "            RecordError::Stream(_) => body.fail(RecordFault::does_not_fit()),"
+}

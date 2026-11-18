@@ -1,0 +1,9 @@
+{
+  "id": "M303",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "Step::End is taken for Skip: the stream reads on past the record that ends it",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "                Ok(Step::End) => {\n                    this.lines = None;\n                    return Poll::Ready(None);\n                }",
+  "replace": "                Ok(Step::End) => {\n                    if ended {\n                        lines.input.start_record();\n                    }\n                }"
+}

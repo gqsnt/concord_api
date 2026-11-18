@@ -1,0 +1,9 @@
+{
+  "id": "M331",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A window without a date erases the last dated reset, which can then refill twice",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                // A window without a date leaves the last dated reset in place.\n                if new.reset_at.is_some() {\n                    if *identity != new.reset_at {\n                        *paid = false;\n                    }\n                    // PANIC-SAFETY: This assigns through a reference to the date; it is not a multiplication.\n                    *identity = new.reset_at;\n                }\n",
+  "replace": "                if *identity != new.reset_at {\n                    *paid = false;\n                }\n                // PANIC-SAFETY: This assigns through a reference to the date; it is not a multiplication.\n                *identity = new.reset_at;\n"
+}

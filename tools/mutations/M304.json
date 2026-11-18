@@ -1,0 +1,9 @@
+{
+  "id": "M304",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "Sse until_last_record ends in silence when the body ends before its last record",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "    {\n        self.finish(End::LastRecord)\n    }\n\n    /// Finishes the reader: the end of the body ends the stream with `Ok(None)`. A\n",
+  "replace": "    {\n        self.finish(End::EndOfBody)\n    }\n\n    /// Finishes the reader: the end of the body ends the stream with `Ok(None)`. A\n"
+}

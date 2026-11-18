@@ -338,6 +338,28 @@ async fn c11_5_a_lower_balance_with_a_newer_dated_reset_is_honoured_at_once() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn c11_5_a_lower_balance_with_a_later_dated_reset_waits_for_the_later_deadline() {
+    // Two units left until T + 10; then none left until T + 20, nineteen seconds after that
+    // response's own Date: the window does not refill at the earlier reset.
+    let script = Script::new();
+    for (date, reset, left) in [(T, T + 10, "2"), (T + 1, T + 20, "0")] {
+        script
+            .answer(200)
+            .header("date", &http_date(date))
+            .header("x-limit", "3")
+            .header("x-remaining", left)
+            .header("x-reset", &rfc3339(reset));
+    }
+    script.answer(200);
+    let limit = requests();
+    let start = Instant::now();
+    for _ in 0..3 {
+        call(&limit, &script).await.unwrap();
+    }
+    assert_eq!(sent(&script, start), [sec(0), sec(0), sec(19)]);
+}
+
+#[tokio::test(start_paused = true)]
 async fn c11_5_remaining_in_unix_seconds_honours_a_lower_balance_on_its_one_clock() {
     // The reader of Unix seconds counts every reset from this process's clock, so a reset
     // that is the same or later never comes earlier: its zero is honoured at once.

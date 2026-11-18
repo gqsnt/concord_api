@@ -1,0 +1,9 @@
+{
+  "id": "M336",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "A call that needs no wait is refused when admission itself took longer than max_hold",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                let expired = now > deadline && waited_once;",
+  "replace": "                let expired = now > deadline;"
+}

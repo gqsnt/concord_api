@@ -1,0 +1,9 @@
+{
+  "id": "M313",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "A fault that is not a decode failure keeps a line and a column in details()",
+  "file": "concord-core/src/read.rs",
+  "find": "        if matches!(self.kind, FaultKind::NotDecoded) && line != 0 {",
+  "replace": "        if line != 0 {"
+}

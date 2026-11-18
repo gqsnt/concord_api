@@ -1,0 +1,9 @@
+{
+  "id": "M312",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "RecordFail::mismatch loses its fixed reason",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "            Cause::Rejected(reason) => body.fail(RecordFault::rejected(reason)),",
+  "replace": "            Cause::Rejected(_) => body.fail(RecordFault::does_not_fit()),"
+}

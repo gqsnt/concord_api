@@ -1,0 +1,9 @@
+{
+  "id": "M334",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A late head naming a reset whose refill was given teaches again",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                (Some(known), Some(seen)) if seen == known && *paid => return,\n",
+  "replace": ""
+}

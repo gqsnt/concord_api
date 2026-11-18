@@ -1,0 +1,9 @@
+{
+  "id": "M330",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A reset already consumed refills again once the key's windows change",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                if matches!((known, new.reset_at), (Some(known), Some(seen)) if seen <= known) {\n                    continue;\n                }\n",
+  "replace": ""
+}

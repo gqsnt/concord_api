@@ -1,0 +1,9 @@
+{
+  "id": "M335",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "max_hold is counted after the key and cost functions instead of from receipt",
+  "file": "concord-extras/src/limit.rs",
+  "find": "        let start = Instant::now();\n        let selected = self\n            .inner\n            .select(&request, &info)\n            .map_err(|error| TransportError::blocked().with_source(error))?;",
+  "replace": "        let selected = self\n            .inner\n            .select(&request, &info)\n            .map_err(|error| TransportError::blocked().with_source(error))?;\n        let start = Instant::now();"
+}

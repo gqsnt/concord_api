@@ -1,0 +1,9 @@
+{
+  "id": "M340",
+  "area": "retry ceiling",
+  "contract": "C4.3",
+  "description": "A wait longer than the timer's longest sleep is started",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "            .filter(|wait| *wait <= LONGEST_SLEEP)\n",
+  "replace": ""
+}

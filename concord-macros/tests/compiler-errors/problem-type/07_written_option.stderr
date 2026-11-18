@@ -1,0 +1,21 @@
+error[E0277]: the endpoint's type names the problem type `Other`, and the client's problem type is `Problem`
+ --> tests/compiler-errors/problem-type/07_written_option.rs:7:12
+  |
+7 | GET e() -> Option<RecordStream<String, concord::Error<Other>>> {
+  |            ^^^^^^ this type's error names `Other`
+  |
+help: the trait `concord::__private::SameProblem<Problem>` is not implemented for `Other`
+ --> tests/compiler-errors/problem-type/07_written_option.rs:4:31
+  |
+4 | #[derive(serde::Deserialize)] pub struct Other;
+  |                               ^^^^^^^^^^^^^^^^
+  = note: a typed stream fails with the client's own error: write the client's `Error` (`RecordStream<Event, client::Error>`), and give the mapping the client's problem type (`RecordFail<Problem>`)
+note: required by a bound in `concord::__private::TypedStream::must_name_the_clients_problem_type`
+ --> $WORKSPACE/concord-core/src/__private/output.rs
+  |
+  |     fn must_name_the_clients_problem_type<P>(&self)
+  |        ---------------------------------- required by a bound in this associated function
+  |     where
+  |         <Self::Carrier as CarriesProblem>::Problem: SameProblem<P>,
+  |                                                     ^^^^^^^^^^^^^^ required by this bound in `TypedStream::must_name_the_clients_problem_type`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

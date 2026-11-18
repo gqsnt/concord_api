@@ -1,0 +1,12 @@
+{
+  "id": "M315",
+  "area": "problem check",
+  "contract": "C11.13",
+  "description": "A stream of another problem type inside Option escapes the check of the declared type",
+  "file": "concord-core/src/error.rs",
+  "find": "impl<S: CarriesProblem> CarriesProblem for Option<S> {\n    type Problem = S::Problem;\n}\n",
+  "replace": "",
+  "checks": [
+    "macro-compiler"
+  ]
+}

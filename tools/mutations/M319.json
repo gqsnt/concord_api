@@ -1,0 +1,9 @@
+{
+  "id": "M319",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A dated reset with a fraction finer than a nanosecond is rounded down, so it refills early",
+  "file": "concord-extras/src/limit/headers.rs",
+  "find": "    if finer {\n        nanos = nanos.checked_add(1)?;\n    }\n",
+  "replace": ""
+}
