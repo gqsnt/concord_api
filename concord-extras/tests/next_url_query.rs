@@ -166,7 +166,11 @@ async fn c8_6_an_empty_query_with_a_secret_key_is_not_the_request_just_sent() {
             graph.keyed().token("v").pages()
         };
         let error = walk(pages.items()).await.unwrap_err();
-        assert_eq!(error.kind(), concord::error::Kind::Mismatch, "linked: {linked}");
+        assert_eq!(
+            error.kind(),
+            concord::error::Kind::Mismatch,
+            "linked: {linked}"
+        );
         assert_eq!(sent.lock().unwrap().len(), 1, "linked: {linked}");
     }
 }
@@ -176,10 +180,17 @@ async fn c8_6_an_empty_query_with_a_secret_key_is_not_the_request_just_sent() {
 async fn c8_6_a_url_with_only_a_path_gets_the_secret_key_again() {
     use concord::page::Call;
     let (graph, sent) = server("/slice");
-    walk(graph.keyed().token("v").pages().items()).await.unwrap();
+    walk(graph.keyed().token("v").pages().items())
+        .await
+        .unwrap();
     assert_eq!(sent.lock().unwrap()[1], "https://api.test/slice?token=v");
     let (graph, sent) = server("/unused");
-    graph.keyed_user().token("v").at_url("/slice").await.unwrap();
+    graph
+        .keyed_user()
+        .token("v")
+        .at_url("/slice")
+        .await
+        .unwrap();
     assert_eq!(sent.lock().unwrap()[0], "https://api.test/slice?token=v");
 }
 
