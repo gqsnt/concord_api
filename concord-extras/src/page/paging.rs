@@ -102,6 +102,17 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 /// input, whose slot tells Rust the call. `by_link()` and `by_next_url(…)` move no input, so there
 /// the type is written: `by_link().has_more(|page: &Batch| page.has_more)`. A closure that uses an
 /// input of the endpoint (a slot) is a `move` closure.
+///
+/// # A `Paging` is not a function
+///
+/// Before `Paging`, the shipped pagers returned closures. Code that used one as a function stops
+/// compiling, and `rustc` says so in its own words:
+///
+/// | What `rustc` says | What was written | What to write |
+/// |---|---|---|
+/// | ``expected function, found `Paging<…>` `` (E0618) | `pager(call, page)` | `pager.next_call(call, page)`, with `use concord::page::Pager;`, from a closure that owns the pager (`let mut pager = by_cursor(…);` and `move \|call, page\| pager.next_call(call, page)`) |
+/// | ``expected an `Fn(…)` closure, found `Paging<…>` `` or the same with `FnMut` (E0277) | `Box<dyn Fn(…)>` or `Box<dyn FnMut(…)>` holding a shipped pager, alone or beside a closure; a function of yours that takes `impl Fn(…)` | [`into_fn`](Paging::into_fn); or a parameter of type `impl Pager<C>`; or `Box<dyn Pager<C>>` for the box |
+/// | ``a macro in `paginate` must expand to a closure, and this one expands to `Paging<…>` `` | `paginate my_pager!(…);`, where the macro writes `by_cursor(…)` | `paginate Paging::from_pager(my_pager!(…));` |
 #[must_use = "a pager does nothing until `paginate` takes it"]
 pub struct Paging<C: Call> {
     // The lock is only ever reached through `&mut self` (`get_mut`): it costs nothing, and it
@@ -235,6 +246,46 @@ impl<C: Call> Paging<C> {
         N: IntoNext<C>,
     {
         Paging::from_pager(pager)
+    }
+
+    /// Turns this pager into a closure, for code that takes a function and not a [`Pager`]: a
+    /// function of yours whose parameter is `impl FnMut(C, &Answer<C::Value>) -> …`, or one boxed
+    /// function type shared with closures. Where you write the parameter yourself, prefer
+    /// `impl Pager<C>` and call [`Pager::next_call`]: it keeps the pager's name in your signature.
+    ///
+    /// ```
+    /// use concord::page::{Call, Paging};
+    /// use concord::{by_cursor, Answer, Fail, Json};
+    ///
+    /// #[derive(serde::Deserialize)]
+    /// pub struct Page { pub next: Option<String> }
+    ///
+    /// /// A function of the author's that wants a function.
+    /// fn logged<C: Call>(
+    ///     mut next: impl FnMut(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + 'static,
+    /// ) -> impl FnMut(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + 'static {
+    ///     move |call, page| next(call, page)
+    /// }
+    ///
+    /// concord::api! {
+    ///     pub client Feed {
+    ///         base "https://feed.example.test";
+    ///         read Json;
+    ///         GET items(after?: String) -> Page {
+    ///             query { after; }
+    ///             paginate logged(by_cursor(after, |page| page.next.clone()).into_fn());
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    // Keep the public pager signature's explicit call, answer and problem types.
+    // PANIC-SAFETY: The closure keeps the call, answer and problem types without boxing; no panic lint is relaxed.
+    #[allow(clippy::type_complexity)]
+    pub fn into_fn(
+        mut self,
+    ) -> impl FnMut(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + Sync + 'static
+    {
+        move |call, page| self.next_call(call, page)
     }
 
     /// `.has_more(|page| page.has_more)`: the page states whether more items follow. `false` ends
@@ -525,6 +576,16 @@ impl<C: Call> Paging<C> {
     }
 }
 
+impl<C: Call> Pager<C> for Box<Paging<C>> {
+    fn next_call(
+        &mut self,
+        call: C,
+        page: &Answer<C::Value>,
+    ) -> Result<Option<C>, Fail<C::Problem>> {
+        (**self).next_call(call, page)
+    }
+}
+
 impl<C: Call> Pager<C> for Paging<C> {
     fn next_call(
         &mut self,
@@ -557,13 +618,9 @@ impl<C: Call> Pager<C> for Paging<C> {
         if stated == Some(false) {
             return Ok(None);
         }
-        // 4 is read here and applied after the move: a short-page rule reads the call and the
-        // page and changes nothing, and the move takes the call.
-        let short = stated.is_none()
-            && parts
-                .stop_on_short_page
-                .iter()
-                .any(|short| short(&call, page.value()));
+        // The short-page rules read the call that fetched the page, after the move has taken it.
+        let fetched =
+            (stated.is_none() && !parts.stop_on_short_page.is_empty()).then(|| call.clone());
         // 3. The move: its failure is the result, also on a short page.
         let mut chosen = parts.or_when_set.iter_mut().filter(|(set, _)| set(&call));
         let next = match (chosen.next(), chosen.next()) {
@@ -571,9 +628,15 @@ impl<C: Call> Pager<C> for Paging<C> {
             (Some((_, other)), None) => other.next_call(call, page)?,
             (None, _) => parts.moves.next_call(call, page)?,
         };
-        // 4. With no statement, a short page ends the list.
-        if short {
-            return Ok(None);
+        // 4. With no statement, a short page ends the list: read after the move.
+        if let Some(fetched) = fetched {
+            if parts
+                .stop_on_short_page
+                .iter()
+                .any(|short| short(&fetched, page.value()))
+            {
+                return Ok(None);
+            }
         }
         let Some(mut next) = next else {
             return match stated {
@@ -657,4 +720,47 @@ where
         Ok(reached < total)
     }));
     paging
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use concord_core::http::{HeaderMap, StatusCode};
+    use concord_core::Headers;
+    use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+    use std::sync::Arc;
+
+    #[derive(Clone, Debug)]
+    struct Probe;
+    impl Call for Probe {
+        type Value = Vec<u32>;
+        type Problem = u8;
+        fn at_url(self, _: &str) -> Probe {
+            self
+        }
+    }
+
+    #[test]
+    fn c8_6_a_statement_that_fails_after_a_disagreement_is_the_result() {
+        let visits: Vec<Arc<AtomicUsize>> = (0..3).map(|_| Arc::new(AtomicUsize::new(0))).collect();
+        let (yes, no, failing) = (visits[0].clone(), visits[1].clone(), visits[2].clone());
+        let mut pager = Paging::from_fn(|call: Probe, _: &Answer<Vec<u32>>| Some(call))
+            .has_more(move |_| {
+                yes.fetch_add(1, SeqCst);
+                true
+            })
+            .has_more(move |_| {
+                no.fetch_add(1, SeqCst);
+                false
+            });
+        // a statement that cannot be read, written after the two that disagree
+        pager.parts().statements.push(Box::new(move |_, _| {
+            failing.fetch_add(1, SeqCst);
+            Err(Fail::from(7))
+        }));
+        let page = Answer::new(StatusCode::OK, Headers::from(HeaderMap::new()), vec![1]);
+        let error = pager.next_call(Probe, &page).unwrap_err();
+        assert_eq!(format!("{error:?}"), "Fail(problem)");
+        assert!(visits.iter().all(|visits| visits.load(SeqCst) == 1));
+    }
 }

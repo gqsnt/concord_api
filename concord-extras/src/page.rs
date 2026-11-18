@@ -1014,6 +1014,89 @@ mod tests {
         assert_eq!(next.after.as_deref(), Some("c2"));
     }
 
+    /// A page whose `count` records each read.
+    struct Seen {
+        items: Vec<u32>,
+        reads: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl IntoItems for Seen {
+        type Item = u32;
+        fn into_items(self) -> Vec<u32> {
+            self.items
+        }
+        fn count(&self) -> usize {
+            self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.items.len()
+        }
+    }
+    #[derive(Clone)]
+    struct Watched;
+    impl Call for Watched {
+        type Value = Seen;
+        type Problem = ();
+        fn at_url(self, _: &str) -> Watched {
+            self
+        }
+    }
+
+    #[test]
+    fn c8_6_the_short_page_rule_is_read_after_the_move() {
+        let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let page = Answer::new(
+            StatusCode::OK,
+            Headers::from(HeaderMap::new()),
+            Seen {
+                items: vec![1],
+                reads: reads.clone(),
+            },
+        );
+        // the move continues only if no rule has read the page before it
+        let mut pager = Paging::from_fn(|call: Watched, answer: &Answer<Seen>| {
+            (answer
+                .value()
+                .reads
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == 0)
+                .then_some(call)
+        })
+        .stop_on_short_page_of(1);
+        assert!(pager.next_call(Watched, &page).unwrap().is_some());
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn c8_6_a_short_page_at_the_largest_offset_ends_unless_the_page_says_more() {
+        let at_the_end = || List {
+            start: Some(u32::MAX),
+            ..short(3)
+        };
+        let page = answer(&[1], None, None);
+        assert!(by_offset_limit(Start, Count)
+            .next_call(at_the_end(), &page)
+            .unwrap()
+            .is_none());
+        assert!(by_offset_limit(Start, Count)
+            .has_more(|_| false)
+            .next_call(at_the_end(), &page)
+            .unwrap()
+            .is_none());
+        // the page says more, and the offset cannot grow: a Mismatch, never a quiet end
+        assert!(by_offset_limit(Start, Count)
+            .has_more(|_| true)
+            .next_call(at_the_end(), &page)
+            .is_err());
+    }
+
+    #[test]
+    fn c8_6_an_empty_page_that_announces_another_is_a_mismatch() {
+        let mut pager = by_page(Start, 1).has_more(|_| true);
+        let first = List {
+            start: Some(1),
+            ..list()
+        };
+        assert!(pager.next_call(first, &answer(&[], None, None)).is_err());
+    }
+
     #[test]
     fn c8_6_a_pager_of_your_own_is_written_the_same_way() {
         // by page number: the next page is one further, until a page comes back empty

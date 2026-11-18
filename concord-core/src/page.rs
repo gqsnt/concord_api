@@ -440,6 +440,19 @@ where
     }
 }
 
+/// A boxed pager of any type: `Box<dyn Pager<C>>`. A box of a closure is a pager because the
+/// box is a closure too, and `concord`'s `Paging` has its own impl for `Box<Paging<C>>`. (One impl
+/// for every `Box<P>` would overlap the impl for closures, which Rust refuses.)
+impl<C: Call> Pager<C> for Box<dyn Pager<C>> {
+    fn next_call(
+        &mut self,
+        call: C,
+        page: &crate::Answer<C::Value>,
+    ) -> Result<Option<C>, Fail<C::Problem>> {
+        (**self).next_call(call, page)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
