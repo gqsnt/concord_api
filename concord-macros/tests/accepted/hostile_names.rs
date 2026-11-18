@@ -1,7 +1,7 @@
 // Names that a module where `api!` is written may well declare: a trait whose methods every
 // type has, named like those that generated code calls; `const client`, `const status`,
 // `const outer`, `const etag`, `const retry`; `type str`; modules named `core`, `std`,
-// `concord`, `clippy`; the names of the prelude. None of them reaches what the macro
+// `concord`, `clippy`, `diagnostic`; the names of the prelude. None of them reaches what the macro
 // writes: the hostile module's client sends the same requests as the clean one. A client
 // named `Diagnostic`, with a scope `diagnostic`, compiles too.
 #![allow(dead_code, non_upper_case_globals, non_camel_case_types, unused_imports, unused)]
@@ -75,6 +75,7 @@ pub mod hostile {
     pub const retry: u8 = 9;
     pub type str = u32;
     pub mod clippy {}
+    pub mod diagnostic {}
     pub mod concord {}
     pub mod core {}
     pub mod std {}

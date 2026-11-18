@@ -10,6 +10,17 @@ help: the trait `IntoFuture` is not implemented for `api::Call<List>`
  4 |     pub client Api {
    |                ^^^
    = note: api::Call<List> must be a future or must implement `IntoFuture` to be awaited
+help: the trait `IntoFuture` is conditionally implemented for `api::Call<E>`
+  --> tests/compiler-errors/calls/await_paged.rs:3:1
+   |
+ 3 | / concord::api! {
+ 4 | |     pub client Api {
+ 5 | |         base "https://calls.test/";
+ 6 | |         POST create();
+...  |
+14 | | }
+   | |_^ unsatisfied requirement introduced here: `<List as Endpoint>::Paging: concord::call::AwaitWithoutPaginate`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: remove the `.await`
    |
 16 -     let _ = Api::new().list().await;

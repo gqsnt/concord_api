@@ -451,31 +451,7 @@ impl Writer<'_> {
         }
     }
 
-    /// Whether `IntoFuture` is written inside the client's module, in a module of its own,
-    /// where no module named `diagnostic` can capture the path of its attribute.
-    fn awaits_in_own_module(&self) -> bool {
-        self.root == "diagnostic"
-    }
-
     pub(super) fn call_implementations(&self) -> TokenStream {
-        let into_future = self.awaits_in_own_module().then(|| {
-            let output_doc = format!(
-                "Awaiting an unpaged call gives [`{}::Result<E::Value>`](super::Result).",
-                self.root
-            );
-            emit! {
-                mod __awaiting {
-                    #[doc = #output_doc]
-                    #[diagnostic::do_not_recommend]
-                    impl<E: super::Endpoint> ::core::future::IntoFuture for super::Call<E>
-                    where E::Paging: ::concord::call::AwaitWithoutPaginate {
-                        type Output = ::core::result::Result<E::Value, ::concord::Error<super::__Problem>>;
-                        type IntoFuture = ::concord::Sending<E::Value, super::__Problem>;
-                        fn into_future(self) -> Self::IntoFuture { super::Call::<E>::send(self) }
-                    }
-                }
-            }
-        });
         let page_problem = emit_at!(self.problem_span()=> __Problem);
         let prepare_call = self.at_problem(emit!(::concord::__private::prepare_call));
         let timeout_doc = call_docs::with_timeout();
@@ -595,8 +571,6 @@ impl Writer<'_> {
                 }
             }
 
-            #into_future
-
             #[doc(hidden)]
             impl<E: Endpoint> ::concord::__private::Call for Call<E> {
                 fn request(&self) -> Result<::concord::reqwest::Request> { self.__build_request(false) }
@@ -678,20 +652,18 @@ impl Writer<'_> {
                 #conditional_methods
             }
         );
-        // The attribute's path resolves where the impl is written. Here, in the author's
-        // scope, its types show as the author wrote them; but the client's own module would
-        // capture the path when the client is named `Diagnostic`, so that client's impl is
-        // written in a module of its own (`call_implementations`).
-        let into_future = (!self.awaits_in_own_module()).then(|| emit! {
+        // One impl, in the author's scope, so that its page shows the author's types. It
+        // carries no `#[diagnostic::…]` attribute: a module `diagnostic` of the author's, or
+        // a client named `Diagnostic`, would capture that path.
+        let into_future = emit! {
             #[doc = #output_doc]
-            #[diagnostic::do_not_recommend]
             impl<E: #root::Endpoint> ::core::future::IntoFuture for #root::Call<E>
             where E::Paging: ::concord::call::AwaitWithoutPaginate {
                 type Output = ::core::result::Result<E::Value, ::concord::Error<#problem_alias>>;
                 type IntoFuture = ::concord::Sending<E::Value #future_problem>;
                 fn into_future(self) -> Self::IntoFuture { #root::Call::<E>::send(self) }
             }
-        });
+        };
         emit! {
             const _: () = {
             #retry_binding

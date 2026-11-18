@@ -276,6 +276,29 @@ fn c1_11_c8_6_c8_8_c10_10_only_the_description_grants_call_capabilities() -> io:
     Ok(())
 }
 
+/// The text without its hint that `IntoFuture` is conditionally implemented: the hint's
+/// lines run up to the note that it originates in the macro. The hint must be there.
+fn without_impl_hint(text: &str) -> String {
+    let start = "help: the trait `IntoFuture` is conditionally implemented for";
+    let mut kept = Vec::new();
+    let mut lines = text.lines();
+    let mut found = false;
+    while let Some(line) = lines.next() {
+        if line.starts_with(start) {
+            found = true;
+            for line in lines.by_ref() {
+                if line.contains("originates in the macro") {
+                    break;
+                }
+            }
+            continue;
+        }
+        kept.push(line);
+    }
+    assert!(found, "no hint of the IntoFuture impl:\n{text}");
+    kept.join("\n")
+}
+
 #[test]
 fn c1_18_rule_diagnostics_name_the_call_and_the_bound_at_the_call_site() -> io::Result<()> {
     let compiler = Compiler::new("rule_diagnostics")?;
@@ -331,7 +354,13 @@ fn c1_18_rule_diagnostics_name_the_call_and_the_bound_at_the_call_site() -> io::
                 &format!("{declaration}\n{code}"),
                 dependent,
             )?;
-            let text = stderr(&output);
+            let mut text = stderr(&output);
+            if name == "await_paged" {
+                // Awaiting a paged call names the generic `IntoFuture` impl and its unmet bound
+                // in one hint, pointing at the description (the impl carries no
+                // `#[diagnostic::do_not_recommend]`). Only that hint is set aside.
+                text = without_impl_hint(&text);
+            }
             let expected_line = declaration.bytes().filter(|byte| *byte == b'\n').count() + 2;
             let primary = text
                 .lines()

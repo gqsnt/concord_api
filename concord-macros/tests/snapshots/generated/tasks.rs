@@ -557,7 +557,6 @@ const _: () = {
         }
     };
     ///Awaiting an unpaged call gives [`tasks::Result<E::Value>`](tasks::Result).
-    #[diagnostic::do_not_recommend]
     impl<E: tasks::Endpoint> ::core::future::IntoFuture for tasks::Call<E>
     where
         E::Paging: ::concord::call::AwaitWithoutPaginate,
