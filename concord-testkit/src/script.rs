@@ -596,7 +596,24 @@ impl Upload {
 }
 
 /// The state of reading an upload.
+///
+/// A later release may add states. Match it with a fallback arm, so that a new state
+/// remains compatible.
+///
+/// ```compile_fail,E0004
+/// use concord_testkit::script::UploadState;
+///
+/// fn exhaustive(state: &UploadState) {
+///     match state {
+///         UploadState::Unread => (),
+///         UploadState::Reading => (),
+///         UploadState::Ended => (),
+///         UploadState::Failed(_) => (),
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UploadState {
     /// The script was not told to read it.
     #[default]
