@@ -26,8 +26,8 @@ type Move<C> = Box<dyn Pager<C>>;
 type Short<C> = Box<dyn Fn(&C) -> Option<usize> + Send>;
 type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 
-/// A pager with what the page states about it. The six shipped pagers return one; so do
-/// [`by_offset_total`], and [`Paging::from_fn`] makes one of your own function. It is a [`Pager`], so `paginate` takes it as it is; its methods need no import.
+/// A pager with what the page states about it. The seven shipped pagers return one,
+/// [`by_offset_total`] included, and [`Paging::from_fn`] makes one of your own function. It is a [`Pager`], so `paginate` takes it as it is; its methods need no import.
 ///
 /// For each page, a `Paging` decides **in this order, whatever the order in which its methods
 /// were written**:
