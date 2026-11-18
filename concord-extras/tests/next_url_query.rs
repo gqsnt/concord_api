@@ -228,8 +228,8 @@ async fn c8_6_a_call_given_a_url_sends_its_query_as_given() {
     assert_eq!(sent.lock().unwrap()[0], "https://api.test/v1.0/users");
 }
 
-/// An `edit_request` that moves the host is not combined with a pager that uses `at_url` (C8.6).
-/// What each case does, for the reason an author can read in C8.6: a next URL is checked against
+/// An `edit_request` that moves the host, with a pager that uses `at_url` (C8.4, C8.6). What each
+/// case does, for the reason an author can read in C8.6: a next URL is checked against
 /// the origin the call builds from its base, before the edits; a relative one is first resolved
 /// against the URL of the response, which the edit had moved.
 #[tokio::test(start_paused = true)]

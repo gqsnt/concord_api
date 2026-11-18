@@ -263,7 +263,7 @@ concord::api! {
 }
 ```
 
-and nowhere in it is there a macro, an attribute (`#[cfg]` included), an item declared inside it (a `fn`, a `struct`), a `return`, a `?`, a loop, a label, or a `break` with a value. A closure passed as an argument, such as the one given to `has_more`, does not count: it is welcome anywhere, but a macro inside it does (`|page| page.next.as_ref().map(|s| format!("{s}"))`): write that function as a named one, or convert the pager. Even a call or a path may need a type written, as Rust needs it anyway: a generic constant (`Bank::<_>::FP`).
+and nowhere in it is there a macro, an attribute (`#[cfg]` included), an item declared inside it (a `fn`, a `struct`), a `return`, a `?`, a loop, a label, or a `break` with a value. A closure passed as an argument, such as the one given to `has_more`, does not count, and neither do the `return`, `?` and loops of an `async` block: they are its own. A closure is welcome anywhere, but a macro inside it does count (`|page| page.next.as_ref().map(|s| format!("{s}"))`): write that function as a named one, or convert the pager. Even a call or a path may need a type written, as Rust needs it anyway: a generic constant (`Bank::<_>::FP`).
 
 **Everything else is read as a closure**, exactly as in earlier releases, so a description that uses only closures of its own compiles and behaves as before, whatever its shape. A `Paging` in such an expression (after a `return` or a `break`, in a `loop`, under `#[cfg]`, out of a macro of yours, behind `*` or `.0`) is refused with Concord's own message:
 
