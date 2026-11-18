@@ -329,11 +329,11 @@ pub mod tasks {
     /// Each option is a method of the call (`call.done(v)`) and a function of this type (`List::done(call, v)`).
     ///
     ///
-    /// [`done(impl Arg<Option<bool>>)`](Self::done): Accepts a [`bool`](bool), a &[`bool`](bool), or an [`Option`]<[`bool`](bool)>. `None` clears it.
+    /// [`done(impl Arg<Option<bool>>)`](Self::done): Accepts a `bool`, a &`bool`, or an [`Option`]<`bool`>. `None` clears it.
     ///
     /// Filter tasks by completion state.
     ///
-    /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Vec`](Vec)<[`Task`](super::Task)>>.
+    /// `.await` returns [`tasks::Result`](super::tasks::Result)<`Vec`<[`Task`](super::Task)>>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
     #[allow(missing_debug_implementations)]
@@ -387,7 +387,7 @@ pub mod tasks {
     /// Inputs:
     ///
     ///
-    /// `id`: Accepts a [`u64`](u64) or a &[`u64`](u64).
+    /// `id`: Accepts a `u64` or a &`u64`.
     ///
     /// The identifier of the task to fetch.
     ///
@@ -415,7 +415,7 @@ pub mod tasks {
     /// Inputs:
     ///
     ///
-    /// `id`: Accepts a [`u64`](u64) or a &[`u64`](u64).
+    /// `id`: Accepts a `u64` or a &`u64`.
     ///
     /// The identifier of the task to delete.
     ///
@@ -493,7 +493,9 @@ const _: () = {
             ) -> ::concord::Sending<
                 ::concord::Answer<::core::option::Option<E::Value>>,
             > {
-                let etag = etag.to_owned();
+                let etag = <::core::primitive::str as ::std::borrow::ToOwned>::to_owned(
+                    etag,
+                );
                 ::concord::Sending::new(async move {
                     self.__prepare_if_none_match(&etag)?.send().await
                 })
@@ -509,9 +511,10 @@ const _: () = {
             /// Polling elsewhere panics with Tokio's own message. Building a client or call needs no runtime.
             pub fn send(self) -> ::concord::Sending<E::Value> {
                 ::concord::Sending::new(async move {
-                    <Self as ::concord::__private::Call>::send_full(self)
-                        .await
-                        .map(::concord::Answer::into_value)
+                    ::core::result::Result::map(
+                        <Self as ::concord::__private::Call>::send_full(self).await,
+                        ::concord::Answer::into_value,
+                    )
                 })
             }
             /// Send the call, and keep the status and the headers beside the value.
@@ -565,7 +568,7 @@ const _: () = {
         >;
         type IntoFuture = ::concord::Sending<E::Value>;
         fn into_future(self) -> Self::IntoFuture {
-            self.send()
+            tasks::Call::<E>::send(self)
         }
     }
     struct __View0;
@@ -574,33 +577,44 @@ const _: () = {
         #[allow(clippy::new_without_default)]
         pub fn new() -> Self {
             let mut __client = Self {
-                __core: ::concord::__private::Core::default(),
+                __core: <::concord::__private::Core<
+                    _,
+                > as ::core::default::Default>::default(),
             };
             __client
         }
         /// The retry policy of this client. Accepts a [`concord::Retry`].
         pub fn with_retry(mut self, __retry: ::concord::Retry) -> Self {
-            self.__core = self.__core.with_retry(__retry);
+            self.__core = ::concord::__private::Core::with_retry(self.__core, __retry);
             self
         }
         /// The longest a call may take. Accepts a [`std::time::Duration`].
         pub fn with_timeout(mut self, __timeout: ::std::time::Duration) -> Self {
-            self.__core = self.__core.with_timeout(__timeout);
+            self.__core = ::concord::__private::Core::with_timeout(
+                self.__core,
+                __timeout,
+            );
             self
         }
         /// The longest a transport or body read may be silent. Accepts a [`std::time::Duration`].
         pub fn with_idle_timeout(mut self, __timeout: ::std::time::Duration) -> Self {
-            self.__core = self.__core.with_idle_timeout(__timeout);
+            self.__core = ::concord::__private::Core::with_idle_timeout(
+                self.__core,
+                __timeout,
+            );
             self
         }
         /// Replace the base URL. Accepts a [`concord::Base`] or text through [`concord::base::IntoBase`].
         pub fn with_base(mut self, __base: impl ::concord::base::IntoBase) -> Self {
-            self.__core = self.__core.with_base(__base);
+            self.__core = ::concord::__private::Core::with_base(self.__core, __base);
             self
         }
         /// Choose the [`concord::Transport`] beneath this client's middleware.
         pub fn with_transport(mut self, __transport: impl ::concord::Transport) -> Self {
-            self.__core = self.__core.with_transport(__transport);
+            self.__core = ::concord::__private::Core::with_transport(
+                self.__core,
+                __transport,
+            );
             self
         }
         /// Add a [`concord::Middleware`] before this client's middleware.
@@ -608,7 +622,10 @@ const _: () = {
             mut self,
             __middleware: impl ::concord::Middleware,
         ) -> Self {
-            self.__core = self.__core.with_middleware(__middleware);
+            self.__core = ::concord::__private::Core::with_middleware(
+                self.__core,
+                __middleware,
+            );
             self
         }
         /// List tasks in their current order.
@@ -730,7 +747,9 @@ const _: () = {
     }
     impl ::core::fmt::Debug for Tasks {
         fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            __f.debug_struct("Tasks").finish_non_exhaustive()
+            ::core::fmt::DebugStruct::finish_non_exhaustive(
+                &mut ::core::fmt::Formatter::debug_struct(__f, "Tasks"),
+            )
         }
     }
     impl tasks::List {
@@ -740,7 +759,7 @@ const _: () = {
         ///
         /// Filter tasks by completion state.
         ///
-        /// Accepts a [`bool`](bool), a &[`bool`](bool), or an [`Option`]<[`bool`](bool)>. `None` clears it.
+        /// Accepts a `bool`, a &`bool`, or an [`Option`]<`bool`>. `None` clears it.
         #[must_use = "a call does nothing until sent or awaited"]
         #[doc(alias = "list done")]
         pub fn done(
@@ -787,12 +806,12 @@ const _: () = {
                 "https://tasks.example.com/api/tasks",
             );
             {
-                __draft
-                    .query_value(
-                        "done",
-                        "done",
-                        (&::concord::__private::ValueRef(&__value.__inputs.0)).adapt(),
-                    );
+                ::concord::__private::Draft::query_value(
+                    &mut __draft,
+                    "done",
+                    "done",
+                    (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                );
             }
             ::core::result::Result::Ok(__draft)
         }
@@ -807,6 +826,8 @@ const _: () = {
                 __response,
                 __info,
                 move || {
+                    #[allow(unused_imports)]
+                    use ::core::mem::drop as client;
                     let client = __View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
@@ -838,13 +859,15 @@ const _: () = {
                 "https://tasks.example.com/api/tasks",
             );
             {
+                #[allow(unused_imports)]
+                use ::core::mem::drop as client;
                 let client = __View0;
                 let task = &__value.__inputs.0;
                 let __body = ::concord::__private::evaluate_body(
                     <Self as tasks::Endpoint>::NAME,
                     || ::core::result::Result::Ok({ json(task) }),
                 )?;
-                __draft.body(__body);
+                ::concord::__private::Draft::body(&mut __draft, __body);
             }
             ::core::result::Result::Ok(__draft)
         }
@@ -859,6 +882,8 @@ const _: () = {
                 __response,
                 __info,
                 move || {
+                    #[allow(unused_imports)]
+                    use ::core::mem::drop as client;
                     let client = __View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
@@ -889,12 +914,12 @@ const _: () = {
                 ::concord::http::Method::GET,
                 "https://tasks.example.com/api/tasks",
             );
-            __draft
-                .segment_value(
-                    "id",
-                    (&::concord::__private::ValueRef(&__value.__inputs.0)).adapt(),
-                    false,
-                );
+            ::concord::__private::Draft::segment_value(
+                &mut __draft,
+                "id",
+                (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                false,
+            );
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(
@@ -908,6 +933,8 @@ const _: () = {
                 __response,
                 __info,
                 move || {
+                    #[allow(unused_imports)]
+                    use ::core::mem::drop as client;
                     let client = __View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
@@ -938,12 +965,12 @@ const _: () = {
                 ::concord::http::Method::DELETE,
                 "https://tasks.example.com/api/tasks",
             );
-            __draft
-                .segment_value(
-                    "id",
-                    (&::concord::__private::ValueRef(&__value.__inputs.0)).adapt(),
-                    false,
-                );
+            ::concord::__private::Draft::segment_value(
+                &mut __draft,
+                "id",
+                (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                false,
+            );
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(

@@ -263,7 +263,7 @@ const _: () = {
                     "starting_after",
                     &[::concord::__private::Piece::Val(
                         "starting_after",
-                        &(&::concord::__private::ValueRef(starting_after)).adapt(),
+                        &(&::concord::__private::ValueRef(starting_after)).__adapt(),
                     )],
                 );
             }
@@ -404,7 +404,7 @@ const _: () = {
                     "starting_after",
                     &[::concord::__private::Piece::Val(
                         "starting_after",
-                        &(&::concord::__private::ValueRef(starting_after)).adapt(),
+                        &(&::concord::__private::ValueRef(starting_after)).__adapt(),
                     )],
                 );
             }

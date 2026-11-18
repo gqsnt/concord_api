@@ -462,10 +462,13 @@ impl<'a> Writer<'a> {
                 let reference = self.borrow_field(current, access, false);
                 emit!(#field: #reference)
             });
+            // A function item of that name in this block lets the binding be made even
+            // if the author's module has a constant, a static or a unit struct of it.
+            let shadow = emit!(#[allow(unused_imports)] use ::core::mem::drop as #binding;);
             if owner.inputs.is_empty() {
-                emit!(let #binding = #view;)
+                emit!(#shadow let #binding = #view;)
             } else {
-                emit!(let #binding = #view { #(#fields),* };)
+                emit!(#shadow let #binding = #view { #(#fields),* };)
             }
         });
         let locals = origin.locals.iter().map(|input| {

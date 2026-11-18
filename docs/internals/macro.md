@@ -104,7 +104,7 @@ The macro does not rewrite expressions. **It binds names, and then copies the ex
     let client = __View0 { key: &self.__parent.__parent.key };   // the owner: a view, one reference for each of its inputs
     let key = &self.__parent.__parent.key;                       // each input of the node that wrote the line: a reference
     let __value = ValueRef(key);                                 // the adapter, for a secret
-    let __adapted = (&__value).adapt();
+    let __adapted = (&__value).__adapt();
     let __Entry0 = &[Piece::Val("x-riot-token", &__adapted)];    // a name, for a Build error
     …                                                            // the other headers run here
     __draft.header("x-riot-token", __Entry0);                    // then all are written, in the order of the wire
@@ -115,7 +115,7 @@ The macro does not rewrite expressions. **It binds names, and then copies the ex
 
 **An owner is a view.** For each level the macro generates one small hidden struct whose fields are references to the inputs of that level (`__View<n>`, numbered like the `__Node<n>` of [where the generated items live](#where-the-generated-items-live-and-how-they-reach-the-authors-types): `__View0` is the client's). A level with no inputs has a unit struct, bound as `let matches = __View4;`. So `client.key` is a `&Secret`, exactly as the bare `key` is in the client's own lines. (With a plain borrow of the handle in its place, `basic(client.key, "")` would not compile, and descriptions of real APIs use it.)
 
-**Every value goes through one adapter**, `(&ValueRef(x)).adapt()` above: a few lines of the hidden module that choose, by the type of the expression, how to write it. `Secret` and `Option<Secret>` (and references to them) are recognized first; everything else must be `serde::Serialize`. `Secret` itself is not serializable, so it cannot end up in a body by accident. Each value also comes with a name, for the text of a Build error: the input for a placeholder and for a `name;` entry; the key for an entry written `"key" = value;`, even when the value is a bare input.
+**Every value goes through one adapter**, `(&ValueRef(x)).__adapt()` above (a method call, which the choice by type needs; its name starts with `__`, so no trait of the author's can take it): a few lines of the hidden module that choose, by the type of the expression, how to write it. `Secret` and `Option<Secret>` (and references to them) are recognized first; everything else must be `serde::Serialize`. `Secret` itself is not serializable, so it cannot end up in a body by accident. Each value also comes with a name, for the text of a Build error: the input for a placeholder and for a `name;` entry; the key for an entry written `"key" = value;`, even when the value is a bare input.
 
 | Where the expression appears | What the name of an input is bound to |
 |---|---|
@@ -199,7 +199,7 @@ Everything inside the author's Rust is checked by `rustc`, and the message is it
 |---|---|
 | `Reader<T>` | `` `BadReader` cannot read a `Vec<MatchId>` `` · note: `` declare `read Json;` with `use concord::Json;`, or implement `concord::Reader<Vec<MatchId>>` for `BadReader` `` |
 | `IntoBody` | `` `Task` is not a body `` · note: `` a body expression returns a `concord::Body` or a `Result` of one, as `json(x)`, `form(x)` or your own function do `` |
-| `__private::Value` | Its words (`` `Filter` cannot be serialized for this placement `` · note: `` it must implement `serde::Serialize` and serialize to one scalar, a list of scalars, or nothing ``) are never printed. A value that is neither a `Secret` nor `serde::Serialize` gets `rustc`'s E0599 at the author's expression: `` the method `adapt` exists for reference `&concord::__private::ValueRef<&Filter>`, but its trait bounds were not satisfied ``, with notes that name `SecretInput` and `Serialize`. |
+| `__private::Value` | Its words (`` `Filter` cannot be serialized for this placement `` · note: `` it must implement `serde::Serialize` and serialize to one scalar, a list of scalars, or nothing ``) are never printed. A value that is neither a `Secret` nor `serde::Serialize` gets `rustc`'s E0599 at the author's expression: `` the method `__adapt` exists for reference `&concord::__private::ValueRef<&Filter>`, but its trait bounds were not satisfied ``, with notes that name `SecretInput` and `Serialize`. |
 | `page::Slot<C>` | `` `u32` is not an input of this endpoint `` · note: `` in `paginate`, pass the endpoint's inputs to the pager: `paginate by_offset(start);` `` |
 | `page::IntoNext<C>` | `` a pager returns the next call: `Some(call)`, `None`, or a `Result` of either `` |
 | `Transport` | `` `X` cannot send a request `` · note: `` a `reqwest::Client`, `concord::Http`, a test transport, or a type that implements `concord::Transport` `` |

@@ -360,11 +360,19 @@ fn c1_16_growth_binds_inputs_once_and_emits_linear_sized_clients() {
             {
                 self.authored_expressions += 1;
             }
-            if call.method == "query_value" {
+            visit::visit_expr_method_call(self, call);
+        }
+
+        // A query pair is written by `Draft::query_value(&mut draft, key, name, value)`, a
+        // call by its full path so that no trait of the author's can take it.
+        fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+            let draft_query = matches!(&*call.func, syn::Expr::Path(path)
+                if path.path.segments.last().is_some_and(|s| s.ident == "query_value"));
+            if draft_query {
                 let syn::Expr::Lit(syn::ExprLit {
                     lit: syn::Lit::Str(key),
                     ..
-                }) = &call.args[0]
+                }) = &call.args[1]
                 else {
                     panic!("shorthand must pass its literal query key");
                 };
@@ -389,10 +397,10 @@ fn c1_16_growth_binds_inputs_once_and_emits_linear_sized_clients() {
                     }
                 }
                 let mut fields = Fields(Vec::new());
-                fields.visit_expr(&call.args[2]);
+                fields.visit_expr(&call.args[3]);
                 self.fields.entry(key.value()).or_default().extend(fields.0);
             }
-            visit::visit_expr_method_call(self, call);
+            visit::visit_expr_call(self, call);
         }
     }
 

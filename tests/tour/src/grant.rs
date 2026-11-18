@@ -46,9 +46,9 @@ const _: () = {
             let __value1 = ::concord::__private::ValueRef(client_id);
             let __value2 = ::concord::__private::ValueRef(client_secret);
             let mut __entries = ::concord::body::Entries::new();
-            __entries.__push("grant_type", (&__value0).adapt());
-            __entries.__push("client_id", (&__value1).adapt());
-            __entries.__push("client_secret", (&__value2).adapt());
+            __entries.__push("grant_type", (&__value0).__adapt());
+            __entries.__push("client_id", (&__value1).__adapt());
+            __entries.__push("client_secret", (&__value2).__adapt());
             form(__entries).map_err(Into::into)
         }
 
@@ -72,7 +72,7 @@ const _: () = {
                         ::concord::__private::Piece::Lit("Bearer "),
                         ::concord::__private::Piece::Val(
                             "client.key",
-                            &(&::concord::__private::ValueRef(client.key)).adapt(),
+                            &(&::concord::__private::ValueRef(client.key)).__adapt(),
                         ),
                     ],
                 );
@@ -81,7 +81,7 @@ const _: () = {
                     "x-client",
                     &[::concord::__private::Piece::Val(
                         "x-client",
-                        &(&::concord::__private::ValueRef(&__entry)).adapt(),
+                        &(&::concord::__private::ValueRef(&__entry)).__adapt(),
                     )],
                 );
             }

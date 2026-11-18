@@ -152,9 +152,9 @@ impl Writer<'_> {
             return TokenStream::new();
         };
         let test = if class {
-            emit!(__status.as_u16() / 100 == #code / 100)
+            emit!(::concord::http::StatusCode::as_u16(&__status) / 100 == #code / 100)
         } else {
-            emit!(__status.as_u16() == #code)
+            emit!(::concord::http::StatusCode::as_u16(&__status) == #code)
         };
         let bindings = self.bindings_at(
             &line.origin,
@@ -193,7 +193,19 @@ impl Writer<'_> {
                 }
             }
         }
+        // As for the owners' bindings: a constant of the author's with a field's name
+        // cannot take the closure's parameter.
+        let shadows = line
+            .value
+            .fields
+            .iter()
+            .flat_map(|fields| &fields.fields)
+            .map(|field| {
+                let name = field.binding.as_ref().unwrap_or(&field.name);
+                emit!(#[allow(unused_imports)] use ::core::mem::drop as #name;)
+            });
         let arm = emit_at!(expression.span()=>
+            #(#shadows)*
             let __arm = |#(#parameters),*| -> ::core::result::Result<#output, ::concord::Fail<#problem>> {
                 ::core::result::Result::Ok({ #expression })
             };
@@ -253,7 +265,7 @@ impl Writer<'_> {
             );
             return TokenStream::new();
         };
-        emit!(_ if __status.is_success() => { #success },)
+        emit!(_ if ::concord::http::StatusCode::is_success(&__status) => { #success },)
     }
 
     fn answer_refused(&self, index: usize, endpoint: &flat::Endpoint<'_>) -> TokenStream {

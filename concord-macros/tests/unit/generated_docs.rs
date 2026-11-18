@@ -324,12 +324,13 @@ fn c10_4_doc_rule_4_setters_preserve_spelling_and_state_accepted_values() {
             "Option `limit` of `items`.",
             "The first argument is the call.",
             "Page size.",
-            "Accepts a [`u32`], a &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.",
+            // In the generated tree a prelude name is not linked: it could be the author's.
+            "Accepts a `u32`, a &`u32`, or an [`Option`]<`u32`>. `None` clears it.",
         ]),
         (&api, "api::Get", "text", vec![
             "Option `text` of `get`.",
             "The first argument is the call.",
-            "Accepts a [`String`], a &[`String`], or an [`Option`]<[`String`]>. `None` clears it. Text and list conversions: [`concord::arg::Arg`].",
+            "Accepts a `String`, a &`String`, or an [`Option`]<`String`>. `None` clears it. Text and list conversions: [`concord::arg::Arg`].",
         ]),
     ] {
         let method = documented_method(file, owner, name);
@@ -698,9 +699,11 @@ fn c1_16_send_names_its_public_result() {
         result_lines(&factory),
         ["`.await` returns [`api::Result`]<[`u32`]>."]
     );
+    // The endpoint's page is in the generated tree, where `u32` could only be linked to the
+    // primitive, though the author's module may declare a `u32` of its own.
     assert_eq!(
-        result_lines(&factory),
-        result_lines(&found.endpoints["Get"])
+        result_lines(&found.endpoints["Get"]),
+        ["`.await` returns [`api::Result`]<`u32`>."]
     );
     assert_eq!(
         method_docs(&file, "api::Call<E>", "send"),
@@ -888,4 +891,34 @@ fn c12_14_generated_edit_docs_explain_detection_limits_and_actual_body_ownership
     assert!(!lines
         .iter()
         .any(|line| line.starts_with("replacing or removing it is a Build error.")));
+}
+
+/// C10.1: the pages of the generated tree do not link a name of the author's to the item
+/// of the same name in the prelude or among the primitives. With `type str = u32` in the
+/// author's module, `-> str` is the author's `u32`: a link to the primitive `str` lies.
+#[test]
+fn c10_1_a_shadowed_prelude_name_is_not_linked_to_the_prelude() {
+    let output = super::surface::rustdoc_output(
+        "shadowed_prelude",
+        r#"#![allow(non_camel_case_types)]
+        pub type str = u32;
+        pub type String = u64;
+        concord::api! {
+            pub client Shadow {
+                base "https://a.test"; read concord::Json;
+                GET num(id: String) -> str { query { id; } }
+            }
+        }"#,
+    );
+    let page = std::fs::read_to_string(output.join("shadow/enum.Num.html")).unwrap();
+    // The one primitive `str` of the page is the type of `Endpoint::NAME`.
+    assert_eq!(
+        page.matches("primitive.str.html").count(),
+        1,
+        "the page links `str` to the primitive"
+    );
+    assert!(
+        !page.contains("string/struct.String.html"),
+        "the page links `String` to the prelude's"
+    );
 }

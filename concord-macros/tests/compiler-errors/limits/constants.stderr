@@ -151,18 +151,27 @@ help: introduce a new binding instead
 19 +         GET other___headers() -> u16 { query { "value" = __value; } status { 404 => __status } }
    |
 
-error[E0599]: no method named `as_u16` found for type `u16` in the current scope
+error[E0308]: mismatched types
   --> tests/compiler-errors/limits/constants.rs:15:1
    |
-15 |   ::concord::api! {
-   |  _^
+15 | / ::concord::api! {
 16 | |     client Hygienic {
 17 | |         base "https://hygiene.test";
 18 | |         read ::concord::Json;
 ...  |
 21 | | }
-   | |_^ method not found in `u16`
+   | | ^
+   | | |
+   | |_expected `&StatusCode`, found `&u16`
+   |   arguments to this function are incorrect
    |
+   = note: expected reference `&StatusCode`
+              found reference `&u16`
+note: method defined here
+  --> $CARGO/http-$VERSION/src/status.rs
+   |
+   |     pub const fn as_u16(&self) -> u16 {
+   |                  ^^^^^^
    = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
@@ -218,18 +227,27 @@ note: function defined here
    |        ^^^
    = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0599]: no method named `is_success` found for type `u16` in the current scope
+error[E0308]: mismatched types
   --> tests/compiler-errors/limits/constants.rs:15:1
    |
-15 |   ::concord::api! {
-   |  _^
+15 | / ::concord::api! {
 16 | |     client Hygienic {
 17 | |         base "https://hygiene.test";
 18 | |         read ::concord::Json;
 ...  |
 21 | | }
-   | |_^ method not found in `u16`
+   | | ^
+   | | |
+   | |_expected `&StatusCode`, found `&u16`
+   |   arguments to this function are incorrect
    |
+   = note: expected reference `&StatusCode`
+              found reference `&u16`
+note: method defined here
+  --> $CARGO/http-$VERSION/src/status.rs
+   |
+   |     pub fn is_success(&self) -> bool {
+   |            ^^^^^^^^^^
    = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `concord::read::Incoming: From<u16>` is not satisfied
@@ -370,7 +388,7 @@ error[E0308]: mismatched types
    |            ^^^^^^^^
    |            |
    |            expected `Retry`, found `u16`
-   |            arguments to this method are incorrect
+   |            arguments to this function are incorrect
    |
    = note: expected struct `concord::Retry`
                 found type `u16`
@@ -408,7 +426,7 @@ error[E0308]: mismatched types
    |            ^^^^^^^^
    |            |
    |            expected `Duration`, found `u16`
-   |            arguments to this method are incorrect
+   |            arguments to this function are incorrect
    |
 note: method defined here
   --> $WORKSPACE/concord-core/src/__private/client.rs
@@ -424,7 +442,7 @@ error[E0308]: mismatched types
    |            ^^^^^^^^
    |            |
    |            expected `Duration`, found `u16`
-   |            arguments to this method are incorrect
+   |            arguments to this function are incorrect
    |
 note: method defined here
   --> $WORKSPACE/concord-core/src/__private/client.rs

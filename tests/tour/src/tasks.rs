@@ -248,7 +248,7 @@ const _: () = {
                     "done",
                     &[::concord::__private::Piece::Val(
                         "done",
-                        &(&::concord::__private::ValueRef(done)).adapt(),
+                        &(&::concord::__private::ValueRef(done)).__adapt(),
                     )],
                 );
             }
@@ -458,7 +458,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -552,7 +552,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)

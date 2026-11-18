@@ -1422,7 +1422,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -1542,7 +1542,7 @@ const _: () = {
                 let item = &self.__inputs.item;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             #[allow(unused_variables)]
@@ -1700,7 +1700,7 @@ const _: () = {
                     "step",
                     &[::concord::__private::Piece::Val(
                         "step",
-                        &(&::concord::__private::ValueRef(&__entry)).adapt(),
+                        &(&::concord::__private::ValueRef(&__entry)).__adapt(),
                     )],
                 );
             }
@@ -1953,7 +1953,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -2175,7 +2175,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -2490,7 +2490,7 @@ const _: () = {
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
                         "tenant",
-                        &(&::concord::__private::ValueRef(tenant)).adapt(),
+                        &(&::concord::__private::ValueRef(tenant)).__adapt(),
                     ),
                     ::concord::__private::Piece::Lit(".shapes.example.com"),
                 ]);
@@ -2641,7 +2641,7 @@ const _: () = {
                     "ratio",
                     &[::concord::__private::Piece::Val(
                         "ratio",
-                        &(&::concord::__private::ValueRef(ratio)).adapt(),
+                        &(&::concord::__private::ValueRef(ratio)).__adapt(),
                     )],
                 );
             }
@@ -2654,7 +2654,7 @@ const _: () = {
                     "filter",
                     &[::concord::__private::Piece::Val(
                         "filter",
-                        &(&::concord::__private::ValueRef(filter)).adapt(),
+                        &(&::concord::__private::ValueRef(filter)).__adapt(),
                     )],
                 );
             }
@@ -2777,7 +2777,7 @@ const _: () = {
                     "content-length",
                     &[::concord::__private::Piece::Val(
                         "content-length",
-                        &(&::concord::__private::ValueRef(length)).adapt(),
+                        &(&::concord::__private::ValueRef(length)).__adapt(),
                     )],
                 );
             }
@@ -2927,7 +2927,7 @@ const _: () = {
                     "n",
                     &[::concord::__private::Piece::Val(
                         "n",
-                        &(&::concord::__private::ValueRef(&__entry)).adapt(),
+                        &(&::concord::__private::ValueRef(&__entry)).__adapt(),
                     )],
                 );
             }
@@ -3355,7 +3355,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -3491,7 +3491,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -3618,7 +3618,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -3771,7 +3771,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -3910,7 +3910,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -4168,7 +4168,7 @@ const _: () = {
                 let title = &self.__inputs.title;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -4306,7 +4306,7 @@ const _: () = {
                 let body = &self.__inputs.body;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "body",
-                    &(&::concord::__private::ValueRef(body)).adapt(),
+                    &(&::concord::__private::ValueRef(body)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -4446,7 +4446,7 @@ const _: () = {
                 __draft.segment(&[
                     ::concord::__private::Piece::Val(
                         "id",
-                        &(&::concord::__private::ValueRef(id)).adapt(),
+                        &(&::concord::__private::ValueRef(id)).__adapt(),
                     ),
                 ]);
             }
@@ -4737,7 +4737,7 @@ const _: () = {
                 __draft.segment(&[
                     ::concord::__private::Piece::Val(
                         "path_key",
-                        &(&::concord::__private::ValueRef(path_key)).adapt(),
+                        &(&::concord::__private::ValueRef(path_key)).__adapt(),
                     ),
                 ]);
             }
@@ -4753,7 +4753,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "key",
-                            &(&::concord::__private::ValueRef(query_key)).adapt(),
+                            &(&::concord::__private::ValueRef(query_key)).__adapt(),
                         ),
                     ],
                 );
@@ -4770,7 +4770,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "cursor",
-                            &(&::concord::__private::ValueRef(cursor)).adapt(),
+                            &(&::concord::__private::ValueRef(cursor)).__adapt(),
                         ),
                     ],
                 );
@@ -4787,7 +4787,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "x-key",
-                            &(&::concord::__private::ValueRef(header_key)).adapt(),
+                            &(&::concord::__private::ValueRef(header_key)).__adapt(),
                         ),
                     ],
                 );
@@ -4972,7 +4972,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "x-cursor",
-                            &(&::concord::__private::ValueRef(cursor)).adapt(),
+                            &(&::concord::__private::ValueRef(cursor)).__adapt(),
                         ),
                     ],
                 );
@@ -5193,8 +5193,8 @@ const _: () = {
                 let __value0 = ::concord::__private::ValueRef(token);
                 let __value1 = ::concord::__private::ValueRef(cursor);
                 let mut __entries = ::concord::body::Entries::new();
-                __entries.__push("token", (&__value0).adapt());
-                __entries.__push("cursor", (&__value1).adapt());
+                __entries.__push("token", (&__value0).__adapt());
+                __entries.__push("cursor", (&__value1).__adapt());
                 __draft.body(json(__entries));
             }
             ::core::result::Result::Ok(__draft)
@@ -5396,7 +5396,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "cursor",
-                            &(&::concord::__private::ValueRef(cursor)).adapt(),
+                            &(&::concord::__private::ValueRef(cursor)).__adapt(),
                         ),
                     ],
                 );
@@ -5597,7 +5597,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "cursor",
-                            &(&::concord::__private::ValueRef(cursor)).adapt(),
+                            &(&::concord::__private::ValueRef(cursor)).__adapt(),
                         ),
                     ],
                 );
@@ -5810,7 +5810,7 @@ const _: () = {
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
                         "host_key",
-                        &(&::concord::__private::ValueRef(host_key)).adapt(),
+                        &(&::concord::__private::ValueRef(host_key)).__adapt(),
                     ),
                     ::concord::__private::Piece::Lit(".shapes.example.com"),
                 ]);
@@ -5826,7 +5826,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "cursor",
-                            &(&::concord::__private::ValueRef(cursor)).adapt(),
+                            &(&::concord::__private::ValueRef(cursor)).__adapt(),
                         ),
                     ],
                 );
@@ -6026,7 +6026,7 @@ const _: () = {
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
                         "tenant",
-                        &(&::concord::__private::ValueRef(tenant)).adapt(),
+                        &(&::concord::__private::ValueRef(tenant)).__adapt(),
                     ),
                     ::concord::__private::Piece::Lit(".shapes.example.com"),
                 ]);
@@ -6042,7 +6042,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "cursor",
-                            &(&::concord::__private::ValueRef(cursor)).adapt(),
+                            &(&::concord::__private::ValueRef(cursor)).__adapt(),
                         ),
                     ],
                 );
@@ -6225,7 +6225,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "start",
-                            &(&::concord::__private::ValueRef(start)).adapt(),
+                            &(&::concord::__private::ValueRef(start)).__adapt(),
                         ),
                     ],
                 );
@@ -6405,7 +6405,7 @@ const _: () = {
                     &[
                         ::concord::__private::Piece::Val(
                             "page",
-                            &(&::concord::__private::ValueRef(page)).adapt(),
+                            &(&::concord::__private::ValueRef(page)).__adapt(),
                         ),
                     ],
                 );
@@ -6651,7 +6651,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -6776,7 +6776,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -6897,7 +6897,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -7035,7 +7035,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)

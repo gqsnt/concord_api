@@ -608,7 +608,7 @@ const _: () = {
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
                         "route",
-                        &(&::concord::__private::ValueRef(route)).adapt(),
+                        &(&::concord::__private::ValueRef(route)).__adapt(),
                     ),
                     ::concord::__private::Piece::Lit(".api.riotgames.com"),
                 ]);
@@ -633,7 +633,7 @@ const _: () = {
                 let start_time = &self.__inputs.start_time;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "puuid",
-                    &(&::concord::__private::ValueRef(puuid)).adapt(),
+                    &(&::concord::__private::ValueRef(puuid)).__adapt(),
                 )]);
             }
             __draft.segment(&[::concord::__private::Piece::Lit("ids")]);
@@ -654,7 +654,7 @@ const _: () = {
                     "start",
                     &[::concord::__private::Piece::Val(
                         "start",
-                        &(&::concord::__private::ValueRef(start)).adapt(),
+                        &(&::concord::__private::ValueRef(start)).__adapt(),
                     )],
                 );
             }
@@ -675,7 +675,7 @@ const _: () = {
                     "count",
                     &[::concord::__private::Piece::Val(
                         "count",
-                        &(&::concord::__private::ValueRef(count)).adapt(),
+                        &(&::concord::__private::ValueRef(count)).__adapt(),
                     )],
                 );
             }
@@ -696,7 +696,7 @@ const _: () = {
                     "queue",
                     &[::concord::__private::Piece::Val(
                         "queue",
-                        &(&::concord::__private::ValueRef(queue)).adapt(),
+                        &(&::concord::__private::ValueRef(queue)).__adapt(),
                     )],
                 );
             }
@@ -717,7 +717,7 @@ const _: () = {
                     "startTime",
                     &[::concord::__private::Piece::Val(
                         "startTime",
-                        &(&::concord::__private::ValueRef(start_time)).adapt(),
+                        &(&::concord::__private::ValueRef(start_time)).__adapt(),
                     )],
                 );
             }
@@ -732,7 +732,7 @@ const _: () = {
                     "x-riot-token",
                     &[::concord::__private::Piece::Val(
                         "x-riot-token",
-                        &(&::concord::__private::ValueRef(key)).adapt(),
+                        &(&::concord::__private::ValueRef(key)).__adapt(),
                     )],
                 );
             }
@@ -887,7 +887,7 @@ const _: () = {
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
                         "route",
-                        &(&::concord::__private::ValueRef(route)).adapt(),
+                        &(&::concord::__private::ValueRef(route)).__adapt(),
                     ),
                     ::concord::__private::Piece::Lit(".api.riotgames.com"),
                 ]);
@@ -907,7 +907,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             #[allow(unused_variables)]
@@ -921,7 +921,7 @@ const _: () = {
                     "x-riot-token",
                     &[::concord::__private::Piece::Val(
                         "x-riot-token",
-                        &(&::concord::__private::ValueRef(key)).adapt(),
+                        &(&::concord::__private::ValueRef(key)).__adapt(),
                     )],
                 );
             }
@@ -1052,7 +1052,7 @@ const _: () = {
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
                         "route",
-                        &(&::concord::__private::ValueRef(route)).adapt(),
+                        &(&::concord::__private::ValueRef(route)).__adapt(),
                     ),
                     ::concord::__private::Piece::Lit(".api.riotgames.com"),
                 ]);
@@ -1074,7 +1074,7 @@ const _: () = {
                 let tag_line = &self.__inputs.tag_line;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "game_name",
-                    &(&::concord::__private::ValueRef(game_name)).adapt(),
+                    &(&::concord::__private::ValueRef(game_name)).__adapt(),
                 )]);
             }
             #[allow(unused_variables)]
@@ -1089,7 +1089,7 @@ const _: () = {
                 let tag_line = &self.__inputs.tag_line;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "tag_line",
-                    &(&::concord::__private::ValueRef(tag_line)).adapt(),
+                    &(&::concord::__private::ValueRef(tag_line)).__adapt(),
                 )]);
             }
             #[allow(unused_variables)]
@@ -1103,7 +1103,7 @@ const _: () = {
                     "x-riot-token",
                     &[::concord::__private::Piece::Val(
                         "x-riot-token",
-                        &(&::concord::__private::ValueRef(key)).adapt(),
+                        &(&::concord::__private::ValueRef(key)).__adapt(),
                     )],
                 );
             }
@@ -1249,7 +1249,7 @@ const _: () = {
                     ::concord::__private::Piece::Lit("https://"),
                     ::concord::__private::Piece::Val(
                         "route",
-                        &(&::concord::__private::ValueRef(route)).adapt(),
+                        &(&::concord::__private::ValueRef(route)).__adapt(),
                     ),
                     ::concord::__private::Piece::Lit(".api.riotgames.com"),
                 ]);
@@ -1274,7 +1274,7 @@ const _: () = {
                         ::concord::__private::Piece::Lit("Bearer "),
                         ::concord::__private::Piece::Val(
                             "access_token",
-                            &(&::concord::__private::ValueRef(access_token)).adapt(),
+                            &(&::concord::__private::ValueRef(access_token)).__adapt(),
                         ),
                     ],
                 );

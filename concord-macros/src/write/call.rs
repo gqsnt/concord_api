@@ -341,7 +341,7 @@ impl Writer<'_> {
             let expression = line.value;
             emit! {
                 let __idle_timeout = { #bindings (|| -> ::std::time::Duration { #expression })() };
-                __draft.description_idle_timeout(__idle_timeout);
+                ::concord::__private::Options::description_idle_timeout(__draft, __idle_timeout);
             }
         });
         let idempotent = match &endpoint.idempotent {
@@ -425,7 +425,7 @@ impl Writer<'_> {
                 let set_field = self.input_field(index, input, emit!((*__call.__data_mut())));
                 let input_type = self.input_id(input);
                 let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
-                let get = if input.input.optional.is_some() { emit!(#get_field.as_ref()) } else { emit!(::core::option::Option::Some(&#get_field)) };
+                let get = if input.input.optional.is_some() { emit!(::core::option::Option::as_ref(&#get_field)) } else { emit!(::core::option::Option::Some(&#get_field)) };
                 let set = if input.input.optional.is_some() { emit!(::core::option::Option::Some(__value)) } else { emit!(__value) };
                 emit!(#impl_attrs #allow #[doc(hidden)] impl ::concord::page::Slot<#ty> for #slot {
                     type Value = #input_type;
@@ -451,7 +451,31 @@ impl Writer<'_> {
         }
     }
 
+    /// Whether `IntoFuture` is written inside the client's module, in a module of its own,
+    /// where no module named `diagnostic` can capture the path of its attribute.
+    fn awaits_in_own_module(&self) -> bool {
+        self.root == "diagnostic"
+    }
+
     pub(super) fn call_implementations(&self) -> TokenStream {
+        let into_future = self.awaits_in_own_module().then(|| {
+            let output_doc = format!(
+                "Awaiting an unpaged call gives [`{}::Result<E::Value>`](super::Result).",
+                self.root
+            );
+            emit! {
+                mod __awaiting {
+                    #[doc = #output_doc]
+                    #[diagnostic::do_not_recommend]
+                    impl<E: super::Endpoint> ::core::future::IntoFuture for super::Call<E>
+                    where E::Paging: ::concord::call::AwaitWithoutPaginate {
+                        type Output = ::core::result::Result<E::Value, ::concord::Error<super::__Problem>>;
+                        type IntoFuture = ::concord::Sending<E::Value, super::__Problem>;
+                        fn into_future(self) -> Self::IntoFuture { super::Call::<E>::send(self) }
+                    }
+                }
+            }
+        });
         let page_problem = emit_at!(self.problem_span()=> __Problem);
         let prepare_call = self.at_problem(emit!(::concord::__private::prepare_call));
         let timeout_doc = call_docs::with_timeout();
@@ -571,6 +595,8 @@ impl Writer<'_> {
                 }
             }
 
+            #into_future
+
             #[doc(hidden)]
             impl<E: Endpoint> ::concord::__private::Call for Call<E> {
                 fn request(&self) -> Result<::concord::reqwest::Request> { self.__build_request(false) }
@@ -642,7 +668,7 @@ impl Writer<'_> {
                 #conditional_doc
                 pub fn send_if_none_match(self, etag: &::core::primitive::str)
                     -> ::concord::Sending<::concord::Answer<::core::option::Option<E::Value>> #problem> {
-                    let etag = etag.to_owned();
+                    let etag = <::core::primitive::str as ::std::borrow::ToOwned>::to_owned(etag);
                     ::concord::Sending::new(async move { self.__prepare_if_none_match(&etag)?.#send_prepared().await })
                 }
         );
@@ -652,6 +678,20 @@ impl Writer<'_> {
                 #conditional_methods
             }
         );
+        // The attribute's path resolves where the impl is written. Here, in the author's
+        // scope, its types show as the author wrote them; but the client's own module would
+        // capture the path when the client is named `Diagnostic`, so that client's impl is
+        // written in a module of its own (`call_implementations`).
+        let into_future = (!self.awaits_in_own_module()).then(|| emit! {
+            #[doc = #output_doc]
+            #[diagnostic::do_not_recommend]
+            impl<E: #root::Endpoint> ::core::future::IntoFuture for #root::Call<E>
+            where E::Paging: ::concord::call::AwaitWithoutPaginate {
+                type Output = ::core::result::Result<E::Value, ::concord::Error<#problem_alias>>;
+                type IntoFuture = ::concord::Sending<E::Value #future_problem>;
+                fn into_future(self) -> Self::IntoFuture { #root::Call::<E>::send(self) }
+            }
+        });
         emit! {
             const _: () = {
             #retry_binding
@@ -662,7 +702,7 @@ impl Writer<'_> {
                 #send_doc
                 pub fn send(self) -> ::concord::Sending<E::Value #problem> {
                     ::concord::Sending::new(async move {
-                        <Self as ::concord::__private::Call>::send_full(self).await.map(::concord::Answer::into_value)
+                        ::core::result::Result::map(<Self as ::concord::__private::Call>::send_full(self).await, ::concord::Answer::into_value)
                     })
                 }
 
@@ -681,14 +721,7 @@ impl Writer<'_> {
 
             #pages_impl
             };
-            #[doc = #output_doc]
-            #[diagnostic::do_not_recommend]
-            impl<E: #root::Endpoint> ::core::future::IntoFuture for #root::Call<E>
-            where E::Paging: ::concord::call::AwaitWithoutPaginate {
-                type Output = ::core::result::Result<E::Value, ::concord::Error<#problem_alias>>;
-                type IntoFuture = ::concord::Sending<E::Value #future_problem>;
-                fn into_future(self) -> Self::IntoFuture { self.send() }
-            }
+            #into_future
         }
     }
 }

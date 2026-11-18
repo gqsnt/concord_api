@@ -29,3 +29,8 @@ fn c10_1_a_shadowed_primitive_name_does_not_reach_generated_code() {
 fn c1_5_a_client_name_is_read_after_normalization() {
     trybuild::TestCases::new().pass("tests/accepted/nfc_client.rs");
 }
+
+#[test]
+fn c10_1_c2_4_names_of_the_author_s_module_do_not_reach_generated_code() {
+    trybuild::TestCases::new().pass("tests/accepted/hostile_names.rs");
+}

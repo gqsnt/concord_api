@@ -115,6 +115,18 @@ pub trait AdaptValue {
     type Adapted: Value;
     /// Choose the writer without making a secret serializable.
     fn adapt(self) -> Self::Adapted;
+
+    /// The same as [`adapt`](AdaptValue::adapt), for generated code. Generated code calls a
+    /// method in the author's scope, where a trait of the author's with a method `adapt`
+    /// on every type could be chosen instead; no trait of the author's has a name that
+    /// starts with `__` (C1.16).
+    #[doc(hidden)]
+    fn __adapt(self) -> Self::Adapted
+    where
+        Self: Sized,
+    {
+        self.adapt()
+    }
 }
 
 impl<'a, T: SecretInput> AdaptValue for &'a ValueRef<T> {
