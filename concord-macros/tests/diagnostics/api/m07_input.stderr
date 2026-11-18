@@ -1,6 +1,6 @@
 error: name conflicts with an input owner
        label: this name is already used by the client or a scope
-       help: rename this input, for example `tournament_value: TournamentCode`, and update its references; no key on the wire is spelled by its name
+       help: rename this input, for example `tournament_value: TournamentCode`; write each short entry `tournament;` as `"tournament" = tournament_value;`, which keeps the key `tournament` on the wire, and update its other references
    --> tests/diagnostics/api/m07_input.rs:187:23
     |
 187 |             GET games(tournament: TournamentCode) -> Vec<TournamentGame> { path "games/by-code/{tournament}"; }

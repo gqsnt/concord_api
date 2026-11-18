@@ -531,8 +531,9 @@ fn rename_input_help(node: &Node, name: &str, replacement: &str, forbidden: &[St
     format!("rename this input to `{replacement}` and update its references in the existing {location}; keep the wire keys and fixed text that spell `{name}`")
 }
 
-/// Message 7's help: a renamed input never has the name of an owner, and a short entry
-/// that sent the old name as its key keeps that key by writing it.
+/// Message 7's help. The input may reach short entries that the macro does not see from
+/// here (at each node that spreads a part), so the help states the rule for every one of
+/// them instead of listing some.
 fn owner_input_help(node: &Node, input: &Input, replacement: &str, forbidden: &[String]) -> String {
     if !input_candidate(node, replacement, true, forbidden) {
         return "choose a distinct valid input name that conflicts with no owner, input or generated method, and update its existing references without changing wire names".into();
@@ -543,41 +544,9 @@ fn owner_input_help(node: &Node, input: &Input, replacement: &str, forbidden: &[
         if input.optional.is_some() { "?" } else { "" },
         Written::new(input.ty.to_token_stream()).text()
     );
-    match short_entry_block(node, &name) {
-        Some(block) => format!(
-            "rename this input and keep its key on the wire by writing the key in the block: `{declaration}` and `{block} {{ \"{name}\" = {replacement}; }}`; update its other references"
-        ),
-        None => format!(
-            "rename this input, for example `{declaration}`, and update its references; no key on the wire is spelled by its name"
-        ),
-    }
-}
-
-/// The opening of the first block, in this node or below, where `name` is a short entry.
-fn short_entry_block(node: &Node, name: &str) -> Option<String> {
-    let short = |entries: &Entries| {
-        entries
-            .entries
-            .iter()
-            .any(|entry| matches!(&entry.kind, EntryKind::Short(r) if r.owner.is_none() && r.name == name))
-    };
-    let mut pending = vec![node];
-    while let Some(node) = pending.pop() {
-        for statement in &node.statements {
-            match &statement.kind {
-                StatementKind::Query(e) | StatementKind::Headers(e) if short(e) => {
-                    return Some(statement.keyword.to_string());
-                }
-                StatementKind::Body(Body::Entries { function, entries }) if short(entries) => {
-                    let function = Written::new(function.to_token_stream()).text();
-                    return Some(format!("{} {function}", statement.keyword));
-                }
-                _ => {}
-            }
-        }
-        pending.extend(node.children.iter().rev());
-    }
-    None
+    format!(
+        "rename this input, for example `{declaration}`; write each short entry `{name};` as `\"{name}\" = {replacement};`, which keeps the key `{name}` on the wire, and update its other references"
+    )
 }
 
 pub(crate) fn expression_uses(expr: &syn::Expr, name: &str) -> bool {

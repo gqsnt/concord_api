@@ -732,3 +732,170 @@ fn c1_18_reserved_input_help_lists_three_placements_or_none() {
         assert_eq!(messages, [expected], "{source}");
     }
 }
+
+/// The keys that an endpoint sends: query, headers and a body of entries, in order.
+fn wire_keys(source: &str) -> Vec<String> {
+    let mut parsed = parse_source(source);
+    let client = parsed.client.as_ref().unwrap();
+    name::check(client, &mut parsed.diagnostics);
+    let flat = resolve::resolve(client, &mut parsed.diagnostics);
+    check::check(client, &flat, &mut parsed.diagnostics);
+    assert!(
+        parsed.diagnostics.is_empty(),
+        "{source}\n{:?}",
+        parsed.diagnostics.messages()
+    );
+    let mut keys = Vec::new();
+    for endpoint in &flat.endpoints {
+        let entries = endpoint.query.iter().map(|e| ("query", e));
+        let headers = endpoint.headers.iter().map(|e| ("headers", e));
+        let body = match &endpoint.body {
+            Some(flat::BodyLine::Entries { entries, .. }) => entries.iter().collect(),
+            _ => Vec::new(),
+        };
+        let body = body.into_iter().map(|e| ("body", e));
+        for (kind, entry) in entries.chain(headers).chain(body) {
+            keys.push(format!("{} {kind} {}", endpoint.node.name, entry.key));
+        }
+    }
+    keys
+}
+
+/// Rewrite a description as a token stream: `edit` sees each token with the one before.
+fn rewrite(
+    tokens: proc_macro2::TokenStream,
+    edit: &mut dyn FnMut(
+        Option<&proc_macro2::TokenTree>,
+        &[proc_macro2::TokenTree],
+    ) -> Option<(proc_macro2::TokenStream, usize)>,
+) -> proc_macro2::TokenStream {
+    use proc_macro2::{Group, TokenTree};
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    let mut output = proc_macro2::TokenStream::new();
+    let mut at = 0;
+    while let Some(token) = tokens.get(at) {
+        let previous = at.checked_sub(1).and_then(|p| tokens.get(p));
+        if let Some((replacement, taken)) = edit(previous, &tokens[at..]) {
+            output.extend(replacement);
+            at += taken;
+            continue;
+        }
+        match token {
+            TokenTree::Group(group) => output.extend([TokenTree::Group(Group::new(
+                group.delimiter(),
+                rewrite(group.stream(), edit),
+            ))]),
+            other => output.extend([other.clone()]),
+        }
+        at += 1;
+    }
+    output
+}
+
+/// Follow message 7's help to the letter, as an author would.
+fn follow_owner_help(source: &str, old: &str) -> String {
+    use proc_macro2::{Literal, TokenTree};
+    let d = diagnostics(source);
+    let helps: Vec<_> = d
+        .numbers()
+        .iter()
+        .zip(d.messages())
+        .filter(|(n, _)| **n == 7)
+        .map(|(_, m)| m.split_once("\nhelp: ").unwrap().1.to_owned())
+        .collect();
+    assert!(!helps.is_empty(), "{source}: no message 7");
+    let help = &helps[0];
+    assert!(helps.iter().all(|other| other == help), "{helps:?}");
+    // The renamed declaration is the first code in the help that declares a type.
+    let declaration = help
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .find(|code| code.contains(": "))
+        .unwrap();
+    let new = declaration.split([':', '?']).next().unwrap().to_owned();
+    // "write each short entry `x;` as `"x" = x_value;`": the entry that the help shows.
+    let entry = help
+        .split_once(&format!("short entry `{old};` as `"))
+        .map(|(_, rest)| rest.split('`').next().unwrap().to_owned());
+    let mut edit = |previous: Option<&TokenTree>, rest: &[TokenTree]| {
+        let first = rest.first()?;
+        let starts_entry =
+            previous.is_none_or(|p| matches!(p, TokenTree::Punct(p) if p.as_char() == ';'));
+        match first {
+            TokenTree::Ident(ident) if ident == old => {
+                // The scope keeps its name, and so does an owner before a `.`.
+                if matches!(previous, Some(TokenTree::Ident(p)) if p == "scope")
+                    || matches!(rest.get(1), Some(TokenTree::Punct(p)) if p.as_char() == '.')
+                {
+                    return None;
+                }
+                let short = starts_entry
+                    && matches!(rest.get(1), Some(TokenTree::Punct(p)) if p.as_char() == ';');
+                match (&entry, short) {
+                    (Some(entry), true) => Some((entry.parse().unwrap(), 2)),
+                    _ => Some((
+                        TokenTree::Ident(syn::Ident::new(&new, ident.span())).into(),
+                        1,
+                    )),
+                }
+            }
+            TokenTree::Literal(literal) => {
+                let text = syn::parse_str::<syn::LitStr>(&literal.to_string()).ok()?;
+                let hole = format!("{{{old}}}");
+                text.value().contains(&hole).then(|| {
+                    let value = text.value().replace(&hole, &format!("{{{new}}}"));
+                    (TokenTree::Literal(Literal::string(&value)).into(), 1)
+                })
+            }
+            _ => None,
+        }
+    };
+    rewrite(source.parse().unwrap(), &mut edit).to_string()
+}
+
+/// The same description with the scope renamed instead, so the input keeps its name.
+fn rename_scope(source: &str, old: &str) -> String {
+    use proc_macro2::TokenTree;
+    let mut edit = |previous: Option<&TokenTree>, rest: &[TokenTree]| match rest.first()? {
+        TokenTree::Ident(ident)
+            if ident == old
+                && (matches!(previous, Some(TokenTree::Ident(p)) if p == "scope")
+                    || matches!(rest.get(1), Some(TokenTree::Punct(p)) if p.as_char() == '.')) =>
+        {
+            Some((
+                TokenTree::Ident(syn::Ident::new(&format!("{old}_scope"), ident.span())).into(),
+                1,
+            ))
+        }
+        _ => None,
+    };
+    rewrite(source.parse().unwrap(), &mut edit).to_string()
+}
+
+/// C1.18, message 7: following the help never changes a key on the wire, wherever the
+/// input is used: a short entry in a query, in headers or in a body of entries, several of
+/// them, an entry at a node that spreads the part declaring the input, a path, an expression.
+#[test]
+fn c1_18_following_message_seven_keeps_every_key_on_the_wire() {
+    let base = r#"base "https://a.test"; read Reader;"#;
+    for body in [
+        "part x(outer?: String) {} scope outer { GET get(..x) { query { outer; } } }",
+        "scope outer { GET get(outer: String) { query { outer; } } }",
+        "scope outer { GET get(outer?: String) { headers { outer; } } }",
+        "scope outer { POST post(outer: String) { body json { outer; } } }",
+        r#"scope outer { POST post(outer?: String) { query { outer; "other" = outer; } headers { outer; } body json { outer; } } }"#,
+        "part x(outer?: String) { query { outer; } } scope outer { GET get(..x); GET more(..x) { headers { outer; } } }",
+        r#"scope outer { GET get(outer: String) { path "items/{outer}"; } }"#,
+        r#"scope outer { GET get(outer: String) { query { "k" = String::len(outer); } } }"#,
+        r#"scope outer(outer: String) { GET get() { query { "k" = outer.outer; } } }"#,
+    ] {
+        let source = format!("client Workshop {{ {base} {body} }}");
+        let repaired = follow_owner_help(&source, "outer");
+        assert_eq!(
+            wire_keys(&repaired),
+            wire_keys(&rename_scope(&source, "outer")),
+            "{source}\nrepaired: {repaired}"
+        );
+    }
+}

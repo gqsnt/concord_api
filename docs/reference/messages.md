@@ -120,7 +120,7 @@ label: the client or an enclosing scope already has this name
 help: choose a distinct scope name and update every qualified reference to this scope's inputs
 ```
 
-For an input, the help shows the input renamed. When the input was a short entry, which sent its name as the key, the help shows the entry that keeps that key on the wire too, in the block where the input was written: `client_value: String` and `query { "client" = client_value; }`. For an input whose name is no key on the wire (a placeholder in a `path`, an expression), the help shows the renamed input only.
+For an input, the help shows the input renamed, and the rule that keeps its key on the wire: a short entry sends the input's name as its key, so each short entry `client;` becomes `"client" = client_value;`, in every block that has one, at every node that receives the input (a part's input reaches each node that spreads the part). Placeholders and expressions take the new name; a key that is already written stays as it is.
 
 **8.** Two children of one level, `one2` and `one_2`, generate the same type `One2`.  
 Point: `one_2`; `one2` is labelled too.
