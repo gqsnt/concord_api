@@ -314,7 +314,9 @@ impl<C: Call> Paging<C> {
     /// the list; `true` requires a next call (step 3 of [`Paging`]). The function returns a
     /// `bool`: when the field may be absent, say what absence means in it
     /// (`page.is_truncated.unwrap_or(false)`). A page number stated with the number of pages is a
-    /// statement too: `.has_more(|page| page.page < page.pages)`.
+    /// statement too: `.has_more(|page| page.page < page.pages)`. The method sets that rule and
+    /// returns the `Paging`; it does not ask the pager anything. Its name is the field that most
+    /// APIs return for it.
     ///
     /// ```
     /// use concord::{by_cursor, Json};

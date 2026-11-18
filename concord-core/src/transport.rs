@@ -175,6 +175,9 @@ impl TransportError {
     /// that none can still be written after it returns: the connection could not be made,
     /// or the transport stopped before handing the request over.
     ///
+    /// It records that fact on the error and returns the error; it does not ask whether the
+    /// request was sent.
+    ///
     /// The call's error then reports it with
     /// [`Error::request_not_sent`](crate::Error::request_not_sent) only when the failure
     /// that ends the call states it, every send that Concord saw during that attempt ended
