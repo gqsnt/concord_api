@@ -643,7 +643,9 @@ impl Seen<'_> {
     /// The time is counted from the response's `Date` header when it appears once, holds at
     /// most 4096 bytes and is an HTTP date in any of its three forms, read as `Retry-After` is
     /// read (`Sun, 06 Nov 1994 08:49:37 GMT`, and the two obsolete forms), so that a wrong clock
-    /// in this process does not move the reset. Without such a header it is counted from
+    /// in this process does not move the reset. As that grammar allows, `23:59:60` is read as
+    /// the next second on any day, also on one when UTC had no leap second, and a two-digit year
+    /// takes its century from this process's clock. Without such a header it is counted from
     /// [`now()`](Self::now), and a wrong clock then costs this much: a clock that is fast by
     /// some minutes makes each reset that much nearer, so a window refills that much early,
     /// and a reset nearer than the error looks past and teaches nothing; a clock that is

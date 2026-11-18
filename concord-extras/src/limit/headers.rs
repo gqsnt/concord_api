@@ -293,13 +293,20 @@ fn time_of_day(clock: &str) -> Option<(u16, u16, u16)> {
 /// The year of a two-digit RFC 850 year: the latest one that is not more than fifty years
 /// after `now`, as the core reads it.
 fn century(two: u16, month: &str, day: u16, clock: &str, now: SystemTime) -> Option<i32> {
+    // Whole seconds, rounded down before 1970 as after it, as the core counts them.
     let seconds = match now.duration_since(UNIX_EPOCH) {
         Ok(since) => i64::try_from(since.as_secs()).ok()?,
-        Err(before) => i64::try_from(before.duration().as_secs())
-            .ok()?
-            .checked_neg()?,
+        Err(before) => {
+            let before = before.duration();
+            let whole = i64::try_from(before.as_secs()).ok()?.checked_neg()?;
+            whole.checked_sub(i64::from(before.subsec_nanos() != 0))?
+        }
     };
     let now = OffsetDateTime::from_unix_timestamp(seconds).ok()?;
+    // A clock outside the years 1 to 9999 chooses no century, as in the core.
+    if !(1..=9999).contains(&now.year()) {
+        return None;
+    }
     let limit_year = now.year().checked_add(50)?;
     let month_number = MONTHS.iter().position(|name| *name == month)?;
     let written = (month_number, day, time_of_day(clock)?);
@@ -478,6 +485,20 @@ mod tests {
         assert_eq!(http_date("Wednesday, 01-Jan-76 00:00:01 GMT", now), None);
         assert_eq!(http_date("Sunday, 06-Nov-94 08:49:37 UTC", now), None);
         assert_eq!(http_date("Sun, 06-Nov-94 08:49:37 GMT", now), None);
+    }
+
+    #[test]
+    fn c11_5_an_rfc_850_year_chooses_its_century_as_the_core_does_on_any_clock() {
+        // Half a second before 1970: the clock's year is 1969, so `20` is 1920.
+        let before = UNIX_EPOCH - Duration::from_millis(500);
+        assert_eq!(http_date("Wednesday, 01-Jan-20 00:00:00 GMT", before), None);
+        assert_eq!(
+            http_date("Thursday, 01-Jan-20 00:00:00 GMT", before),
+            UNIX_EPOCH.checked_sub(Duration::from_secs(1_577_923_200))
+        );
+        // A clock in the year 0 chooses no century.
+        let year_zero = UNIX_EPOCH - Duration::from_secs(62_150_000_000);
+        assert_eq!(http_date("Friday, 01-Jan-49 00:00:00 GMT", year_zero), None);
     }
 
     #[test]
