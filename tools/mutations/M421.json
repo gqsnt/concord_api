@@ -1,0 +1,9 @@
+{
+  "id": "M421",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "End by_offset quietly on an empty page whose offset cannot be read",
+  "file": "concord-extras/src/page.rs",
+  "find": "        0 => offset(start, &call).map(|_| None).map_err(Stuck::fail),",
+  "replace": "        0 => Ok(None),"
+}

@@ -73,6 +73,33 @@ async fn c8_6_a_gate_whose_input_is_set_lets_the_rest_decide() {
     assert_eq!(walked.events, [A, Move("after"), A]);
 }
 
+/// Step 0 comes before the gate: a call that sets two inputs that each choose a move is refused
+/// also when a gate it does not open would end the list.
+#[tokio::test]
+async fn c8_6_two_inputs_that_each_choose_are_refused_before_a_closed_gate() {
+    let walked = walk::walk(
+        &spec(
+            Base::Cursor,
+            &[
+                Rule::Gate(Input::Gate),
+                Rule::Or(Input::Before),
+                Rule::Or(Input::Back),
+            ],
+        ),
+        &Inputs {
+            before: Some("p0".into()),
+            back: Some("q0".into()),
+            ..none()
+        },
+        &[items(&[1]).next("n1").prev("p1").reply()],
+    )
+    .await;
+    assert_eq!(walked.urls, [url("before=p0&back=q0")]);
+    assert_eq!(walked.pages, [vec![1]]);
+    assert_eq!(walked.end, End::mismatch(TWO_MOVES));
+    assert_eq!(walked.events, []);
+}
+
 #[tokio::test]
 async fn c8_6_one_gate_of_two_that_is_not_set_ends_the_list() {
     let walked = walk::walk(

@@ -1,0 +1,9 @@
+{
+  "id": "M412",
+  "area": "map_next",
+  "contract": "C8.6",
+  "description": "Run the edits of map_next in the reverse of the order written",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        for edit in &mut parts.map_next {",
+  "replace": "        for edit in parts.map_next.iter_mut().rev() {"
+}

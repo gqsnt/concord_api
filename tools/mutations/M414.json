@@ -1,0 +1,9 @@
+{
+  "id": "M414",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Read the default size of stop_on_short_page even when the call set a count",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "count.get(call).copied().unwrap_or(default).try_into().ok()",
+  "replace": "Some(default).unwrap_or(default).try_into().ok()"
+}

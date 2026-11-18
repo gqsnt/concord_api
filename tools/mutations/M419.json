@@ -1,0 +1,9 @@
+{
+  "id": "M419",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Report an offset that cannot be read as one that cannot grow",
+  "file": "concord-extras/src/page.rs",
+  "find": "Some(at) => (*at).try_into().map_err(|_| Stuck::Unreadable),",
+  "replace": "Some(at) => (*at).try_into().map_err(|_| Stuck::Overflow),"
+}

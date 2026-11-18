@@ -1,0 +1,9 @@
+{
+  "id": "M406",
+  "area": "decision order",
+  "contract": "C8.6",
+  "description": "Ignore only_when_set: a call without the input still moves",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        if !parts.only_when_set.iter().all(|set| set(&call)) {",
+  "replace": "        if false && !parts.only_when_set.iter().all(|set| set(&call)) {"
+}

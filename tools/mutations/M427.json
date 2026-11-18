@@ -1,0 +1,9 @@
+{
+  "id": "M427",
+  "area": "next-page URL",
+  "contract": "C8.2, C8.6",
+  "description": "Write a secret query pair again only when the next URL had a query",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "(given || !kept.is_empty())",
+  "replace": "given"
+}

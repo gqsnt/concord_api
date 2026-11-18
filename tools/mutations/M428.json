@@ -1,0 +1,9 @@
+{
+  "id": "M428",
+  "area": "next-page URL",
+  "contract": "C8.4, C8.6",
+  "description": "Drop the empty parts of a query with its secret when comparing with the request just sent",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "let query = (!kept.is_empty()).then(|| kept.join(\"&\"));",
+  "replace": "let query = kept.iter().any(|part| !part.is_empty()).then(|| kept.join(\"&\"));"
+}

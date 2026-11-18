@@ -1,0 +1,9 @@
+{
+  "id": "M403",
+  "area": "or_when_set",
+  "contract": "C8.6",
+  "description": "Read a slot's identity when the pager is built, not when it decides",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "            Box::new(move |call| input.get(call).map(|_| input.input())),",
+  "replace": "            {\n                let id = input.input();\n                Box::new(move |call| input.get(call).map(|_| id))\n            },"
+}
