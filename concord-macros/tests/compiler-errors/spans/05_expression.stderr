@@ -1,4 +1,4 @@
-error[E0599]: the method `adapt` exists for reference `&concord::__private::ValueRef<&NotSer>`, but its trait bounds were not satisfied
+error[E0599]: the method `__adapt` exists for reference `&concord::__private::ValueRef<&NotSer>`, but its trait bounds were not satisfied
  --> tests/compiler-errors/spans/05_expression.rs:3:17
   |
 3 | query { "key" = NotSer; }

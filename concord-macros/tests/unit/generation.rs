@@ -217,6 +217,7 @@ fn c1_16_no_empty_impl_is_written() {
     let file: syn::File = syn::parse2(crate::expand(
         r#"pub client Minimal { base "https://minimal.test";
             scope empty {} GET get(); scope nested { POST post(); }
+            #[cfg(not(any()))] scope gated {} #[deprecated] scope old {}
         }"#
         .parse()
         .unwrap(),
@@ -260,10 +261,40 @@ fn c1_16_no_empty_impl_is_written() {
         .any(|bound| compact(bound) == "__sealed::Sealed"));
 
     let mut endpoint_types = BTreeSet::from(["Get".to_owned(), "nested::Post".to_owned()]);
+    // `Unpin` is a marker: its implementations are empty by nature, one for the call and
+    // one for the client and each handle (C10.2). Each is matched whole: its module, its
+    // attributes, its generics and bounds, and no `where` clause.
+    let mut unpinned = BTreeSet::from(
+        [
+            (
+                "minimal",
+                "impl<E:Endpoint>::core::marker::UnpinforCall<E>{}",
+            ),
+            ("", "impl::core::marker::UnpinforMinimal{}"),
+            ("", "impl::core::marker::Unpinforminimal::Empty{}"),
+            ("", "impl::core::marker::Unpinforminimal::Nested{}"),
+            (
+                "",
+                "#[cfg(not(any()))]impl::core::marker::Unpinforminimal::Gated{}",
+            ),
+            (
+                "",
+                "#[allow(deprecated)]impl::core::marker::Unpinfor__Impl6{}",
+            ),
+        ]
+        .map(|(module, block)| (module.to_owned(), block.to_owned())),
+    );
     for (module, block) in impls(&file)
         .into_iter()
         .filter(|(_, block)| block.items.is_empty())
     {
+        if let Some((_, path, _)) = &block.trait_ {
+            if compact(path).ends_with("Unpin") {
+                let whole = (module.clone(), compact(block));
+                assert!(unpinned.remove(&whole), "unexpected {whole:?}");
+                continue;
+            }
+        }
         assert_eq!(module, "minimal", "{}", quote!(#block));
         let (_, path, _) = block.trait_.as_ref().expect("empty inherent impl");
         assert_eq!(compact(path), "__sealed::Sealed");
@@ -277,6 +308,7 @@ fn c1_16_no_empty_impl_is_written() {
         endpoint_types.is_empty(),
         "missing seal for {endpoint_types:?}"
     );
+    assert!(unpinned.is_empty(), "missing Unpin for {unpinned:?}");
 }
 
 #[test]
@@ -328,39 +360,59 @@ fn c1_16_growth_binds_inputs_once_and_emits_linear_sized_clients() {
             {
                 self.authored_expressions += 1;
             }
+            // The method spelling is counted too: a second write of one pair, in either
+            // spelling, shows as a repeated field.
             if call.method == "query_value" {
-                let syn::Expr::Lit(syn::ExprLit {
-                    lit: syn::Lit::Str(key),
-                    ..
-                }) = &call.args[0]
-                else {
-                    panic!("shorthand must pass its literal query key");
-                };
-                struct Fields(Vec<u32>);
-                impl<'ast> Visit<'ast> for Fields {
-                    fn visit_expr_field(&mut self, field: &'ast syn::ExprField) {
-                        match &field.member {
-                            syn::Member::Named(name) => {
-                                if let Some(index) = name.to_string().strip_prefix("input_") {
-                                    self.0.push(index.parse().unwrap());
-                                }
-                            }
-                            syn::Member::Unnamed(index) => {
-                                if matches!(field.base.as_ref(), syn::Expr::Field(base)
-                                    if matches!(&base.member, syn::Member::Named(name) if name == "__inputs"))
-                                {
-                                    self.0.push(index.index);
-                                }
-                            }
-                        }
-                        visit::visit_expr_field(self, field);
-                    }
-                }
-                let mut fields = Fields(Vec::new());
-                fields.visit_expr(&call.args[2]);
-                self.fields.entry(key.value()).or_default().extend(fields.0);
+                self.query_value(&call.args[0], &call.args[2]);
             }
             visit::visit_expr_method_call(self, call);
+        }
+
+        // A query pair is written by `Draft::query_value(&mut draft, key, name, value)`, a
+        // call by its full path so that no trait of the author's can take it.
+        fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+            let draft_query = matches!(&*call.func, syn::Expr::Path(path)
+                if path.path.segments.last().is_some_and(|s| s.ident == "query_value"));
+            if draft_query {
+                self.query_value(&call.args[1], &call.args[3]);
+            }
+            visit::visit_expr_call(self, call);
+        }
+    }
+
+    impl Inputs {
+        /// One pair: its key, and the inputs that its value reads.
+        fn query_value(&mut self, key: &syn::Expr, value: &syn::Expr) {
+            let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(key),
+                ..
+            }) = key
+            else {
+                panic!("shorthand must pass its literal query key");
+            };
+            struct Fields(Vec<u32>);
+            impl<'ast> Visit<'ast> for Fields {
+                fn visit_expr_field(&mut self, field: &'ast syn::ExprField) {
+                    match &field.member {
+                        syn::Member::Named(name) => {
+                            if let Some(index) = name.to_string().strip_prefix("input_") {
+                                self.0.push(index.parse().unwrap());
+                            }
+                        }
+                        syn::Member::Unnamed(index) => {
+                            if matches!(field.base.as_ref(), syn::Expr::Field(base)
+                                if matches!(&base.member, syn::Member::Named(name) if name == "__inputs"))
+                            {
+                                self.0.push(index.index);
+                            }
+                        }
+                    }
+                    visit::visit_expr_field(self, field);
+                }
+            }
+            let mut fields = Fields(Vec::new());
+            fields.visit_expr(value);
+            self.fields.entry(key.value()).or_default().extend(fields.0);
         }
     }
 

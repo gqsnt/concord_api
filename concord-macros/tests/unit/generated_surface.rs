@@ -4,8 +4,43 @@ use quote::{quote, ToTokens};
 use std::collections::{BTreeMap, BTreeSet};
 use syn::visit::{self, Visit};
 
+/// The tokens without their spacing. A string literal is kept as its decoded text, written
+/// in hexadecimal between quotes, so that no rewriting of paths or names below can reach
+/// inside it: `"tasks.cre ate"` and `"tasks.concord::reqwest::create"` differ from
+/// `"tasks.create"`, and a raw string equals an ordinary one.
+fn spelled(tokens: proc_macro2::TokenStream) -> String {
+    use proc_macro2::{Delimiter, TokenTree};
+    tokens
+        .into_iter()
+        .map(|token| match token {
+            TokenTree::Group(group) => {
+                let (open, close) = match group.delimiter() {
+                    Delimiter::Parenthesis => ("(", ")"),
+                    Delimiter::Brace => ("{", "}"),
+                    Delimiter::Bracket => ("[", "]"),
+                    Delimiter::None => ("", ""),
+                };
+                format!("{open}{}{close}", spelled(group.stream()))
+            }
+            TokenTree::Literal(literal) => {
+                match syn::parse2::<syn::LitStr>(TokenTree::Literal(literal.clone()).into()) {
+                    Ok(text) => format!(
+                        "\"{}\"",
+                        text.value()
+                            .bytes()
+                            .map(|byte| format!("{byte:02x}"))
+                            .collect::<String>()
+                    ),
+                    Err(_) => literal.to_string(),
+                }
+            }
+            other => other.to_string(),
+        })
+        .collect()
+}
+
 fn canonical(tokens: impl ToTokens) -> String {
-    let mut text = tokens.to_token_stream().to_string().replace(' ', "");
+    let mut text = spelled(tokens.to_token_stream());
     for (old, new) in [
         ("::concord::", "concord::"),
         ("::std::", "std::"),
@@ -32,7 +67,11 @@ fn canonical(tokens: impl ToTokens) -> String {
 }
 
 fn public(vis: &syn::Visibility, ident: &syn::Ident) -> bool {
-    matches!(vis, syn::Visibility::Public(_)) && !ident.to_string().starts_with("__")
+    matches!(vis, syn::Visibility::Public(_)) && public_name(ident)
+}
+
+fn public_name(ident: &syn::Ident) -> bool {
+    !ident.to_string().starts_with("__")
 }
 
 #[derive(Default)]
@@ -45,6 +84,8 @@ struct Surface {
     future_aliases: BTreeMap<(String, String), String>,
     rules: BTreeMap<String, Rules>,
     mode_traits: BTreeSet<(String, String)>,
+    /// The hand-written `call.rs`, which each tour client module includes.
+    call_source: String,
 }
 
 #[derive(Debug, Default)]
@@ -59,6 +100,24 @@ fn hidden(attrs: &[syn::Attribute]) -> bool {
         attr.path().is_ident("doc")
             && matches!(&attr.meta, syn::Meta::List(doc) if doc.tokens.to_string() == "hidden")
     })
+}
+
+/// The attributes of an item, compared as a user sees them: documentation by its decoded
+/// text (a raw string and an ordinary one agree), every other attribute by its tokens.
+fn attributes(attrs: &[syn::Attribute]) -> String {
+    attrs
+        .iter()
+        .map(|attr| match &attr.meta {
+            syn::Meta::NameValue(doc) if doc.path.is_ident("doc") => match &doc.value {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(text),
+                    ..
+                }) => format!("doc={:?};", text.value()),
+                other => format!("doc={};", canonical(other)),
+            },
+            _ => format!("{};", canonical(attr)),
+        })
+        .collect()
 }
 
 impl Surface {
@@ -276,9 +335,12 @@ impl<'ast> Visit<'ast> for Surface {
             for associated in &item.items {
                 match associated {
                     syn::TraitItem::Type(ty) if !hidden(&ty.attrs) => {
-                        let mut ty = ty.clone();
-                        ty.attrs.clear();
-                        self.add(format!("{owner}::{}", ty.ident), canonical(&ty));
+                        let mut signature = ty.clone();
+                        signature.attrs.clear();
+                        self.add(
+                            format!("{owner}::{}", ty.ident),
+                            format!("{}{}", attributes(&ty.attrs), canonical(&signature)),
+                        );
                     }
                     syn::TraitItem::Fn(method) if !hidden(&method.attrs) => {
                         self.add(
@@ -287,7 +349,12 @@ impl<'ast> Visit<'ast> for Surface {
                         );
                     }
                     syn::TraitItem::Const(item) if !hidden(&item.attrs) => {
-                        self.add(format!("{owner}::{}", item.ident), canonical(item));
+                        let mut signature = item.clone();
+                        signature.attrs.clear();
+                        self.add(
+                            format!("{owner}::{}", item.ident),
+                            format!("{}{}", attributes(&item.attrs), canonical(&signature)),
+                        );
                     }
                     _ => {}
                 }
@@ -317,6 +384,64 @@ impl<'ast> Visit<'ast> for Surface {
             let name = &path.segments.last().unwrap().ident;
             if name == "Clone" || name == "Debug" {
                 self.add(format!("{owner}::__trait::{name}"), "implemented");
+            }
+            if name == "Unpin" {
+                // The whole header: a bound or a `where` clause would narrow the promise.
+                // Everything but the spelling of the trait's path and of the type, which
+                // the owner already names: polarity, `unsafe`, generics, `where`, items.
+                let trait_path = canonical(path).replace("std::marker::Unpin", "Unpin");
+                let generics = &item.generics;
+                let where_clause = &item.generics.where_clause;
+                let negative = item
+                    .trait_
+                    .as_ref()
+                    .is_some_and(|(bang, _, _)| bang.is_some());
+                let items = &item.items;
+                self.add(
+                    format!("{owner}::__trait::Unpin"),
+                    format!(
+                        "{}{}{}impl{}{}{trait_path}for{owner}{}{{{}}}",
+                        attributes(&item.attrs),
+                        if item.defaultness.is_some() {
+                            "default"
+                        } else {
+                            ""
+                        },
+                        if item.unsafety.is_some() {
+                            "unsafe"
+                        } else {
+                            ""
+                        },
+                        canonical(generics),
+                        if negative { "!" } else { "" },
+                        canonical(where_clause),
+                        canonical(quote!(#(#items)*)),
+                    ),
+                );
+            }
+            if name == "Endpoint" {
+                for associated in &item.items {
+                    if let syn::ImplItem::Const(constant) = associated {
+                        if public_name(&constant.ident) {
+                            self.add(
+                                format!("{owner}::__trait::Endpoint::{}", constant.ident),
+                                format!(
+                                    "{}{}={}",
+                                    attributes(&constant.attrs),
+                                    canonical(&constant.ty),
+                                    // A string by its value, never rewritten.
+                                    match &constant.expr {
+                                        syn::Expr::Lit(syn::ExprLit {
+                                            lit: syn::Lit::Str(text),
+                                            ..
+                                        }) => format!("{:?}", text.value()),
+                                        other => canonical(other),
+                                    }
+                                ),
+                            );
+                        }
+                    }
+                }
             }
             match name.to_string().as_str() {
                 "Awaitable" => self.rules.entry(owner.clone()).or_default().awaitable = true,
@@ -400,9 +525,8 @@ impl<'ast> Visit<'ast> for Surface {
             && syn::parse2::<syn::LitStr>(mac.tokens.clone())
                 .is_ok_and(|name| name.value() == "call.rs")
         {
-            self.visit_file(
-                &syn::parse_file(include_str!("../../../tests/tour/src/call.rs")).unwrap(),
-            );
+            let call = syn::parse_file(&self.call_source).unwrap();
+            self.visit_file(&call);
         }
     }
 }
@@ -749,40 +873,40 @@ fn documented_call_signatures() -> (String, bool, String) {
     )
 }
 
-#[test]
-fn c1_16_public_surface_matches_the_hand_written_client() {
-    let collect = |files: Vec<syn::File>| {
-        let mut surface = Surface {
-            mode_traits: core_mode_traits(),
-            ..Surface::default()
-        };
-        for file in files {
-            surface.visit_file(&file);
-        }
-        for (endpoint, rules) in std::mem::take(&mut surface.rules) {
-            surface.add(format!("{endpoint}::capabilities"), format!("{rules:?}"));
-        }
-        // Compare the retry argument's type through the client's public alias.
-        // The rendered signature is checked separately for its spelling.
-        for root in ["tasks", "riot", "files", "feed", "shapes"] {
-            let retry = format!("{root}::Call<E>::with_retry");
-            if surface.lines.get(&retry).map(String::as_str)
-                == Some("fnwith_retry(self,retry:Retry)->Self")
-            {
-                let target = surface.lines[&format!("{root}::Retry")]
-                    .strip_prefix("pubtypeRetry=")
-                    .unwrap()
-                    .strip_suffix(';')
-                    .unwrap();
-                surface
-                    .lines
-                    .insert(retry, format!("fnwith_retry(self,retry:{target})->Self"));
-            }
-        }
-        surface.lines
+fn collect(files: Vec<syn::File>, call_source: &str) -> BTreeMap<String, String> {
+    let mut surface = Surface {
+        mode_traits: core_mode_traits(),
+        call_source: call_source.to_owned(),
+        ..Surface::default()
     };
-    let mut violations = Vec::new();
-    let generated = collect(
+    for file in files {
+        surface.visit_file(&file);
+    }
+    for (endpoint, rules) in std::mem::take(&mut surface.rules) {
+        surface.add(format!("{endpoint}::capabilities"), format!("{rules:?}"));
+    }
+    // Compare the retry argument's type through the client's public alias.
+    // The rendered signature is checked separately for its spelling.
+    for root in ["tasks", "riot", "files", "feed", "shapes"] {
+        let retry = format!("{root}::Call<E>::with_retry");
+        if surface.lines.get(&retry).map(String::as_str)
+            == Some("fnwith_retry(self,retry:Retry)->Self")
+        {
+            let target = surface.lines[&format!("{root}::Retry")]
+                .strip_prefix("pubtypeRetry=")
+                .unwrap()
+                .strip_suffix(';')
+                .unwrap();
+            surface
+                .lines
+                .insert(retry, format!("fnwith_retry(self,retry:{target})->Self"));
+        }
+    }
+    surface.lines
+}
+
+fn generated_surface(violations: &mut Vec<String>) -> BTreeMap<String, String> {
+    collect(
         ["tasks", "riot", "files", "feed", "shapes"]
             .iter()
             .map(|name| {
@@ -792,14 +916,76 @@ fn c1_16_public_surface_matches_the_hand_written_client() {
                 .unwrap();
                 let authored = description(&source);
                 let file: syn::File = syn::parse2(crate::expand(authored.clone())).unwrap();
-                check_authored_arguments(authored, &file, &mut violations);
-                check_impl_gates(&file, true, &mut violations);
+                check_authored_arguments(authored, &file, violations);
+                check_impl_gates(&file, true, violations);
                 file
             })
             .collect(),
-    );
-    let hand_written_calls =
-        syn::parse_file(include_str!("../../../tests/tour/src/call.rs")).unwrap();
+        "",
+    )
+}
+
+/// The hand-written client's files, by name, and its shared `call.rs`.
+fn hand_written_sources() -> (Vec<(&'static str, String)>, String) {
+    let files = [
+        "declarations",
+        "tasks",
+        "riot",
+        "files",
+        "grant",
+        "feed",
+        "shapes",
+    ]
+    .map(|name| {
+        let path = package().join(format!("../tests/tour/src/{name}.rs"));
+        (name, std::fs::read_to_string(path).unwrap())
+    });
+    let call = std::fs::read_to_string(package().join("../tests/tour/src/call.rs")).unwrap();
+    (files.into(), call)
+}
+
+fn hand_written_surface(files: &[(&str, String)], call: &str) -> BTreeMap<String, String> {
+    collect(
+        files
+            .iter()
+            .map(|(_, source)| syn::parse_file(source).unwrap())
+            .collect(),
+        call,
+    )
+}
+
+fn differences(
+    hand_written: &BTreeMap<String, String>,
+    generated: &BTreeMap<String, String>,
+) -> Vec<String> {
+    hand_written
+        .keys()
+        .chain(generated.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|key| hand_written.get(*key) != generated.get(*key))
+        .map(|key| {
+            format!(
+                "{key}\nhand-written client: {:?}\nmacro: {:?}",
+                hand_written.get(key),
+                generated.get(key)
+            )
+        })
+        .collect()
+}
+
+/// What is compared, item by item: the public items of both clients and their
+/// signatures; the documentation and the other attributes of the public items of each
+/// `Endpoint` trait; each endpoint's `Value` and `NAME`; whole `Unpin` headers; `Clone` and
+/// `Debug`; the capabilities of each call. What is not compared: method bodies, struct
+/// fields, the documentation of items outside the `Endpoint` trait, and the impls of other
+/// traits beyond those named here.
+#[test]
+fn c1_16_public_surface_matches_the_hand_written_client() {
+    let mut violations = Vec::new();
+    let generated = generated_surface(&mut violations);
+    let (files, call) = hand_written_sources();
+    let hand_written_calls = syn::parse_file(&call).unwrap();
     check_impl_gates(&hand_written_calls, false, &mut violations);
     let (output, alias_prose, retry) = documented_call_signatures();
     let expected = "type Output = Result<<E as Endpoint>::Value, Error<String>>";
@@ -816,40 +1002,88 @@ fn c1_16_public_surface_matches_the_hand_written_client() {
             "with_retry must show the authored problem type: {retry}"
         ));
     }
-    let hand_written = collect(
-        [
-            "declarations",
-            "tasks",
-            "riot",
-            "files",
-            "grant",
-            "feed",
-            "shapes",
-        ]
-        .iter()
-        .map(|name| {
-            syn::parse_file(
-                &std::fs::read_to_string(package().join(format!("../tests/tour/src/{name}.rs")))
-                    .unwrap(),
-            )
-            .unwrap()
-        })
-        .collect(),
-    );
-    violations.extend(
-        hand_written
-            .keys()
-            .chain(generated.keys())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .filter(|key| hand_written.get(*key) != generated.get(*key))
-            .map(|key| {
-                format!(
-                    "{key}\nhand-written client: {:?}\nmacro: {:?}",
-                    hand_written.get(key),
-                    generated.get(key)
-                )
-            }),
-    );
+    violations.extend(differences(
+        &hand_written_surface(&files, &call),
+        &generated,
+    ));
     assert!(violations.is_empty(), "{}", violations.join("\n"));
+}
+
+/// Each drift of the hand-written client from what the macro writes is a difference:
+/// an `Unpin` taken away, an endpoint's name changed, an attribute added to `NAME`.
+#[test]
+fn c1_16_surface_comparison_reports_each_drift_of_the_hand_written_client() {
+    let generated = generated_surface(&mut Vec::new());
+    let (files, call) = hand_written_sources();
+    let drifted = |file: &str, old: &str, new: &str| {
+        let mut files = files.clone();
+        let mut call = call.clone();
+        let source = if file == "call" {
+            &mut call
+        } else {
+            &mut files.iter_mut().find(|(name, _)| *name == file).unwrap().1
+        };
+        assert_eq!(source.matches(old).count(), 1, "{old}");
+        *source = source.replacen(old, new, 1);
+        differences(&hand_written_surface(&files, &call), &generated)
+    };
+    assert!(differences(&hand_written_surface(&files, &call), &generated).is_empty());
+    for (file, old, new, key) in [
+        (
+            "declarations",
+            "impl Unpin for Tasks {}",
+            "",
+            "Tasks::__trait::Unpin",
+        ),
+        (
+            "declarations",
+            "impl Unpin for Tasks {}",
+            "impl Unpin for Tasks where Tasks: Send {}",
+            "Tasks::__trait::Unpin",
+        ),
+        (
+            "tasks",
+            "const NAME: &'static str = \"tasks.create\";",
+            "const NAME: &'static str = \"tasks.drift\";",
+            "tasks::Create::__trait::Endpoint::NAME",
+        ),
+        (
+            "tasks",
+            "const NAME: &'static str = \"tasks.create\";",
+            "const NAME: &'static str = \"tasks.cre ate\";",
+            "tasks::Create::__trait::Endpoint::NAME",
+        ),
+        (
+            "tasks",
+            "const NAME: &'static str = \"tasks.create\";",
+            "const NAME: &'static str = \"tasks.concord::reqwest::create\";",
+            "tasks::Create::__trait::Endpoint::NAME",
+        ),
+        (
+            "declarations",
+            "impl Unpin for Tasks {}",
+            "impl !Unpin for Tasks {}",
+            "Tasks::__trait::Unpin",
+        ),
+        (
+            "call",
+            "    /// The value of a successful send. For a paged endpoint, this is one page.",
+            "    /// The value of a send.",
+            "tasks::Endpoint::Value",
+        ),
+        (
+            "call",
+            "    const NAME: &'static str;",
+            "    /// More.\n    #[deprecated]\n    const NAME: &'static str;",
+            "tasks::Endpoint::NAME",
+        ),
+    ] {
+        let found = drifted(file, old, new);
+        assert!(
+            found
+                .iter()
+                .any(|difference| difference.starts_with(&format!("{key}\n"))),
+            "{file}: `{new}` drifts unseen: {found:?}"
+        );
+    }
 }

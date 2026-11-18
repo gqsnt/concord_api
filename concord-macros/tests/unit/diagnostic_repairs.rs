@@ -283,7 +283,10 @@ fn repairs(fixture: &str, broken: &str, intended: &str, d: &crate::diag::Diagnos
             code_after(first, "write `client ").as_str(),
         ),
         "m07_input.rs" => {
-            rename_mutations(fixture, broken, "tournament", &code_after(first, "to `"))
+            // The help shows the renamed declaration: `tournament_value: TournamentCode`.
+            let declaration = code_after(first, "for example `");
+            let renamed = declaration.split(':').next().unwrap();
+            rename_mutations(fixture, broken, "tournament", renamed)
         }
         "m08.rs" => rename_mutations(fixture, broken, "top_3", &code_after(first, "to `")),
         "m16_child.rs" | "m16_part.rs" => move_to_client(broken, &code_after(first, "move `")),
@@ -728,4 +731,237 @@ fn c1_18_reserved_input_help_lists_three_placements_or_none() {
             .collect();
         assert_eq!(messages, [expected], "{source}");
     }
+}
+
+/// A replacement for the tokens at the start of `rest`, and how many it takes.
+type Edit<'a> = dyn FnMut(
+        Option<&proc_macro2::TokenTree>,
+        &[proc_macro2::TokenTree],
+    ) -> Option<(proc_macro2::TokenStream, usize)>
+    + 'a;
+
+/// Rewrite a description as a token stream: `edit` sees each token with the one before.
+fn rewrite(tokens: proc_macro2::TokenStream, edit: &mut Edit<'_>) -> proc_macro2::TokenStream {
+    use proc_macro2::{Group, TokenTree};
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    let mut output = proc_macro2::TokenStream::new();
+    let mut at = 0;
+    while let Some(token) = tokens.get(at) {
+        let previous = at.checked_sub(1).and_then(|p| tokens.get(p));
+        if let Some((replacement, taken)) = edit(previous, &tokens[at..]) {
+            output.extend(replacement);
+            at += taken;
+            continue;
+        }
+        match token {
+            TokenTree::Group(group) => output.extend([TokenTree::Group(Group::new(
+                group.delimiter(),
+                rewrite(group.stream(), edit),
+            ))]),
+            other => output.extend([other.clone()]),
+        }
+        at += 1;
+    }
+    output
+}
+
+/// Follow message 7's help to the letter, as an author would.
+fn follow_owner_help(source: &str, old: &str) -> (String, String) {
+    use proc_macro2::{Literal, TokenTree};
+    let d = diagnostics(source);
+    let helps: Vec<_> = d
+        .numbers()
+        .iter()
+        .zip(d.messages())
+        .filter(|(n, _)| **n == 7)
+        .map(|(_, m)| m.split_once("\nhelp: ").unwrap().1.to_owned())
+        .collect();
+    assert!(!helps.is_empty(), "{source}: no message 7");
+    let help = &helps[0];
+    assert!(helps.iter().all(|other| other == help), "{helps:?}");
+    // The renamed declaration is the first code in the help that declares a type. Only when
+    // the help is the rule that proposes no name does the author pick one that is free.
+    let no_name = "rename this input to a name that no owner, input, child or generated method of the nodes that receive it has; ";
+    let new = match help
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .find(|code| code.contains(": "))
+    {
+        Some(declaration) => declaration.split([':', '?']).next().unwrap().to_owned(),
+        None => {
+            assert!(
+                help.starts_with(no_name),
+                "{source}: the help proposes no name: {help}"
+            );
+            "renamed".to_owned()
+        }
+    };
+    assert!(
+        help.contains(&format!("for each short entry `{old};`, if any, write `")),
+        "{source}: the help does not state the rule for the key: {help}"
+    );
+    // "for each short entry `x;`, if any, write `"x" = x_value;`", or, with no name
+    // proposed, "write `"x" = ` and the new name".
+    let entry = help
+        .split_once(&format!("for each short entry `{old};`, if any, write `"))
+        .map(|(_, rest)| {
+            let entry = rest.split('`').next().unwrap();
+            if entry.ends_with("= ") {
+                format!("{entry}{new};")
+            } else {
+                entry.to_owned()
+            }
+        });
+    let mut edit = |previous: Option<&TokenTree>, rest: &[TokenTree]| {
+        let first = rest.first()?;
+        let starts_entry =
+            previous.is_none_or(|p| matches!(p, TokenTree::Punct(p) if p.as_char() == ';'));
+        match first {
+            TokenTree::Ident(ident) if ident == old => {
+                // The scope keeps its name, and so does an owner before a `.`.
+                if matches!(previous, Some(TokenTree::Ident(p)) if p == "scope")
+                    || matches!(rest.get(1), Some(TokenTree::Punct(p)) if p.as_char() == '.')
+                {
+                    return None;
+                }
+                let short = starts_entry
+                    && matches!(rest.get(1), Some(TokenTree::Punct(p)) if p.as_char() == ';');
+                match (&entry, short) {
+                    (Some(entry), true) => Some((entry.parse().unwrap(), 2)),
+                    _ => Some((
+                        TokenTree::Ident(syn::Ident::new(&new, ident.span())).into(),
+                        1,
+                    )),
+                }
+            }
+            TokenTree::Literal(literal) => {
+                let text = syn::parse_str::<syn::LitStr>(&literal.to_string()).ok()?;
+                let hole = format!("{{{old}}}");
+                text.value().contains(&hole).then(|| {
+                    let value = text.value().replace(&hole, &format!("{{{new}}}"));
+                    (TokenTree::Literal(Literal::string(&value)).into(), 1)
+                })
+            }
+            _ => None,
+        }
+    };
+    let repaired = rewrite(source.parse().unwrap(), &mut edit).to_string();
+    (repaired, new)
+}
+
+/// The same description with the scope renamed instead, so the input keeps its name.
+fn rename_scope(source: &str, old: &str) -> String {
+    use proc_macro2::TokenTree;
+    let mut edit = |previous: Option<&TokenTree>, rest: &[TokenTree]| match rest.first()? {
+        TokenTree::Ident(ident)
+            if ident == old
+                && (matches!(previous, Some(TokenTree::Ident(p)) if p == "scope")
+                    || matches!(rest.get(1), Some(TokenTree::Punct(p)) if p.as_char() == '.')) =>
+        {
+            Some((
+                TokenTree::Ident(syn::Ident::new(&format!("{old}_scope"), ident.span())).into(),
+                1,
+            ))
+        }
+        _ => None,
+    };
+    rewrite(source.parse().unwrap(), &mut edit).to_string()
+}
+
+/// C1.18, message 7: following the help leads to a description that compiles and sends the
+/// same requests, wherever the input is used: a short entry in a query, in headers or in a
+/// body of entries, several of them, an entry at a node that spreads the part declaring
+/// the input, a path, an expression, a qualified reference; a proposed name that would
+/// collide with a child of a receiving scope; and no name proposed at all. The reference is
+/// the same description with the scope renamed instead, where the input keeps its name.
+/// Both are compiled, and their requests compared as built: method, URL, headers, body.
+#[test]
+fn c1_18_following_message_seven_sends_the_same_requests() {
+    // A description, and the calls to compare, with `SCOPE` for the scope's method and
+    // `INPUT` for the input's setter.
+    let cases: [(&str, &[&str]); 11] = [
+        (
+            "part p(outer?: String) { query { outer; } } scope outer { scope g(..p) { GET outer_value(); } }",
+            &[r#"SCOPE().g().INPUT("v").outer_value()"#],
+        ),
+        (
+            "scope outer { GET get(outer: String) { query { outer; } } }",
+            &[r#"SCOPE().get("v")"#],
+        ),
+        (
+            "scope outer { GET get(outer?: String) { headers { outer; } } }",
+            &[r#"SCOPE().get().INPUT("v")"#],
+        ),
+        (
+            "scope outer { POST post(outer: String) { body concord::json { outer; } } }",
+            &[r#"SCOPE().post("v")"#],
+        ),
+        (
+            r#"scope outer { POST post(outer?: String) { query { outer; "other" = outer; } headers { outer; } body concord::json { outer; } } }"#,
+            &[r#"SCOPE().post().INPUT("v")"#],
+        ),
+        (
+            "part x(outer?: String) {} scope outer { GET get(..x) { query { outer; } } }",
+            &[r#"SCOPE().get().INPUT("v")"#],
+        ),
+        (
+            "part x(outer?: String) { query { outer; } } scope outer { GET get(..x); GET more(..x) { headers { outer; } } }",
+            &[r#"SCOPE().get().INPUT("v")"#, r#"SCOPE().more().INPUT("v")"#],
+        ),
+        (
+            r#"scope outer { GET get(outer: String) { path "items/{outer}"; } }"#,
+            &[r#"SCOPE().get("v")"#],
+        ),
+        (
+            r#"scope outer { GET get(outer: String) { query { "k" = String::len(outer); } } }"#,
+            &[r#"SCOPE().get("v")"#],
+        ),
+        (
+            r#"scope outer(outer: String) { GET get() { query { "k" = outer.outer; } } }"#,
+            &[r#"SCOPE("v").get()"#],
+        ),
+        (
+            "scope outer { GET get(outer: String, outer_value: String, outer_input: String, outer_param: String) { query { outer; outer_value; outer_input; outer_param; } } }",
+            &[r#"SCOPE().get("v", "a", "b", "c")"#],
+        ),
+    ];
+    let mut program = String::from(
+        "#![allow(dead_code, unused)]\n\
+         fn sent(request: concord::reqwest::Request) -> String {\n\
+         let mut headers: Vec<String> = request.headers().iter().map(|(k, v)| format!(\"{k}={v:?}\")).collect();\n\
+         headers.sort();\n\
+         let body = request.body().and_then(|b| b.as_bytes()).map(|b| String::from_utf8_lossy(b).into_owned());\n\
+         format!(\"{} {} {headers:?} {body:?}\", request.method(), request.url())\n\
+         }\n",
+    );
+    let mut calls = String::new();
+    for (index, (body, case_calls)) in cases.iter().enumerate() {
+        let source = format!(r#"pub client Workshop {{ base "https://a.test"; {body} }}"#);
+        let (repaired, new) = follow_owner_help(&source, "outer");
+        let reference = rename_scope(&source, "outer");
+        assert!(
+            diagnostics(&repaired).is_empty(),
+            "{source}\nrepaired: {repaired}\n{:?}",
+            diagnostics(&repaired).messages()
+        );
+        program.push_str(&format!(
+            "mod repaired_{index} {{ concord::api! {{ {repaired} }} }}\nmod reference_{index} {{ concord::api! {{ {reference} }} }}\n"
+        ));
+        for call in case_calls.iter() {
+            let ours = call.replace("SCOPE", "outer").replace("INPUT", &new);
+            let theirs = call
+                .replace("SCOPE", "outer_scope")
+                .replace("INPUT", "outer");
+            calls.push_str(&format!(
+                "assert_eq!(sent(repaired_{index}::Workshop::new().{ours}.request().unwrap()), sent(reference_{index}::Workshop::new().{theirs}.request().unwrap()), \"{{}}\", {source:?});\n"
+            ));
+        }
+    }
+    program.push_str(&format!("fn main() {{\n{calls}}}\n"));
+    let directory = path().join("../target/message-seven");
+    fs::create_dir_all(&directory).unwrap();
+    let file = directory.join("following.rs");
+    fs::write(&file, program).unwrap();
+    trybuild::TestCases::new().pass(&file);
 }

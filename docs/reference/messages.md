@@ -120,7 +120,7 @@ label: the client or an enclosing scope already has this name
 help: choose a distinct scope name and update every qualified reference to this scope's inputs
 ```
 
-For an input, the help renames the input and keeps the key: `query { "client" = client_id; }`.
+For an input, the help proposes a new name that is free at every node that receives the input (a part's input reaches each node that spreads the part, with its children), and the rule that keeps its key on the wire: a short entry sends the input's name as its key, so each short entry `client;`, if any, becomes `"client" = client_value;`, in every block that has one. Placeholders and expressions take the new name; a key that is already written stays as it is. When none of the names it tries is free, the help proposes none and still states the rule.
 
 **8.** Two children of one level, `one2` and `one_2`, generate the same type `One2`.  
 Point: `one_2`; `one2` is labelled too.

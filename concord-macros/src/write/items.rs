@@ -204,12 +204,15 @@ impl Writer<'_> {
         let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
         emit! {
             #methods
+            // Like a call, a client or a handle is never pinned in place: it is `Unpin`
+            // whatever its inputs hold, so adding an input never takes `Unpin` from it.
+            #(#cfg)* #allow impl ::core::marker::Unpin for #ty {}
             #(#cfg)* #allow impl ::core::clone::Clone for #ty {
                 fn clone(&self) -> Self { Self { #clone_state #(#clone_fields)* } }
             }
             #(#cfg)* impl ::core::fmt::Debug for #ty {
                 fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    __f.debug_struct(#debug_name) .finish_non_exhaustive()
+                    ::core::fmt::DebugStruct::finish_non_exhaustive(&mut ::core::fmt::Formatter::debug_struct(__f, #debug_name))
                 }
             }
         }
@@ -242,7 +245,7 @@ impl Writer<'_> {
             let expr = m.value;
             let bindings = self.bindings(&m.origin, 0, emit!(__client), false);
             let value = emit_at!(expr.span()=> (|| {#expr})());
-            let add = emit_at!(expr.span()=> __client.__core.add_middleware(__middleware));
+            let add = emit_at!(expr.span()=> ::concord::__private::Core::add_middleware(__client.__core, __middleware));
             let assignment = if node.deprecated {
                 emit!(#[allow(deprecated)] { __client.__core = #add; })
             } else {
@@ -276,9 +279,9 @@ impl Writer<'_> {
         let problem = self.problem_type().map(|ty| emit!(<#ty>));
         let fields = fields.collect::<Vec<_>>();
         let construct = if node.deprecated {
-            emit!({ #[allow(deprecated)] let __made = Self { __core: ::concord::__private::Core::default(), #(#fields),* }; __made })
+            emit!({ #[allow(deprecated)] let __made = Self { __core: <::concord::__private::Core<_> as ::core::default::Default>::default(), #(#fields),* }; __made })
         } else {
-            emit!(Self { __core: ::concord::__private::Core::default(), #(#fields),* })
+            emit!(Self { __core: <::concord::__private::Core<_> as ::core::default::Default>::default(), #(#fields),* })
         };
         let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
         emit_at! { self.client_span =>
@@ -292,27 +295,27 @@ impl Writer<'_> {
             }
             /// The retry policy of this client. Accepts a [`concord::Retry`].
             #allow pub fn #retry(mut self, __retry: ::concord::Retry #problem) -> Self {
-                self.__core=self.__core.with_retry(__retry); self
+                self.__core=::concord::__private::Core::with_retry(self.__core, __retry); self
             }
             /// The longest a call may take. Accepts a [`std::time::Duration`].
             #allow pub fn #timeout(mut self, __timeout: ::std::time::Duration) -> Self {
-                self.__core=self.__core.with_timeout(__timeout); self
+                self.__core=::concord::__private::Core::with_timeout(self.__core, __timeout); self
             }
             /// The longest a transport or body read may be silent. Accepts a [`std::time::Duration`].
             #allow pub fn #idle(mut self, __timeout: ::std::time::Duration) -> Self {
-                self.__core=self.__core.with_idle_timeout(__timeout); self
+                self.__core=::concord::__private::Core::with_idle_timeout(self.__core, __timeout); self
             }
             /// Replace the base URL. Accepts a [`concord::Base`] or text through [`concord::base::IntoBase`].
             #allow pub fn #base(mut self, __base: impl ::concord::base::IntoBase) -> Self {
-                self.__core=self.__core.with_base(__base); self
+                self.__core=::concord::__private::Core::with_base(self.__core, __base); self
             }
             /// Choose the [`concord::Transport`] beneath this client's middleware.
             #allow pub fn #transport(mut self, __transport: impl ::concord::Transport) -> Self {
-                self.__core=self.__core.with_transport(__transport); self
+                self.__core=::concord::__private::Core::with_transport(self.__core, __transport); self
             }
             /// Add a [`concord::Middleware`] before this client's middleware.
             #allow pub fn #middleware_name(mut self, __middleware: impl ::concord::Middleware) -> Self {
-                self.__core=self.__core.with_middleware(__middleware); self
+                self.__core=::concord::__private::Core::with_middleware(self.__core, __middleware); self
             }
         }
     }

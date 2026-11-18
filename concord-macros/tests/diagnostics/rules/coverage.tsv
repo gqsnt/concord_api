@@ -23,6 +23,14 @@
 07_repeated_owner.rs	7
 07_input_owner.rs	7
 07_input_client.rs	7
+07_input_body.rs	7
+07_input_header.rs	7
+07_input_several.rs	7
+07_input_spread.rs	7
+07_input_path.rs	7
+07_input_expression.rs	7
+07_input_spread_child.rs	7
+07_input_no_name.rs	7
 08_generated_type.rs	8
 09_unused.rs	9
 10_borrow_str.rs	10

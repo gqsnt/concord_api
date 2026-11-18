@@ -75,10 +75,13 @@ pub mod tasks {
         type Paging: ::concord::call::PagingMode + __PagesFor<Self>;
         #[doc(hidden)]
         type Conditional: ::concord::call::ConditionalMode;
+        /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
+        /// client, its scopes and the endpoint, joined with `.` (`riot.matches.ids`).
+        ///
+        /// Use it as a key for limits and in logs.
+        const NAME: &'static ::core::primitive::str;
         #[doc(hidden)]
-        const __ENDPOINT: &'static str;
-        #[doc(hidden)]
-        const __DEBUG: &'static str;
+        const __DEBUG: &'static ::core::primitive::str;
         #[doc(hidden)]
         fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<__Problem>;
         #[doc(hidden)]
@@ -134,6 +137,7 @@ pub mod tasks {
         __data: E::Data<()>,
         __options: ::concord::__private::Options<__Problem>,
     }
+    impl<E: Endpoint> ::core::marker::Unpin for Call<E> {}
     impl<E: Endpoint> ::core::clone::Clone for Call<E> {
         fn clone(&self) -> Self {
             Self {
@@ -149,7 +153,7 @@ pub mod tasks {
         ) -> ::core::fmt::Result {
             formatter
                 .debug_struct(E::__DEBUG)
-                .field("endpoint", &E::__ENDPOINT)
+                .field("endpoint", &E::NAME)
                 .finish_non_exhaustive()
         }
     }
@@ -171,12 +175,7 @@ pub mod tasks {
         }
         fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
             E::__build_draft(&self.__data)?
-                .finish_request(
-                    E::__core(&self.__data),
-                    &self.__options,
-                    E::__ENDPOINT,
-                    take,
-                )
+                .finish_request(E::__core(&self.__data), &self.__options, E::NAME, take)
         }
         fn __prepare_inner(
             mut self,
@@ -184,7 +183,7 @@ pub mod tasks {
             let run = ::concord::__private::Run::start(
                 E::__core(&self.__data),
                 &self.__options,
-                E::__ENDPOINT,
+                E::NAME,
             );
             let idempotent = E::__settings(&self.__data, &mut self.__options);
             let draft = E::__build_draft(&self.__data)?;
@@ -229,7 +228,7 @@ pub mod tasks {
                 E::__read_answer(
                         &self.__data,
                         response,
-                        ::concord::transport::TryInfo::new(E::__ENDPOINT, 0),
+                        ::concord::transport::TryInfo::new(E::NAME, 0),
                     )
                     .await
                     .map(::concord::Answer::into_value)
@@ -317,6 +316,8 @@ pub mod tasks {
     }
     /// List tasks in their current order.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
+    ///
     /// Request: `GET https://tasks.example.com/api/tasks ?done`.
     ///
     /// Call type: `tasks::Call<tasks::List>`, returned by `Tasks::list`.
@@ -328,11 +329,11 @@ pub mod tasks {
     /// Each option is a method of the call (`call.done(v)`) and a function of this type (`List::done(call, v)`).
     ///
     ///
-    /// [`done(impl Arg<Option<bool>>)`](Self::done): Accepts a [`bool`](bool), a &[`bool`](bool), or an [`Option`]<[`bool`](bool)>. `None` clears it.
+    /// [`done(impl Arg<Option<bool>>)`](Self::done): Accepts a `bool`, a &`bool`, or an [`Option`]<`bool`>. `None` clears it.
     ///
     /// Filter tasks by completion state.
     ///
-    /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Vec`](Vec)<[`Task`](super::Task)>>.
+    /// `.await` returns [`tasks::Result`](super::tasks::Result)<`Vec`<[`Task`](super::Task)>>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
     #[allow(missing_debug_implementations)]
@@ -344,6 +345,8 @@ pub mod tasks {
         List,
     >;
     /// Create a task with a title.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
     ///
     /// Request: `POST https://tasks.example.com/api/tasks`.
     ///
@@ -373,6 +376,8 @@ pub mod tasks {
     >;
     /// Fetch one task by its identifier.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
+    ///
     /// Request: `GET https://tasks.example.com/api/tasks/{id}`.
     ///
     /// Call type: `tasks::Call<tasks::Get>`, returned by `Tasks::get`.
@@ -382,7 +387,7 @@ pub mod tasks {
     /// Inputs:
     ///
     ///
-    /// `id`: Accepts a [`u64`](u64) or a &[`u64`](u64).
+    /// `id`: Accepts a `u64` or a &`u64`.
     ///
     /// The identifier of the task to fetch.
     ///
@@ -399,6 +404,8 @@ pub mod tasks {
     >;
     /// Delete one task by its identifier.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
+    ///
     /// Request: `DELETE https://tasks.example.com/api/tasks/{id}`.
     ///
     /// Call type: `tasks::Call<tasks::Delete>`, returned by `Tasks::delete`.
@@ -408,7 +415,7 @@ pub mod tasks {
     /// Inputs:
     ///
     ///
-    /// `id`: Accepts a [`u64`](u64) or a &[`u64`](u64).
+    /// `id`: Accepts a `u64` or a &`u64`.
     ///
     /// The identifier of the task to delete.
     ///
@@ -486,7 +493,9 @@ const _: () = {
             ) -> ::concord::Sending<
                 ::concord::Answer<::core::option::Option<E::Value>>,
             > {
-                let etag = etag.to_owned();
+                let etag = <::core::primitive::str as ::std::borrow::ToOwned>::to_owned(
+                    etag,
+                );
                 ::concord::Sending::new(async move {
                     self.__prepare_if_none_match(&etag)?.send().await
                 })
@@ -502,9 +511,10 @@ const _: () = {
             /// Polling elsewhere panics with Tokio's own message. Building a client or call needs no runtime.
             pub fn send(self) -> ::concord::Sending<E::Value> {
                 ::concord::Sending::new(async move {
-                    <Self as ::concord::__private::Call>::send_full(self)
-                        .await
-                        .map(::concord::Answer::into_value)
+                    ::core::result::Result::map(
+                        <Self as ::concord::__private::Call>::send_full(self).await,
+                        ::concord::Answer::into_value,
+                    )
                 })
             }
             /// Send the call, and keep the status and the headers beside the value.
@@ -547,7 +557,6 @@ const _: () = {
         }
     };
     ///Awaiting an unpaged call gives [`tasks::Result<E::Value>`](tasks::Result).
-    #[diagnostic::do_not_recommend]
     impl<E: tasks::Endpoint> ::core::future::IntoFuture for tasks::Call<E>
     where
         E::Paging: ::concord::call::AwaitWithoutPaginate,
@@ -558,7 +567,7 @@ const _: () = {
         >;
         type IntoFuture = ::concord::Sending<E::Value>;
         fn into_future(self) -> Self::IntoFuture {
-            self.send()
+            tasks::Call::<E>::send(self)
         }
     }
     struct __View0;
@@ -567,33 +576,44 @@ const _: () = {
         #[allow(clippy::new_without_default)]
         pub fn new() -> Self {
             let mut __client = Self {
-                __core: ::concord::__private::Core::default(),
+                __core: <::concord::__private::Core<
+                    _,
+                > as ::core::default::Default>::default(),
             };
             __client
         }
         /// The retry policy of this client. Accepts a [`concord::Retry`].
         pub fn with_retry(mut self, __retry: ::concord::Retry) -> Self {
-            self.__core = self.__core.with_retry(__retry);
+            self.__core = ::concord::__private::Core::with_retry(self.__core, __retry);
             self
         }
         /// The longest a call may take. Accepts a [`std::time::Duration`].
         pub fn with_timeout(mut self, __timeout: ::std::time::Duration) -> Self {
-            self.__core = self.__core.with_timeout(__timeout);
+            self.__core = ::concord::__private::Core::with_timeout(
+                self.__core,
+                __timeout,
+            );
             self
         }
         /// The longest a transport or body read may be silent. Accepts a [`std::time::Duration`].
         pub fn with_idle_timeout(mut self, __timeout: ::std::time::Duration) -> Self {
-            self.__core = self.__core.with_idle_timeout(__timeout);
+            self.__core = ::concord::__private::Core::with_idle_timeout(
+                self.__core,
+                __timeout,
+            );
             self
         }
         /// Replace the base URL. Accepts a [`concord::Base`] or text through [`concord::base::IntoBase`].
         pub fn with_base(mut self, __base: impl ::concord::base::IntoBase) -> Self {
-            self.__core = self.__core.with_base(__base);
+            self.__core = ::concord::__private::Core::with_base(self.__core, __base);
             self
         }
         /// Choose the [`concord::Transport`] beneath this client's middleware.
         pub fn with_transport(mut self, __transport: impl ::concord::Transport) -> Self {
-            self.__core = self.__core.with_transport(__transport);
+            self.__core = ::concord::__private::Core::with_transport(
+                self.__core,
+                __transport,
+            );
             self
         }
         /// Add a [`concord::Middleware`] before this client's middleware.
@@ -601,7 +621,10 @@ const _: () = {
             mut self,
             __middleware: impl ::concord::Middleware,
         ) -> Self {
-            self.__core = self.__core.with_middleware(__middleware);
+            self.__core = ::concord::__private::Core::with_middleware(
+                self.__core,
+                __middleware,
+            );
             self
         }
         /// List tasks in their current order.
@@ -713,6 +736,7 @@ const _: () = {
             )
         }
     }
+    impl ::core::marker::Unpin for Tasks {}
     impl ::core::clone::Clone for Tasks {
         fn clone(&self) -> Self {
             Self {
@@ -722,7 +746,9 @@ const _: () = {
     }
     impl ::core::fmt::Debug for Tasks {
         fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            __f.debug_struct("Tasks").finish_non_exhaustive()
+            ::core::fmt::DebugStruct::finish_non_exhaustive(
+                &mut ::core::fmt::Formatter::debug_struct(__f, "Tasks"),
+            )
         }
     }
     impl tasks::List {
@@ -732,7 +758,7 @@ const _: () = {
         ///
         /// Filter tasks by completion state.
         ///
-        /// Accepts a [`bool`](bool), a &[`bool`](bool), or an [`Option`]<[`bool`](bool)>. `None` clears it.
+        /// Accepts a `bool`, a &`bool`, or an [`Option`]<`bool`>. `None` clears it.
         #[must_use = "a call does nothing until sent or awaited"]
         #[doc(alias = "list done")]
         pub fn done(
@@ -764,8 +790,8 @@ const _: () = {
         type Value = Vec<Task>;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
-        const __ENDPOINT: &'static str = "tasks.list";
-        const __DEBUG: &'static str = "List";
+        const NAME: &'static ::core::primitive::str = "tasks.list";
+        const __DEBUG: &'static ::core::primitive::str = "List";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {
@@ -779,12 +805,12 @@ const _: () = {
                 "https://tasks.example.com/api/tasks",
             );
             {
-                __draft
-                    .query_value(
-                        "done",
-                        "done",
-                        (&::concord::__private::ValueRef(&__value.__inputs.0)).adapt(),
-                    );
+                ::concord::__private::Draft::query_value(
+                    &mut __draft,
+                    "done",
+                    "done",
+                    (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                );
             }
             ::core::result::Result::Ok(__draft)
         }
@@ -799,6 +825,8 @@ const _: () = {
                 __response,
                 __info,
                 move || {
+                    #[allow(unused_imports)]
+                    use ::core::mem::drop as client;
                     let client = __View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
@@ -815,8 +843,8 @@ const _: () = {
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::Post;
-        const __ENDPOINT: &'static str = "tasks.create";
-        const __DEBUG: &'static str = "Create";
+        const NAME: &'static ::core::primitive::str = "tasks.create";
+        const __DEBUG: &'static ::core::primitive::str = "Create";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {
@@ -830,13 +858,15 @@ const _: () = {
                 "https://tasks.example.com/api/tasks",
             );
             {
+                #[allow(unused_imports)]
+                use ::core::mem::drop as client;
                 let client = __View0;
                 let task = &__value.__inputs.0;
                 let __body = ::concord::__private::evaluate_body(
-                    Self::__ENDPOINT,
+                    <Self as tasks::Endpoint>::NAME,
                     || ::core::result::Result::Ok({ json(task) }),
                 )?;
-                __draft.body(__body);
+                ::concord::__private::Draft::body(&mut __draft, __body);
             }
             ::core::result::Result::Ok(__draft)
         }
@@ -851,6 +881,8 @@ const _: () = {
                 __response,
                 __info,
                 move || {
+                    #[allow(unused_imports)]
+                    use ::core::mem::drop as client;
                     let client = __View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
@@ -867,8 +899,8 @@ const _: () = {
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
-        const __ENDPOINT: &'static str = "tasks.get";
-        const __DEBUG: &'static str = "Get";
+        const NAME: &'static ::core::primitive::str = "tasks.get";
+        const __DEBUG: &'static ::core::primitive::str = "Get";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {
@@ -881,12 +913,12 @@ const _: () = {
                 ::concord::http::Method::GET,
                 "https://tasks.example.com/api/tasks",
             );
-            __draft
-                .segment_value(
-                    "id",
-                    (&::concord::__private::ValueRef(&__value.__inputs.0)).adapt(),
-                    false,
-                );
+            ::concord::__private::Draft::segment_value(
+                &mut __draft,
+                "id",
+                (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                false,
+            );
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(
@@ -900,6 +932,8 @@ const _: () = {
                 __response,
                 __info,
                 move || {
+                    #[allow(unused_imports)]
+                    use ::core::mem::drop as client;
                     let client = __View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
@@ -916,8 +950,8 @@ const _: () = {
         type Value = ();
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::NotGetOrHead;
-        const __ENDPOINT: &'static str = "tasks.delete";
-        const __DEBUG: &'static str = "Delete";
+        const NAME: &'static ::core::primitive::str = "tasks.delete";
+        const __DEBUG: &'static ::core::primitive::str = "Delete";
         fn __core(
             __value: &Self::Data<()>,
         ) -> &::concord::__private::Core<__DeclaredProblem> {
@@ -930,12 +964,12 @@ const _: () = {
                 ::concord::http::Method::DELETE,
                 "https://tasks.example.com/api/tasks",
             );
-            __draft
-                .segment_value(
-                    "id",
-                    (&::concord::__private::ValueRef(&__value.__inputs.0)).adapt(),
-                    false,
-                );
+            ::concord::__private::Draft::segment_value(
+                &mut __draft,
+                "id",
+                (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                false,
+            );
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(

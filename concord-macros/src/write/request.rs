@@ -11,7 +11,7 @@ fn reference(reference: &Reference) -> TokenStream {
 }
 
 fn adapt(value: TokenStream, gate: Option<&str>, span: Span) -> TokenStream {
-    let value = emit_at!(span => (#value).adapt());
+    let value = emit_at!(span => (#value).__adapt());
     if let Some(gate) = gate {
         let gate = ident(gate);
         emit_at!(span => ::concord::__private::#gate(#value))
@@ -96,7 +96,9 @@ fn path_segments(
     let mut literals = Vec::new();
     let flush_literals = |output: &mut TokenStream, literals: &mut Vec<&str>| {
         if !literals.is_empty() {
-            output.extend(emit!(__draft.literal_path(&[#(#literals),*]);));
+            output.extend(
+                emit!(::concord::__private::Draft::literal_path(&mut __draft, &[#(#literals),*]);),
+            );
             literals.clear();
         }
     };
@@ -112,12 +114,15 @@ fn path_segments(
         if let [Splat(r)] = pieces.as_slice() {
             let value = adapted(binding(r), gate, r.span);
             let name = flat::reference_text(r);
-            let tail = trailing.then(|| emit!(__draft.trailing_separator();));
-            output.extend(emit!(__draft.segments(#name, &#value); #tail));
+            let tail = trailing
+                .then(|| emit!(::concord::__private::Draft::trailing_separator(&mut __draft);));
+            output.extend(
+                emit!(::concord::__private::Draft::segments(&mut __draft, #name, &#value); #tail),
+            );
         } else if let [Hole(r)] = pieces.as_slice() {
             let value = adapted(binding(r), gate, r.span);
             let name = flat::reference_text(r);
-            output.extend(emit!(__draft.segment_value(#name, #value, #trailing);));
+            output.extend(emit!(::concord::__private::Draft::segment_value(&mut __draft, #name, #value, #trailing);));
         } else {
             let values = pieces.iter().map(|piece| match piece {
                 Literal(text) => emit!(::concord::__private::Piece::Lit(#text)),
@@ -128,7 +133,9 @@ fn path_segments(
                 }
             });
             let tail = trailing.then(|| emit!(, ::concord::__private::Piece::Lit("/")));
-            output.extend(emit!(__draft.segment(&[#(#values),* #tail]);));
+            output.extend(
+                emit!(::concord::__private::Draft::segment(&mut __draft, &[#(#values),* #tail]);),
+            );
         }
     }
     flush_literals(&mut output, &mut literals);
@@ -162,6 +169,13 @@ impl Values {
 }
 
 impl Writer<'_> {
+    /// The name of the endpoint, inside its `Endpoint` implementation. The path names the
+    /// trait, so an inherent `NAME` that the author gives the endpoint type is never read.
+    fn endpoint_name(&self) -> TokenStream {
+        let root = &self.root;
+        emit!(<Self as #root::Endpoint>::NAME)
+    }
+
     pub(super) fn request(&self, index: usize, endpoint: &flat::Endpoint<'_>) -> TokenStream {
         let root = &self.root;
         let method = self.request_method(endpoint);
@@ -197,6 +211,7 @@ impl Writer<'_> {
     }
 
     fn request_method(&self, endpoint: &flat::Endpoint<'_>) -> TokenStream {
+        let endpoint_name = self.endpoint_name();
         let NodeKind::Endpoint(method) = &endpoint.node.kind else {
             self.internal(
                 endpoint.node.name.span(),
@@ -206,8 +221,8 @@ impl Writer<'_> {
         };
         if let Some(custom) = &method.custom {
             emit! {
-                ::concord::http::Method::from_bytes(#custom.as_bytes())
-                    .map_err(|__error| ::concord::__private::build_error(Self::__ENDPOINT, ::std::boxed::Box::new(__error)))?
+                ::core::result::Result::map_err(::concord::http::Method::from_bytes(::core::primitive::str::as_bytes(#custom)),
+                    |__error| ::concord::__private::build_error(#endpoint_name, ::std::boxed::Box::new(__error)))?
             }
         } else {
             let method = &method.keyword;
@@ -226,14 +241,14 @@ impl Writer<'_> {
                         if let [TemplatePiece::Text { text: prefix, .. }, TemplatePiece::Hole { reference, .. }, TemplatePiece::Text { text: suffix, .. }] = template.pieces.as_slice() {
                             let name = flat::reference_text(reference);
                             let value = adapted(binding(reference), None, reference.span);
-                            return emit!(__draft.base_value(#prefix, #name, #value, #suffix););
+                            return emit!(::concord::__private::Draft::base_value(&mut __draft, #prefix, #name, #value, #suffix););
                         }
                         let pieces = pieces_with(template, binding);
-                        emit!(__draft.base(#pieces);)
+                        emit!(::concord::__private::Draft::base(&mut __draft, #pieces);)
                     }
                     Base::Reference(r) => {
                         let value = binding(r);
-                        emit_at!(r.span => __draft.base_from(#value);)
+                        emit_at!(r.span => ::concord::__private::Draft::base_from(&mut __draft, #value);)
                     }
                 }
             })
@@ -278,14 +293,15 @@ impl Writer<'_> {
     }
 
     fn request_body(&self, index: usize, endpoint: &flat::Endpoint<'_>) -> TokenStream {
+        let endpoint_name = self.endpoint_name();
         match &endpoint.body {
             Some(flat::BodyLine::Expression(line)) => {
                 let bindings = self.bindings(&line.origin, index, emit!(__value), false);
                 let expression = line.value;
-                let place = emit_at!(expression.span() => __draft.body(__body););
+                let place = emit_at!(expression.span() => ::concord::__private::Draft::body(&mut __draft, __body););
                 emit!({
                     #bindings
-                    let __body = ::concord::__private::evaluate_body(Self::__ENDPOINT, || ::core::result::Result::Ok({ #expression }))?;
+                    let __body = ::concord::__private::evaluate_body(#endpoint_name, || ::core::result::Result::Ok({ #expression }))?;
                     #place
                 })
             }
@@ -302,6 +318,7 @@ impl Writer<'_> {
         function: &syn::ExprPath,
         entries: &[flat::EntryLine<'_>],
     ) -> TokenStream {
+        let endpoint_name = self.endpoint_name();
         let mut setup = TokenStream::new();
         let mut writes = TokenStream::new();
         let mut next = 0;
@@ -337,7 +354,7 @@ impl Writer<'_> {
                     } => {
                         let pieces = pieces(template);
                         (
-                            emit!(::concord::__private::Draft::body_template(Self::__ENDPOINT, #pieces)?),
+                            emit!(::concord::__private::Draft::body_template(#endpoint_name, #pieces)?),
                             template.literal.span(),
                             true,
                         )
@@ -347,7 +364,7 @@ impl Writer<'_> {
                 let value = if template {
                     value
                 } else {
-                    emit!(::concord::__private::evaluate_body(Self::__ENDPOINT, || ::core::result::Result::Ok({ #value }))?)
+                    emit!(::concord::__private::evaluate_body(#endpoint_name, || ::core::result::Result::Ok({ #value }))?)
                 };
                 values.bind(raw.clone(), value);
                 holders.extend(emit!(let #name = ::concord::__private::ValueRef(#raw);));
@@ -363,7 +380,7 @@ impl Writer<'_> {
             #setup
             let mut __entries = ::concord::body::Entries::new();
             #writes
-            __draft.body(__body_function(__entries));
+            ::concord::__private::Draft::body(&mut __draft, __body_function(__entries));
         })
     }
 
@@ -404,7 +421,7 @@ impl Writer<'_> {
                     write
                 } else {
                     holders.extend(self.entry_value(entry, &name, next, &mut values));
-                    emit!(__draft.#method(#key, #name);)
+                    emit!(::concord::__private::Draft::#method(&mut __draft, #key, #name);)
                 };
                 next += 1;
                 names.push((entry.position, write));
@@ -427,6 +444,7 @@ impl Writer<'_> {
         values: &mut Values,
         placement: &Ident,
     ) -> Option<TokenStream> {
+        let endpoint_name = self.endpoint_name();
         let raw = ident(&format!("__EntryExpression{index}"));
         let key = flat::key(entry.line.value, false);
         let (name, saved, span) = match &entry.line.value.kind {
@@ -439,14 +457,14 @@ impl Writer<'_> {
                 value: Value::Expression(expr),
                 ..
             } => {
-                values.bind(raw.clone(), emit!(::concord::__private::evaluate_entry(Self::__ENDPOINT, #key, || ::core::result::Result::Ok({ #expr }))?));
+                values.bind(raw.clone(), emit!(::concord::__private::evaluate_entry(#endpoint_name, #key, || ::core::result::Result::Ok({ #expr }))?));
                 (key.clone(), emit!(&#raw), expr.span())
             }
             _ => return None,
         };
         let value = adapted(saved, entry.crosses_base.then_some("inherited"), span);
         let place = ident(&format!("{placement}_value"));
-        Some(emit!(__draft.#place(#key, #name, #value);))
+        Some(emit!(::concord::__private::Draft::#place(&mut __draft, #key, #name, #value);))
     }
 
     fn entry_value(

@@ -1,0 +1,22 @@
+error[E0277]: the trait bound `std::result::Result<Option<api::Call<Get>>, LocalError>: concord_core::page::sealed::Sealed<api::Call<Get>>` is not satisfied
+  --> tests/compiler-errors/calls/implement_into_next.rs:11:45
+   |
+11 | impl concord::page::IntoNext<Generated> for Result<Option<Generated>, LocalError> {
+   |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `concord_core::page::sealed::Sealed<api::Call<Get>>` is not implemented for `Result<Option<Call<Get>>, LocalError>`
+      but it is implemented for `Result<Option<Call<Get>>, Fail<()>>`
+  --> $WORKSPACE/concord-core/src/page.rs
+   |
+   |     impl<C: Call> Sealed<C> for Result<Option<C>, Fail<C::Problem>> {}
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Fail<()>`, found `LocalError`
+note: required by a bound in `IntoNext`
+  --> $WORKSPACE/concord-core/src/page.rs
+   |
+   | pub trait IntoNext<C: Call>: sealed::Sealed<C> {
+   |                              ^^^^^^^^^^^^^^^^^ required by this bound in `IntoNext`
+   = note: `IntoNext` is a "sealed trait", because to implement it you also need to implement `concord_core::page::sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following types implement the trait:
+             std::option::Option<C>
+             std::result::Result<std::option::Option<C>, concord::Fail<<C as concord::page::Call>::Problem>>

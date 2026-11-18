@@ -248,7 +248,7 @@ const _: () = {
                     "done",
                     &[::concord::__private::Piece::Val(
                         "done",
-                        &(&::concord::__private::ValueRef(done)).adapt(),
+                        &(&::concord::__private::ValueRef(done)).__adapt(),
                     )],
                 );
             }
@@ -264,7 +264,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.list";
+        const __ENDPOINT: &'static str = <tasks::List as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -317,6 +317,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::List {
         type Value = Vec<Task>;
+        const NAME: &'static str = "tasks.list";
     }
 
     call_spec!(
@@ -372,7 +373,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.create";
+        const __ENDPOINT: &'static str = <tasks::Create as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -425,6 +426,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::Create {
         type Value = Task;
+        const NAME: &'static str = "tasks.create";
     }
 
     call_spec!(
@@ -456,7 +458,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -471,7 +473,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.get";
+        const __ENDPOINT: &'static str = <tasks::Get as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -524,6 +526,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::Get {
         type Value = Task;
+        const NAME: &'static str = "tasks.get";
     }
 
     call_spec!(tasks, tasks::Get, tasks::__GetInputs, Task, (), "Get");
@@ -549,7 +552,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             ::core::result::Result::Ok(__draft)
@@ -564,7 +567,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "tasks.delete";
+        const __ENDPOINT: &'static str = <tasks::Delete as tasks::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -604,6 +607,7 @@ const _: () = {
 
     impl tasks::Endpoint for tasks::Delete {
         type Value = ();
+        const NAME: &'static str = "tasks.delete";
     }
 
     call_spec!(

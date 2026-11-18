@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "about": "The names that a description of an API may use, for programs that write descriptions: their spelling, the names reserved in each position, and the collisions between names. Every other rule of a description is in docs/reference/rules.md, and every message in docs/reference/messages.md. docs/reference/rules.md explains each key. Concord's tests write this file from the macro's own tables and check every example against the macro.",
+  "readers": "A reader must stop, not guess, when schema is a version that it does not know, or when it meets a key, a kind of match or a collision id that it does not know: each is a rule that the reader cannot apply. Later releases may add keys and collisions; a change in the meaning of a key changes schema.",
+  "positions": {
+    "client": { "what": "the name of the client", "probe": "client NAME { base \"https://a.test\"; GET probe(); }", "enclosing": [], "children": ["probe"] },
+    "client_input": { "what": "a required input of the client", "probe": "client Probe(NAME: String) { base \"https://a.test\"; query { NAME; } GET probe(); }", "enclosing": [], "children": ["probe"] },
+    "client_option": { "what": "an optional input of the client", "probe": "client Probe(NAME?: String) { base \"https://a.test\"; query { NAME; } GET probe(); }", "enclosing": [], "children": ["probe"] },
+    "scope_in_client": { "what": "a scope that is a child of the client", "probe": "client Probe { base \"https://a.test\"; scope NAME { GET probe(); } }", "enclosing": [], "children": [] },
+    "scope_in_scope": { "what": "a scope that is a child of a scope", "probe": "client Probe { base \"https://a.test\"; scope outer { scope NAME { GET probe(); } } }", "enclosing": ["outer"], "children": [] },
+    "scope_input": { "what": "a required input of a scope", "probe": "client Probe { base \"https://a.test\"; scope outer(NAME: String) { query { NAME; } GET probe(); } }", "enclosing": ["outer"], "children": ["probe"] },
+    "scope_option": { "what": "an optional input of a scope", "probe": "client Probe { base \"https://a.test\"; scope outer(NAME?: String) { query { NAME; } GET probe(); } }", "enclosing": ["outer"], "children": ["probe"] },
+    "endpoint_in_client": { "what": "an endpoint that is a child of the client", "probe": "client Probe { base \"https://a.test\"; GET NAME(); }", "enclosing": [], "children": [] },
+    "endpoint_in_scope": { "what": "an endpoint that is a child of a scope", "probe": "client Probe { base \"https://a.test\"; scope outer { GET NAME(); } }", "enclosing": ["outer"], "children": [] },
+    "endpoint_input": { "what": "a required input of an endpoint", "probe": "client Probe { base \"https://a.test\"; scope outer { GET probe(NAME: String) { query { NAME; } } } }", "enclosing": ["outer"], "children": [] },
+    "endpoint_option": { "what": "an optional input of an endpoint", "probe": "client Probe { base \"https://a.test\"; scope outer { GET probe(NAME?: String) { query { NAME; } } } }", "enclosing": ["outer"], "children": [] },
+    "part": { "what": "the name of a part", "probe": "client Probe { base \"https://a.test\"; part NAME(shared?: String) { query { shared; } } GET probe(..NAME); }", "enclosing": [], "children": [] },
+    "part_input": { "what": "a required input of a part that an endpoint spreads: an input of that endpoint", "probe": "client Probe { base \"https://a.test\"; part shared(NAME: String) { query { NAME; } } scope outer { GET probe(..shared); } }", "enclosing": ["outer"], "children": [], "inherits": "endpoint_input" },
+    "part_option": { "what": "an optional input of a part that an endpoint spreads: an optional input of that endpoint", "probe": "client Probe { base \"https://a.test\"; part shared(NAME?: String) { query { NAME; } } scope outer { GET probe(..shared); } }", "enclosing": ["outer"], "children": [], "inherits": "endpoint_option" },
+    "part_option_in_scope": { "what": "an optional input of a part that a scope spreads: an optional input of that scope", "probe": "client Probe { base \"https://a.test\"; part shared(NAME?: String) { query { NAME; } } scope outer { scope inner(..shared) { GET probe(); } } }", "enclosing": ["outer", "inner"], "children": ["probe"], "inherits": "scope_option" }
+  },
+  "spelling": {
+    "normalization": { "form": "NFC", "rule": "Rust puts every identifier in Unicode normalization form C before the macro reads it; the spelling rules apply to the normalized name", "examples": [["\u212Aite", "Kite"]] },
+    "name": { "positions": ["client_input", "client_option", "scope_in_client", "scope_in_scope", "scope_input", "scope_option", "endpoint_in_client", "endpoint_in_scope", "endpoint_input", "endpoint_option", "part"], "first": "abcdefghijklmnopqrstuvwxyz", "characters": "abcdefghijklmnopqrstuvwxyz0123456789_", "doubled_underscore": false, "final_underscore": false, "accept": [["endpoint_input", "by_puuid"], ["scope_in_client", "v2"], ["endpoint_in_scope", "get_sha256sum"], ["part", "lol_filter"]], "refuse": [["endpoint_input", "a__b"], ["endpoint_input", "tail_"], ["endpoint_input", "r#ok"], ["endpoint_input", "_x"], ["scope_in_client", "Get"], ["endpoint_in_client", "getMany"]] },
+    "client": { "positions": ["client"], "first": "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "characters": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", "module_is_keyword": false, "accept": [["client", "Riot"], ["client", "GitHub"], ["client", "V2Api"], ["client", "Types"]], "refuse": [["client", "riot"], ["client", "Git_Hub"], ["client", "Self"], ["client", "Type"], ["client", "Mod"]] }
+  },
+  "conversions": {
+    "type": { "rule": "split the name at each _, put the first character of each part in upper case, and join the parts; a digit never splits a part", "examples": [["get_sha256sum", "GetSha256sum"], ["one_2", "One2"], ["by_riot_id", "ByRiotId"]] },
+    "module": { "rule": "the client's name in lower case, with a _ before each capital that follows a lower-case letter or a digit, and before the last capital of a run that a lower-case letter follows", "examples": [["Riot", "riot"], ["GitHub", "git_hub"], ["XMLHttpClient", "xml_http_client"], ["V2API", "v2_api"]] }
+  },
+  "reserved": [
+    {
+      "id": "keywords",
+      "what": "the Rust keywords, raw (`r#type`) or not; `Self` is here for the client's module name",
+      "positions": ["client_input", "client_option", "scope_in_client", "scope_in_scope", "scope_input", "scope_option", "endpoint_in_client", "endpoint_in_scope", "endpoint_input", "endpoint_option", "part"],
+      "names": ["abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "crate", "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "gen", "if", "impl", "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true", "try", "type", "typeof", "unsafe", "unsized", "use", "virtual", "where", "while", "yield"],
+      "accept": [["endpoint_input", "kind"], ["scope_in_client", "matches"]],
+      "refuse": [["endpoint_input", "type"], ["endpoint_input", "r#type"], ["scope_in_client", "match"], ["part", "self"], ["part_option", "loop"]]
+    },
+    {
+      "id": "client_owner",
+      "what": "the name by which the client's inputs are written (`client.key`)",
+      "positions": ["client_input", "client_option", "scope_input", "scope_option", "endpoint_input", "endpoint_option", "scope_in_client", "scope_in_scope"],
+      "names": ["client"],
+      "accept": [["endpoint_in_client", "client"], ["part", "client"]],
+      "refuse": [["endpoint_input", "client"], ["scope_in_client", "client"], ["part_input", "client"]]
+    },
+    {
+      "id": "enclosing_scopes",
+      "what": "the names of the scopes above the name, and for an input of a scope, that scope's own name (the position's `enclosing`)",
+      "positions": ["scope_input", "scope_option", "endpoint_input", "endpoint_option", "scope_in_scope"],
+      "enclosing": true,
+      "accept": [["endpoint_in_scope", "outer"], ["scope_in_client", "outer"]],
+      "refuse": [["endpoint_input", "outer"], ["scope_input", "outer"], ["scope_in_scope", "outer"], ["part_option", "outer"], ["part_option_in_scope", "inner"]]
+    },
+    {
+      "id": "client_methods",
+      "what": "the methods of a client: a child of the client or an optional input of the client would add one",
+      "positions": ["scope_in_client", "endpoint_in_client", "client_option"],
+      "names": ["call", "clone", "new"],
+      "accept": [["endpoint_in_scope", "new"], ["client_input", "new"]],
+      "refuse": [["endpoint_in_client", "new"], ["client_option", "clone"]]
+    },
+    {
+      "id": "handle_methods",
+      "what": "the methods of a scope's handle: a child of a scope or an optional input of a scope would add one",
+      "positions": ["scope_in_scope", "endpoint_in_scope", "scope_option"],
+      "names": ["call", "clone"],
+      "accept": [["scope_input", "call"]],
+      "refuse": [["endpoint_in_scope", "call"], ["scope_option", "clone"], ["part_option_in_scope", "call"]]
+    },
+    {
+      "id": "call_methods",
+      "what": "the methods of a call: an optional input of an endpoint would add one",
+      "positions": ["endpoint_option"],
+      "names": ["at_url", "clone", "edit_request", "into_future", "into_request", "pages", "read_response", "request", "send", "send_full", "send_if_none_match", "send_raw"],
+      "accept": [["endpoint_input", "send"], ["endpoint_in_scope", "pages"], ["part_input", "send"]],
+      "refuse": [["endpoint_option", "send"], ["endpoint_option", "at_url"], ["part_option", "send"]]
+    },
+    {
+      "id": "settings",
+      "what": "the prefix of the settings that Concord may add to a client, a handle or a call",
+      "positions": ["scope_in_client", "scope_in_scope", "endpoint_in_client", "endpoint_in_scope", "client_option", "scope_option", "endpoint_option"],
+      "prefix": "with_",
+      "accept": [["endpoint_input", "with_tag"], ["client_input", "with_tag"], ["part", "with_tag"]],
+      "refuse": [["endpoint_option", "with_tag"], ["endpoint_in_client", "with_tag"], ["scope_in_scope", "with_tag"], ["part_option", "with_tag"]]
+    },
+    {
+      "id": "root_items",
+      "what": "the items at the root of a client's module: a child of the client whose type is one of them",
+      "positions": ["scope_in_client", "endpoint_in_client"],
+      "types": ["Call", "Endpoint", "Error", "Result", "Retry"],
+      "accept": [["endpoint_in_scope", "retry"], ["scope_in_scope", "error"]],
+      "refuse": [["endpoint_in_client", "retry"], ["scope_in_client", "endpoint"], ["endpoint_in_client", "result"]]
+    },
+    {
+      "id": "children",
+      "what": "the names of the children of the node that an optional input belongs to (the position's `children`): its setter and the child's method would collide",
+      "positions": ["client_option", "scope_option"],
+      "children": true,
+      "accept": [["client_input", "probe"], ["endpoint_option", "probe"]],
+      "refuse": [["client_option", "probe"], ["scope_option", "probe"], ["part_option_in_scope", "probe"]]
+    }
+  ],
+  "collisions": [
+    { "id": "sibling_types", "what": "two children of one node may not have the same type (the `type` conversion)", "accept": ["client Probe { base \"https://a.test\"; scope one2 { GET probe(); } scope one_3 { GET probe(); } }"], "refuse": ["client Probe { base \"https://a.test\"; scope one2 { GET probe(); } scope one_2 { GET probe(); } }"] },
+    { "id": "duplicate_children", "what": "two children of one node, or two parts, may not have the same name", "accept": ["client Probe { base \"https://a.test\"; GET probe(); scope inner { GET probe(); } }"], "refuse": ["client Probe { base \"https://a.test\"; GET probe(); POST probe(); }"] },
+    { "id": "duplicate_inputs", "what": "two inputs of one node, its parts' inputs included, may not have the same name", "accept": ["client Probe { base \"https://a.test\"; part p(a?: String) { query { a; } } GET probe(b: String, ..p) { query { b; } } }"], "refuse": ["client Probe { base \"https://a.test\"; part p(a?: String) { query { a; } } GET probe(a: String, ..p) { query { a; } } }"] },
+    { "id": "repeated_spread", "what": "a node may not spread one part twice, even a part with no input", "accept": ["client Probe { base \"https://a.test\"; part p() {} part q() {} GET probe(..p, ..q); }"], "refuse": ["client Probe { base \"https://a.test\"; part p() {} GET probe(..p, ..p); }"] }
+  ]
+}

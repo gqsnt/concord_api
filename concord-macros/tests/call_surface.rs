@@ -276,6 +276,54 @@ fn c1_11_c8_6_c8_8_c10_10_only_the_description_grants_call_capabilities() -> io:
     Ok(())
 }
 
+/// Awaiting a paged call: the message without the two parts of its `IntoFuture` hint that are
+/// expected, the location inside the macro invocation and the note that the error originates
+/// in the macro. The hint must be there, in either wording of the compiler ("is
+/// conditionally implemented" from Rust 1.97, "is implemented" before). Its header and the
+/// requirement it names stay in the text and are checked like the rest; the private names
+/// are checked on the message as the compiler printed it.
+fn without_impl_location(text: &str) -> String {
+    let headers = [
+        "help: the trait `IntoFuture` is conditionally implemented for",
+        "help: the trait `IntoFuture` is implemented for",
+    ];
+    let mut kept = Vec::new();
+    let mut lines = text.lines();
+    let mut found = false;
+    while let Some(line) = lines.next() {
+        kept.push(line.to_owned());
+        if !headers.iter().any(|header| line.starts_with(header)) {
+            continue;
+        }
+        found = true;
+        // The location: the `-->` line and the snippet of the invocation, up to the note.
+        for line in lines.by_ref() {
+            if line
+                .trim_start()
+                .starts_with("= note: this error originates in the macro")
+            {
+                break;
+            }
+            let snippet = line.trim_start().starts_with("-->")
+                || line.trim_start().starts_with("...")
+                || line
+                    .trim_start()
+                    .trim_start_matches(|c: char| c.is_ascii_digit())
+                    .trim_start()
+                    .starts_with('|');
+            if !snippet {
+                kept.push(line.to_owned());
+            } else if let Some((_, requirement)) =
+                line.split_once("unsatisfied requirement introduced here: ")
+            {
+                kept.push(format!("requirement: {requirement}"));
+            }
+        }
+    }
+    assert!(found, "no hint of the IntoFuture impl:\n{text}");
+    kept.join("\n")
+}
+
 #[test]
 fn c1_18_rule_diagnostics_name_the_call_and_the_bound_at_the_call_site() -> io::Result<()> {
     let compiler = Compiler::new("rule_diagnostics")?;
@@ -331,7 +379,21 @@ fn c1_18_rule_diagnostics_name_the_call_and_the_bound_at_the_call_site() -> io::
                 &format!("{declaration}\n{code}"),
                 dependent,
             )?;
-            let text = stderr(&output);
+            let printed = stderr(&output);
+            // No private name anywhere, the hint of a paged `.await` included.
+            if printed.contains("__") {
+                violations.push(format!(
+                    "{name} ({context}) names a private item\n{printed}"
+                ));
+            }
+            let text = if name == "await_paged" {
+                // Awaiting a paged call names the generic `IntoFuture` impl and its unmet bound
+                // in one hint, pointing into the description (the impl carries no
+                // `#[diagnostic::do_not_recommend]`): only its location is set aside.
+                without_impl_location(&printed)
+            } else {
+                printed
+            };
             let expected_line = declaration.bytes().filter(|byte| *byte == b'\n').count() + 2;
             let primary = text
                 .lines()

@@ -934,5 +934,8 @@ mod tour;
 #[path = "diagnostic_repairs.rs"]
 mod diagnostic_repairs;
 
+#[path = "reserved_names.rs"]
+mod reserved_names;
+
 #[path = "expression_scopes.rs"]
 mod expression_scopes;

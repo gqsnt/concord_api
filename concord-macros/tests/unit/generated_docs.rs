@@ -324,12 +324,13 @@ fn c10_4_doc_rule_4_setters_preserve_spelling_and_state_accepted_values() {
             "Option `limit` of `items`.",
             "The first argument is the call.",
             "Page size.",
-            "Accepts a [`u32`], a &[`u32`], or an [`Option`]<[`u32`]>. `None` clears it.",
+            // In the generated tree a prelude name is not linked: it could be the author's.
+            "Accepts a `u32`, a &`u32`, or an [`Option`]<`u32`>. `None` clears it.",
         ]),
         (&api, "api::Get", "text", vec![
             "Option `text` of `get`.",
             "The first argument is the call.",
-            "Accepts a [`String`], a &[`String`], or an [`Option`]<[`String`]>. `None` clears it. Text and list conversions: [`concord::arg::Arg`].",
+            "Accepts a `String`, a &`String`, or an [`Option`]<`String`>. `None` clears it. Text and list conversions: [`concord::arg::Arg`].",
         ]),
     ] {
         let method = documented_method(file, owner, name);
@@ -700,9 +701,11 @@ fn c1_16_send_names_its_public_result() {
         result_lines(&factory),
         ["`.await` returns [`api::Result`]<[`u32`]>."]
     );
+    // The endpoint's page is in the generated tree, where `u32` could only be linked to the
+    // primitive, though the author's module may declare a `u32` of its own.
     assert_eq!(
-        result_lines(&factory),
-        result_lines(&found.endpoints["Get"])
+        result_lines(&found.endpoints["Get"]),
+        ["`.await` returns [`api::Result`]<`u32`>."]
     );
     assert_eq!(
         method_docs(&file, "api::Call<E>", "send"),
@@ -823,7 +826,7 @@ fn c10_4_request_names_queries_in_wire_order_without_values() {
 }
 
 #[test]
-fn c1_11_c10_4_endpoint_types_have_no_variants_and_only_value_is_documented() {
+fn c1_11_c10_4_endpoint_types_have_no_variants_and_only_value_and_name_are_documented() {
     let file: syn::File = syn::parse2(crate::expand(super::description(include_str!(
         "../support/call_client.rs"
     ))))
@@ -869,7 +872,11 @@ fn c1_11_c10_4_endpoint_types_have_no_variants_and_only_value_is_documented() {
             _ => true,
         })
         .collect();
-    assert!(matches!(visible.as_slice(), [syn::TraitItem::Type(value)] if value.ident == "Value"));
+    assert!(matches!(
+        visible.as_slice(),
+        [syn::TraitItem::Type(value), syn::TraitItem::Const(name)]
+            if value.ident == "Value" && name.ident == "NAME"
+    ));
 }
 
 #[test]
@@ -886,4 +893,76 @@ fn c12_14_generated_edit_docs_explain_detection_limits_and_actual_body_ownership
     assert!(!lines
         .iter()
         .any(|line| line.starts_with("replacing or removing it is a Build error.")));
+}
+
+/// C10.1: the pages of the generated tree do not link a name of the author's to the item
+/// of the same name in the prelude or among the primitives. With `type str = u32` in the
+/// author's module, `-> str` is the author's `u32`: a link to the primitive `str` lies.
+#[test]
+fn c10_1_a_shadowed_prelude_name_is_not_linked_to_the_prelude() {
+    let output = super::surface::rustdoc_output(
+        "shadowed_prelude",
+        r#"#![allow(non_camel_case_types)]
+        pub type str = u32;
+        pub type String = u64;
+        concord::api! {
+            pub client Shadow {
+                base "https://a.test"; read concord::Json;
+                GET num(id: String) -> str { query { id; } }
+            }
+        }"#,
+    );
+    let page = std::fs::read_to_string(output.join("shadow/enum.Num.html")).unwrap();
+    // The one primitive `str` of the page is the type of `Endpoint::NAME`.
+    assert_eq!(
+        page.matches("primitive.str.html").count(),
+        1,
+        "the page links `str` to the primitive"
+    );
+    assert!(
+        !page.contains("string/struct.String.html"),
+        "the page links `String` to the prelude's"
+    );
+}
+
+/// A type written with a leading `::` is the crate's: its link is absolute, so a module of the
+/// author's with the crate's name (`mod std`, `mod concord`) does not take it.
+#[test]
+fn c10_1_an_absolute_type_is_linked_absolutely() {
+    let output = super::surface::rustdoc_output(
+        "absolute_links",
+        r#"pub mod concord { pub struct Secret; }
+        pub mod std { pub mod string { pub struct String; } }
+        ::concord::api! {
+            pub client Api(token?: ::concord::Secret) {
+                base "https://a.test"; headers { "x-token" = token; }
+                GET get(key: ::concord::Secret, name: ::std::string::String) {
+                    headers { "x-key" = key; } query { name; }
+                }
+            }
+        }"#,
+    );
+    for page in ["struct.Api.html", "api/enum.Get.html"] {
+        let text = std::fs::read_to_string(output.join(page)).unwrap();
+        for local in [
+            "concord/struct.Secret.html\"",
+            "std/string/struct.String.html\"",
+        ] {
+            assert!(
+                !text.contains(&format!("href=\"{local}"))
+                    && !text.contains(&format!("href=\"../{local}")),
+                "{page} links an absolute path to the author's module"
+            );
+        }
+        assert!(!text.contains("href=\"::"), "{page} has an unresolved link");
+        assert!(
+            text.contains("<code>::concord::Secret</code>"),
+            "{page} lost the path"
+        );
+    }
+    let page = std::fs::read_to_string(output.join("api/enum.Get.html")).unwrap();
+    assert!(
+        page.contains("doc.rust-lang.org") && page.contains("string/struct.String.html"),
+        "the page does not link `::std::string::String` to the standard library"
+    );
 }

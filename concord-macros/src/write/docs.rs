@@ -87,7 +87,10 @@ impl Writer<'_> {
                     spelling.clone()
                 };
                 let args = path.path.segments.last().map(|s| &s.arguments);
-                // Declarations in the generated tree link back to the author's scope.
+                // Declarations in the generated tree link back to the author's scope. A name
+                // that the prelude or the primitives also have is not linked there: the page
+                // cannot tell whether the author's module declares one of its own (`type str`),
+                // and a link resolved in the generated tree would name the prelude's.
                 let mut text = if depth > 0 {
                     let first = path
                         .path
@@ -126,13 +129,24 @@ impl Writer<'_> {
                                 | "f32"
                                 | "f64"
                         ) {
-                        spelling
+                        None
                     } else if let Some(tail) = spelling.strip_prefix("self::") {
-                        format!("{}{tail}", "super::".repeat(depth))
+                        Some(format!("{}{tail}", "super::".repeat(depth)))
                     } else {
-                        format!("{}{spelling}", "super::".repeat(depth))
+                        Some(format!("{}{spelling}", "super::".repeat(depth)))
                     };
-                    format!("[`{shown}`]({target})")
+                    match target {
+                        Some(target) => format!("[`{shown}`]({target})"),
+                        None if path.path.leading_colon.is_some() => format!("[`::{spelling}`]"),
+                        None if first == "crate" => format!("[`{shown}`]({spelling})"),
+                        None => format!("`{shown}`"),
+                    }
+                } else if path.path.leading_colon.is_some() {
+                    // A path that starts with `::` names a crate. It is linked as a shortcut
+                    // with its `::`, which rustdoc resolves past a module of the author's with
+                    // the crate's name (`mod concord`, `mod std`); written as the target of a
+                    // link, `(::concord::Secret)`, it would not resolve.
+                    format!("[`::{spelling}`]")
                 } else {
                     format!("[`{shown}`]")
                 };

@@ -66,7 +66,7 @@ In a `{x}` placeholder, an empty value is rejected, and so is a finished segment
 
 For every public method of a call, this table says what generated code calls. **The macro generates the endpoint parts of a call in its `Endpoint` implementation:**
 
-- `__ENDPOINT`, the name of the endpoint (`riot.matches.ids`);
+- `NAME`, the name of the endpoint (`riot.matches.ids`), public: `TryInfo::endpoint()` and every printed line give the same text;
 - `__build_draft()`: step 2, the request on a `Draft`;
 - `__read_answer(response, info)`: the reader, the arms, the problem.
 

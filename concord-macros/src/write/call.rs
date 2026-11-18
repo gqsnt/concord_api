@@ -137,7 +137,16 @@ impl Writer<'_> {
         let docs = self
             .endpoints
             .get(&(node.node as *const Node))
-            .map(|endpoint| self.endpoint_type_doc(index, endpoint));
+            .map(|endpoint| {
+                let docs = self.endpoint_type_doc(index, endpoint);
+                // Beside the author's description; the implementation shows the text itself.
+                let name = format!(
+                    " Its name in errors and logs: [`Endpoint::NAME`]({}{}::Endpoint::NAME).",
+                    "super::".repeat(depth),
+                    self.root
+                );
+                emit!(#[doc = ""] #[doc = #name] #docs)
+            });
         emit! {
             #(#attrs)* #docs
             #[allow(missing_debug_implementations)]
@@ -183,10 +192,13 @@ impl Writer<'_> {
                 type Paging: ::concord::call::PagingMode + __PagesFor<Self>;
                 #[doc(hidden)]
                 type Conditional: ::concord::call::ConditionalMode;
+                /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
+                /// client, its scopes and the endpoint, joined with `.` (`riot.matches.ids`).
+                ///
+                /// Use it as a key for limits and in logs.
+                const NAME: &'static ::core::primitive::str;
                 #[doc(hidden)]
-                const __ENDPOINT: &'static str;
-                #[doc(hidden)]
-                const __DEBUG: &'static str;
+                const __DEBUG: &'static ::core::primitive::str;
                 #[doc(hidden)]
                 fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<__Problem>;
                 #[doc(hidden)]
@@ -329,7 +341,7 @@ impl Writer<'_> {
             let expression = line.value;
             emit! {
                 let __idle_timeout = { #bindings (|| -> ::std::time::Duration { #expression })() };
-                __draft.description_idle_timeout(__idle_timeout);
+                ::concord::__private::Options::description_idle_timeout(__draft, __idle_timeout);
             }
         });
         let idempotent = match &endpoint.idempotent {
@@ -413,7 +425,7 @@ impl Writer<'_> {
                 let set_field = self.input_field(index, input, emit!((*__call.__data_mut())));
                 let input_type = self.input_id(input);
                 let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
-                let get = if input.input.optional.is_some() { emit!(#get_field.as_ref()) } else { emit!(::core::option::Option::Some(&#get_field)) };
+                let get = if input.input.optional.is_some() { emit!(::core::option::Option::as_ref(&#get_field)) } else { emit!(::core::option::Option::Some(&#get_field)) };
                 let set = if input.input.optional.is_some() { emit!(::core::option::Option::Some(__value)) } else { emit!(__value) };
                 emit!(#impl_attrs #allow #[doc(hidden)] impl ::concord::page::Slot<#ty> for #slot {
                     type Value = #input_type;
@@ -429,8 +441,8 @@ impl Writer<'_> {
                 type Data<__T: #root::__Types> = #data<__T>;
                 type Value = #output;
                 #modes
-                const __ENDPOINT: &'static str = #path;
-                const __DEBUG: &'static str = #debug;
+                const NAME: &'static ::core::primitive::str = #path;
+                const __DEBUG: &'static ::core::primitive::str = #debug;
                 fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<#problem> { &#core }
                 #settings #request #answer
             }
@@ -474,6 +486,10 @@ impl Writer<'_> {
             }
         );
         emit! {
+            // A call is a value that is moved, never polled in place: no code takes a pin
+            // to a call or to one of its fields. So it is `Unpin` whatever its inputs hold,
+            // and adding an input that is not `Unpin` never takes `Unpin` from a call.
+            impl<E: Endpoint> ::core::marker::Unpin for Call<E> {}
             impl<E: Endpoint> ::core::clone::Clone for Call<E> {
                 fn clone(&self) -> Self {
                     Self { __data: ::core::clone::Clone::clone(&self.__data), __options: ::core::clone::Clone::clone(&self.__options) }
@@ -481,7 +497,7 @@ impl Writer<'_> {
             }
             impl<E: Endpoint> ::core::fmt::Debug for Call<E> {
                 fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    formatter.debug_struct(E::__DEBUG).field("endpoint", &E::__ENDPOINT).finish_non_exhaustive()
+                    formatter.debug_struct(E::__DEBUG).field("endpoint", &E::NAME).finish_non_exhaustive()
                 }
             }
             impl<E: Endpoint> Call<E> {
@@ -495,11 +511,11 @@ impl Writer<'_> {
                 pub(super) fn __data_mut(&mut self) -> &mut E::Data<()> { &mut self.__data }
 
                 fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
-                    E::__build_draft(&self.__data)?.finish_request(E::__core(&self.__data), &self.__options, E::__ENDPOINT, take)
+                    E::__build_draft(&self.__data)?.finish_request(E::__core(&self.__data), &self.__options, E::NAME, take)
                 }
 
                 fn __prepare_inner(mut self) -> Result<::concord::__private::Prepared<E::Value, __Problem>> {
-                    let run = ::concord::__private::Run::start(E::__core(&self.__data), &self.__options, E::__ENDPOINT);
+                    let run = ::concord::__private::Run::start(E::__core(&self.__data), &self.__options, E::NAME);
                     let idempotent = E::__settings(&self.__data, &mut self.__options);
                     let draft = E::__build_draft(&self.__data)?;
                     #prepare_call(
@@ -521,7 +537,7 @@ impl Writer<'_> {
                 pub fn read_response(&self, response: ::concord::reqwest::Response)
                     -> impl ::core::future::Future<Output = Result<E::Value>> + ::core::marker::Send + '_ {
                     async move {
-                        E::__read_answer(&self.__data, response, ::concord::transport::TryInfo::new(E::__ENDPOINT, 0))
+                        E::__read_answer(&self.__data, response, ::concord::transport::TryInfo::new(E::NAME, 0))
                             .await.map(::concord::Answer::into_value)
                     }
                 }
@@ -626,7 +642,7 @@ impl Writer<'_> {
                 #conditional_doc
                 pub fn send_if_none_match(self, etag: &::core::primitive::str)
                     -> ::concord::Sending<::concord::Answer<::core::option::Option<E::Value>> #problem> {
-                    let etag = etag.to_owned();
+                    let etag = <::core::primitive::str as ::std::borrow::ToOwned>::to_owned(etag);
                     ::concord::Sending::new(async move { self.__prepare_if_none_match(&etag)?.#send_prepared().await })
                 }
         );
@@ -636,6 +652,18 @@ impl Writer<'_> {
                 #conditional_methods
             }
         );
+        // One impl, in the author's scope, so that its page shows the author's types. It
+        // carries no `#[diagnostic::…]` attribute: a module `diagnostic` of the author's, or
+        // a client named `Diagnostic`, would capture that path.
+        let into_future = emit! {
+            #[doc = #output_doc]
+            impl<E: #root::Endpoint> ::core::future::IntoFuture for #root::Call<E>
+            where E::Paging: ::concord::call::AwaitWithoutPaginate {
+                type Output = ::core::result::Result<E::Value, ::concord::Error<#problem_alias>>;
+                type IntoFuture = ::concord::Sending<E::Value #future_problem>;
+                fn into_future(self) -> Self::IntoFuture { #root::Call::<E>::send(self) }
+            }
+        };
         emit! {
             const _: () = {
             #retry_binding
@@ -646,7 +674,7 @@ impl Writer<'_> {
                 #send_doc
                 pub fn send(self) -> ::concord::Sending<E::Value #problem> {
                     ::concord::Sending::new(async move {
-                        <Self as ::concord::__private::Call>::send_full(self).await.map(::concord::Answer::into_value)
+                        ::core::result::Result::map(<Self as ::concord::__private::Call>::send_full(self).await, ::concord::Answer::into_value)
                     })
                 }
 
@@ -665,14 +693,7 @@ impl Writer<'_> {
 
             #pages_impl
             };
-            #[doc = #output_doc]
-            #[diagnostic::do_not_recommend]
-            impl<E: #root::Endpoint> ::core::future::IntoFuture for #root::Call<E>
-            where E::Paging: ::concord::call::AwaitWithoutPaginate {
-                type Output = ::core::result::Result<E::Value, ::concord::Error<#problem_alias>>;
-                type IntoFuture = ::concord::Sending<E::Value #future_problem>;
-                fn into_future(self) -> Self::IntoFuture { self.send() }
-            }
+            #into_future
         }
     }
 }

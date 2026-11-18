@@ -306,7 +306,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             // Headers follow paths; entries within this kind run in tree order.
@@ -323,7 +323,7 @@ const _: () = {
                         ::concord::__private::Piece::Lit("Bearer "),
                         ::concord::__private::Piece::Val(
                             "client.key",
-                            &(&::concord::__private::ValueRef(client.key)).adapt(),
+                            &(&::concord::__private::ValueRef(client.key)).__adapt(),
                         ),
                     ],
                 );
@@ -332,7 +332,7 @@ const _: () = {
                     "x-client",
                     &[::concord::__private::Piece::Val(
                         "x-client",
-                        &(&::concord::__private::ValueRef(&__entry)).adapt(),
+                        &(&::concord::__private::ValueRef(&__entry)).__adapt(),
                     )],
                 );
             }
@@ -348,7 +348,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.exists";
+        const __ENDPOINT: &'static str = <files::Exists as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -409,6 +409,7 @@ const _: () = {
 
     impl files::Endpoint for files::Exists {
         type Value = bool;
+        const NAME: &'static str = "files.exists";
     }
 
     call_spec!(
@@ -444,7 +445,7 @@ const _: () = {
                 let repo = &self.__inputs.repo;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "repo",
-                    &(&::concord::__private::ValueRef(repo)).adapt(),
+                    &(&::concord::__private::ValueRef(repo)).__adapt(),
                 )]);
             }
             __draft.segment(&[::concord::__private::Piece::Lit("readme")]);
@@ -462,7 +463,7 @@ const _: () = {
                         ::concord::__private::Piece::Lit("Bearer "),
                         ::concord::__private::Piece::Val(
                             "client.key",
-                            &(&::concord::__private::ValueRef(client.key)).adapt(),
+                            &(&::concord::__private::ValueRef(client.key)).__adapt(),
                         ),
                     ],
                 );
@@ -471,7 +472,7 @@ const _: () = {
                     "x-client",
                     &[::concord::__private::Piece::Val(
                         "x-client",
-                        &(&::concord::__private::ValueRef(&__entry)).adapt(),
+                        &(&::concord::__private::ValueRef(&__entry)).__adapt(),
                     )],
                 );
             }
@@ -487,7 +488,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.readme";
+        const __ENDPOINT: &'static str = <files::Readme as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -541,6 +542,7 @@ const _: () = {
 
     impl files::Endpoint for files::Readme {
         type Value = String;
+        const NAME: &'static str = "files.readme";
     }
 
     call_spec!(
@@ -578,7 +580,7 @@ const _: () = {
                 let id = &self.__inputs.id;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "id",
-                    &(&::concord::__private::ValueRef(id)).adapt(),
+                    &(&::concord::__private::ValueRef(id)).__adapt(),
                 )]);
             }
             // Headers follow paths; entries within this kind run in tree order.
@@ -595,7 +597,7 @@ const _: () = {
                         ::concord::__private::Piece::Lit("Bearer "),
                         ::concord::__private::Piece::Val(
                             "client.key",
-                            &(&::concord::__private::ValueRef(client.key)).adapt(),
+                            &(&::concord::__private::ValueRef(client.key)).__adapt(),
                         ),
                     ],
                 );
@@ -604,7 +606,7 @@ const _: () = {
                     "x-client",
                     &[::concord::__private::Piece::Val(
                         "x-client",
-                        &(&::concord::__private::ValueRef(&__entry)).adapt(),
+                        &(&::concord::__private::ValueRef(&__entry)).__adapt(),
                     )],
                 );
             }
@@ -620,7 +622,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.download";
+        const __ENDPOINT: &'static str = <files::Download as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -687,6 +689,7 @@ const _: () = {
 
     impl files::Endpoint for files::Download {
         type Value = ::concord::ByteStream;
+        const NAME: &'static str = "files.download";
     }
 
     call_spec!(
@@ -729,7 +732,7 @@ const _: () = {
                 let file = &self.__inputs.file;
                 __draft.segment(&[::concord::__private::Piece::Val(
                     "name",
-                    &(&::concord::__private::ValueRef(name)).adapt(),
+                    &(&::concord::__private::ValueRef(name)).__adapt(),
                 )]);
             }
             // The root base already bound authorization. This second base,
@@ -751,7 +754,7 @@ const _: () = {
                         ::concord::__private::Piece::Lit("Bearer "),
                         ::concord::__private::Piece::Val(
                             "client.key",
-                            &(&::concord::__private::ValueRef(client.key)).adapt(),
+                            &(&::concord::__private::ValueRef(client.key)).__adapt(),
                         ),
                     ],
                 );
@@ -760,7 +763,7 @@ const _: () = {
                     &[::concord::__private::Piece::Val(
                         "x-client",
                         &::concord::__private::inherited(
-                            (&::concord::__private::ValueRef(&__entry)).adapt(),
+                            (&::concord::__private::ValueRef(&__entry)).__adapt(),
                         ),
                     )],
                 );
@@ -797,7 +800,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.upload";
+        const __ENDPOINT: &'static str = <files::Upload as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -846,6 +849,7 @@ const _: () = {
 
     impl files::Endpoint for files::Upload {
         type Value = ();
+        const NAME: &'static str = "files.upload";
     }
 
     call_spec!(
@@ -917,7 +921,7 @@ const _: () = {
                         ::concord::__private::Piece::Lit("Bearer "),
                         ::concord::__private::Piece::Val(
                             "client.key",
-                            &(&::concord::__private::ValueRef(client.key)).adapt(),
+                            &(&::concord::__private::ValueRef(client.key)).__adapt(),
                         ),
                     ],
                 );
@@ -926,7 +930,7 @@ const _: () = {
                     "x-client",
                     &[::concord::__private::Piece::Val(
                         "x-client",
-                        &(&::concord::__private::ValueRef(&__entry)).adapt(),
+                        &(&::concord::__private::ValueRef(&__entry)).__adapt(),
                     )],
                 );
             }
@@ -941,8 +945,8 @@ const _: () = {
                 let __value0 = ::concord::__private::ValueRef(text);
                 let __value1 = ::concord::__private::ValueRef(cursor);
                 let mut __entries = ::concord::body::Entries::new();
-                __entries.__push("text", (&__value0).adapt());
-                __entries.__push("cursor", (&__value1).adapt());
+                __entries.__push("text", (&__value0).__adapt());
+                __entries.__push("cursor", (&__value1).__adapt());
                 __draft.body(json(__entries));
             }
             ::core::result::Result::Ok(__draft)
@@ -957,7 +961,7 @@ const _: () = {
             }
         }
 
-        const __ENDPOINT: &'static str = "files.search";
+        const __ENDPOINT: &'static str = <files::Search as files::Endpoint>::NAME;
 
         async fn __read_answer(
             &self,
@@ -1011,6 +1015,7 @@ const _: () = {
 
     impl files::Endpoint for files::Search {
         type Value = Page;
+        const NAME: &'static str = "files.search";
     }
 
     call_spec!(

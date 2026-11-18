@@ -1,4 +1,4 @@
-error[E0599]: the method `adapt` exists for reference `&concord::__private::ValueRef<&NotSer>`, but its trait bounds were not satisfied
+error[E0599]: the method `__adapt` exists for reference `&concord::__private::ValueRef<&NotSer>`, but its trait bounds were not satisfied
  --> tests/compiler-errors/spans/07_body_entry.rs:3:22
   |
 3 | body concord::json { value; }

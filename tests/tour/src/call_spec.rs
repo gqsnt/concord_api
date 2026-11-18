@@ -4,8 +4,7 @@ macro_rules! call_spec {
     ($client:ident, $endpoint:path, $inputs:path, $value:ty, $problem:ty, $name:literal) => {
         impl $client::__spec::Spec for $endpoint {
             type Inputs = $inputs;
-            const NAME: &'static str = $name;
-            const PATH: &'static str = $client::Call::<Self>::__ENDPOINT;
+            const DEBUG: &'static str = $name;
 
             fn request(
                 call: &$client::Call<Self>,

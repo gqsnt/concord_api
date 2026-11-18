@@ -168,7 +168,7 @@ The two timeouts are `tokio` timers, so a test that pauses time controls them ([
 
 **Why.** A client is shared between tasks, and a `select!` drops futures. What a drop does must be known before it happens.
 
-**Check.** `Send`, `Sync` and `Unpin` of the public types are asserted in [`concord-core/src/lib.rs`](../../concord-core/src/lib.rs), so a change that loses one does not compile. The timeouts and the cancel safety of pages are tested on paused time ([C7.6, C7.7](../reference/contracts.md) and [C8.5](../reference/contracts.md)).
+**Check.** `Send`, `Sync` and `Unpin` of the public types are asserted in [`concord-core/src/lib.rs`](../../concord-core/src/lib.rs), so a change that loses one does not compile. A client, a handle and a call are `Unpin` too, and the macro writes that implementation without a condition: none of them is ever pinned in place, so an input that is not `Unpin` does not take it away (C10.2). The timeouts and the cancel safety of pages are tested on paused time ([C7.6, C7.7](../reference/contracts.md) and [C8.5](../reference/contracts.md)).
 
 ### Rust 1.96 is enough
 
