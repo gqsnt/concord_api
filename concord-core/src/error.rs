@@ -797,16 +797,17 @@ impl<E> Error<E> {
     /// the network, on any attempt and any page. `false` means that it may have been, or that
     /// Concord cannot tell: it does not mean that the request arrived.
     ///
-    /// It is stated for a Transport error only, when every send that Concord saw during the
-    /// attempt ended with a failure stating it (or a middleware layer stated it itself and
-    /// sent nothing), no send is still outstanding, and no earlier attempt or page may have
-    /// written anything. A failure states it when:
+    /// It is stated for a Transport error only, when the failure that ends the call states
+    /// it, every send that Concord saw during that attempt ended with a failure that states
+    /// it (a middleware layer may also state it itself and send nothing), no copy of the
+    /// attempt's `TryInfo` is still held when the attempt ends, and no earlier attempt or
+    /// page may have written anything. A failure states it when:
     ///
     /// - the request was [`Blocked`](Class::Blocked) before it was sent;
     /// - [`Http`](crate::Http) recognizes the failure as one of its connector's, so that the
     ///   connection was not made: it was refused, the host name was not resolved, the TLS
-    ///   handshake or a proxy failed, or the HTTP client's connect timeout expired before a
-    ///   connection existed;
+    ///   handshake or a proxy failed, or a connect timeout that it recognizes expired before
+    ///   a connection existed;
     /// - your own transport or middleware stated it with
     ///   [`TransportError::not_sent`](crate::transport::TransportError::not_sent).
     ///
@@ -829,7 +830,7 @@ impl<E> Error<E> {
     /// For [`Http`](crate::Http), it rests on the versions of the HTTP libraries in your build
     /// (see [`Http`](crate::Http)).
     ///
-    /// The retry policy does not read it: the class decides whether an attempt is repeated.
+    /// The retry policy does not read it.
     pub fn request_not_sent(&self) -> bool {
         self.inner.kind == Kind::Transport && self.inner.not_sent
     }

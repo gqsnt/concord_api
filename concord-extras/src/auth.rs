@@ -285,8 +285,8 @@ impl RenewalError {
     ///
     /// **When the exchange is a Concord call,** do not classify its error yourself: use
     /// [`from_call`](Self::from_call), which gives `NotSent` exactly when the call made one
-    /// attempt and Concord states that nothing of it was sent, a connect timeout of
-    /// `concord::Http` included.
+    /// attempt and Concord states that nothing of it was sent, a connect timeout that
+    /// `concord::Http` recognizes included.
     ///
     /// **When you classify an error yourself,** use `not_sent` only when you can establish
     /// that no byte of the request that carries the refresh token was written, and that

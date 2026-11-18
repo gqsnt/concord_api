@@ -176,9 +176,10 @@ impl TransportError {
     /// or the transport stopped before handing the request over.
     ///
     /// The call's error then reports it with
-    /// [`Error::request_not_sent`](crate::Error::request_not_sent), under the conditions
-    /// that method states: every send of the call stated it, none is still outstanding, and
-    /// no earlier attempt or page may have written anything. A caller may rely on it to
+    /// [`Error::request_not_sent`](crate::Error::request_not_sent) only when the failure
+    /// that ends the call states it, every send that Concord saw during that attempt ended
+    /// with a failure that states it, no copy of the attempt's `TryInfo` is still held when
+    /// the attempt ends, and no earlier attempt or page may have written anything. A caller may rely on it to
     /// reuse what the request carried, such as a single-use refresh token: state it only
     /// when it is certain. It may be stated after a connection was opened, when no byte of
     /// the request was written and none can still be. A connection that broke when you
@@ -186,7 +187,7 @@ impl TransportError {
     /// write, a send that another task may still be making, and an error of your HTTP
     /// library that you did not classify yourself are not certain. [`Http`] states it for a
     /// failure that it recognizes as one of its connector's; [`TransportError::from`] for a
-    /// `reqwest::Error` never does. The retry policy does not read it: the class decides.
+    /// `reqwest::Error` never does. The retry policy does not read it.
     ///
     /// ```
     /// # use concord_core as concord;
@@ -610,15 +611,13 @@ pub fn reply_with(
 /// on another connection when a reused connection turns out to be unusable and hands the
 /// request back before writing any of it, as often as that happens.
 ///
-/// Its error states that nothing was sent when it recognizes the failure as one of its
-/// connector's, so that the connection was not made (refused, a host name not resolved, a
-/// TLS handshake or a proxy that failed, its connect timeout): a request error of
-/// `reqwest` that carries the connector's mark, with no other error of `reqwest` or
-/// `hyper` in its chain. See [`TransportError::not_sent`], and
-/// [`Error::request_not_sent`](crate::Error::request_not_sent) for when the call's error
-/// reports it. Any other failure states nothing, including one whose chain of causes it
-/// does not expect, and every failure over HTTP/3: that is the safe side, not a proof
-/// that the request was sent.
+/// Its error states that nothing was sent for the connector failures that it recognizes,
+/// so that the connection was not made (refused, a host name not resolved, a TLS
+/// handshake or a proxy that failed), recognized connect timeouts included. See
+/// [`TransportError::not_sent`], and [`Error::request_not_sent`](crate::Error::request_not_sent)
+/// for when the call's error reports it. Any other failure states nothing, including one
+/// whose chain of causes it does not expect, and every failure over HTTP/3: that is the
+/// safe side, not a proof that the request was sent.
 ///
 /// Both promises rest on how `reqwest`, `hyper-util`, `hyper` and `h2` behave, read in the
 /// versions of Concord's own `Cargo.lock` (reqwest 0.13.5, hyper-util 0.1.21, hyper 1.12.0,
