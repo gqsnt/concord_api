@@ -8,6 +8,8 @@ The work is split three ways. The description states the fact about the API (thi
 
 ## Retries are off until you turn them on
 
+This is Concord's own engine. The HTTP transport beneath it can send a request again on its own ([what is resent without Concord](#what-holds-for-every-retry)).
+
 ```rust
 let riot = Riot::new(key).with_retry(Retry::standard());     // for every call of this client
 let game = asia.get(id).with_retry(Retry::none()).await?;         // for this call only
@@ -88,7 +90,7 @@ A `POST` that is not idempotent is then retried after a `429`, and only then. `i
 
 ## The standard policy
 
-**`Retry::standard()`** makes a few attempts, with a random wait that grows from one attempt to the next. (The randomness matters: many clients that wait the same time would all retry at once.) When the response has a `Retry-After`, the wait is never shorter than that. `Retry-After` is either a number of seconds or a date, and Concord reads both: a date in the past means a wait of zero, and a value that cannot be parsed counts as no `Retry-After`. When a `Retry-After`, or a wait that one of your rules requests, is longer than 60 seconds, no further attempt is made: the error is the result, and `e.retry_after()` says how long to wait. It returns the longer of two waits: the `Retry-After` of the response, and the wait that a `when` rule requested for the attempt that was not made. The waits are fixed, and so is the table of failures worth another attempt; see C4.2 and C4.3 of the [contracts](../reference/contracts.md) for the numbers. Each wait is logged as one event ([what Concord logs](promises.md#what-concord-logs)).
+**`Retry::standard()`** makes a few attempts, with a random wait that grows from one attempt to the next. (The randomness matters: many clients that wait the same time would all retry at once.) When the response has a `Retry-After`, the wait is never shorter than that. `Retry-After` is either a number of seconds or a date, and Concord reads both: a date in the past means a wait of zero, and a value that cannot be parsed counts as no `Retry-After`. When a `Retry-After`, or a wait that one of your rules requests, is longer than 60 seconds, no further attempt is made: the error is the result, and `e.retry_after()` says how long to wait. It returns the longer of two waits: the `Retry-After` of the response, and the wait that a `when` rule requested for the attempt that was not made. `headers.retry_after()`, on the headers of a response, reads the header alone. The waits are fixed, and so is the table of failures worth another attempt; see C4.2 and C4.3 of the [contracts](../reference/contracts.md) for the numbers. Each wait is logged as one event ([what Concord logs](promises.md#what-concord-logs)).
 
 ## Your own retry rules
 
@@ -141,6 +143,6 @@ To test your own policy on virtual time and check when each attempt happens, see
 | A stream handed to you is outside the attempt | With `read Stream;`, the attempt ends at the head. |
 | When the attempts run out | The last outcome is the result: for example, a Refused error with status 429 and its headers. `e.tries()` says how many attempts were made: an attempt counts once the request is handed to the middleware. |
 | A body that does not decode | Never retried: it would be the same body. |
-| What is resent without Concord | `reqwest`'s own resend of an HTTP/2 request whose stream the server refused before processing it (`REFUSED_STREAM`) is left as `reqwest` does it. It happens below the level where Concord counts attempts: `tries()` does not see it. |
+| What is resent without Concord | By default, with HTTP/2, `reqwest` can send a request again, up to twice and whatever its method, when its body is in memory or empty, after a remote `REFUSED_STREAM` reset or a `GOAWAY` with `NO_ERROR`. It decides on the error alone: a `GOAWAY` leaves unprocessed only the streams above the server's last stream id, so a request that the server processed can be sent again. The connection pool under `reqwest` also sends a request again when a reused connection proved unusable and handed the request back unsent: a request with a streamed body too, with no fixed count, and whatever `builder.retry(…)` says. That case never puts a request on the wire twice. Both are left as `reqwest` does them ([Concord's own HTTP client](../reference/crates.md#concords-own-http-client)). They happen below the level where Concord counts attempts: `tries()` does not see them, and the policy does not decide them. |
 | `send_raw()` | The attempt ends at the head. A head with a status below `400` is final, like a value. A head of `400` or above is checked by the policy, as an error response is, but your rules get no `problem()`, because nothing of the body is read. |
 | The timeouts | The call timeout, `timeout`, when you set one, covers every attempt and every wait between attempts ([timeouts](calling.md#timeouts)). |

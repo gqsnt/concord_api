@@ -102,7 +102,14 @@ impl Headers {
             .ok_or_else(|| crate::mismatch(format!("header {name} is missing or is not text")))
     }
 
-    /// Returns the delay of `Retry-After`, given in seconds or as a date. A date in the past yields zero.
+    /// Returns the delay of the `Retry-After` header alone, given in seconds or as a date.
+    ///
+    /// A date is measured against the system clock when this method is called: a date in the
+    /// past yields zero. A value that is neither a number of seconds nor a date yields `None`.
+    ///
+    /// This is the header only. [`Error::retry_after`](crate::Error::retry_after) is the wait
+    /// that Concord recorded when it decided about another attempt: the longer of this header
+    /// and the wait that a `when` rule requested.
     pub fn retry_after(&self) -> Option<Duration> {
         self.retry_after_at(SystemTime::now())
     }
