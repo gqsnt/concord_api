@@ -397,3 +397,50 @@ async fn c8_6_a_slot_that_names_the_same_input_at_the_decision_is_one_choice() {
     );
     assert_eq!(end, Ok(()));
 }
+
+// The numbering itself: each input of an endpoint is its position among the inputs of the
+// endpoint, those of its parts included, whatever the client and the scopes above it hold.
+
+static NUMBERED: std::sync::Mutex<Vec<concord::page::InputId>> = std::sync::Mutex::new(Vec::new());
+
+/// A pager that records the identity of each slot it is given, then ends the list.
+fn record<C: Call>(ids: &[concord::page::InputId]) -> Paging<C> {
+    *NUMBERED.lock().unwrap() = ids.to_vec();
+    Paging::from_fn(|_: C, _: &concord::Answer<C::Value>| None::<C>)
+}
+
+concord::api! {
+    client Numbered(tenant: String) {
+        base "https://numbered.test";
+        read Json;
+        headers { "x-tenant" = tenant; }
+        part window(from?: u32, to: u32) { query { from; to; } }
+        scope shelf(name: String) {
+            path "{name}";
+            GET list(a: u8, b?: u8, c?: String, ..window) -> Vec<u8> {
+                query { a; b; c; }
+                paginate record(&[a.input(), b.input(), c.input(), from.input(), to.input()]);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn c8_6_the_identity_of_an_input_is_its_position_in_the_endpoint() {
+    use concord::page::InputId;
+    let script = Script::new();
+    script.answer(200).body("[]");
+    let api = Numbered::new("t").with_transport(script.clone());
+    let mut pages = api.shelf("s").list(1, 2).pages();
+    while pages.try_next().await.unwrap().is_some() {}
+    assert_eq!(
+        *NUMBERED.lock().unwrap(),
+        [
+            InputId::new(0),
+            InputId::new(1),
+            InputId::new(2),
+            InputId::new(3),
+            InputId::new(4)
+        ]
+    );
+}
