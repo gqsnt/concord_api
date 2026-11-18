@@ -87,7 +87,7 @@ For every public method of a call, this table says what generated code calls. **
 | `into_request()` | `__build_request(true)`: steps 2 and 3 with `Draft::finish_request` and `take` true, and a one-shot body is taken; a repeatable body becomes one stream that opens when it is read, with no plan for another attempt. No `Run`. |
 | `read_response(response)` | `__read_answer(response, info)` alone (see [reading a response that you obtained yourself](#reading-a-response-that-you-obtained-yourself)). |
 | `with_retry`, `with_timeout`, `with_idle_timeout`, `edit_request(edit)`, `at_url(url)` | A field of `Options`, read by `prepare` and by `finish_for_send`. |
-| `pages()` (on `Call<E>` for an endpoint with `paginate`) | `__private::pages_with_pager(call, make_pager)`: the state machine of [pages](#pages). For each page: `prepare()`, the two checks on the `Prepared`, then `Prepared::send`. On the call that the pager returns: `answered_from(url)`, below. |
+| `pages()` (on `Call<E>` for an endpoint with `paginate`) | `__private::pages_of_pager(call, make_pager)` for a `paginate` expression that the macro takes as any `Pager`, which wraps the pager in a closure that calls `next_call`; otherwise `__private::pages_with_pager` or `__private::pages_inferred`, whose `FnMut` bound infers a closure ([the macro](macro.md#the-authors-names-in-the-authors-rust)). Each builds the state machine of [pages](#pages). For each page: `prepare()`, the two checks on the `Prepared`, then `Prepared::send`. On the call that the pager returns: `answered_from(url)`, below. |
 | `pages().items()` | `IntoItems` of each page. |
 
 **How generated code passes values to the `Draft`.**
@@ -294,6 +294,7 @@ poll_page:
 - Each page is one call, with the options of the call. The time that the caller spends between two pages is not counted. Nothing bounds the whole loop; that takes a timer around it, in the caller.
 - `pages.items()` yields each item of each page. It asks one thing of the page type, `concord::page::IntoItems`, which a `Vec<T>` implements and which an author implements for their own list type. An `Option` and a `Result` do not implement it.
 - A paginated call has no `.await` of its own: `.send()` returns one page, and `.pages()` returns this state machine.
+- The machine knows one kind of pager: a closure from the call and the answer to the next call. A `Pager` that is not a closure reaches it wrapped in one that calls `next_call`, so a `Paging` (`concord-extras`) makes its whole decision, in the order of [C8.6](../reference/contracts.md#c8-secrets-and-pages), inside the line `next = pager(call.clone(), &answer)`; the engine adds its two checks to the request that the next call builds, as for every pager.
 
 ## Reading a response that you obtained yourself
 

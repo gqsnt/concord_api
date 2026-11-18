@@ -142,3 +142,69 @@ pub fn optional_json<T: Serialize>(
         None => Ok(concord::Body::from(Vec::new())),
     }
 }
+
+// `pages.md`: the pages of a shop, one shape of list for each way to page.
+pub use concord::page::{by_offset_total, Pager, Paging, Slot};
+pub use concord::{by_link, by_next_url, by_offset, by_page, Answer};
+data!(Order, Product, Review, Item, Change);
+#[derive(Debug, Deserialize)]
+pub struct Batch<T> {
+    pub data: Vec<T>,
+    pub has_more: bool,
+    pub last_id: Option<String>,
+}
+#[derive(Debug, Deserialize)]
+pub struct Counted<T> {
+    pub items: Vec<T>,
+    pub total: u64,
+}
+#[derive(Debug, Deserialize)]
+pub struct Numbered<T> {
+    pub rows: Vec<T>,
+    pub page: u32,
+    pub pages: u32,
+}
+#[derive(Debug, Deserialize)]
+pub struct Linked<T> {
+    pub results: Vec<T>,
+    pub next: Option<String>,
+}
+#[derive(Debug, Deserialize)]
+pub struct Hits {
+    pub hits: Vec<Doc>,
+    pub timed_out: bool,
+    pub next: Option<String>,
+}
+#[derive(Debug, Deserialize)]
+pub struct Changes {
+    pub changes: Vec<Change>,
+    pub next_page_token: Option<String>,
+    pub new_start_page_token: Option<String>,
+}
+impl<T: Send> concord::page::IntoItems for Batch<T> {
+    type Item = T;
+    fn into_items(self) -> Vec<T> {
+        self.data
+    }
+    fn count(&self) -> usize {
+        self.data.len()
+    }
+}
+impl<T: Send> concord::page::IntoItems for Counted<T> {
+    type Item = T;
+    fn into_items(self) -> Vec<T> {
+        self.items
+    }
+    fn count(&self) -> usize {
+        self.items.len()
+    }
+}
+impl<T: Send> concord::page::IntoItems for Numbered<T> {
+    type Item = T;
+    fn into_items(self) -> Vec<T> {
+        self.rows
+    }
+    fn count(&self) -> usize {
+        self.rows.len()
+    }
+}

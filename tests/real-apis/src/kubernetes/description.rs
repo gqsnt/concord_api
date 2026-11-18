@@ -1,6 +1,6 @@
 use std::time::Duration;
 use concord::read::{JsonLines, RecordStream, Stream};
-use concord::{json, Base, Json, Secret, Text, MIB};
+use concord::{by_cursor, json, Base, Json, Secret, Text, MIB};
 
 concord::api! {
     /// The Kubernetes API of one cluster (a subset): pods, two subresources of a deployment, custom resources.
@@ -25,9 +25,9 @@ concord::api! {
                 limit; "continue" = continue_token;
                 "resourceVersion" = resource_version; "resourceVersionMatch" = resource_version_match;
             }
-            // not `by_cursor`: it keeps the version, and the server rejects one alongside a token (unsure)
-            paginate move |call, page| page.value().next_token()
-                .map(|token| call.continue_token(token).resource_version(None).resource_version_match(None));
+            // the server rejects a version alongside a token (unsure): the next call drops both
+            paginate by_cursor(continue_token, List::next_token)
+                .map_next(|next, _| next.resource_version(None).resource_version_match(None));
         }
         /// A watch: a response that does not end, one event on each line. The server ends it after
         /// `timeout_seconds`, or after 30 to 60 minutes when it is not set (unsure).

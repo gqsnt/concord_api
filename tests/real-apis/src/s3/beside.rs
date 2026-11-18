@@ -66,40 +66,8 @@ impl BucketsPage {
     }
 }
 
-/// The next marker of a page: none at the end, or a Mismatch when a truncated page has none.
-pub type NextMarker<T> = Result<Option<T>, Fail<S3Problem>>;
-
-fn truncated_next<T: Clone>(more: bool, next: &Option<T>) -> NextMarker<T> {
-    if !more {
-        return Ok(None);
-    }
-    next.clone().map(Some).ok_or_else(|| concord::mismatch("a truncated page with no next marker"))
-}
-
-impl ObjectsPage {
-    pub fn next(&self) -> NextMarker<String> {
-        truncated_next(self.is_truncated, &self.next_continuation_token)
-    }
-}
-
-impl PartsPage {
-    pub fn next(&self) -> NextMarker<u32> {
-        truncated_next(self.is_truncated, &self.next_part_number_marker)
-    }
-}
-
-/// `by_cursor`, with a next value that may fail.
-pub fn checked_cursor<C, S, V>(slot: S, next: fn(&C::Value) -> NextMarker<V>)
-    -> impl Fn(C, &Answer<C::Value>) -> Result<Option<C>, Fail<S3Problem>> + Send + 'static
-where
-    C: concord::page::Call<Problem = S3Problem>,
-    S: Slot<C, Value = V>,
-    V: Send + 'static,
-{
-    move |call, answer| Ok(next(answer.value())?.map(|value| slot.set(call, value)))
-}
-
-/// The uploads in progress move by two markers together.
+/// The uploads in progress move by two markers together: a truncated page that lacks either
+/// one is a Mismatch.
 pub fn uploads_after<C, K, U>(key: K, upload: U)
     -> impl Fn(C, &Answer<UploadsPage>) -> Result<Option<C>, Fail<S3Problem>> + Send + 'static
 where

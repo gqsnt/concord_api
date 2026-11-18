@@ -91,6 +91,34 @@
     "client": "Downloads"
   },
   {
+    "page": "docs/guide/pages.md",
+    "block": 2,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_pages_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_pages_001.rs",
+    "client": "Shop"
+  },
+  {
+    "page": "docs/guide/pages.md",
+    "block": 7,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_pages_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_pages_002.rs",
+    "client": "Index"
+  },
+  {
+    "page": "docs/guide/pages.md",
+    "block": 8,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_pages_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_pages_003.rs",
+    "client": "Drive"
+  },
+  {
+    "page": "docs/guide/pages.md",
+    "block": 9,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_pages_004.api",
+    "compiled": "tests/real-apis/src/guide/guide_pages_004.rs",
+    "client": "Catalog"
+  },
+  {
     "page": "docs/guide/recipes.md",
     "block": 1,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_recipes_001.api",

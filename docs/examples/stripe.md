@@ -48,7 +48,10 @@ concord::api! {
                 "created[gte]" = created_gte;
                 "created[lt]" = created_lt;
             }
-            paginate by_object_id(starting_after, ending_before);
+            // after the last object; with `ending_before`, back from the first one
+            paginate by_cursor(starting_after, |page| page.data.last().map(|object| object.id().to_owned()))
+                .or_when_set(ending_before, by_cursor(ending_before, |page| page.data.first().map(|object| object.id().to_owned())))
+                .has_more(|page| page.has_more);
         }
 
         /// Every search: Stripe's query language, paginated by a token.
@@ -298,8 +301,7 @@ The data types are plain `serde` types, named here but not shown. Ids, each a `#
 The pages, `expand`, a deleted customer, and Stripe's retry policy:
 
 ```rust
-use concord::page::Slot;
-use concord::{Answer, Fail, Headers};
+use concord::Headers;
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -351,34 +353,6 @@ impl<T: Send> concord::page::IntoItems for SearchResult<T> {
 /// What the pager of the lists needs of an object: its id.
 pub trait Object {
     fn id(&self) -> &str;
-}
-
-/// The next call, none at the end, or a Mismatch.
-pub type NextPage<C> = Result<Option<C>, Fail<<C as concord::page::Call>::Problem>>;
-
-/// `paginate by_object_id(starting_after, ending_before);`. The next page starts after the last
-/// object; when the caller went back with `ending_before`, it ends before the first one.
-/// `has_more` with no object is not the end: the pages end with a Mismatch.
-pub fn by_object_id<C, A, B, T>(after: A, before: B)
-    -> impl Fn(C, &Answer<C::Value>) -> NextPage<C> + Send + 'static
-where
-    C: concord::page::Call<Value = List<T>>,
-    A: Slot<C, Value = String>,
-    B: Slot<C, Value = String>,
-    T: Object,
-{
-    move |call, answer| {
-        let page = answer.value();
-        if !page.has_more {
-            return Ok(None);
-        }
-        let back = before.get(&call).is_some();
-        let edge = if back { page.data.first() } else { page.data.last() };
-        let Some(id) = edge.map(|object| object.id().to_owned()) else {
-            return Err(concord::mismatch("has_more, and no object to go on from"));
-        };
-        Ok(Some(if back { before.set(call, id) } else { after.set(call, id) }))
-    }
 }
 
 /// A field that `expand` turns from an id into the object: the return type does not
