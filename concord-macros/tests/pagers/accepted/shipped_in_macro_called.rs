@@ -16,7 +16,7 @@ concord::api! {
     pub client Probe {
         base "https://probe.example.test";
         read Json;
-        GET list(after?: String) -> Page { query { after; } paginate concord::page::Paging::new(shipped!(after)); }
+        GET list(after?: String) -> Page { query { after; } paginate concord::page::Paging::from_pager(shipped!(after)); }
     }
 }
 fn main() {}

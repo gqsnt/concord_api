@@ -76,7 +76,7 @@ where
 /// error for a pager value.
 #[diagnostic::on_unimplemented(
     message = "a macro in `paginate` must expand to a closure, and this one expands to `{Self}`",
-    note = "for a pager value such as `by_cursor(…)`, write the macro inside a call: `paginate concord::page::Paging::new(your_macro!(…));`"
+    note = "for a pager value such as `by_cursor(…)`, write the macro inside a call: `paginate concord::page::Paging::from_pager(your_macro!(…));`"
 )]
 pub trait ClosureFromMacro<C: Call, N>: FnMut(C, &Answer<C::Value>) -> N {}
 impl<C, F, N> ClosureFromMacro<C, N> for F

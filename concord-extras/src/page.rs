@@ -8,13 +8,13 @@
 //! A [`Paging`] decides in one fixed order, whatever the order in which its methods are written:
 //! the gate ([`only_when_set`](Paging::only_when_set)), what the page states
 //! ([`has_more`](Paging::has_more), [`by_offset_total`]), the move (with
-//! [`or_when_set`](Paging::or_when_set) or [`switch_on_input`]), the short-page rule
+//! [`or_when_set`](Paging::or_when_set)), the short-page rule
 //! ([`stop_on_short_page`](Paging::stop_on_short_page)) when nothing is stated, and the edits
 //! ([`map_next`](Paging::map_next)):
 //! `paginate by_cursor(after, |page| page.next.clone()).has_more(|page| page.has_more);`.
 
 mod paging;
-pub use paging::{by_offset_total, switch_on_input, Paging};
+pub use paging::{by_offset_total, Paging};
 
 use concord_core::error::{mismatch, Fail};
 use concord_core::page::{Call, IntoItems, Slot};
@@ -977,6 +977,41 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(next.0, Some(Seven(1)));
+    }
+
+    #[test]
+    fn c8_6_what_each_shipped_pager_returns_is_send_and_sync() {
+        fn send_and_sync<T: Send + Sync>(_: &T) {}
+        send_and_sync(&by_offset(Start));
+        send_and_sync(&by_offset_limit(Start, Count));
+        send_and_sync(&by_page(Start, 1));
+        send_and_sync(&by_cursor(After, Page::next));
+        send_and_sync(&by_next_url::<List, _, _>(Page::next));
+        send_and_sync(&by_link::<List>());
+        send_and_sync(&by_offset_total(Start, |_: &Page| 3u32));
+        // also when a function it holds is not `Sync`
+        let seen = std::cell::Cell::new(0);
+        let counted = by_cursor(After, move |page: &Page| {
+            seen.set(seen.get() + 1);
+            page.next()
+        })
+        .has_more(|_| true)
+        .stop_on_short_page_of(10);
+        send_and_sync(&counted);
+    }
+
+    #[test]
+    fn c8_6_a_fixed_page_size_ends_a_list_that_states_nothing() {
+        let mut pager = by_cursor(After, Page::next).stop_on_short_page_of(3);
+        assert!(pager
+            .next_call(list(), &answer(&[1, 2], Some("c2"), None))
+            .unwrap()
+            .is_none());
+        let next = pager
+            .next_call(list(), &answer(&[1, 2, 3], Some("c2"), None))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.after.as_deref(), Some("c2"));
     }
 
     #[test]

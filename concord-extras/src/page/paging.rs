@@ -24,8 +24,7 @@ type Short<C> = Box<dyn Fn(&C, &<C as Call>::Value) -> bool + Send>;
 type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 
 /// A pager with what the page states about it. The six shipped pagers return one; so do
-/// [`by_offset_total`] and [`switch_on_input`], and [`Paging::from_fn`] makes one of your own
-/// function. It is a [`Pager`], so `paginate` takes it as it is; its methods need no import.
+/// [`by_offset_total`], and [`Paging::from_fn`] makes one of your own function. It is a [`Pager`], so `paginate` takes it as it is; its methods need no import.
 ///
 /// For each page, a `Paging` decides **in this order, whatever the order in which its methods
 /// were written**:
@@ -105,6 +104,13 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 /// input of the endpoint (a slot) is a `move` closure.
 #[must_use = "a pager does nothing until `paginate` takes it"]
 pub struct Paging<C: Call> {
+    // The lock is only ever reached through `&mut self` (`get_mut`): it costs nothing, and it
+    // makes `Paging` `Sync` without asking `Sync` of the functions it holds.
+    parts: std::sync::Mutex<Parts<C>>,
+}
+
+/// The parts of a `Paging`, in the order in which they decide.
+struct Parts<C: Call> {
     /// 1. The gates: each input must be set on the call that fetched the page.
     only_when_set: Vec<Gate<C>>,
     /// 2. The statements of the page: `true` for "more".
@@ -118,17 +124,28 @@ pub struct Paging<C: Call> {
     map_next: Vec<Edit<C>>,
 }
 
-impl<C: Call> std::fmt::Debug for Paging<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Paging")
-            .field("only_when_set", &self.only_when_set.len())
-            .field("statements", &self.statements.len())
-            .field("or_when_set", &self.or_when_set.len())
-            .field("stop_on_short_page", &self.stop_on_short_page.len())
-            .field("map_next", &self.map_next.len())
-            .finish_non_exhaustive()
+impl<C: Call> Paging<C> {
+    fn parts(&mut self) -> &mut Parts<C> {
+        self.parts
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
+
+impl<C: Call> std::fmt::Debug for Paging<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Paging").finish_non_exhaustive()
+    }
+}
+
+// What each shipped pager returns is `Send` and `Sync`, as their closures were.
+const _: () = {
+    fn send_and_sync<T: Send + Sync>() {}
+    #[allow(dead_code)]
+    fn paging<C: Call>() {
+        send_and_sync::<Paging<C>>();
+    }
+};
 
 impl<C: Call> Paging<C> {
     /// Makes a `Paging` that moves as `pager` does: any [`Pager`], such as a type of your own that
@@ -159,26 +176,28 @@ impl<C: Call> Paging<C> {
     ///         read Json;
     ///         GET search(after?: String) -> Search {
     ///             query { after; }
-    ///             paginate Paging::new(Complete(by_cursor(after, |page| page.next.clone())))
+    ///             paginate Paging::from_pager(Complete(by_cursor(after, |page| page.next.clone())))
     ///                 .has_more(|page| page.next.is_some());
     ///         }
     ///     }
     /// }
     /// ```
-    pub fn new<P: Pager<C>>(pager: P) -> Paging<C> {
+    pub fn from_pager<P: Pager<C>>(pager: P) -> Paging<C> {
         Paging {
-            only_when_set: Vec::new(),
-            statements: Vec::new(),
-            or_when_set: Vec::new(),
-            moves: Box::new(pager),
-            stop_on_short_page: Vec::new(),
-            map_next: Vec::new(),
+            parts: std::sync::Mutex::new(Parts {
+                only_when_set: Vec::new(),
+                statements: Vec::new(),
+                or_when_set: Vec::new(),
+                moves: Box::new(pager),
+                stop_on_short_page: Vec::new(),
+                map_next: Vec::new(),
+            }),
         }
     }
 
     /// Makes a `Paging` of a function of your own, from the call and the page to the next call:
     /// `Option<C>`, or the same in a `Result` whose error is a [`Fail`]. Unlike
-    /// [`new`](Paging::new), it takes the closure's shape from its bound, so the closure's
+    /// [`from_pager`](Paging::from_pager), it takes the closure's shape from its bound, so the closure's
     /// parameters need no lifetime. Written in place, the closure names the type of the page
     /// (`page: &Answer<Changes>`): Rust learns the call only after the whole expression. A
     /// closure with no method after it needs nothing of this: `paginate |call, page| …;` as
@@ -213,7 +232,7 @@ impl<C: Call> Paging<C> {
         F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
         N: IntoNext<C>,
     {
-        Paging::new(pager)
+        Paging::from_pager(pager)
     }
 
     /// `.has_more(|page| page.has_more)`: the page states whether more items follow. `false` ends
@@ -264,7 +283,8 @@ impl<C: Call> Paging<C> {
     where
         F: FnMut(&C::Value) -> bool + Send + 'static,
     {
-        self.statements
+        self.parts()
+            .statements
             .push(Box::new(move |_, value| Ok(more(value))));
         self
     }
@@ -311,13 +331,57 @@ impl<C: Call> Paging<C> {
         K::Value: Copy + TryInto<usize> + Send + 'static,
         C::Value: IntoItems,
     {
-        self.stop_on_short_page.push(Box::new(move |call, value| {
-            let size = count.get(call).copied().unwrap_or(default);
-            size.try_into()
-                .ok()
-                .is_some_and(|size: usize| value.count() < size)
-        }));
+        self.parts()
+            .stop_on_short_page
+            .push(Box::new(move |call, value| {
+                let size = count.get(call).copied().unwrap_or(default);
+                size.try_into()
+                    .ok()
+                    .is_some_and(|size: usize| value.count() < size)
+            }));
         self
+    }
+
+    /// `.stop_on_short_page_of(100)`: as [`stop_on_short_page`](Paging::stop_on_short_page), for
+    /// an API whose page size is fixed and has no input: a page that holds fewer than `size`
+    /// items is the last, when the page states nothing. If the API changes the size, the list
+    /// ends early, in silence.
+    ///
+    /// ```
+    /// use concord::{by_cursor, Json};
+    /// use concord::page::IntoItems;
+    /// use serde::Deserialize;
+    ///
+    /// /// Journals, always 100 at a time, after the number given in `offset`.
+    /// #[derive(Deserialize)]
+    /// pub struct Journals { #[serde(rename = "Journals", default)] pub journals: Vec<Journal> }
+    /// #[derive(Deserialize)]
+    /// pub struct Journal { #[serde(rename = "JournalNumber")] pub number: i64 }
+    ///
+    /// impl IntoItems for Journals {
+    ///     type Item = Journal;
+    ///     fn into_items(self) -> Vec<Journal> { self.journals }
+    ///     fn count(&self) -> usize { self.journals.len() }
+    /// }
+    ///
+    /// concord::api! {
+    ///     pub client Books {
+    ///         base "https://books.example.test";
+    ///         read Json;
+    ///         GET journals(offset?: i64) -> Journals {
+    ///             path "api.xro/2.0/Journals";
+    ///             query { offset; }
+    ///             paginate by_cursor(offset, |page| Some(page.journals.last()?.number))
+    ///                 .stop_on_short_page_of(100);
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn stop_on_short_page_of(self, size: usize) -> Paging<C>
+    where
+        C::Value: IntoItems,
+    {
+        self.short_page_rule(move |_, value| value.count() < size)
     }
 
     /// `.only_when_set(page)`: when the call that fetched the page did not set `input`, this page
@@ -361,7 +425,8 @@ impl<C: Call> Paging<C> {
     /// }
     /// ```
     pub fn only_when_set<S: Slot<C>>(mut self, input: S) -> Paging<C> {
-        self.only_when_set
+        self.parts()
+            .only_when_set
             .push(Box::new(move |call| input.get(call).is_some()));
         self
     }
@@ -401,7 +466,7 @@ impl<C: Call> Paging<C> {
     /// }
     /// ```
     pub fn or_when_set<S: Slot<C>, P: Pager<C>>(mut self, input: S, other: P) -> Paging<C> {
-        self.or_when_set.push((
+        self.parts().or_when_set.push((
             Box::new(move |call| input.get(call).is_some()),
             Box::new(other),
         ));
@@ -442,7 +507,7 @@ impl<C: Call> Paging<C> {
     where
         F: FnMut(C, &C::Value) -> C + Send + 'static,
     {
-        self.map_next.push(Box::new(edit));
+        self.parts().map_next.push(Box::new(edit));
         self
     }
 }
@@ -453,7 +518,7 @@ impl<C: Call> Paging<C> {
     where
         F: Fn(&C, &C::Value) -> bool + Send + 'static,
     {
-        self.stop_on_short_page.push(Box::new(short));
+        self.parts().stop_on_short_page.push(Box::new(short));
         self
     }
 }
@@ -464,13 +529,14 @@ impl<C: Call> Pager<C> for Paging<C> {
         call: C,
         page: &Answer<C::Value>,
     ) -> Result<Option<C>, Fail<C::Problem>> {
+        let parts = self.parts();
         // 1. The gates.
-        if !self.only_when_set.iter().all(|set| set(&call)) {
+        if !parts.only_when_set.iter().all(|set| set(&call)) {
             return Ok(None);
         }
         // 2. What the page states: every statement is read, once, in the order written; the
         // first that cannot be read is the result, then a disagreement.
-        let read: Vec<_> = self
+        let read: Vec<_> = parts
             .statements
             .iter_mut()
             .map(|statement| statement(&call, page.value()))
@@ -492,16 +558,16 @@ impl<C: Call> Pager<C> for Paging<C> {
         // 4 is read here and applied after the move: a short-page rule reads the call and the
         // page and changes nothing, and the move takes the call.
         let short = stated.is_none()
-            && self
+            && parts
                 .stop_on_short_page
                 .iter()
                 .any(|short| short(&call, page.value()));
         // 3. The move: its failure is the result, also on a short page.
-        let mut chosen = self.or_when_set.iter_mut().filter(|(set, _)| set(&call));
+        let mut chosen = parts.or_when_set.iter_mut().filter(|(set, _)| set(&call));
         let next = match (chosen.next(), chosen.next()) {
             (Some(_), Some(_)) => return Err(mismatch(TWO_MOVES)),
             (Some((_, other)), None) => other.next_call(call, page)?,
-            (None, _) => self.moves.next_call(call, page)?,
+            (None, _) => parts.moves.next_call(call, page)?,
         };
         // 4. With no statement, a short page ends the list.
         if short {
@@ -514,7 +580,7 @@ impl<C: Call> Pager<C> for Paging<C> {
             };
         };
         // 5. The edits, in the order written.
-        for edit in &mut self.map_next {
+        for edit in &mut parts.map_next {
             next = edit(next, page.value());
         }
         Ok(Some(next))
@@ -577,7 +643,7 @@ where
     C::Value: IntoItems,
 {
     let mut paging = super::by_offset(start);
-    paging.statements.push(Box::new(move |call, value| {
+    paging.parts().statements.push(Box::new(move |call, value| {
         // An offset that is not set is zero, whatever the type's `Default` says.
         let at: u64 = match start.get(call) {
             Some(at) => (*at).try_into().map_err(|_| mismatch(OFFSET))?,
@@ -589,47 +655,4 @@ where
         Ok(reached < total)
     }));
     paging
-}
-
-/// `paginate switch_on_input(before, backward, forward);`: when the call that fetched the page
-/// set `input`, `when_set` moves; otherwise `otherwise` does. The same as
-/// `Paging::new(otherwise).or_when_set(input, when_set)`, written as one function so that what
-/// follows it visibly covers both directions.
-///
-/// ```
-/// use concord::page::switch_on_input;
-/// use concord::{by_cursor, Json};
-/// use serde::Deserialize;
-///
-/// #[derive(Deserialize)]
-/// pub struct Batches {
-///     pub data: Vec<serde_json::Value>,
-///     pub has_more: bool,
-///     pub first_id: Option<String>,
-///     pub last_id: Option<String>,
-/// }
-///
-/// concord::api! {
-///     pub client Batching {
-///         base "https://batches.example.test";
-///         read Json;
-///         GET batches(after_id?: String, before_id?: String) -> Batches {
-///             path "v1/batches";
-///             query { after_id; before_id; }
-///             paginate switch_on_input(before_id,
-///                 by_cursor(before_id, |page| page.first_id.clone()),
-///                 by_cursor(after_id, |page| page.last_id.clone()))
-///             .has_more(|page| page.has_more);
-///         }
-///     }
-/// }
-/// ```
-pub fn switch_on_input<C, S, W, O>(input: S, when_set: W, otherwise: O) -> Paging<C>
-where
-    C: Call,
-    S: Slot<C>,
-    W: Pager<C>,
-    O: Pager<C>,
-{
-    Paging::new(otherwise).or_when_set(input, when_set)
 }
