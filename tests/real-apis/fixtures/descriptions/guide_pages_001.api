@@ -1,0 +1,30 @@
+pub client Shop {
+        base "https://shop.example.test";
+        read Json;
+
+        /// A cursor, and a flag that says whether more items follow.
+        GET customers(limit?: u32, starting_after?: String) -> Batch<Customer> {
+            query { limit; starting_after; }
+            paginate by_cursor(starting_after, |page| page.last_id.clone())
+                .has_more(|page| page.has_more);
+        }
+        /// An offset, and the total number of items in the list.
+        GET orders(offset?: u32, limit?: u32) -> Counted<Order> {
+            query { offset; limit; }
+            paginate by_offset_total(offset, |page| page.total);
+        }
+        /// A page number, and the number of pages.
+        GET products(page?: u32) -> Numbered<Product> {
+            query { page; }
+            paginate by_page(page, 1).has_more(|list| list.page < list.pages);
+        }
+        /// The URL of the next page, in a `Link` header.
+        GET reviews(per_page?: u32) -> Vec<Review> {
+            query { per_page; }
+            paginate by_link();
+        }
+        /// The URL of the next page, in the body.
+        GET invoices() -> Linked<Invoice> {
+            paginate by_next_url(|page: &Linked<Invoice>| page.next.clone());
+        }
+    }

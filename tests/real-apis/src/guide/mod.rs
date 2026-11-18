@@ -106,6 +106,38 @@ mod guide_extending_003 {
     }
 }
 #[doc(hidden)]
+mod guide_pages_001 {
+    use super::support::*;
+    include!("guide_pages_001.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Shop>()
+    }
+}
+#[doc(hidden)]
+mod guide_pages_002 {
+    use super::support::*;
+    include!("guide_pages_002.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Index>()
+    }
+}
+#[doc(hidden)]
+mod guide_pages_003 {
+    use super::support::*;
+    include!("guide_pages_003.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Drive>()
+    }
+}
+#[doc(hidden)]
+mod guide_pages_004 {
+    use super::support::*;
+    include!("guide_pages_004.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Catalog>()
+    }
+}
+#[doc(hidden)]
 mod guide_recipes_001 {
     use super::support::*;
     include!("guide_recipes_001.rs");
@@ -202,7 +234,7 @@ mod guide_tour_003 {
     }
 }
 /// The concrete client types emitted by every documented description.
-pub fn compiled_descriptions() -> [&'static str; 37] {
+pub fn compiled_descriptions() -> [&'static str; 41] {
     [
         readme_001::compiled(),
         readme_002::compiled(),
@@ -217,6 +249,10 @@ pub fn compiled_descriptions() -> [&'static str; 37] {
         guide_extending_001::compiled(),
         guide_extending_002::compiled(),
         guide_extending_003::compiled(),
+        guide_pages_001::compiled(),
+        guide_pages_002::compiled(),
+        guide_pages_003::compiled(),
+        guide_pages_004::compiled(),
         guide_recipes_001::compiled(),
         guide_recipes_002::compiled(),
         guide_recipes_003::compiled(),

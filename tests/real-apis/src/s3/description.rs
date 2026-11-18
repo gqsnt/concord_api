@@ -75,7 +75,8 @@ concord::api! {
                     "start-after" = start_after;
                     "fetch-owner" = fetch_owner;
                 }
-                paginate checked_cursor(continuation_token, ObjectsPage::next);
+                paginate by_cursor(continuation_token, |page| page.next_continuation_token.clone())
+                    .has_more(|page| page.is_truncated);
             }
             /// A key that could not be deleted is in `DeleteResult.errors`, under a `200`.
             POST delete_objects(batch: DeleteBatch) -> DeleteResult {
@@ -154,7 +155,8 @@ concord::api! {
                             "max-parts" = max_parts;
                             "part-number-marker" = part_number_marker;
                         }
-                        paginate checked_cursor(part_number_marker, PartsPage::next);
+                        paginate by_cursor(part_number_marker, |page| page.next_part_number_marker)
+                            .has_more(|page| page.is_truncated);
                     }
                 }
             }
