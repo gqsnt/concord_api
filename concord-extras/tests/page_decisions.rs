@@ -100,3 +100,66 @@ async fn c8_6_an_empty_page_that_announces_another_is_a_mismatch() {
     assert_eq!(error.reason(), Some(MORE));
     assert_eq!(script.requests().len(), 1);
 }
+
+/// A limit of any new public trait with an implementation for closures: with a glob import of
+/// `concord::page::*`, `Pager::next_call` is found on a box of a closure before the author's own
+/// method of that name, which Rust reaches only through the box. This pins it, so a change notices.
+mod a_glob_import {
+    use super::Page;
+    use concord::page::*;
+    use concord::{Answer, Fail, Json};
+
+    type Callback = dyn FnMut(lists::Call<lists::Tokens>, &Answer<Page>) -> Option<lists::Call<lists::Tokens>>
+        + Send;
+    // Rust reports the author's trait as never used: that is what this test shows.
+    #[allow(dead_code)]
+    trait LocalMove {
+        fn next_call(
+            &mut self,
+            call: lists::Call<lists::Tokens>,
+            page: &Answer<Page>,
+        ) -> Result<Option<lists::Call<lists::Tokens>>, Fail<()>>;
+    }
+    impl LocalMove for Callback {
+        fn next_call(
+            &mut self,
+            call: lists::Call<lists::Tokens>,
+            page: &Answer<Page>,
+        ) -> Result<Option<lists::Call<lists::Tokens>>, Fail<()>> {
+            Ok(match page.value().items.first() {
+                Some(1) => Some(call.after("next")),
+                _ => self(call, page),
+            })
+        }
+    }
+
+    concord::api! {
+        client Lists {
+            base "https://lists.test";
+            read Json;
+            GET tokens(after?: String) -> Page {
+                path "tokens";
+                query { after; }
+                paginate {
+                    let mut f: Box<Callback> = Box::new(|_, _| None);
+                    move |call, page| f.next_call(call, page)
+                };
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c8_6_a_glob_import_makes_a_boxed_closure_call_concords_next_call_not_the_authors() {
+        let script = concord_testkit::Script::new();
+        script.answer(200).body(r#"{"items":[1]}"#);
+        script.answer(200).body(r#"{"items":[2]}"#);
+        let mut pages = Lists::new().with_transport(script.clone()).tokens().pages();
+        let mut items = Vec::new();
+        while let Some(page) = pages.try_next().await.unwrap() {
+            items.extend(page.items);
+        }
+        // The author's method would have asked for the second page; Concord's ends the list.
+        assert_eq!(items, [1]);
+        assert_eq!(script.requests().len(), 1);
+    }
+}

@@ -1111,6 +1111,42 @@ mod tests {
     }
 
     #[test]
+    fn c8_6_an_outer_no_more_skips_the_statements_of_a_converted_pager() {
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let inner = read.clone();
+        let converted = by_cursor(After, Page::next)
+            .has_more(move |_| {
+                inner.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                true
+            })
+            .into_fn();
+        let mut pager = Paging::from_fn(converted).has_more(|_| false);
+        assert!(pager
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap()
+            .is_none());
+        assert_eq!(read.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn c8_6_an_outer_short_page_rule_ends_a_list_that_a_converted_pager_says_goes_on() {
+        let converted = by_cursor(After, Page::next).has_more(|_| true).into_fn();
+        let mut pager = Paging::from_fn(converted).stop_on_short_page_of(10);
+        assert!(pager
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap()
+            .is_none());
+        // the same pager, not converted: its statement has authority over the rule
+        let mut direct = by_cursor(After, Page::next)
+            .has_more(|_| true)
+            .stop_on_short_page_of(10);
+        assert!(direct
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
     fn c8_6_a_pager_of_your_own_is_written_the_same_way() {
         // by page number: the next page is one further, until a page comes back empty
         fn by_page<C: Call, S: Slot<C, Value = u32>>(

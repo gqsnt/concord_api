@@ -258,6 +258,12 @@ impl<C: Call> Paging<C> {
     /// function type shared with closures. Where you write the parameter yourself, prefer
     /// `impl Pager<C>` and call [`Pager::next_call`]: it keeps the pager's name in your signature.
     ///
+    /// **It ends a decision.** Attach every rule before the conversion: `by_cursor(…)
+    /// .has_more(…).into_fn()`. A converted value wrapped again with [`Paging::from_fn`] starts a
+    /// separate decision, whose rules come first and know nothing of the inner ones: an outer
+    /// "no more" ends the list without reading the inner statements, and an outer short-page rule
+    /// can end the list although an inner statement says that more items follow.
+    ///
     /// ```
     /// use concord::page::{Call, Paging};
     /// use concord::{by_cursor, Answer, Fail, Json};
