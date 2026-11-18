@@ -445,7 +445,8 @@ impl<C: Call> IntoNext<C> for Result<Option<C>, Fail<C::Problem>> {
 /// **A method of your own named `next_call`.** `Pager` is implemented for every closure, so with
 /// `use concord::page::*;` its `next_call` is in scope wherever a closure is. If a trait of yours
 /// also has a method named `next_call`, call yours by its trait, as Rust does for any two traits
-/// with one method name: `LocalMove::next_call(&mut f, call, page)`. Rust may report the
+/// with one method name: `LocalMove::next_call(&mut f, call, page)`, or `&mut *f` for a box
+/// `f: Box<dyn …>`. Rust may report the
 /// ambiguity (E0034, "multiple applicable items in scope"), or, on a box of a closure, quietly
 /// call Concord's method, which Rust finds first; so qualify the call in both cases.
 #[diagnostic::on_unimplemented(

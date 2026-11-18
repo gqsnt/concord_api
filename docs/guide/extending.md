@@ -19,7 +19,7 @@ Before you write your own, check what Concord ships. The macro knows none of the
 | `json_lines(records, max_bytes)` | `json` (on by default) | A bulk endpoint takes one JSON value per line. |
 | `Text`, `Binary`, `read::Stream` | none | The body is text, raw bytes, or too large to hold in memory ([reading a success](responses-and-errors.md#reading-a-success)). |
 | `read::JsonLines`, `read::Sse` | `json` for `JsonLines` | The body is a sequence of records: JSON Lines, or server-sent events ([a stream of records](responses-and-errors.md#a-stream-of-records)). |
-| `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` | none | A list arrives over several responses ([the shipped pagers](pages.md#the-shipped-pagers)). |
+| `by_offset`, `by_offset_limit`, `by_offset_total`, `by_page`, `by_cursor`, `by_link`, `by_next_url`, and the methods of the `Paging` they return (`has_more`, `stop_on_short_page`, `only_when_set`, `or_when_set`, `map_next`) | none | A list arrives over several responses, and the page may say whether more follow ([the shipped pagers](pages.md#the-shipped-pagers)). |
 | `basic(user, password)` | none | The API uses HTTP Basic. |
 | `auth::Renewed`, `auth::after_401` | `auth` | A token expires, and a renewal that was cancelled can simply be started again ([a token that is renewed](credentials.md#a-token-that-is-renewed)). |
 | `auth::Rotating` | `rotating` (turns on `auth`) | Each exchange consumes the refresh token and returns its replacement ([a refresh token that rotates](credentials.md#a-refresh-token-that-rotates)). |
@@ -136,9 +136,9 @@ where
 }
 ```
 
-A pager returns `Some(next call)`, or `None` at the end. A pager that can reject a page returns a `Result` whose error is a `concord::Fail` (the same type that a function used in an arm fails with; `concord::mismatch("…")` creates one): a page that says "there is more" but gives no cursor is an error, not the end. That pager, `more`, is written out in [a pager of your own](pages.md#a-pager-of-your-own), along with what `Call::at_url` does for an API that hands out URLs. To remove the fragment from a next-page URL, the shipped pagers use `concord::page::fragmentless`, which is public too. The shipped pagers are in [`concord-extras/src/page.rs`](../../concord-extras/src/page.rs).
+A pager returns `Some(next call)`, or `None` at the end. A pager that can reject a page returns a `Result` whose error is a `concord::Fail` (the same type that a function used in an arm fails with; `concord::mismatch("…")` creates one): a page that says "there is more" but gives no cursor is an error, not the end. A shipped pager says that with one method, `.has_more(…)` ([more items, but nothing to continue with](pages.md#more-items-but-nothing-to-continue-with-is-an-error)); [a pager of your own](pages.md#a-pager-of-your-own) shows how yours calls a shipped one (`next_call`, with `concord::page::Pager` in scope: a shipped pager is a value, not a function), and what `Call::at_url` does for an API that hands out URLs. To remove the fragment from a next-page URL, the shipped pagers use `concord::page::fragmentless`, which is public too. The shipped pagers are in [`concord-extras/src/page.rs`](../../concord-extras/src/page.rs).
 
-**Your own list type as a page.** `.pages().items()` and the counting pagers (`by_offset`, `by_offset_limit`, `by_page`) require one trait on the return type, `concord::page::IntoItems`: `into_items` and `count`, a few lines. It is written out in [a page type of your own](pages.md#a-page-type-of-your-own-intoitems).
+**Your own list type as a page.** `.pages().items()`, the counting pagers (`by_offset`, `by_offset_limit`, `by_offset_total`, `by_page`) and the short-page rules (`stop_on_short_page`, `stop_on_short_page_of`) require one trait on the return type, `concord::page::IntoItems`: `into_items` and `count`, a few lines. It is written out in [a page type of your own](pages.md#a-page-type-of-your-own-intoitems).
 
 ## A middleware
 
