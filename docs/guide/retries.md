@@ -149,7 +149,7 @@ To test your own policy on virtual time and check when each attempt happens, see
 
 ### What can send a request twice
 
-With the default transport, `concord::Http`, every repetition of a request is an attempt of the engine: `e.tries()` counts it, the retry policy decides it, and it happens only for a request that may be repeated ([three questions decide a retry](#three-questions-decide-a-retry)). With no retry policy, a request gets one attempt.
+With the default transport, `concord::Http`, and the middleware layers that Concord ships, every repetition of a request is an attempt of the engine: `e.tries()` counts it, the retry policy decides it, and it happens only for a request that may be repeated ([three questions decide a retry](#three-questions-decide-a-retry)). With no retry policy, a request gets one attempt.
 
 - **`reqwest` resends nothing on its own.** `Http::with(f)` builds its client with `reqwest::retry::never()`, applied after `f` as the redirect policy is, so a retry policy that `f` sets with `builder.retry(…)` is replaced ([Concord's own HTTP client](../reference/crates.md#concords-own-http-client)).
 - **The connection pool** under `reqwest` sends a request again, on another connection, only when a reused connection turned out to be unusable and handed the request back before writing any of it. That never puts a request on the wire twice, and it is not an attempt.
