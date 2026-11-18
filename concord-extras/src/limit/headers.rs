@@ -2,7 +2,7 @@
 use super::{Learn, Seen, Window};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use time::format_description::well_known::Rfc3339;
-use time::{Date, Month, OffsetDateTime};
+use time::OffsetDateTime;
 
 const MAX_HEADER_BYTES: usize = 4096;
 const MAX_WINDOWS: usize = 8;
@@ -85,7 +85,7 @@ pub(super) fn remaining_rfc3339(limit: String, remaining: String, reset: String)
             let capacity = number(text(seen, &limit)?)?;
             let remaining = number(text(seen, &remaining)?)?;
             let at = rfc3339(text(seen, &reset)?)?;
-            let until = at.duration_since(seen.server_now()).ok()?;
+            let until = until(at, seen.server_now())?;
             if capacity == 0 || remaining > capacity || until.is_zero() {
                 return None;
             }
@@ -99,21 +99,27 @@ pub(super) fn remaining_rfc3339(limit: String, remaining: String, reset: String)
     })
 }
 
-fn digits(text: &str, from: usize, to: usize) -> Option<u16> {
-    let part = text.get(from..to)?;
-    if !part.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    part.parse().ok()
+/// More than fifty years of 365.2425 days ahead is not a reset, as for an HTTP date's year.
+const FIFTY_YEARS: Duration = Duration::from_secs(1_577_847_600);
+
+/// The time from `base` to a reset: zero when it is past, `None` beyond fifty years.
+pub(super) fn until(reset: SystemTime, base: SystemTime) -> Option<Duration> {
+    let until = reset.duration_since(base).unwrap_or_default();
+    (until <= FIFTY_YEARS).then_some(until)
 }
 
 fn at_nanos(nanos: i128) -> Option<SystemTime> {
-    let nanos = u128::try_from(nanos).ok()?;
+    let size = nanos.unsigned_abs();
     // PANIC-SAFETY: Division and remainder by a nonzero constant cannot overflow or panic.
-    let seconds = u64::try_from(nanos / 1_000_000_000).ok()?;
+    let seconds = u64::try_from(size / 1_000_000_000).ok()?;
     // PANIC-SAFETY: Division and remainder by a nonzero constant cannot overflow or panic.
-    let fraction = u32::try_from(nanos % 1_000_000_000).ok()?;
-    UNIX_EPOCH.checked_add(Duration::new(seconds, fraction))
+    let fraction = u32::try_from(size % 1_000_000_000).ok()?;
+    let offset = Duration::new(seconds, fraction);
+    if nanos < 0 {
+        UNIX_EPOCH.checked_sub(offset)
+    } else {
+        UNIX_EPOCH.checked_add(offset)
+    }
 }
 
 /// An RFC 3339 date-time, read by `time` within the stricter rules of `Seen::until_rfc3339`.
@@ -159,46 +165,15 @@ pub(super) fn rfc3339(text: &str) -> Option<SystemTime> {
     if finer {
         nanos = nanos.checked_add(1)?;
     }
-    // A date before 1970 is past.
-    Some(at_nanos(nanos).unwrap_or(UNIX_EPOCH))
+    at_nanos(nanos)
 }
 
-/// An HTTP date in its preferred form, `Sun, 06 Nov 1994 08:49:37 GMT`, on `time`'s calendar.
-pub(super) fn http_date(text: &str) -> Option<SystemTime> {
-    const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    let text = text.trim_matches([' ', '\t']);
-    let bytes = text.as_bytes();
-    let shape = bytes.len() == 29
-        && text.get(3..5) == Some(", ")
-        && [7, 11, 16].iter().all(|at| bytes.get(*at) == Some(&b' '))
-        && [19, 22].iter().all(|at| bytes.get(*at) == Some(&b':'))
-        && text.get(25..) == Some(" GMT");
-    if !shape {
+/// The `Date` of a response, in any of the three forms of an HTTP date, read by the core.
+pub(super) fn http_date(text: &str, now: SystemTime) -> Option<SystemTime> {
+    if text.len() > MAX_HEADER_BYTES {
         return None;
     }
-    let month = MONTHS
-        .iter()
-        .position(|name| text.get(8..11) == Some(*name))?;
-    let month = Month::try_from(u8::try_from(month.checked_add(1)?).ok()?).ok()?;
-    let day = u8::try_from(digits(text, 5, 7)?).ok()?;
-    let year = i32::from(digits(text, 12, 16)?);
-    let date = Date::from_calendar_date(year, month, day).ok()?;
-    let weekday = DAYS.get(usize::from(date.weekday().number_days_from_monday()))?;
-    if text.get(..3) != Some(*weekday) {
-        return None;
-    }
-    let hour = u8::try_from(digits(text, 17, 19)?).ok()?;
-    let minute = u8::try_from(digits(text, 20, 22)?).ok()?;
-    let second = u8::try_from(digits(text, 23, 25)?).ok()?;
-    let seconds = date
-        .with_hms(hour, minute, second)
-        .ok()?
-        .assume_utc()
-        .unix_timestamp();
-    at_nanos(i128::from(seconds).checked_mul(1_000_000_000)?)
+    concord_core::retry::http_date(text.trim_matches([' ', '\t']), now)
 }
 
 #[cfg(test)]
@@ -312,35 +287,70 @@ mod tests {
     }
 
     #[test]
-    fn c11_5_rfc3339_before_1970_is_past() {
-        assert_eq!(rfc3339("1969-12-31T23:59:59Z"), Some(UNIX_EPOCH));
-        assert_eq!(rfc3339("0001-01-01T00:00:00Z"), Some(UNIX_EPOCH));
+    fn c11_5_rfc3339_before_1970_keeps_its_sign() {
+        assert_eq!(
+            rfc3339("1969-12-31T23:59:59Z"),
+            UNIX_EPOCH.checked_sub(Duration::from_secs(1))
+        );
+        assert_eq!(
+            rfc3339("1969-12-31T23:59:59.5Z"),
+            UNIX_EPOCH.checked_sub(Duration::from_millis(500))
+        );
+        assert_eq!(
+            rfc3339("0001-01-01T00:00:00Z"),
+            UNIX_EPOCH.checked_sub(Duration::from_secs(62_135_596_800))
+        );
     }
 
     #[test]
-    fn c11_5_date_header_is_read_only_in_its_preferred_form() {
+    fn c11_5_a_reset_further_than_fifty_years_is_none() {
+        let base = UNIX_EPOCH + Duration::from_secs(T);
+        assert_eq!(until(base + FIFTY_YEARS, base), Some(FIFTY_YEARS));
         assert_eq!(
-            http_date("Sun, 06 Nov 1994 08:49:37 GMT"),
-            at(784_111_777, 0)
+            until(base + FIFTY_YEARS + Duration::from_nanos(1), base),
+            None
         );
         assert_eq!(
-            http_date(" Sun, 06 Nov 1994 08:49:37 GMT "),
-            at(784_111_777, 0)
+            until(base - Duration::from_secs(1), base),
+            Some(Duration::ZERO)
         );
+    }
+
+    #[test]
+    fn c11_5_date_header_is_read_in_the_three_http_forms() {
+        let now = UNIX_EPOCH + Duration::from_secs(T);
         for text in [
-            "Mon, 06 Nov 1994 08:49:37 GMT",
+            "Sun, 06 Nov 1994 08:49:37 GMT",
+            " Sun, 06 Nov 1994 08:49:37 GMT\t",
             "Sunday, 06-Nov-94 08:49:37 GMT",
             "Sun Nov  6 08:49:37 1994",
+        ] {
+            assert_eq!(http_date(text, now), at(784_111_777, 0), "{text}");
+        }
+        assert_eq!(
+            http_date("Sat, 31 Dec 2016 23:59:60 GMT", now),
+            at(1_483_228_800, 0)
+        );
+        assert_eq!(
+            http_date("Fri, 01 Jan 1960 00:00:00 GMT", now),
+            UNIX_EPOCH.checked_sub(Duration::from_secs(315_619_200))
+        );
+        let long = format!("Sun, 06 Nov 1994 08:49:37 GMT{}", " ".repeat(4097 - 29));
+        assert_eq!(http_date(&long, now), None);
+        let exact = format!("Sun, 06 Nov 1994 08:49:37 GMT{}", " ".repeat(4096 - 29));
+        assert_eq!(http_date(&exact, now), at(784_111_777, 0));
+        for text in [
+            "Mon, 06 Nov 1994 08:49:37 GMT",
             "Sun, 06 Nov 1994 08:49:37 UTC",
             "Sun, 06 nov 1994 08:49:37 GMT",
             "Sun, 6 Nov 1994 08:49:37 GMT",
             "Thu, 30 Feb 1995 08:49:37 GMT",
             "Sun, 06 Nov 1994 24:49:37 GMT",
             "Sun, 06 Nov 1994 08:49:60 GMT",
-            "Thu, 01 Jan 1960 00:00:00 GMT",
+            "784111777",
             "",
         ] {
-            assert_eq!(http_date(text), None, "{text}");
+            assert_eq!(http_date(text, now), None, "{text}");
         }
     }
 }

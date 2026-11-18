@@ -139,7 +139,8 @@ async fn c11_5_rfc3339_without_one_valid_date_counts_from_the_local_clock() {
     let reset = rfc3339(local + 3600);
     let script = Script::new();
     script.answer(200).header("x-reset", &reset);
-    // Repeated, in an obsolete form, and not a date: each falls back to this clock.
+    // Repeated, with a weekday that is not the date's, and not a date: each falls back to
+    // this clock.
     script
         .answer(200)
         .header("date", &http_date(T))
@@ -147,7 +148,7 @@ async fn c11_5_rfc3339_without_one_valid_date_counts_from_the_local_clock() {
         .header("x-reset", &reset);
     script
         .answer(200)
-        .header("date", "Tuesday, 01-Jan-30 00:00:00 GMT")
+        .header("date", "Monday, 01-Jan-30 00:00:00 GMT")
         .header("x-reset", &reset);
     script
         .answer(200)
@@ -398,4 +399,104 @@ async fn c11_5_a_reset_already_consumed_grants_no_refill_when_learning_resumes()
         sent(&script, start),
         [sec(0), sec(2), sec(2), sec(2), sec(2), sec(12)]
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_the_date_header_is_read_in_the_three_http_forms_and_bounded() {
+    let long_date = format!("{}{}", http_date(T), " ".repeat(4097));
+    let script = Script::new();
+    let (limit, seen) = recorder();
+    let cases = [
+        // RFC 850, asctime, a leap second, and a date before 1970.
+        (
+            "Sunday, 06-Nov-94 08:49:37 GMT",
+            "1994-11-06T08:49:39Z".to_owned(),
+        ),
+        (
+            "Sun Nov  6 08:49:37 1994",
+            "1994-11-06T08:49:39Z".to_owned(),
+        ),
+        (
+            "Sat, 31 Dec 2016 23:59:60 GMT",
+            "2017-01-01T00:00:02Z".to_owned(),
+        ),
+        (
+            "Wed, 31 Dec 1969 23:59:57 GMT",
+            "1969-12-31T23:59:59Z".to_owned(),
+        ),
+        // Offsets.
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "2030-01-01T00:00:00-00:30".to_owned(),
+        ),
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "2030-01-01T00:00:00-99:59".to_owned(),
+        ),
+        // Fifty years ahead of the Date, and one second more.
+        ("Tue, 01 Jan 2030 00:00:00 GMT", rfc3339(T + 1_577_847_600)),
+        ("Tue, 01 Jan 2030 00:00:00 GMT", rfc3339(T + 1_577_847_601)),
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "9999-12-31T23:59:59-23:59".to_owned(),
+        ),
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "9999-12-31T23:59:60Z".to_owned(),
+        ),
+        // A Date over 4,096 bytes is not read: the local clock counts instead.
+        (long_date.as_str(), rfc3339(T + 2)),
+    ];
+    for (date, reset) in &cases {
+        script
+            .answer(200)
+            .header("date", date)
+            .header("x-reset", reset);
+        call(&limit, &script).await.unwrap();
+    }
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        seen[..10],
+        [
+            Some(sec(2)),
+            Some(sec(2)),
+            Some(sec(2)),
+            Some(sec(2)),
+            Some(sec(1800)),
+            None,
+            Some(sec(1_577_847_600)),
+            None,
+            None,
+            None,
+        ]
+    );
+    let local = seen[10].unwrap();
+    assert!(
+        local > sec(T + 2 - local_now() - 60) && local <= sec(T + 2 - local_now()),
+        "{local:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_remaining_in_unix_seconds_learns_a_reset_fifty_years_ahead() {
+    // The reader of Unix seconds has no such bound: it learns the window, and the next call,
+    // which would wait sixty years, fails at once.
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "1")
+        .header("x-remaining", "0")
+        .header("x-reset", &(local_now() + 60 * 31_556_952).to_string());
+    let limit = Limit::new().bucket(Bucket::new(|_| Some("requests".into())).learn(remaining(
+        "x-limit",
+        "x-remaining",
+        "x-reset",
+    )));
+    call(&limit, &script).await.unwrap();
+    let error = call(&limit, &script).await.unwrap_err();
+    assert!(matches!(
+        cause(&error),
+        LimitError::MaxHold { required: Some(wait), .. } if *wait > sec(59 * 31_556_952)
+    ));
+    assert_eq!(script.requests().len(), 1);
 }

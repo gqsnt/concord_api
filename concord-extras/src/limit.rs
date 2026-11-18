@@ -636,15 +636,16 @@ impl Seen<'_> {
     /// Returns the time until an RFC 3339 date-time, such as `2026-11-17T12:00:30Z`, counted
     /// on the server's clock when the response gives it.
     ///
-    /// The time is counted from the response's `Date` header when it appears once and is an
-    /// HTTP date in its usual form (`Sun, 06 Nov 1994 08:49:37 GMT`), so that a wrong clock
+    /// The time is counted from the response's `Date` header when it appears once, holds at
+    /// most 4096 bytes and is an HTTP date in any of its three forms, read as `Retry-After` is
+    /// read (`Sun, 06 Nov 1994 08:49:37 GMT`, and the two obsolete forms), so that a wrong clock
     /// in this process does not move the reset. Without such a header it is counted from
     /// [`now()`](Self::now), and a wrong clock then costs this much: a clock that is fast by
     /// some minutes makes each reset that much nearer, so a window refills that much early,
     /// and a reset nearer than the error looks past and teaches nothing; a clock that is
     /// slow makes requests wait that much longer than the server needs. The limit then waits
     /// on its internal timer, not on the wall clock. [`until_unix`](Self::until_unix) always
-    /// counts from `now()`.
+    /// counts from `now()`, and has no bound of fifty years.
     ///
     /// Accepted: a full date, then `T`, `t` or one space, a full time with seconds, an
     /// optional fraction, then `Z`, `z` or an offset such as `+01:00`; spaces and tabs around
@@ -652,7 +653,8 @@ impl Seen<'_> {
     /// as the next second. A fraction finer than a nanosecond is rounded up, never down.
     /// Returns zero if the date is past. Returns `None` for any other separator, a date that
     /// does not exist, a malformed offset, a leap second at another time, a text over 4096
-    /// bytes, or a date that cannot be represented.
+    /// bytes, a date that cannot be represented, or a reset more than fifty years (of 365.2425
+    /// days) ahead, as an HTTP date's two-digit year is never read further ahead.
     ///
     /// ```no_run
     /// fn reset(seen: &concord::limit::Seen<'_>) -> Option<std::time::Duration> {
@@ -660,14 +662,13 @@ impl Seen<'_> {
     /// }
     /// ```
     pub fn until_rfc3339(&self, text: &str) -> Option<Duration> {
-        let reset = headers::rfc3339(text)?;
-        Some(reset.duration_since(self.server_now()).unwrap_or_default())
+        headers::until(headers::rfc3339(text)?, self.server_now())
     }
 
     /// The response's `Date` when it is one valid HTTP date; otherwise the local clock.
     fn server_now(&self) -> SystemTime {
         self.header("date")
-            .and_then(headers::http_date)
+            .and_then(|date| headers::http_date(date, self.now))
             .unwrap_or(self.now)
     }
 }
