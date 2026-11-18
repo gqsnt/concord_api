@@ -28,6 +28,7 @@ pub(super) struct Policy {
     pub(super) timeout: Duration,
     pub(super) name: HeaderName,
     pub(super) format: Arc<Format>,
+    pub(super) rejects: Option<Arc<crate::auth::rejection::Rejects>>,
 }
 #[derive(Clone)]
 pub(super) struct Version {
@@ -114,6 +115,7 @@ impl Inner {
                     timeout: Duration::from_secs(30),
                     name: AUTHORIZATION,
                     format: Arc::new(default_format),
+                    rejects: None,
                 },
                 current: None,
                 pending: None,
@@ -149,6 +151,15 @@ impl Inner {
         }
         drop(retired);
         self.demand.notify_one();
+    }
+    // Reject the access token only if it is still the one that the request carried.
+    pub(super) fn reject(&self, generation: &Arc<()>) {
+        let mut state = self.lock();
+        if let Some(current) = &mut state.current {
+            if Arc::ptr_eq(&current.generation, generation) {
+                current.rejected = true;
+            }
+        }
     }
     fn storage_panicked(&self) {
         let retired = {

@@ -1774,3 +1774,60 @@ async fn c11_3_renewed_treats_a_renewal_not_sent_as_a_failure_and_tries_again() 
     assert_attempts(&tokens, &[1, 1]);
     assert_header(&api, 0, "authorization", "Bearer new-secret");
 }
+
+fn rejected(seen: &concord_extras::auth::Seen<'_>) -> bool {
+    seen.status() == 200 && seen.body() == b"rejected"
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_2_renewed_rejection_inside_a_200_renews_the_next_call_without_resending() {
+    let tokens = Script::new();
+    mint(&tokens, 0);
+    let api = Script::new();
+    api.answer(200).body("rejected");
+    api.answer(200).body("ok");
+    let auth = renewed(&tokens)
+        .with_token(initial("seed-secret", 100))
+        .unwrap()
+        .rejected_when(rejected);
+    let client = client(&api, auth).with_retry(Retry::standard().when(after_401));
+    assert_eq!(client.get().await.unwrap(), "rejected");
+    assert_attempts(&api, &[1]);
+    assert_attempts(&tokens, &[]);
+    assert_eq!(client.get().await.unwrap(), "ok");
+    assert_attempts(&api, &[1, 1]);
+    assert_attempts(&tokens, &[1]);
+    assert_header(&api, 0, "authorization", "Bearer seed-secret");
+    assert_header(&api, 1, "authorization", "Bearer new-secret");
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_2_renewed_late_rejection_inside_a_200_keeps_the_newer_token() {
+    let tokens = Script::new();
+    mint(&tokens, 0);
+    let api = Script::new();
+    api.answer(200).after(seconds(5)).body("rejected");
+    api.answer(200).body("rejected");
+    api.answer(200).body("c");
+    api.answer(200).body("d");
+    let auth = renewed(&tokens)
+        .with_token(initial("seed-secret", 100))
+        .unwrap()
+        .rejected_when(rejected);
+    let client = client(&api, auth);
+    let late = tokio::spawn({
+        let client = client.clone();
+        async move { client.get().await }
+    });
+    tokio::task::yield_now().await;
+    assert_attempts(&api, &[1]);
+    assert_eq!(client.get().await.unwrap(), "rejected");
+    assert_eq!(client.get().await.unwrap(), "c");
+    assert_eq!(late.await.unwrap().unwrap(), "rejected");
+    assert_eq!(client.get().await.unwrap(), "d");
+    assert_attempts(&tokens, &[1]);
+    assert_header(&api, 0, "authorization", "Bearer seed-secret");
+    assert_header(&api, 1, "authorization", "Bearer seed-secret");
+    assert_header(&api, 2, "authorization", "Bearer new-secret");
+    assert_header(&api, 3, "authorization", "Bearer new-secret");
+}

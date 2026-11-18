@@ -3083,3 +3083,267 @@ async fn c12_6_only_a_refusal_before_the_first_attempt_is_not_sent() {
         .source()
         .is_some_and(|s| s.to_string() == "private cause"));
 }
+
+// A credential that the API rejects inside a `200`.
+
+#[derive(Debug, Deserialize)]
+struct SlackProblem {
+    error: String,
+}
+fn slack_envelope(body: serde_json::Value) -> Result<String, concord::Fail<SlackProblem>> {
+    if body.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+        return Ok(body["user"].as_str().unwrap_or_default().to_owned());
+    }
+    let problem: SlackProblem =
+        serde_json::from_value(body).map_err(|_| concord::mismatch("ok: false with no error"))?;
+    Err(problem)?
+}
+concord::api! {
+    client Slack {
+        base "https://slack.test/api";
+        read concord::Json;
+        problem SlackProblem;
+        status { 2xx { body } => slack_envelope(body)? }
+        POST auth_test() -> String { path "auth.test"; }
+    }
+}
+// What the client's author states once: the errors of the envelope that reject the token.
+fn slack_rejects(seen: &concord::auth::Seen<'_>) -> bool {
+    #[derive(Deserialize)]
+    struct Envelope {
+        ok: bool,
+        error: Option<String>,
+    }
+    seen.status() == 200
+        && serde_json::from_slice::<Envelope>(seen.body()).is_ok_and(|reply| {
+            !reply.ok
+                && matches!(
+                    reply.error.as_deref(),
+                    Some("token_expired" | "token_revoked" | "invalid_auth")
+                )
+        })
+}
+fn rejected(seen: &concord::auth::Seen<'_>) -> bool {
+    seen.body() == b"rejected"
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_token_expired_inside_a_200_makes_the_next_call_exchange() {
+    let future = SystemTime::now() + sec(3600);
+    let rig = Rig::new(Stored::Ready(TokenPair::new(
+        "xoxe.xoxb-a",
+        "xoxe-1-r",
+        Some(future),
+    )));
+    rig.issue("xoxe.xoxb-b", "xoxe-1-s", 0);
+    rig.resource
+        .answer(200)
+        .header("content-type", "application/json")
+        .body(r#"{"ok": false, "error": "token_expired"}"#);
+    rig.resource
+        .answer(200)
+        .header("content-type", "application/json")
+        .body(r#"{"ok": true, "user": "U1"}"#);
+    let tokens = Tokens::new().with_transport(rig.tokens.clone());
+    let events = rig.events.clone();
+    let (auth, driver) = Rotating::new(
+        &"https://slack.test".parse().unwrap(),
+        rig.store.clone(),
+        move |exchange: Exchange| {
+            let tokens = tokens.clone();
+            let events = events.clone();
+            async move {
+                events
+                    .lock()
+                    .unwrap()
+                    .push(format!("exchange {}", &*exchange.refresh().expose()));
+                let reply = tokens.exchange(exchange.refresh()).await?;
+                Ok(TokenPair::expires_in(
+                    reply.access,
+                    reply.refresh,
+                    sec(reply.life),
+                ))
+            }
+        },
+    );
+    let task = tokio::spawn(driver);
+    let slack = Slack::new()
+        .with_transport(rig.resource.clone())
+        .with_middleware(auth.rejected_when(slack_rejects))
+        .with_retry(Retry::standard().not_applied_on(429).when(after_401));
+
+    let first = slack.auth_test().await.unwrap_err();
+    assert_eq!(first.problem().unwrap().error, "token_expired");
+    assert_eq!(first.tries(), 1);
+    rig.sent(0, 1);
+    assert_eq!(slack.auth_test().await.unwrap(), "U1");
+    rig.sent(1, 2);
+    header(&rig.resource, 0, "Bearer xoxe.xoxb-a");
+    header(&rig.resource, 1, "Bearer xoxe.xoxb-b");
+    assert_eq!(
+        rig.tokens.requests()[0].upload().bytes(),
+        b"refresh_token=xoxe-1-r"
+    );
+    rig.events(&["load", "mark", "exchange xoxe-1-r", "save xoxe-1-s"]);
+    rig.store.ready("xoxe.xoxb-b", "xoxe-1-s");
+    drop(slack);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_late_rejection_inside_a_200_keeps_the_newer_pair() {
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).after(sec(5)).body("rejected");
+    rig.resource.answer(200).body("rejected");
+    rig.resource.answer(200).body("c");
+    rig.resource.answer(200).body("d");
+    let (auth, driver) = rig.auth();
+    let api = rig
+        .client(auth.rejected_when(rejected))
+        .with_retry(Retry::none().tries(2).when(after_401));
+    let task = tokio::spawn(driver);
+    let late = tokio::spawn({
+        let api = api.clone();
+        async move { api.get().await }
+    });
+    ticks().await;
+    rig.sent(0, 1);
+    assert_eq!(api.get().await.unwrap(), "rejected");
+    assert_eq!(api.get().await.unwrap(), "c");
+    assert_eq!(late.await.unwrap().unwrap(), "rejected");
+    assert_eq!(api.get().await.unwrap(), "d");
+    rig.sent(1, 4);
+    header(&rig.resource, 0, "Bearer a0");
+    header(&rig.resource, 1, "Bearer a0");
+    header(&rig.resource, 2, "Bearer a1");
+    header(&rig.resource, 3, "Bearer a1");
+    rig.events(&["load", "mark", "exchange r0", "save r1"]);
+    assert!(rig
+        .resource
+        .requests()
+        .iter()
+        .all(|request| request.info().number() == 1));
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_rejection_inside_a_200_is_shown_only_a_whole_body_of_at_most_64_kib() {
+    let large = "x".repeat(64 * 1024 + 1);
+    let half = "z".repeat(40 * 1024);
+    let full = "y".repeat(64 * 1024);
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.issue("a1", "r1", 0);
+    rig.resource
+        .answer(200)
+        .body(half.clone())
+        .body(half.clone());
+    rig.resource.answer(200).body(large.clone());
+    rig.resource
+        .answer(200)
+        .declare_length(u64::try_from(large.len()).unwrap())
+        .body(large.clone());
+    rig.resource.answer(200).body("panic");
+    rig.resource.answer(200).body(full.clone());
+    rig.resource.answer(200).body("after");
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let (auth, driver) = rig.auth();
+    let auth = auth.rejected_when({
+        let shown = shown.clone();
+        move |seen| {
+            assert_eq!(format!("{seen:?}"), "Seen(..)");
+            shown.lock().unwrap().push(seen.body().len());
+            assert!(seen.body() != b"panic", "private panic");
+            seen.body().len() == 64 * 1024
+        }
+    });
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap(), half.repeat(2));
+    assert_eq!(api.get().await.unwrap(), large);
+    assert_eq!(api.get().await.unwrap(), large);
+    assert_eq!(api.get().await.unwrap(), "panic");
+    assert_eq!(api.get().await.unwrap(), full);
+    assert_eq!(api.get().await.unwrap(), "after");
+    // No long body is shown, whether its length is known or not; a panic rejects
+    // nothing; a body of exactly 64 KiB is shown and rejects the token.
+    assert_eq!(*shown.lock().unwrap(), [5, 64 * 1024, 5]);
+    rig.sent(1, 6);
+    header(&rig.resource, 4, "Bearer a0");
+    header(&rig.resource, 5, "Bearer a1");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_body_that_is_not_read_to_its_end_rejects_nothing() {
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.resource.answer(200).body("rejected").stall();
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = rig.auth();
+    let api = rig.client(auth.rejected_when(rejected));
+    let task = tokio::spawn(driver);
+    assert!(api
+        .get()
+        .with_timeout(sec(1))
+        .await
+        .unwrap_err()
+        .is_timeout());
+    assert_eq!(api.get().await.unwrap(), "ok");
+    rig.sent(0, 2);
+    header(&rig.resource, 1, "Bearer a0");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_body_of_unknown_length_is_shown_only_up_to_64_kib() {
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.issue("a1", "r1", 0);
+    let sizes = Arc::new(Mutex::new(vec![40 * 1024, 40 * 1024, 30 * 1024, 30 * 1024]));
+    let carried = Arc::new(Mutex::new(Vec::new()));
+    let transport = concord::fake({
+        let carried = carried.clone();
+        move |request| {
+            carried.lock().unwrap().push(
+                request.headers()["authorization"]
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            );
+            let mut sizes = sizes.lock().unwrap();
+            let count = sizes.len().min(2);
+            let pieces: Vec<_> = sizes
+                .drain(..count)
+                .map(|size| Ok::<_, std::io::Error>(concord::bytes::Bytes::from(vec![b'z'; size])))
+                .collect();
+            Ok(concord::reply(
+                200,
+                concord::reqwest::Body::wrap_stream(futures_util::stream::iter(pieces)),
+            ))
+        }
+    });
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let (auth, driver) = rig.auth();
+    let auth = auth.rejected_when({
+        let shown = shown.clone();
+        move |seen| {
+            shown.lock().unwrap().push(seen.body().len());
+            true
+        }
+    });
+    let api = Data::new().with_transport(transport).with_middleware(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap().len(), 80 * 1024);
+    assert_eq!(api.get().await.unwrap().len(), 60 * 1024);
+    assert_eq!(api.get().await.unwrap().len(), 0);
+    assert_eq!(*shown.lock().unwrap(), [60 * 1024, 0]);
+    assert_eq!(
+        *carried.lock().unwrap(),
+        ["Bearer a0", "Bearer a0", "Bearer a1"]
+    );
+    rig.sent(1, 0);
+    drop(api);
+    task.await.unwrap().unwrap();
+}

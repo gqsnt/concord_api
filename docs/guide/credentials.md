@@ -202,6 +202,7 @@ concord-api = { git = "https://github.com/gqsnt/concord_api", features = ["auth"
 | One renewal at a time | The calls that need a token at the same moment share one renewal, and its token or its failure. Clones of a `Renewed` share one token and one renewal: configure it fully, then clone it ([what a clone shares](middleware.md#what-a-clone-shares)). Concord starts no task: a call that is dropped while it waits leaves the renewal to the others, and when the last one is dropped, the renewal is dropped with it. |
 | How long a renewal may take | `renewal_timeout`, 30 seconds by default (zero is refused). After that, the calls that wait fail with `RenewalError::TimedOut`. A renewal is a wait in a middleware: the idle timeout does not count it, and the call timeout, `timeout`, does ([a layer that waits](middleware.md#a-layer-that-waits)). |
 | A `401` | It is returned as it is, and the request is sent once. The token that the request carried is marked as rejected, so the next request gets a new one. |
+| A rejection in a `200` | For an API that reports an expired token in another status, `rejected_when(…)` says once what that response looks like ([a token rejected inside a `200`](#a-token-rejected-inside-a-200)). |
 | When a renewal fails | The call is a Transport error of class blocked, and nothing is sent. Its `source()` is a `concord::auth::RenewalError`, which `RenewalError::find(&e)` returns from the error of the call; for `RenewalError::Failed`, the `source()` of that is your function's error, such as the token client's `concord::Error`. A panic in your function is `RenewalError::Panicked` for every call that waits. The next call tries again. |
 | A token that you already hold | `with_token(token)` starts with it, for example a token saved by an earlier run. It returns `Err(RenewalError::Expired)` for a token that has expired. |
 | Saving a new token | `on_renewed(\|token\| …)` is called once for each new token, before any request uses it. It must return promptly. `token.value()` and `token.remaining()` are what to save. |
@@ -268,7 +269,7 @@ The rustdoc of `concord::auth::Rotating` has the whole example: the token endpoi
 | The wait | `renewal_timeout`, 30 seconds by default, bounds each resource call's wait. If the first driver poll after the call began waiting is at or after its deadline, or never happens, the call fails with `RotationError::NotPolled`; another expired wait has `RenewalError::TimedOut` as its cause. A begun renewal goes on; its replacement is saved or returned to the driver’s owner as `Unsaved`. The same name on `Renewed` bounds its shared renewal future instead: cancelling that renewal does not consume a single-use refresh token. |
 | Dropping | Renewal begins when saving its marker begins. Dropping the last waiting call during the first load leaves nothing begun; after the marker save begins, dropping calls leaves the driver working. Dropping the driver stops the credential and wakes waiters with `RotationError::Stopped` unless their deadline has already passed; it cannot finish saving after it has been dropped. Dropping the last credential owner lets a polled driver drain its begun work, try a pending save once more, then finish. If recovery fails, it returns the pair in `Unsaved`. A hung store or exchange can prevent that drain. |
 | Ownership and failure | One value and its clones own the account; another process needs an application-owned lease. A store panic stops the credential with `Stopped`, but an existing call whose deadline has passed still reports its timeout; the driver returns `Unsaved` with a known replacement, or `Stopped` when it has none. Before a new owner can use the account after a panic or cancellation, the application must establish that old store operations can have no later effects. |
-| Headers, origin and retry | These work as for `Renewed`: a sensitive Bearer header by default, `header` for another scheme, the origin checked before any store access, a `401` returned unchanged, which rejects only the access token that the request carried. `after_401` asks the engine for another attempt under its usual repeatability rules. The middleware never resends a resource request itself. Configure it fully, then clone it: as with `Renewed`, a change of `header`, `early_by` or `renewal_timeout` on a clone changes the settings that every clone shares ([what a clone shares](middleware.md#what-a-clone-shares)). |
+| Headers, origin and retry | These work as for `Renewed`: a sensitive Bearer header by default, `header` for another scheme, the origin checked before any store access, a `401` returned unchanged, which rejects only the access token that the request carried. `after_401` asks the engine for another attempt under its usual repeatability rules. The middleware never resends a resource request itself. Configure it fully, then clone it: as with `Renewed`, a change of `header`, `early_by`, `renewal_timeout` or `rejected_when` on a clone changes the settings that every clone shares ([what a clone shares](middleware.md#what-a-clone-shares)). `rejected_when` works as for `Renewed`, and the next call runs an exchange ([a token rejected inside a `200`](#a-token-rejected-inside-a-200)). |
 | Errors | `RotationError::find(&error)` follows the call error's sources. `Load`, `Save`, and `Renewal` retain a `RenewalError` and its original cause. `Unsaved { pair, cause, .. }` gives the application the exact replacement for its own recovery path; after a panic, first make sure that no earlier store operation can still take effect, then save it. Concord’s own error formatting and `Debug` print no token, URL, cause text or panic payload. What an author puts in a store error is the author’s responsibility; traversing its sources can print that text. |
 
 Completing a renewal wakes all its waiting calls, so notification work grows with the number of waiters.
@@ -276,6 +277,40 @@ Completing a renewal wakes all its waiting calls, so notification work grows wit
 The promise to save or return a replacement begins when the exchange future yields its pair. Concord cannot protect a pair that the author's exchange code loses before yielding it. Concord catches a panic when it destroys an author's value; if destroying that panic's payload also panics, Concord cannot contain the second panic.
 
 **What it cannot promise.** A process can die after the provider issued a replacement and before the local save. No client can make those two systems commit atomically. On restart the marker prevents reuse of the uncertain old token, but cannot recover the lost replacement; the account may need reauthorization. The application still supplies the initial grant, the token protocol, durable storage, exclusive account ownership and any provider recovery. Concord starts no task, and an unpolled or dropped driver cannot finish a renewal.
+
+## A token rejected inside a `200`
+
+**Some APIs never answer `401` for a token that has expired or was revoked.** Slack answers `200` with `{"ok": false, "error": "token_expired"}`; Telegram reports its errors in an `ok` field too. The arm on the `2xx` turns that body into the API's problem, but an arm cannot reach the credential, and the credential, a middleware layer, sees the response before its body is read. Without more, the next calls go out with the same dead token until its known expiry.
+
+So say once, on the credential, what such a rejection looks like. The function receives a `concord::auth::Seen`: the status, the headers and the whole body of the response.
+
+```rust
+use concord::auth::{after_401, Seen};
+use concord::Retry;
+
+#[derive(serde::Deserialize)]
+struct Envelope { ok: bool, error: Option<String> }
+
+fn token_rejected(seen: &Seen<'_>) -> bool {
+    seen.status() == 200
+        && serde_json::from_slice::<Envelope>(seen.body()).is_ok_and(|reply| {
+            !reply.ok
+                && matches!(reply.error.as_deref(), Some("token_expired" | "token_revoked" | "invalid_auth"))
+        })
+}
+
+let slack = Slack::new()
+    .with_middleware(auth.rejected_when(token_rejected))   // a `Renewed` or a `Rotating`
+    .with_retry(Retry::standard().when(after_401));
+```
+
+| | |
+|---|---|
+| When the function runs | Once for each response whose body is read to its end, when that body holds at most 64 KiB, before the body is decoded. It is not called for a `401`, which always rejects the token. A body that is not read to its end is not shown to it: a dropped call, a reader that stops early, an endpoint that does not read its body. |
+| What `true` does | The token that the request carried is rejected, as after a `401`, before the call returns: the next call gets a new token, and with `Rotating` it runs an exchange. An answer that arrives after the token was replaced rejects nothing: the newer token stays. |
+| The call that received it | It returns what its arm makes of the response, here the problem `token_expired`, after one attempt. Concord does not send it again: `after_401` retries a `401` only. |
+| The body | The function sees it once; the credential then drops it, and keeps and prints none of it. What your function does with it is yours. |
+| What it costs | Without `rejected_when`, a response passes through untouched. With it, each frame of the body passes through as it is read, at most 64 KiB is held until the body ends, and only the size hint is lost: a raw response (`send_raw()`) without a `Content-Length` header reports no `content_length()`. The function must return promptly; a panic in it rejects nothing. |
 
 ## What Concord does not ship
 

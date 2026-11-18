@@ -560,7 +560,8 @@ impl fmt::Debug for RotationDriver {
 ///
 /// A `401` is returned unchanged and rejects only the access token that the request
 /// carried. Add `after_401` to the engine's retry policy; this middleware never resends
-/// a request. A call that resumes waiting checks the expiry, the settings and the state
+/// a request. An API that rejects a token inside another status, such as a `200`, is
+/// described once with [`rejected_when`](Rotating::rejected_when). A call that resumes waiting checks the expiry, the settings and the state
 /// of the driver again. Relative lifetimes include the time spent saving; retrying a
 /// pending save never restarts them.
 ///
@@ -686,6 +687,50 @@ impl Rotating {
         drop(retired);
         self
     }
+
+    /// Sets a function that recognises a response that rejects the access token although
+    /// its status is not `401`: an API that reports a revoked or expired token inside a
+    /// `200`.
+    ///
+    /// It works as [`Renewed::rejected_when`](super::Renewed::rejected_when). Once the
+    /// body of a response has been read to its end, the function receives its status, its
+    /// headers and its body, as a [`Seen`](super::Seen), if the body holds at most 64 KiB.
+    /// When it returns `true`, the access token that the request carried is rejected as
+    /// after a `401`: only if it is still the current token, so an answer that arrives
+    /// after a renewal never discards the newer pair, and the next call runs an exchange.
+    /// This happens before the reader decodes the body, so before the call returns. The
+    /// response is returned unchanged, and the call that received it is not sent again:
+    /// `after_401` retries a `401` only. A `401` always rejects the token, and the
+    /// function is not called for it.
+    ///
+    /// The function sees the body once, and the credential then drops it: it keeps and
+    /// prints nothing of it. A body that is not read to its end is not shown. The function
+    /// must return promptly; a panic rejects nothing, and its payload is dropped. Without
+    /// this function, a response passes through untouched; with it, only the size hint of
+    /// the body is lost. Configuring a clone changes every clone.
+    ///
+    /// ```no_run
+    /// #[derive(serde::Deserialize)]
+    /// struct Envelope { ok: bool, error: Option<String> }
+    /// fn configure(auth: concord::auth::Rotating) -> concord::auth::Rotating {
+    ///     auth.rejected_when(|seen| {
+    ///         seen.status() == 200
+    ///             && serde_json::from_slice::<Envelope>(seen.body()).is_ok_and(|reply| {
+    ///                 !reply.ok && matches!(reply.error.as_deref(), Some("token_expired" | "invalid_auth"))
+    ///             })
+    ///     })
+    /// }
+    /// ```
+    #[must_use = "attach the configured credential as middleware"]
+    pub fn rejected_when(
+        self,
+        rejects: impl Fn(&super::Seen<'_>) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        let rejects: Arc<super::rejection::Rejects> = Arc::new(rejects);
+        let retired = self.inner.lock().policy.rejects.replace(rejects);
+        drop(retired);
+        self
+    }
 }
 impl Drop for Rotating {
     fn drop(&mut self) {
@@ -733,14 +778,23 @@ impl Middleware for Rotating {
         };
         let response = next.send(request, info).await?;
         if response.status() == 401 {
-            let mut state = self.inner.lock();
-            if let Some(current) = &mut state.current {
-                if Arc::ptr_eq(&current.generation, &access.generation) {
-                    current.rejected = true;
-                }
-            }
+            self.inner.reject(&access.generation);
+            return Ok(response);
         }
-        Ok(response)
+        let rejects = self.inner.lock().policy.rejects.clone();
+        Ok(match rejects {
+            Some(rejects) => {
+                let inner = Arc::downgrade(&self.inner);
+                let generation = Arc::downgrade(&access.generation);
+                super::rejection::watch(response, rejects, move || {
+                    if let (Some(inner), Some(generation)) = (inner.upgrade(), generation.upgrade())
+                    {
+                        inner.reject(&generation);
+                    }
+                })
+            }
+            None => response,
+        })
     }
 }
 
