@@ -119,11 +119,13 @@ pub(crate) trait ErasedTransport: Send + Sync {
 impl<T: Transport> ErasedTransport for T {
     fn send(&self, request: reqwest::Request, info: TryInfo) -> ResponseFuture<'_> {
         let url = request.url().clone();
-        Box::pin(async move {
+        // Every send that reaches a transport is recorded for its attempt.
+        let sends = info.sends();
+        Box::pin(crate::transport::counted(sends, async move {
             Transport::send(self, request, info)
                 .await
                 .map(|response| crate::transport::__response_at(response, url))
-        })
+        }))
     }
 }
 

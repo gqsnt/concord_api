@@ -12,7 +12,7 @@ use super::{Core, Idempotent, Options};
 use crate::answer::{Answer, BodyClock, BodyTimeout, Headers, KnownKind, KnownOutcome};
 use crate::error::{Clock, Error, Kept, Kind, MismatchFailure};
 use crate::retry::{again, Decision, Outcome, Retry};
-use crate::transport::TryInfo;
+use crate::transport::{Sends, TryInfo};
 
 /// The clocks of one call, shared by its tries, readers and handed-over stream.
 #[derive(Clone)]
@@ -397,6 +397,8 @@ where
     let none = Retry::none();
     let policy = options.retry(core).unwrap_or(&none);
     let mut n = 0u32;
+    // No attempt so far can have written a byte of the request.
+    let mut unsent = true;
     loop {
         let this = if let Some(request) = request.take() {
             Some(request)
@@ -422,6 +424,7 @@ where
         n = n.saturating_add(1);
         run.clear();
         let info = TryInfo::for_run(run.clone(), n);
+        let sends = info.sends();
         let result = if let Some(observed) = &control {
             let mut info = info;
             info.repeatable_body = true;
@@ -477,6 +480,22 @@ where
             {
                 Ok(result) => result,
                 Err(()) => Attempt::Failed(run.timeout_error(n)),
+            }
+        };
+        // A failure states that nothing was sent only if no send of this attempt, and no
+        // earlier attempt, may have written anything.
+        let result = match result {
+            Attempt::Failed(error) if error.request_not_sent() => {
+                if unsent && sends.as_deref().is_some_and(Sends::none_written) {
+                    Attempt::Failed(error)
+                } else {
+                    unsent = false;
+                    Attempt::Failed(error.sent_before())
+                }
+            }
+            result => {
+                unsent = false;
+                result
             }
         };
         let Some(outcome) = result.outcome() else {
