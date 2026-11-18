@@ -1,9 +1,19 @@
-//! Six pagers. Each is a function that returns a function from the call and its response to the
-//! next call.
+//! Six pagers, and what they combine with. Each pager is a function that returns a function from
+//! the call and its response to the next call.
 //!
 //! In a `paginate` statement, an input of the endpoint names its slot on the call
 //! ([`Slot`]). So `paginate by_offset_limit(start, count);` hands two slots to
 //! [`by_offset_limit`]. Nothing here is known to the macro.
+//!
+//! The methods of [`Pager`] combine with any pager: an end that the page states
+//! ([`more`](Pager::more), [`total`](Pager::total)), the page size that the API applies
+//! ([`page_size`](Pager::page_size)), a change to other inputs ([`also`](Pager::also)), a
+//! second pager for the other direction ([`when_set`](Pager::when_set)), and a list that is
+//! paged only when the caller asks ([`if_set`](Pager::if_set)):
+//! `paginate by_cursor(after, |page| page.next.clone()).more(|page| page.has_more);`.
+
+mod pager;
+pub use pager::Pager;
 
 use concord_core::error::{mismatch, Fail};
 use concord_core::page::{Call, IntoItems, Slot};
