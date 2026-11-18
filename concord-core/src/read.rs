@@ -605,6 +605,27 @@ impl ReadError {
         error
     }
 
+    /// A decoder's failure returned by an arm or a pager, after the body was read: the error
+    /// that a reader would have given for a response with this status.
+    pub(crate) fn into_returned<P>(
+        self,
+        status: http::StatusCode,
+        headers: Headers,
+        info: &TryInfo,
+    ) -> Error<P> {
+        if status.is_success() {
+            return self.into_error(status, headers, info);
+        }
+        let mut error = Error::refused(info.endpoint(), info.number(), status, headers, None);
+        if let Some(kept) = self.kept {
+            error = error.with_body(&self.body, kept);
+        }
+        if let Some(details) = self.details {
+            error = error.with_reader_details(details);
+        }
+        error
+    }
+
     pub(crate) fn into_refused<P>(
         self,
         status: http::StatusCode,

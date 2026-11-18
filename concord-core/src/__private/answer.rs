@@ -520,6 +520,38 @@ mod c5_tests {
     }
 
     #[test]
+    fn c5_8_a_decoder_error_returned_by_an_arm_is_the_error_of_the_reader() {
+        for status in [200, 409] {
+            let response = || crate::reply_with(status, &[("x-id", "one")], "PRIVATE_SENTINEL");
+            let headers = Headers::from(response().headers().clone());
+            let from_reader: Error =
+                ready(read_body(&NotTheType, response(), &info())).unwrap_err();
+            let failure = ready(NotTheType.read(Incoming::new(response()))).unwrap_err();
+            let from_arm: Error = arm::<(), _>(
+                Err(Fail::from_read(failure)),
+                http::StatusCode::from_u16(status).unwrap(),
+                &headers,
+                &info(),
+            )
+            .unwrap_err();
+            assert_eq!(from_arm.kind(), from_reader.kind());
+            assert_eq!(from_arm.to_string(), from_reader.to_string());
+            assert_eq!(
+                from_arm.details().to_string(),
+                from_reader.details().to_string()
+            );
+            assert_eq!(from_arm.body(), Some(b"PRIVATE_SENTINEL".as_slice()));
+            assert_eq!(from_arm.kept(), Some(Kept::Complete));
+            assert_eq!(from_arm.reason(), None);
+            assert_eq!(from_arm.tries(), 3);
+            assert_eq!(
+                from_arm.source().map(ToString::to_string),
+                from_reader.source().map(ToString::to_string)
+            );
+        }
+    }
+
+    #[test]
     fn c5_6_problem_is_tried_only_on_complete_refusals_and_failure_is_ignored() {
         struct Problem;
         impl Reader<String> for Problem {

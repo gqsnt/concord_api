@@ -855,6 +855,9 @@ impl<E: Send + Sync + 'static> From<Error<E>> for std::io::Error {
 ///
 /// `?` on a `Result<_, P>` creates one from the API's own problem: the call ends as Refused.
 /// [`mismatch`] creates one that says "this response is not what was promised".
+/// [`Fail::from_read`] creates one from a decoder's [`ReadError`](crate::read::ReadError), for
+/// an arm that decodes a body itself: the call ends with the error that a reader would have
+/// given, with the location of the fault.
 ///
 /// `Fail::from(problem)` in a pager becomes a Refused error with that problem;
 /// `concord::mismatch(…)` becomes a Mismatch. Both are returned by the `try_next()`
@@ -866,6 +869,8 @@ pub struct Fail<P> {
 enum Cause<P> {
     Problem(P),
     Mismatch(Cow<'static, str>),
+    // Boxed, so that a `Result<_, Fail<P>>` is no larger than before.
+    Read(Box<crate::read::ReadError>),
 }
 
 impl<P> From<P> for Fail<P> {
@@ -889,6 +894,39 @@ impl<P> fmt::Debug for Fail<P> {
         match self.cause {
             Cause::Problem(_) => f.write_str("Fail(problem)"),
             Cause::Mismatch(_) => f.write_str("Fail(mismatch)"),
+            Cause::Read(_) => f.write_str("Fail(read)"),
+        }
+    }
+}
+
+impl<P> Fail<P> {
+    /// Creates a failure from a decoder's error, for an arm that decodes a body itself.
+    ///
+    /// The call ends with the error that a reader would have given for this response: on a
+    /// 2xx, a Mismatch whose message and `source()` name the location of the fault, with the
+    /// decoder's message in `details()` and the bytes that the error keeps in `body()`; on
+    /// another status, a Refused error with those bytes and no problem. `reason()` is `None`,
+    /// as for a body that a reader could not decode. Nothing of the response reaches the
+    /// message or the cause: the location is made of the program's names and of indexes.
+    ///
+    /// `?` cannot make this conversion, because `?` already turns any `P` into a `Fail<P>`:
+    /// write `.map_err(Fail::from_read)`.
+    ///
+    /// ```
+    /// # use concord_core as concord;
+    /// use concord::read::{Place, ReadError};
+    /// use concord::Fail;
+    ///
+    /// fn check(body: concord::bytes::Bytes) -> Result<u32, Fail<()>> {
+    ///     // a decoder of your own, which knows where the fault is
+    ///     Err(ReadError::not_the_type(body).at(Place::root().field("count")))
+    ///         .map_err(Fail::from_read)
+    /// }
+    /// # assert!(check(concord::bytes::Bytes::from_static(b"{}")).is_err());
+    /// ```
+    pub fn from_read(error: crate::read::ReadError) -> Fail<P> {
+        Fail {
+            cause: Cause::Read(Box::new(error)),
         }
     }
 }
@@ -918,6 +956,11 @@ impl<P> Fail<P> {
                 error.inner.reason = Some(reason);
                 error
             }
+            Cause::Read(error) => error.into_returned(
+                status,
+                headers,
+                &crate::transport::TryInfo::new(endpoint, tries),
+            ),
         }
     }
 }
@@ -1647,6 +1690,42 @@ mod tests {
         assert_eq!(error.source().unwrap().to_string(), "PRIVATE_SENTINEL");
         assert!(!format!("{error:?}").contains("PRIVATE_SENTINEL"));
     }
+    #[test]
+    fn c8_4_a_pager_that_fails_with_a_decoder_error_names_its_location() {
+        let failure =
+            crate::read::ReadError::not_the_type(bytes::Bytes::from_static(b"PRIVATE_SENTINEL"))
+                .at(Place::root().field("cursor"))
+                .with_details("PRIVATE_SENTINEL");
+        let error: Error = Fail::from_read(failure).into_error(
+            "tasks.list",
+            1,
+            StatusCode::OK,
+            Headers::default(),
+            true,
+        );
+        assert_eq!(
+            error.to_string(),
+            "mismatch: status 200, cursor could not be decoded, in tasks.list"
+        );
+        assert_eq!(error.reason(), None);
+        assert_eq!(error.body(), Some(b"PRIVATE_SENTINEL".as_slice()));
+        assert_eq!(
+            error.source().map(ToString::to_string).as_deref(),
+            Some("cursor could not be decoded")
+        );
+        assert!(error
+            .details()
+            .to_string()
+            .contains("reader: PRIVATE_SENTINEL"));
+        assert_eq!(
+            format!(
+                "{:?}",
+                Fail::<()>::from_read(crate::read::ReadError::wrong_content_type())
+            ),
+            "Fail(read)"
+        );
+    }
+
     #[test]
     fn c6_2_arm_and_pager_mismatch_use_distinct_whole_lines() {
         let arm: Error = super::mismatch("PRIVATE_SENTINEL").into_error(
