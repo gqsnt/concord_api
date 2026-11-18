@@ -502,11 +502,13 @@ impl<C: Call> Paging<C> {
     /// moves instead (step 3 of [`Paging`]). For an API that pages in both directions, with one
     /// input for each (`starting_after` and `ending_before`): the caller chooses the direction by
     /// the input it sets. The statements, the short-page rules, the gates and the edits of this
-    /// value apply to both moves. A call that sets the inputs of two `or_when_set` ends the pages
-    /// with a Mismatch after the first page, whatever that page says; an input given to two
-    /// `or_when_set` (directly, or through a slot of yours that forwards to it) is one choice,
-    /// and the first written moves. An `other` that is a `Paging`
-    /// decides by the same order on its own, inside the move: the rules of this value come first.
+    /// value apply to both moves. The call that fetched a page is checked at each decision,
+    /// before the gates: one that sets the inputs of two `or_when_set` ends the pages with a
+    /// Mismatch after that page, whatever the page says. That is the first page when the caller
+    /// set both inputs, and can be a later page when a move itself sets a second input. An input
+    /// given to two `or_when_set` (directly, or through a slot of yours that forwards to it) is
+    /// one choice, and the first written moves. An `other` that is a `Paging` decides by the same
+    /// order on its own, inside the move: the rules of this value come first.
     ///
     /// ```
     /// use concord::{by_cursor, Json};
