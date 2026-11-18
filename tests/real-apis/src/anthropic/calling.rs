@@ -14,23 +14,19 @@ pub async fn ask() -> Result<(), BoxError> {
     Ok(())
 }
 
-/// The text of a streamed reply, printed as it arrives.
-pub async fn stream(api: &Anthropic, model: &str, prompt: &str) -> Result<String, ReplyError> {
-    let mut events = api.stream(model, 1024, vec![Turn::user(prompt)]).await
-        .map_err(ReplyError::Call)?;
+/// The text of a streamed reply, printed as it arrives. The stream's error is the client's own:
+/// the API's `error` event is a Refused error with `problem()`, and a reply cut before
+/// `message_stop` is a Mismatch.
+pub async fn stream(api: &Anthropic, model: &str, prompt: &str) -> anthropic::Result<String> {
+    let mut events = api.stream(model, 1024, vec![Turn::user(prompt)]).await?;
     let mut text = String::new();
-    while let Some(event) = events.try_next().await.map_err(ReplyError::Record)? {
-        match streamed(&event).map_err(ReplyError::Record)? {
-            Streamed::Text(piece) => {
-                print!("{piece}");
-                text.push_str(&piece);
-            }
-            Streamed::Failed(error) => return Err(ReplyError::Api(error)),
-            Streamed::Done => return Ok(text),
-            Streamed::Stopped { .. } | Streamed::Other => {}
+    while let Some(event) = events.try_next().await? {
+        if let Streamed::Text(piece) = event {
+            print!("{piece}");
+            text.push_str(&piece);
         }
     }
-    Err(ReplyError::Unfinished)
+    Ok(text)
 }
 
 /// Every model, page after page.

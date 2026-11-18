@@ -134,7 +134,7 @@
   },
   {
     "page": "docs/guide/responses-and-errors.md",
-    "block": 15,
+    "block": 17,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_001.api",
     "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_001.rs",
     "client": "Chat"

@@ -47,7 +47,7 @@ concord::api! {
                 "watch" = "true"; "resourceVersion" = resource_version;
                 "allowWatchBookmarks" = allow_watch_bookmarks; "timeoutSeconds" = timeout_seconds;
             }
-            read JsonLines::new(4 * MIB);    // one object and its type: by default the server refuses a body over 3 MiB
+            read JsonLines::new(4 * MIB).try_map(watch_event).until_end_of_body();    // one object and its type: by default the server refuses a body over 3 MiB
             idle_timeout Duration::from_secs(u64::from(timeout_seconds.unwrap_or(3600)) + 60);
         }
         /// What every write takes.
@@ -82,7 +82,7 @@ concord::api! {
                 path "namespaces/{namespace}/pods";
 
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>, kubernetes::Error>;
                 POST create(pod: Pod, ..write) -> Pod { body json(pod); }
 
                 /// `None` when there is no such pod, or no such namespace.
@@ -129,7 +129,7 @@ concord::api! {
             scope all_pods {
                 path "pods";
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>, kubernetes::Error>;
             }
         }
 
@@ -190,6 +190,7 @@ The list and its pages, the patch, the response to a delete, the events of a wat
 
 ```rust
 use concord::http::HeaderValue;
+use concord::read::{JsonLine, RecordFail, Step};
 use concord::transport::{TransportError, TryInfo};
 use concord::{reqwest, Base, Middleware, Next};
 use serde::de::{DeserializeOwned, Deserializer};
@@ -283,6 +284,16 @@ pub enum WatchEvent<T> {
     Deleted(T),
     Bookmark(Bookmark),
     Error(Status),
+}
+
+/// What one line of a watch is: an `ERROR` line is the API's own error, which ends the watch as
+/// the call's error with `problem()`; any other line is an event. So a watch never yields
+/// `WatchEvent::Error`.
+pub fn watch_event<T: DeserializeOwned>(line: JsonLine) -> Result<Step<WatchEvent<T>>, RecordFail<Status>> {
+    match line.json()? {
+        WatchEvent::Error(status) => Err(RecordFail::problem(status)),
+        event => Ok(Step::Next(event)),
+    }
 }
 
 /// A `BOOKMARK` line: an object whose `metadata` promises only `resourceVersion`.
@@ -426,7 +437,20 @@ pub async fn follow(
                 }
                 Err(e) => return Err(e.into()),
             };
-            while let Some(event) = events.try_next().await? {
+            loop {
+                let event = match events.try_next().await {
+                    Ok(Some(event)) => event,
+                    Ok(None) => break,
+                    // An `ERROR` line with 410: the version is too old. The stream has released its body.
+                    Err(e) if e.problem().is_some_and(|status| status.code == Some(410)) => {
+                        expired += 1;
+                        continue 'list;
+                    }
+                    Err(e) => return Err(match e.into_problem() {
+                        Ok(status) => format!("{:?}", status.reason).into(),   // another `ERROR` line
+                        Err(e) => e.into(),                                    // a broken body, a line that does not decode
+                    }),
+                };
                 match &event {
                     WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
                         version = pod.metadata.resource_version.clone().filter(|v| !v.is_empty())
@@ -437,11 +461,7 @@ pub async fn follow(
                         return Err("a bookmark has no resourceVersion".into());
                     }
                     WatchEvent::Bookmark(mark) => version = mark.metadata.resource_version.clone(),
-                    WatchEvent::Error(status) if status.code == Some(410) => {
-                        expired += 1;
-                        continue 'list;                            // the rest of this stream is dropped
-                    }
-                    WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                    WatchEvent::Error(_) => {}                         // never yielded: `watch_event`
                 }
                 expired = 0;                                       // an event or a bookmark: progress
             }
@@ -468,7 +488,7 @@ pub async fn drain(kube: &Kubernetes) -> kubernetes::Result<()> {
 
 | Kubernetes wants | What to write |
 |---|---|
-| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others. A line that is too long or is not an event, or a stream that breaks, ends the watch with a `concord::read::RecordError`. The caller of a watch handles three cases: the call's error, `RecordError`, and the `Error` event. A `410 Gone`, as the status of the watch (or of a page of the list) or as an `Error` event, means that the version is too old: `follow` reads the whole list again, then watches from the version of that list, and drops the rest of the stream that said `410`. The new list is a new snapshot: the changes between the expired version and it are lost, so the caller replaces its state with it. After three `410`s in a row with no progress between them (an event or a bookmark resets the count), `follow` gives up with an error: a choice of the example. A caller that needs a longer recovery waits on its own side, around `follow`. |
+| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. | `watch_event`, given to `JsonLines::new(…).try_map(watch_event)` in the part `watching`: an `ERROR` line ends the watch with the client's own error, Refused, whose `problem()` is the `Status`; its status is the watch's `200`, so the code to test is the body's, `e.problem()…code`, never `e.is_status(410)`. A line that is too long or does not decode, or a stream that breaks, ends the watch with the client's error too (a Mismatch, a Transport error): the caller of a watch handles one error type. `until_end_of_body()`: the server's clean end of the watch is the end of the stream, and `follow` watches again. A `410 Gone`, as the status of the watch (or of a page of the list) or as an `ERROR` line, means that the version is too old: `follow` reads the whole list again, then watches from the version of that list; the stream that said `410` has already released its body. The new list is a new snapshot: the changes between the expired version and it are lost, so the caller replaces its state with it. After three `410`s in a row with no progress between them (an event or a bookmark resets the count), `follow` gives up with an error: a choice of the example. A caller that needs a longer recovery waits on its own side, around `follow`. `follow` keeps what it did with a raw watch: another `ERROR` line ends it with the `reason` of the `Status`, taken back with `into_problem()`. Where it differs: a line that does not decode, or a broken body, is now `kubernetes::Error` (a Mismatch, a Transport error), not `concord::read::RecordError`; and `WatchEvent::Error` is never yielded, although the type keeps it (it is the line as the server writes it). A caller that wants the `ERROR` line as an event keeps the raw reader: `read JsonLines::new(4 * MIB);` and `-> RecordStream<WatchEvent<Pod>>`, whose error is `concord::read::RecordError`. |
 | The cluster's certificate, as much an input as the server. `new` cannot take it: a certificate is set on the transport. | `connect(server, ca_pem)`, with `concord::Http::with(…)`. The doc comment of the client points to it. |
 | Keys in camelCase, and inputs in snake_case: 17 of the 23 entries use the long form, `"labelSelector" = label_selector;`. | The long form, once for each key, in a part. |
 | A custom resource, typed. A scope has no type parameter. | `DynamicObject`, decoded by the caller with `serde_json::from_value`; or one scope for each type. |

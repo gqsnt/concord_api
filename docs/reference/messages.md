@@ -426,6 +426,8 @@ help: write `200 { body: bodi } => bodi`
 
 For a field written twice, as in `200 { body, body }`, the first line is ``duplicate field `body` in a status arm``. For two fields with the same binding, as in `200 { body: b, headers: b }`, it is ``duplicate binding `b` in a status arm``.
 
+**A mapped reader whose end is not chosen**, `read Sse::new(n).try_map(event);`, and **a stream whose error names another problem type than the client's**, `-> RecordStream<String, concord::Error<Other>>` under `problem Problem;`, are refused by `rustc`, with words of Concord. The first points at the reader: ``error[E0277]: the reader made by `try_map` does not say how its stream ends``, with the label ``finish this reader with `.until_last_record()` or `.until_end_of_body()` `` and one note for each word (``.until_last_record()`: a record ends the stream (`Step::Last` or `Step::End`), and a body that ends before it is an error``; ``.until_end_of_body()`: the end of the body ends the stream``); it follows an error with the note of a reader that does not fit, at the same place. The second points at the declared type: ``error[E0277]: the endpoint's type names the problem type `Other`, and the client's problem type is `Problem` ``, with the label ``this type's error names `Other` `` and the note ``a typed stream fails with the client's own error: write the client's `Error` (`RecordStream<Event, client::Error>`), and give the mapping the client's problem type (`RecordFail<Problem>`)``. A mapping whose problem type differs from the stream's is the error of a reader that does not fit: `` `impl Reader<…>` cannot read a `RecordStream<…>` ``, with the note `` the value of `read` must be a reader of the endpoint's type: one of `concord::read`, or a type that implements `concord::Reader<…>` ``.
+
 ### Parts
 
 **35.** A node names `..pages`, and the client declares `part page`.  
@@ -635,6 +637,20 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 
 The cause that `source()` returns holds no value of the response: a reader, shipped or your own, passes Concord no cause of its own; Concord builds the cause from the location and the kind of failure, and the reader's own message (at most 1 KiB, its mark included) is behind `details()`. A location prints names of the program and indexes only: a key of a map prints as `[key]`, a variant that was read as `[variant]` (`data[key][0].kind`). An error response whose body is broken is still a Refused error. An ignored body cannot fail the call.
 
+**A typed stream**, `RecordStream<T, client::Error>` from `Sse::new(…).try_map(…)` or `JsonLines::new(…).try_map(…)` (C11.13), ends after its first error with the client's own error, in the pattern of section 2. The record is named by its one-based position as the reader counts records: a line, or an event block (blocks that dispatch no event included). For the faults that the reader finds, `reason()` is `None`, and `details()` adds the decoder's line and column only for a record that does not decode:
+
+| Failure | Printed text |
+|---|---|
+| The mapping returned `RecordFail::problem(p)`: the API's own error, in `problem()` | `refused: status 200, in chat.stream` |
+| The mapping returned `RecordFail::mismatch(reason)`; `reason()` gives the fixed reason, which is printed nowhere else. Also a `RecordError` passed on with `?` that is not a decoder's failure | `mismatch: status 200, record 7 does not fit the stream, in chat.stream` |
+| The mapping's decoder failed (`?` on `SseEvent::json` or `JsonLine::json`); `details()` holds `reader: line 1, column 34` when the decoder gave a place | `mismatch: status 200, record 7 could not be decoded, in chat.stream` |
+| A line, or a whole event block, is larger than the bound | `mismatch: status 200, record 7 exceeds the reader's size limit, in chat.stream` |
+| A record is not valid UTF-8 | `mismatch: status 200, record 7 is not UTF-8, in chat.stream` |
+| The body ended cleanly before a record ended the stream, under `until_last_record()`, also an empty body | `mismatch: status 200, the body ended before its last record, in chat.stream` |
+| The body could not be read, or a timeout expired | the engine's own line, from the tables above |
+
+Each Mismatch has one cause, `source()`, in the same words. A reader of records of your own gives the same texts with `RecordBody::fail` and `RecordBody::refuse`.
+
 **The cause behind a failed repeatable body.** When a `Body::repeatable` fails while it is sent (`transport error: the body of the request failed`), `source()` returns the author's error unchanged, one of the core's two `io::Error` failures below, or the multipart boundary scanner's `io::Error`:
 
 | Failure | Printed text |
@@ -724,6 +740,7 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 | A line, or a whole event block, is larger than the bound given to the reader (`JsonLines::new(…)`, `Sse::new(…)`) | `record exceeds its byte limit` |
 | A record is not valid UTF-8 | `record is not UTF-8` |
 | A JSON line, or the data of an event given to `SseEvent::json`, does not decode as the type. The fields hold the line and the column, never the record | `record does not decode as the requested type` |
+
 
 **A URL that the API returned**, `concord::transfer::TransferError`, returned by `concord::transfer::at` before anything is sent:
 

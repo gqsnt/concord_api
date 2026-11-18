@@ -197,7 +197,8 @@ Everything inside the author's Rust is checked by `rustc`, and the message is it
 
 | Trait | When it is not met, at the author's expression |
 |---|---|
-| `Reader<T>` | `` `BadReader` cannot read a `Vec<MatchId>` `` · note: `` declare `read Json;` with `use concord::Json;`, or implement `concord::Reader<Vec<MatchId>>` for `BadReader` `` |
+| `Reader<T>` | `` `BadReader` cannot read a `Vec<MatchId>` `` · note: `` the value of `read` must be a reader of the endpoint's type: one of `concord::read`, or a type that implements `concord::Reader<Vec<MatchId>>` `` |
+| `__private::SameProblem<P>` | `` the endpoint's type names the problem type `Other`, and the client's problem type is `Problem` ``, at the declared type: the check that every endpoint runs on its declared type, through `(&Output::<T>::new()).problem::<P>()`. A type whose value holds a client's error (`RecordStream<T, Error<Q>>`) implements the hidden `CarriesProblem` and takes the path that requires `Q` to be `P`; every other type takes the path that checks nothing |
 | `IntoBody` | `` `Task` is not a body `` · note: `` a body expression returns a `concord::Body` or a `Result` of one, as `json(x)`, `form(x)` or your own function do `` |
 | `__private::Value` | Its words (`` `Filter` cannot be serialized for this placement `` · note: `` it must implement `serde::Serialize` and serialize to one scalar, a list of scalars, or nothing ``) are never printed. A value that is neither a `Secret` nor `serde::Serialize` gets `rustc`'s E0599 at the author's expression: `` the method `__adapt` exists for reference `&concord::__private::ValueRef<&Filter>`, but its trait bounds were not satisfied ``, with notes that name `SecretInput` and `Serialize`. |
 | `page::Slot<C>` | `` `u32` is not an input of this endpoint `` · note: `` in `paginate`, pass the endpoint's inputs to the pager: `paginate by_offset(start);` `` |

@@ -156,6 +156,7 @@ The macro knows none of these: each is an ordinary item of `concord`, used in a 
 | `json_lines(records, max_bytes)` (feature `json`) | Write compact JSON and LF after every record, within a whole-body byte bound. |
 | `Json`, `Text`, `Binary`, `read::Stream` | Read a body: whole, at most 10 MiB, or as a `ByteStream`. |
 | `read::JsonLines::new(n)` (feature `json`), `read::Sse::new(n)` | Read a body as records, each at most `n` bytes, into a `RecordStream`: JSON Lines, or server-sent events. |
+| `.try_map(f)`, then `.until_last_record()` or `.until_end_of_body()` | Map each record with your own function into a typed stream, `RecordStream<T, client::Error>`: a value, a record skipped, the end, or the API's own error. |
 | `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` | Fetch the next page. |
 | `basic(user, password)` | The value of an `Authorization` header for HTTP Basic. |
 | `auth::Renewed`, `auth::after_401` (feature `auth`) | A middleware: a token that expires, renewed once for all the calls that wait for it, and sent only to the origin of its base. A retry rule for one more attempt after a `401`. |

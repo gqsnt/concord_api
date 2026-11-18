@@ -1,7 +1,7 @@
-//! C11.11, typed streams of records: `Sse::try_map` and `JsonLines::try_map`, finished by
+//! C11.13, typed streams of records: `Sse::try_map` and `JsonLines::try_map`, finished by
 //! `until_end_of_body` or `until_last_record`, give a `RecordStream<T, client::Error>`.
 //!
-//! One test for each row of the table of endings (C11.11 and the rustdoc of `TryMap`),
+//! One test for each row of the table of endings (C11.13 and the rustdoc of `TryMap`),
 //! named after its row, for both readers where the row applies. Every test goes through a
 //! description of `concord::api!` and a generated client over a `concord_testkit::Script`, on
 //! Tokio's paused clock: no socket, no wait on real time.
@@ -271,7 +271,7 @@ fn poll<T>(
 // Row 1 ------------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_01_next_yields_the_value_and_the_next_record_is_read() {
+async fn c11_13_row_01_next_yields_the_value_and_the_next_record_is_read() {
     for reader in BOTH {
         let script = Script::new();
         answer(&script, &[reader.records(&[ITEM_1, ITEM_2])]);
@@ -287,7 +287,7 @@ async fn c11_11_row_01_next_yields_the_value_and_the_next_record_is_read() {
 // Row 2 ------------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_02_skip_yields_nothing_and_the_same_pull_reads_on() {
+async fn c11_13_row_02_skip_yields_nothing_and_the_same_pull_reads_on() {
     for reader in BOTH {
         let script = Script::new();
         answer(&script, &[reader.records(&[PING, PING, ITEM_1])]);
@@ -311,7 +311,7 @@ async fn c11_11_row_02_skip_yields_nothing_and_the_same_pull_reads_on() {
 // Row 3 ------------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_03_skips_spend_one_budget_per_pull_and_the_pull_yields_and_goes_on() {
+async fn c11_13_row_03_skips_spend_one_budget_per_pull_and_the_pull_yields_and_goes_on() {
     for reader in BOTH {
         // The byte budget: 2,000 skipped records in one chunk, more than 16 KiB.
         let mut many = Vec::new();
@@ -357,7 +357,7 @@ async fn c11_11_row_03_skips_spend_one_budget_per_pull_and_the_pull_yields_and_g
 // Row 4 ------------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_04_input_that_never_pauses_is_ended_by_the_call_deadline_when_a_pull_yields() {
+async fn c11_13_row_04_input_that_never_pauses_is_ended_by_the_call_deadline_when_a_pull_yields() {
     for reader in BOTH {
         let mut pings = reader.record(ITEM_1);
         for _ in 0..20_000 {
@@ -409,7 +409,7 @@ fn terminal(reader: Reader, marker: &str) -> Vec<Vec<u8>> {
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_05_last_yields_its_value_and_releases_the_body_before_it_returns() {
+async fn c11_13_row_05_last_yields_its_value_and_releases_the_body_before_it_returns() {
     for reader in BOTH {
         for last in [false, true] {
             let script = Script::new();
@@ -440,7 +440,7 @@ async fn c11_11_row_05_last_yields_its_value_and_releases_the_body_before_it_ret
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_06_end_yields_nothing_and_releases_the_body() {
+async fn c11_13_row_06_end_yields_nothing_and_releases_the_body() {
     for reader in BOTH {
         for last in [false, true] {
             let script = Script::new();
@@ -464,7 +464,7 @@ async fn c11_11_row_06_end_yields_nothing_and_releases_the_body() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_07_bytes_after_a_terminal_record_are_never_read() {
+async fn c11_13_row_07_bytes_after_a_terminal_record_are_never_read() {
     for reader in BOTH {
         for marker in [r#"{"kind":"last","n":9}"#, r#"{"kind":"end"}"#] {
             let script = Script::new();
@@ -501,7 +501,7 @@ async fn c11_11_row_07_bytes_after_a_terminal_record_are_never_read() {
 // Row 8 ------------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_08_a_problem_is_a_refused_error_with_the_problem_and_the_body_is_released() {
+async fn c11_13_row_08_a_problem_is_a_refused_error_with_the_problem_and_the_body_is_released() {
     for reader in BOTH {
         let script = Script::new();
         let client = limited(&script);
@@ -536,7 +536,7 @@ async fn c11_11_row_08_a_problem_is_a_refused_error_with_the_problem_and_the_bod
 // Row 9 ------------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_09_a_rejection_is_a_mismatch_with_its_fixed_reason_outside_the_text() {
+async fn c11_13_row_09_a_rejection_is_a_mismatch_with_its_fixed_reason_outside_the_text() {
     for reader in BOTH {
         let script = Script::new();
         let client = limited(&script);
@@ -566,7 +566,7 @@ async fn c11_11_row_09_a_rejection_is_a_mismatch_with_its_fixed_reason_outside_t
 // Row 10 -----------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_10_a_record_that_does_not_decode_names_its_place_in_details_only() {
+async fn c11_13_row_10_a_record_that_does_not_decode_names_its_place_in_details_only() {
     // A syntax fault has a place; a fault inside a tagged enum, which `serde` decodes from a
     // buffer, has none.
     let syntax = r#"{"kind":"item","n":1,}"#;
@@ -604,7 +604,7 @@ async fn c11_11_row_10_a_record_that_does_not_decode_names_its_place_in_details_
 // Row 11 -----------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_11_a_failure_of_another_body_returned_by_a_mapping_keeps_nothing() {
+async fn c11_13_row_11_a_failure_of_another_body_returned_by_a_mapping_keeps_nothing() {
     for reader in BOTH {
         // Another response, whose body breaks: its failure is a `RecordError::Stream`.
         let script = Script::new();
@@ -638,7 +638,7 @@ async fn c11_11_row_11_a_failure_of_another_body_returned_by_a_mapping_keeps_not
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_11_a_decode_failure_of_other_bytes_keeps_only_its_coordinates() {
+async fn c11_13_row_11_a_decode_failure_of_other_bytes_keeps_only_its_coordinates() {
     for reader in BOTH {
         let script = Script::new();
         answer(
@@ -664,7 +664,7 @@ async fn c11_11_row_11_a_decode_failure_of_other_bytes_keeps_only_its_coordinate
 // Row 12 -----------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_12_an_empty_line_or_a_line_that_is_not_json_does_not_decode() {
+async fn c11_13_row_12_an_empty_line_or_a_line_that_is_not_json_does_not_decode() {
     for (body, record) in [
         (&b"\n"[..], 1),
         (&b"{\"kind\":\"item\",\"n\":1}\nnot json\n"[..], 2),
@@ -692,7 +692,7 @@ async fn c11_11_row_12_an_empty_line_or_a_line_that_is_not_json_does_not_decode(
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_12_a_mapping_that_only_reads_the_text_accepts_a_line_that_is_not_json() {
+async fn c11_13_row_12_a_mapping_that_only_reads_the_text_accepts_a_line_that_is_not_json() {
     let script = Script::new();
     answer(&script, &[b"not json\n\n{\"a\": 1}\r\n".to_vec()]);
     let mut lines = success(feed(&script).lines_text().await);
@@ -710,7 +710,7 @@ async fn c11_11_row_12_a_mapping_that_only_reads_the_text_accepts_a_line_that_is
 // Row 13 -----------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_13_a_record_of_exactly_the_bound_is_read_and_one_byte_more_is_refused() {
+async fn c11_13_row_13_a_record_of_exactly_the_bound_is_read_and_one_byte_more_is_refused() {
     for reader in BOTH {
         let script = Script::new();
         let client = limited(&script);
@@ -744,7 +744,7 @@ async fn c11_11_row_13_a_record_of_exactly_the_bound_is_read_and_one_byte_more_i
 // Row 14 -----------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_14_a_record_that_is_not_utf8_is_refused_before_the_mapping() {
+async fn c11_13_row_14_a_record_that_is_not_utf8_is_refused_before_the_mapping() {
     for reader in BOTH {
         let script = Script::new();
         let mut body = reader.record(ITEM_1);
@@ -766,7 +766,7 @@ async fn c11_11_row_14_a_record_that_is_not_utf8_is_refused_before_the_mapping()
 // Rows 15 and 16 ---------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_15_until_end_of_body_ends_at_a_clean_end_also_of_an_empty_body() {
+async fn c11_13_row_15_until_end_of_body_ends_at_a_clean_end_also_of_an_empty_body() {
     for reader in BOTH {
         let script = Script::new();
         let client = limited(&script);
@@ -795,7 +795,7 @@ async fn c11_11_row_15_until_end_of_body_ends_at_a_clean_end_also_of_an_empty_bo
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_16_until_last_record_refuses_a_body_that_ends_before_its_last_record() {
+async fn c11_13_row_16_until_last_record_refuses_a_body_that_ends_before_its_last_record() {
     for reader in BOTH {
         for body in [reader.records(&[ITEM_1]), Vec::new()] {
             let script = Script::new();
@@ -820,7 +820,7 @@ async fn c11_11_row_16_until_last_record_refuses_a_body_that_ends_before_its_las
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_16_each_ending_accepts_last_and_end() {
+async fn c11_13_row_16_each_ending_accepts_last_and_end() {
     for reader in BOTH {
         for last in [false, true] {
             for (marker, values) in [
@@ -843,7 +843,7 @@ async fn c11_11_row_16_each_ending_accepts_last_and_end() {
 // Rows 17 to 19 ----------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_17_a_body_that_breaks_is_the_cores_transport_error() {
+async fn c11_13_row_17_a_body_that_breaks_is_the_cores_transport_error() {
     for reader in BOTH {
         let script = Script::new();
         script
@@ -867,7 +867,7 @@ async fn c11_11_row_17_a_body_that_breaks_is_the_cores_transport_error() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_18_silence_for_the_idle_timeout_is_a_timeout() {
+async fn c11_13_row_18_silence_for_the_idle_timeout_is_a_timeout() {
     for reader in BOTH {
         let script = Script::new();
         script
@@ -890,7 +890,7 @@ async fn c11_11_row_18_silence_for_the_idle_timeout_is_a_timeout() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_19_the_call_timeout_ends_a_stream_that_waits() {
+async fn c11_13_row_19_the_call_timeout_ends_a_stream_that_waits() {
     for reader in BOTH {
         let script = Script::new();
         script
@@ -923,7 +923,7 @@ async fn c11_11_row_19_the_call_timeout_ends_a_stream_that_waits() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_19_every_text_names_the_attempts_of_the_call() {
+async fn c11_13_row_19_every_text_names_the_attempts_of_the_call() {
     for reader in BOTH {
         let script = Script::new();
         script.answer(503);
@@ -945,7 +945,7 @@ async fn c11_11_row_19_every_text_names_the_attempts_of_the_call() {
 // Rows 20 to 22 ----------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_20_dropping_the_stream_releases_the_body_and_its_place() {
+async fn c11_13_row_20_dropping_the_stream_releases_the_body_and_its_place() {
     for reader in BOTH {
         let script = Script::new();
         let client = limited(&script);
@@ -960,7 +960,7 @@ async fn c11_11_row_20_dropping_the_stream_releases_the_body_and_its_place() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_21_a_dropped_pull_keeps_its_skips_and_its_partial_record_and_stops_the_idle_timer(
+async fn c11_13_row_21_a_dropped_pull_keeps_its_skips_and_its_partial_record_and_stops_the_idle_timer(
 ) {
     for reader in BOTH {
         let mut first = reader.record(PING);
@@ -991,7 +991,7 @@ async fn c11_11_row_21_a_dropped_pull_keeps_its_skips_and_its_partial_record_and
 }
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_22_a_panic_of_the_mapping_releases_the_body_as_it_unwinds() {
+async fn c11_13_row_22_a_panic_of_the_mapping_releases_the_body_as_it_unwinds() {
     for reader in BOTH {
         let script = Script::new();
         let client = limited(&script);
@@ -1017,7 +1017,7 @@ async fn c11_11_row_22_a_panic_of_the_mapping_releases_the_body_as_it_unwinds() 
 // Row 23 -----------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn c11_11_row_23_event_blocks_that_dispatch_nothing_count_in_the_position() {
+async fn c11_13_row_23_event_blocks_that_dispatch_nothing_count_in_the_position() {
     let script = Script::new();
     answer(
         &script,

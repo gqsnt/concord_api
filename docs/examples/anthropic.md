@@ -9,7 +9,7 @@ Here is the Anthropic API as Concord sees it. There is one host, `api.anthropic.
 ## The description
 
 ```rust
-use concord::read::{RecordStream, Sse, SseEvent};
+use concord::read::{RecordStream, Sse};
 use concord::{by_cursor, json, Json, Secret};
 use std::time::Duration;
 
@@ -32,10 +32,10 @@ concord::api! {
         POST create(..request) -> Message { path "messages"; }
 
         /// The same request with `"stream": true`: the reply arrives as events, read one by one.
-        POST stream(..request) -> RecordStream<SseEvent> {
+        POST stream(..request) -> RecordStream<Streamed, anthropic::Error> {
             path "messages";
             body json { "stream" = true; }
-            read Sse::new(64 * concord::KIB);
+            read Sse::new(64 * concord::KIB).try_map(streamed).until_last_record();
             idle_timeout Duration::from_secs(120);
         }
 
@@ -54,16 +54,16 @@ concord::api! {
 }
 ```
 
-`stream` is the same request as `create`, plus `"stream": true`, and a different return type: a `RecordStream<SseEvent>`, read by `Sse` with a bound of 64 KiB on one event. The bound is this example's policy; a delta of text is far smaller (unsure for the largest event that the API sends). The idle timeout of two minutes is this example's margin for a long silence before the first event (unsure how often the API sends `ping` events). No call timeout is set, so a long reply is not cut.
+`stream` is the same request as `create`, plus `"stream": true`, and a different return type: a typed stream, `RecordStream<Streamed, anthropic::Error>`, read by `Sse` with a bound of 64 KiB on one event and mapped by `streamed`, below. `until_last_record()` says that the reply ends with a record of its own, `message_stop`: a body that ends before it is an error, not a whole reply. The bound is this example's policy; a delta of text is far smaller (unsure for the largest event that the API sends). The idle timeout of two minutes is this example's margin for a long silence before the first event (unsure how often the API sends `ping` events). No call timeout is set, so a long reply is not cut.
 
 ## Beside the description
 
 The data types are plain `serde` types, named here but not shown: `Message` (`content`, a list of blocks with `type` and `text`), `TokenCount` (`input_tokens`) and `ModelInfo` (`id`, `display_name`).
 
-`Sse` frames the events and gives them no meaning: each one is an `SseEvent` with its type (`event`) and its data as text (`data`). Your own function reads the data into the type that its event type names:
+`Sse` frames the events and gives them no meaning: each one is an `SseEvent` with its type (`event`) and its data as text (`data`). Your own function says what each event is: a value of the stream (`Step::Next`), an event to skip (`Step::Skip`), the end of the reply (`Step::End`), or the API's own error (`RecordFail::problem`). It reads the data into the type that its event type names, and `?` on `event.json()` makes data that does not decode an error of the stream:
 
 ```rust
-use concord::read::{RecordError, SseEvent};
+use concord::read::{RecordFail, SseEvent, Step};
 use serde::{Deserialize, Serialize};
 
 /// Anthropic's error response, and the data of an `error` event:
@@ -100,16 +100,13 @@ pub enum Streamed {
     Text(String),
     /// The reply stopped: `end_turn`, `max_tokens`, and so on.
     Stopped { stop_reason: Option<String> },
-    /// The last event.
-    Done,
-    /// An error event, sent after the `200`.
-    Failed(ApiError),
-    /// `message_start`, `ping`, a delta that is not text, or an event type added later.
+    /// `message_start`, a delta that is not text, or an event type added later.
     Other,
 }
 
-/// Reads one server-sent event as a `Streamed`: the event's type chooses the shape of its data.
-pub fn streamed(event: &SseEvent) -> Result<Streamed, RecordError> {
+/// What one server-sent event is: the event's type chooses the shape of its data. `ping` is
+/// skipped, `message_stop` ends the reply, and an `error` event is the API's own error.
+pub fn streamed(event: SseEvent) -> Result<Step<Streamed>, RecordFail<ApiProblem>> {
     #[derive(Deserialize)]
     struct BlockDelta {
         delta: Delta,
@@ -131,28 +128,19 @@ pub fn streamed(event: &SseEvent) -> Result<Streamed, RecordError> {
         stop_reason: Option<String>,
     }
     Ok(match event.event.as_str() {
-        "content_block_delta" => match event.json::<BlockDelta>()?.delta {
+        "content_block_delta" => Step::Next(match event.json::<BlockDelta>()?.delta {
             Delta::Text { text } => Streamed::Text(text),
             Delta::Other => Streamed::Other,
-        },
+        }),
         "message_delta" => {
             let stop_reason = event.json::<MessageDelta>()?.delta.stop_reason;
-            Streamed::Stopped { stop_reason }
+            Step::Next(Streamed::Stopped { stop_reason })
         }
-        "message_stop" => Streamed::Done,
-        "error" => Streamed::Failed(event.json::<ApiProblem>()?.error),
-        _ => Streamed::Other,
+        "message_stop" => Step::End,
+        "error" => return Err(RecordFail::problem(event.json()?)),
+        "ping" => Step::Skip,
+        _ => Step::Next(Streamed::Other),
     })
-}
-
-/// Why a streamed reply has no text: the request failed, a record failed, the API sent an
-/// error event, or the stream ended before `message_stop`.
-#[derive(Debug)]
-pub enum ReplyError {
-    Call(anthropic::Error),
-    Record(RecordError),
-    Api(ApiError),
-    Unfinished,
 }
 
 /// A page of models. For `by_cursor(after_id, …)`: the last ID, while there are more.
@@ -199,23 +187,19 @@ pub async fn ask() -> Result<(), BoxError> {
     Ok(())
 }
 
-/// The text of a streamed reply, printed as it arrives.
-pub async fn stream(api: &Anthropic, model: &str, prompt: &str) -> Result<String, ReplyError> {
-    let mut events = api.stream(model, 1024, vec![Turn::user(prompt)]).await
-        .map_err(ReplyError::Call)?;
+/// The text of a streamed reply, printed as it arrives. The stream's error is the client's own:
+/// the API's `error` event is a Refused error with `problem()`, and a reply cut before
+/// `message_stop` is a Mismatch.
+pub async fn stream(api: &Anthropic, model: &str, prompt: &str) -> anthropic::Result<String> {
+    let mut events = api.stream(model, 1024, vec![Turn::user(prompt)]).await?;
     let mut text = String::new();
-    while let Some(event) = events.try_next().await.map_err(ReplyError::Record)? {
-        match streamed(&event).map_err(ReplyError::Record)? {
-            Streamed::Text(piece) => {
-                print!("{piece}");
-                text.push_str(&piece);
-            }
-            Streamed::Failed(error) => return Err(ReplyError::Api(error)),
-            Streamed::Done => return Ok(text),
-            Streamed::Stopped { .. } | Streamed::Other => {}
+    while let Some(event) = events.try_next().await? {
+        if let Streamed::Text(piece) = event {
+            print!("{piece}");
+            text.push_str(&piece);
         }
     }
-    Err(ReplyError::Unfinished)
+    Ok(text)
 }
 
 /// Every model, page after page.
@@ -233,7 +217,8 @@ pub async fn models(api: &Anthropic) -> anthropic::Result<()> {
 | The API wants | What to write |
 |---|---|
 | One path for two shapes of response: a whole message, or a stream of events, chosen by a field of the body. The return type is fixed. | Two endpoints, `create` and `stream`, on the same path; the part `request` keeps their inputs the same, and `stream` adds `"stream" = true`. |
-| Events whose data has a different shape for each event type. `Sse` gives no meaning to the data. | Your own function, `streamed`, that matches `event.event` and decodes `event.data` with `SseEvent::json`. An event type that it does not know is `Other`. |
-| An error after the `200`, as an `error` event. The status is already read, so it cannot be a Refused error. | `Streamed::Failed`, which the loop returns as its own error. |
-| A stream that ends before `message_stop`: the connection was closed early. | `try_next` returns `None`; the loop reports `ReplyError::Unfinished`. A broken connection is a `RecordError` instead. The reader never reconnects and never sends the request again. |
+| Events whose data has a different shape for each event type. `Sse` gives no meaning to the data. | Your own function, `streamed`, given to `Sse::new(…).try_map(streamed)`: it matches `event.event` and decodes `event.data` with `SseEvent::json`. An event type that it does not know is `Other`; `ping` is skipped and never reaches the loop. |
+| An error after the `200`, as an `error` event. | `RecordFail::problem` in `streamed`: the stream ends with the client's own error, Refused, its `problem()` the `ApiProblem` of the event, as for an error before the stream (`refused: status 200, in anthropic.stream`). The loop's `?` passes it on. |
+| A stream that ends before `message_stop`: the connection was closed early. | `until_last_record()`: `try_next` returns the Mismatch `the body ended before its last record`. A broken connection is the client's Transport error instead. The reader never reconnects and never sends the request again. |
+| Events after `message_stop`. | None are read: `Step::End` releases the body at once. |
 | The model, chosen by each application. | An input; the example reads it from the environment and names none. |

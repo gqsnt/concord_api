@@ -31,7 +31,7 @@
                 "watch" = "true"; "resourceVersion" = resource_version;
                 "allowWatchBookmarks" = allow_watch_bookmarks; "timeoutSeconds" = timeout_seconds;
             }
-            read JsonLines::new(4 * MIB);    // one object and its type: by default the server refuses a body over 3 MiB
+            read JsonLines::new(4 * MIB).try_map(watch_event).until_end_of_body();    // one object and its type: by default the server refuses a body over 3 MiB
             idle_timeout Duration::from_secs(u64::from(timeout_seconds.unwrap_or(3600)) + 60);
         }
         /// What every write takes.
@@ -66,7 +66,7 @@
                 path "namespaces/{namespace}/pods";
 
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>, kubernetes::Error>;
                 POST create(pod: Pod, ..write) -> Pod { body json(pod); }
 
                 /// `None` when there is no such pod, or no such namespace.
@@ -113,7 +113,7 @@
             scope all_pods {
                 path "pods";
                 GET list(..selectors, ..listing) -> List<Pod>;
-                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>>;
+                GET watch(..selectors, ..watching) -> RecordStream<WatchEvent<Pod>, kubernetes::Error>;
             }
         }
 

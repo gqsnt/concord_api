@@ -1,4 +1,4 @@
-use concord::read::{RecordError, SseEvent};
+use concord::read::{RecordFail, SseEvent, Step};
 use serde::{Deserialize, Serialize};
 
 /// Anthropic's error response, and the data of an `error` event:
@@ -35,16 +35,13 @@ pub enum Streamed {
     Text(String),
     /// The reply stopped: `end_turn`, `max_tokens`, and so on.
     Stopped { stop_reason: Option<String> },
-    /// The last event.
-    Done,
-    /// An error event, sent after the `200`.
-    Failed(ApiError),
-    /// `message_start`, `ping`, a delta that is not text, or an event type added later.
+    /// `message_start`, a delta that is not text, or an event type added later.
     Other,
 }
 
-/// Reads one server-sent event as a `Streamed`: the event's type chooses the shape of its data.
-pub fn streamed(event: &SseEvent) -> Result<Streamed, RecordError> {
+/// What one server-sent event is: the event's type chooses the shape of its data. `ping` is
+/// skipped, `message_stop` ends the reply, and an `error` event is the API's own error.
+pub fn streamed(event: SseEvent) -> Result<Step<Streamed>, RecordFail<ApiProblem>> {
     #[derive(Deserialize)]
     struct BlockDelta {
         delta: Delta,
@@ -66,28 +63,19 @@ pub fn streamed(event: &SseEvent) -> Result<Streamed, RecordError> {
         stop_reason: Option<String>,
     }
     Ok(match event.event.as_str() {
-        "content_block_delta" => match event.json::<BlockDelta>()?.delta {
+        "content_block_delta" => Step::Next(match event.json::<BlockDelta>()?.delta {
             Delta::Text { text } => Streamed::Text(text),
             Delta::Other => Streamed::Other,
-        },
+        }),
         "message_delta" => {
             let stop_reason = event.json::<MessageDelta>()?.delta.stop_reason;
-            Streamed::Stopped { stop_reason }
+            Step::Next(Streamed::Stopped { stop_reason })
         }
-        "message_stop" => Streamed::Done,
-        "error" => Streamed::Failed(event.json::<ApiProblem>()?.error),
-        _ => Streamed::Other,
+        "message_stop" => Step::End,
+        "error" => return Err(RecordFail::problem(event.json()?)),
+        "ping" => Step::Skip,
+        _ => Step::Next(Streamed::Other),
     })
-}
-
-/// Why a streamed reply has no text: the request failed, a record failed, the API sent an
-/// error event, or the stream ended before `message_stop`.
-#[derive(Debug)]
-pub enum ReplyError {
-    Call(anthropic::Error),
-    Record(RecordError),
-    Api(ApiError),
-    Unfinished,
 }
 
 /// A page of models. For `by_cursor(after_id, …)`: the last ID, while there are more.
