@@ -509,9 +509,11 @@ impl Draft {
                     }
                 }
             }
+            // A URL with an empty query (`/slice?`, `?&&`) is not the URL without one: the
+            // query is sent as given, less the secret pairs and with the secrets written again.
+            let given = replacement.query().is_some();
             replacement.set_query(
-                kept.iter()
-                    .any(|pair| !pair.is_empty())
+                (given || !kept.is_empty())
                     .then(|| kept.join("&"))
                     .as_deref(),
             );
@@ -2054,15 +2056,19 @@ mod tests {
         );
     }
     #[test]
-    fn c2_6_replacement_urls_with_no_query_pair_have_no_question_mark() {
-        for next in ["/next?", "/next?&&#fragment"] {
+    fn c8_6_replacement_urls_keep_an_empty_query_as_given() {
+        for (next, sent, query) in [
+            ("/next?", "https://example.test/next?", Some("")),
+            ("/next?&&#fragment", "https://example.test/next?&&", Some("&&")),
+            ("/next", "https://example.test/next", None),
+        ] {
             let mut options = Options::default();
             options.at_url(next);
             let request = draft()
                 .finish(&Core::<()>::default(), &options, "tasks.get")
                 .unwrap();
-            assert_eq!(request.url().as_str(), "https://example.test/next");
-            assert_eq!(request.url().query(), None);
+            assert_eq!(request.url().as_str(), sent);
+            assert_eq!(request.url().query(), query);
         }
     }
 
