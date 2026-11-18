@@ -171,6 +171,36 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn c11_8_follow_counts_a_bookmark_as_progress_between_410s() {
+        let script = Script::new();
+        page(&script, Some("10"), None, &["a"]);
+        gone(&script); // the watch: 1
+        gone(&script); // the list: 2
+        page(&script, Some("11"), None, &["a"]);
+        script.answer(200).body(line(
+            "BOOKMARK",
+            r#"{"kind":"Pod","metadata":{"resourceVersion":"20"}}"#,
+        )); // progress: the count starts again
+        gone(&script); // the watch from the bookmark: 1
+        gone(&script); // 2
+        gone(&script); // 3
+        let kube = client(&script);
+
+        let mut lists = 0;
+        let error = calling::follow(&kube, |_| lists += 1, |_| {})
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "the resource version expired three times in a row"
+        );
+        assert_eq!(lists, 2);
+        assert_eq!(script.requests()[5].url(), watch("20"));
+        assert_eq!(script.unused(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn c11_8_follow_refuses_to_watch_without_a_version() {
         let script = Script::new();
         page(&script, None, None, &["a"]);
@@ -184,5 +214,42 @@ mod tests {
         assert_eq!(error.to_string(), "the list has no resourceVersion");
         assert_eq!(lists, 0);
         assert_eq!(script.requests().len(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_8_follow_refuses_an_empty_version_from_a_list_an_event_or_a_bookmark() {
+        let bookmark = line(
+            "BOOKMARK",
+            r#"{"kind":"Pod","metadata":{"resourceVersion":""}}"#,
+        );
+        for (case, expected) in [
+            ("list", "the list has no resourceVersion"),
+            ("event", "an event has no resourceVersion"),
+            ("bookmark", "a bookmark has no resourceVersion"),
+        ] {
+            let script = Script::new();
+            if case == "list" {
+                page(&script, Some(""), None, &["a"]);
+            } else {
+                page(&script, Some("10"), None, &["a"]);
+                let wrong = if case == "event" {
+                    line("ADDED", &pod("c", ""))
+                } else {
+                    bookmark.clone()
+                };
+                script.answer(200).body(wrong);
+            }
+            let kube = client(&script);
+
+            let (mut lists, mut changes) = (0, 0);
+            let error = calling::follow(&kube, |_| lists += 1, |_| changes += 1)
+                .await
+                .unwrap_err();
+
+            assert_eq!(error.to_string(), expected, "{case}");
+            assert_eq!(lists, usize::from(case != "list"), "{case}");
+            assert_eq!(changes, 0, "{case}");
+            assert_eq!(script.unused(), 0, "{case}");
+        }
     }
 }

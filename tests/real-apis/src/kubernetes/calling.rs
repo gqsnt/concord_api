@@ -28,17 +28,18 @@ pub async fn scale_to_five(kube: &Kubernetes) -> kubernetes::Result<()> {
 }
 
 /// The pods of a namespace, then the changes to them, for as long as the program runs and the
-/// server keeps their history. `listed` receives the whole list: first, and again after each
-/// `410 Gone`. Such a list is a new snapshot: it replaces what the caller knows, and the changes
-/// between the old version and the new one are not delivered. `changed` receives each `Added`,
-/// `Modified` and `Deleted` event after a list.
+/// server keeps their history. `listed` receives the whole list: first, and again after a
+/// `410 Gone`, until the limit below. Such a list is a new snapshot: it replaces what the caller
+/// knows, and the changes between the old version and the new one are not delivered. `changed`
+/// receives each `Added`, `Modified` and `Deleted` event after a list.
 pub async fn follow(
     kube: &Kubernetes,
     mut listed: impl FnMut(Vec<Pod>),
     mut changed: impl FnMut(WatchEvent<Pod>),
 ) -> Result<(), BoxError> {
     // A choice of this example: list again at once after a `410`, and give up after three in a
-    // row with no event between them. A caller that wants to wait and try again loops around it.
+    // row with no progress between them (an event or a bookmark). A caller that needs a longer
+    // recovery waits on its own side, and calls `follow` again.
     const EXPIRED_IN_A_ROW: u32 = 3;
     let pods = kube.core_v1().pods("shop");
     let mut expired = 0;
@@ -46,7 +47,7 @@ pub async fn follow(
         if expired == EXPIRED_IN_A_ROW {
             return Err("the resource version expired three times in a row".into());
         }
-        // Every page of the list: 500 objects a page, a size that you may tune.
+        // Every page of the list, asking for up to 500 objects a page: a size that you may tune.
         let (mut all, mut version) = (Vec::new(), None);
         let mut pages = pods.list().limit(500).pages();
         loop {
@@ -63,8 +64,8 @@ pub async fn follow(
                 Err(e) => return Err(e.into()),
             }
         }
-        // The watch starts at the version of the list, never without one.
-        let mut version = version.ok_or("the list has no resourceVersion")?;
+        // The watch starts at the version of the list, never without one, nor at an empty one.
+        let mut version = version.filter(|v| !v.is_empty()).ok_or("the list has no resourceVersion")?;
         listed(all);
         loop {
             let watch = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true);
@@ -79,9 +80,12 @@ pub async fn follow(
             while let Some(event) = events.try_next().await? {
                 match &event {
                     WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
-                        version = pod.metadata.resource_version.clone()
+                        version = pod.metadata.resource_version.clone().filter(|v| !v.is_empty())
                             .ok_or("an event has no resourceVersion")?;
                         changed(event);
+                    }
+                    WatchEvent::Bookmark(mark) if mark.metadata.resource_version.is_empty() => {
+                        return Err("a bookmark has no resourceVersion".into());
                     }
                     WatchEvent::Bookmark(mark) => version = mark.metadata.resource_version.clone(),
                     WatchEvent::Error(status) if status.code == Some(410) => {
@@ -90,7 +94,7 @@ pub async fn follow(
                     }
                     WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
                 }
-                expired = 0;
+                expired = 0;                                       // an event or a bookmark: progress
             }
             // The server ended the watch: watch again from the last version seen.
         }

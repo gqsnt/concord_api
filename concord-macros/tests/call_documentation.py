@@ -399,36 +399,62 @@ def hover_signature(result, method, include_impl=False):
     return "".join(display.split())
 
 
-CONVERSIONS = re.compile(r"Text and list conversions: (<a\b[^>]*><code>[^<]*</code></a>|.{0,120})", re.S)
-CONVERSION_LINK = re.compile(r'^<a href="https://docs\.rs/concord-api/([^/"]+)/([^"#]+)"><code>concord::arg::Arg</code></a>$')
-LINKS = ROOT / "target/call-documentation/links"
+ACCEPTS = re.compile(r"Accepts an? ")
+ACCEPTED_TYPE = re.compile(r"^Accepts an? \[?(\w+)")
+CONVERSION = "Text and list conversions: "
+CONVERSION_LINK = re.compile(
+    r'Text and list conversions: <a href="https://docs\.rs/concord-api/([^/"]+)/([^"#]+)"><code>concord::arg::Arg</code></a>\.'
+)
+# The setters whose declared type is spelled with one of these names carry the conversion text.
+CONVERTED = {"String", "Secret", "Vec"}
+ARG_PAGE = "concord/arg/index.html"
 
 
 def check_links():
-    """Document tour-gen with --no-deps in a folder of its own, as an author's crate is, and check
-    that every conversion link names this release and a page of the facade's documentation."""
-    shutil.rmtree(LINKS / "doc", ignore_errors=True)
-    env = {**ENV, "CARGO_TARGET_DIR": str(LINKS)}
+    """Document tour-gen and the facade with --no-deps in a folder of their own, and check the
+    conversion text of every setter: present exactly where the input's type is spelled String,
+    Secret or Vec, and a link to docs.rs for this release and the page of concord::arg."""
+    links = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")) / "call-documentation/links"
+    shutil.rmtree(links / "doc", ignore_errors=True)
+    env = {**ENV, "CARGO_TARGET_DIR": str(links)}
     for package in ("tour-gen", "concord-api"):
         subprocess.check_output(["cargo", "doc", "--offline", "-j", "4", "--no-deps", "-p", package],
                                 cwd=ROOT, env=env)
     version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
-    links, wrong = 0, []
-    for page in sorted((LINKS / "doc/tour_gen").rglob("*.html")):
-        for link in CONVERSIONS.findall(page.read_text()):
-            links += 1
-            found = CONVERSION_LINK.match(link)
-            if not found:
-                wrong.append(f"{page.relative_to(LINKS / 'doc')}: not a link to docs.rs: {link}")
-            elif found[1] != version:
-                wrong.append(f"{page.relative_to(LINKS / 'doc')}: version {found[1]}, not {version}")
-            elif not (LINKS / "doc" / found[2]).is_file():
-                wrong.append(f"{page.relative_to(LINKS / 'doc')}: no page {found[2]} in the facade's documentation")
+    if not (links / "doc" / ARG_PAGE).is_file():
+        raise SystemExit(f"The facade's documentation has no page {ARG_PAGE}")
+    expected = found = 0
+    wrong = []
+    for page in sorted((links / "doc/tour_gen").rglob("*.html")):
+        html = page.read_text()
+        name = page.relative_to(links / "doc")
+        # Each "Accepts …" sentence, up to the next one, is the text of one setter.
+        starts = [m.start() for m in ACCEPTS.finditer(html)]
+        for number, start in enumerate(starts):
+            text = html[start:starts[number + 1] if number + 1 < len(starts) else len(html)]
+            kind = ACCEPTED_TYPE.match(display(text))
+            wanted = bool(kind) and kind[1] in CONVERTED
+            expected += wanted
+            if CONVERSION not in text:
+                if wanted:
+                    wrong.append(f"{name}: no conversion text after: {display(text)[:80]}")
+                continue
+            found += 1
+            link = CONVERSION_LINK.search(text)
+            if not wanted:
+                wrong.append(f"{name}: conversion text for a type that has none: {display(text)[:80]}")
+            elif not link:
+                wrong.append(f"{name}: the conversion text is not a link to docs.rs: {display(text)[:120]}")
+            elif link[1] != version:
+                wrong.append(f"{name}: the link names version {link[1]}, not {version}")
+            elif link[2] != ARG_PAGE:
+                wrong.append(f"{name}: the link goes to {link[2]}, not {ARG_PAGE}")
     if wrong:
-        raise SystemExit("Conversion links that do not reach the facade's page:\n" + "\n".join(sorted(set(wrong))))
-    if not links:
-        raise SystemExit("No setter of tour-gen documents its text and list conversions")
-    print(f"All {links} conversion links name docs.rs for {version} and a page of the facade.")
+        raise SystemExit("Conversion links that are missing or wrong:\n" + "\n".join(sorted(set(wrong))))
+    if not expected:
+        raise SystemExit("No setter of tour-gen has an input spelled String, Secret or Vec")
+    print(f"{found} of {expected} setters of String, Secret or Vec inputs link "
+          f"docs.rs/concord-api/{version}/{ARG_PAGE}, a page of the facade built here.")
 
 
 def check_search():
