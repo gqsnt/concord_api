@@ -38,7 +38,9 @@ pub fn document_404<T: DeserializeOwned>(body: Value) -> Result<T, Fail<EsProble
 
 /// The next page of a search in a point in time: the newest id of the point in time, and the
 /// sort values of the last hit. An empty page is the end. A page that timed out, or to which some
-/// shards did not respond, ends pagination with a Mismatch: going on would skip documents.
+/// shards did not respond, ends pagination with a Mismatch: going on would skip documents. So does
+/// a last hit with no sort values, or with those the call just sent: the id of a point in time
+/// changes from page to page, so the request would differ and fetch the same hits again.
 pub fn pit_after<C, P, A>(pit: P, after: A)
     -> impl Fn(C, &Answer<SearchPage>) -> Result<Option<C>, Fail<EsProblem>> + Send + 'static
 where
@@ -52,6 +54,12 @@ where
             return Err(concord::mismatch("a page with missing results"));
         }
         let Some(last) = page.hits.hits.last() else { return Ok(None) };
+        if last.sort.is_empty() {
+            return Err(concord::mismatch("a last hit with no sort values"));
+        }
+        if after.get(&call) == Some(&last.sort) {
+            return Err(concord::mismatch("the sort values of the page just sent"));
+        }
         let id = page.pit_id.clone().ok_or_else(|| concord::mismatch("no pit_id"))?;
         let keep_alive = pit.get(&call).map(|old| old.keep_alive.clone()).unwrap_or_default();
         let call = pit.set(call, Pit { id, keep_alive });

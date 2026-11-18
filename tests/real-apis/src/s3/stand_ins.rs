@@ -10,20 +10,28 @@ pub struct BucketsPage {
     #[serde(rename = "ContinuationToken")]
     pub continuation_token: Option<String>,
 }
+/// `ListBucketResult`, with the service's element names.
 #[derive(Debug, serde::Deserialize)]
 pub struct ObjectsPage {
+    #[serde(rename = "Contents", default)]
     pub objects: Vec<ObjectInfo>,
+    #[serde(rename = "CommonPrefixes", default)]
     pub common_prefixes: Vec<CommonPrefix>,
+    #[serde(rename = "IsTruncated")]
     pub is_truncated: bool,
+    #[serde(rename = "NextContinuationToken")]
     pub next_continuation_token: Option<String>,
 }
 #[derive(Debug, serde::Deserialize)]
 pub struct ObjectInfo {
+    #[serde(rename = "Key")]
     pub key: String,
+    #[serde(rename = "Size")]
     pub size: u64,
 }
 #[derive(Debug, serde::Deserialize)]
 pub struct CommonPrefix {
+    #[serde(rename = "Prefix")]
     pub prefix: String,
 }
 #[derive(Debug, serde::Deserialize)]
@@ -32,10 +40,24 @@ pub struct UploadsPage {
     pub next_key_marker: Option<String>,
     pub next_upload_id_marker: Option<String>,
 }
+/// `ListPartsResult`, with the service's element names and its parts.
 #[derive(Debug, serde::Deserialize)]
 pub struct PartsPage {
+    #[serde(rename = "Part", default)]
+    pub parts: Vec<PartInfo>,
+    #[serde(rename = "IsTruncated")]
     pub is_truncated: bool,
+    #[serde(rename = "NextPartNumberMarker")]
     pub next_part_number_marker: Option<u32>,
+}
+#[derive(Debug, serde::Deserialize)]
+pub struct PartInfo {
+    #[serde(rename = "PartNumber")]
+    pub part_number: u32,
+    #[serde(rename = "ETag")]
+    pub etag: String,
+    #[serde(rename = "Size")]
+    pub size: u64,
 }
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct CreateBucketConfiguration {}
