@@ -283,11 +283,16 @@ impl Bucket {
     /// Adds a window known in advance; call it again to add more, up to eight.
     ///
     /// A window set here is where the budget of each key starts. When [`learn`](Self::learn)
-    /// returns a window at the same position, the capacity that the API reports replaces
-    /// this one, also upward, from that response on; what is left can still only go down.
-    /// The same code can then serve keys of different sizes: Riot gives a development key
-    /// 20 requests a second and a production key far more, so a bucket declared for the
-    /// first learns the second from its headers.
+    /// returns the same windows, in the same order, of the same kind and, for a rolling
+    /// window, of the same period, the capacity that the API reports replaces this one, also
+    /// upward, from that response on; what is left can still only go down. A report whose
+    /// windows differ from these in number or in period is ignored whole, and the windows
+    /// set here keep holding, with nothing to say so.
+    ///
+    /// So for an API whose periods depend on the key, set no window and let the bucket learn
+    /// them: Riot reports `20:1,100:120` for a development key and other periods for a
+    /// production key. The first calls of each key then go one at a time, until a response
+    /// teaches it its windows.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|_| Some("requests".into()))
