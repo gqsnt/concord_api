@@ -23,6 +23,8 @@
 07_repeated_owner.rs	7
 07_input_owner.rs	7
 07_input_client.rs	7
+07_input_body.rs	7
+07_input_header.rs	7
 08_generated_type.rs	8
 09_unused.rs	9
 10_borrow_str.rs	10

@@ -118,6 +118,172 @@ fn c1_5_names_acronyms_digits_and_receivers() {
     );
 }
 
+/// Whether the whole macro refuses this description.
+fn refused(source: &str) -> bool {
+    crate::expand(source.parse().unwrap())
+        .to_string()
+        .contains("compile_error")
+}
+
+fn json_list<S: AsRef<str>>(items: &[S]) -> String {
+    let items: Vec<_> = items
+        .iter()
+        .map(|item| format!("\"{}\"", item.as_ref()))
+        .collect();
+    format!("[{}]", items.join(", "))
+}
+
+/// The methods of a receiver: those of every receiver, then its own, in order.
+fn methods(own: &[&'static str]) -> Vec<&'static str> {
+    let mut all: Vec<_> = name::EVERY_RECEIVER.iter().chain(own).copied().collect();
+    all.sort_unstable();
+    all
+}
+
+#[test]
+fn c1_4_c1_6_reserved_names_file_equals_the_tables_of_the_macro() {
+    let get = || {
+        NodeKind::Endpoint(Method {
+            keyword: syn::parse_str("GET").unwrap(),
+            custom: None,
+        })
+    };
+    // The owner name of a client: the one input name, and scope name, refused everywhere.
+    let parsed = parse_source(r#"client Owner { base "https://a.test"; }"#);
+    let client_owner = flat::owner_name(&parsed.client.as_ref().unwrap().node);
+    assert!(refused(&format!(
+        r#"client C {{ base "https://a.test"; GET get({client_owner}: u32) {{ query {{ "k" = {client_owner}; }} }} }}"#
+    )));
+    assert!(refused(&format!(
+        r#"client C {{ base "https://a.test"; scope {client_owner} {{ GET get(); }} }}"#
+    )));
+    // An enclosing scope's name is refused for an input and for a scope below it.
+    assert!(refused(
+        r#"client C { base "https://a.test"; scope outer { GET get(outer: u32) { query { outer; } } } }"#
+    ));
+    assert!(refused(
+        r#"client C { base "https://a.test"; scope outer { scope outer { GET get(); } } }"#
+    ));
+
+    let client = methods(&name::CLIENT_METHODS);
+    let handle = methods(&name::HANDLE_METHODS);
+    let call = methods(&name::CALL_METHODS);
+    for (receiver, names) in [
+        (NodeKind::Client, &client),
+        (NodeKind::Scope, &handle),
+        (get(), &call),
+    ] {
+        for name in names.iter() {
+            assert!(name::reserved(name, &receiver), "{name}");
+        }
+        let prefixed = format!("{}x", name::SETTER_PREFIX);
+        assert!(name::reserved(&prefixed, &receiver));
+    }
+    for keyword in name::KEYWORDS {
+        assert!(name::keyword(keyword));
+    }
+    // A name that starts with `__` is the macro's own; no description can write one.
+    assert!(refused(
+        r#"client C { base "https://a.test"; GET get(__x: u32) { query { "k" = __x; } } }"#
+    ));
+
+    // The items at the root of a client's module, read from the module the macro writes.
+    let file: syn::File = syn::parse2(crate::expand(
+        r#"pub client Minimal { base "https://a.test"; }"#.parse().unwrap(),
+    ))
+    .unwrap();
+    let module = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            syn::Item::Mod(module) if module.ident == "minimal" => Some(module),
+            _ => None,
+        })
+        .unwrap();
+    let mut root: Vec<String> = module
+        .content
+        .as_ref()
+        .unwrap()
+        .1
+        .iter()
+        .filter_map(|item| match item {
+            syn::Item::Struct(item) => Some(item.ident.to_string()),
+            syn::Item::Trait(item) => Some(item.ident.to_string()),
+            syn::Item::Type(item) => Some(item.ident.to_string()),
+            syn::Item::Enum(item) => Some(item.ident.to_string()),
+            syn::Item::Mod(item) => Some(item.ident.to_string()),
+            _ => None,
+        })
+        .filter(|ident| !ident.starts_with("__"))
+        .collect();
+    root.sort_unstable();
+    for item in &root {
+        let child = name::module_name(item);
+        assert!(
+            refused(&format!(
+                r#"client C {{ base "https://a.test"; GET {child}(); }}"#
+            )),
+            "a child `{child}` of the client is accepted"
+        );
+    }
+    for alias in name::ROOT_ALIASES {
+        assert!(root.iter().any(|item| item == alias), "{alias}");
+    }
+
+    let examples: Vec<_> = ["Riot", "GitHub", "XMLHttpClient"]
+        .iter()
+        .map(|client| format!("[\"{client}\", \"{}\"]", name::module_name(client)))
+        .collect();
+    let keywords: Vec<_> = name::KEYWORDS
+        .chunks(8)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .map(|keyword| format!("\"{keyword}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .collect();
+    let owner = json_list(&[client_owner.as_str()]);
+    let expected = format!(
+        r#"{{
+  "about": "The names that a description of an API may not use, for programs that write descriptions. Its schema is at the top of docs/reference/rules.md. A test of the macro keeps it equal to the macro's own tables.",
+  "keywords": [
+    {keywords}
+  ],
+  "inputs": {{ "names": {owner}, "enclosing_scopes": true }},
+  "scopes": {{ "names": {owner}, "enclosing_scopes": true, "in_client": {client}, "in_scope": {handle} }},
+  "endpoints": {{ "in_client": {client}, "in_scope": {handle} }},
+  "setters": {{ "client": {client}, "scope": {handle}, "endpoint": {call} }},
+  "root": {root},
+  "patterns": {{ "reserved_prefix": "{prefix}", "generated_prefix": "__" }},
+  "client_module": {{
+    "rule": "the client's name in lower case, with a _ before each capital that follows a lower-case letter or a digit, and before the last capital of a run that a lower-case letter follows",
+    "examples": [{examples}]
+  }}
+}}
+"#,
+        keywords = keywords.join(",\n    "),
+        client = json_list(&client),
+        handle = json_list(&handle),
+        call = json_list(&call),
+        root = json_list(&root),
+        prefix = name::SETTER_PREFIX,
+        examples = examples.join(", "),
+    );
+    let file = path().join("../docs/reference/reserved-names.json");
+    let written = fs::read_to_string(&file).unwrap_or_default();
+    if written != expected {
+        let fresh = path().join("../target/reserved-names.json");
+        fs::write(&fresh, &expected).unwrap();
+        panic!(
+            "{} differs from the macro's tables; the expected file is {}",
+            file.display(),
+            fresh.display()
+        );
+    }
+}
+
 #[test]
 fn c1_7_closed_arrow_spellings_and_parentheses() {
     for spelling in [

@@ -1,0 +1,13 @@
+error: name conflicts with an input owner
+       label: this name is already used by the client or a scope
+       help: rename this input and keep its key on the wire by writing the key in the block: `accounts_value?: String` and `body json { "accounts" = accounts_value; }`; update its other references
+ --> tests/diagnostics/rules/07_input_body.rs:2:95
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope accounts { POST update(accounts?: String) { body json { accoun...
+  |                                                                                               ^^^^^^^^
+
+error: this owner is declared here
+ --> tests/diagnostics/rules/07_input_body.rs:2:72
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope accounts { POST update(accounts?: String) { body json { accoun...
+  |                                                                        ^^^^^^^^

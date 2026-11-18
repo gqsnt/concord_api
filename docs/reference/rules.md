@@ -24,6 +24,20 @@ The exact statement of each rule is in [the contracts](contracts.md).
 | 3 | C | **An argument** is the declared type, a reference to it (it is cloned inside), a string (`"Faker"`) for a `String` or a `Secret`, or an array or a slice for a `Vec`. For an optional list of `String`, strings in an array or a slice too: `.labels(["bug", "ui"])` for `labels?: Vec<String>`. Nothing else: `ids("p-1")` does not compile for `puuid: Puuid`; write `Puuid::from("p-1")`. An input owns its data: its type is `Clone + Send + Sync + 'static` and cannot borrow ([C1.8](contracts.md#c1-the-description)), and it is at least as visible as the client. |
 | 4 | C | **A bare name is an input of the node where the statement is written.** An input of a node above is named with its owner: `client.key`, `matches.route`; an owner's name is visible in its own node and below. So no input may have the name of an enclosing owner: `client`, or a scope above it. A bare name that is not an input is whatever Rust finds in your module, with no message. And an input shadows an item with the same name in the statements of its node: the item is then written with its path (`body concord::form(form);`). A `const` or a `static` that is visible there is not shadowed: an input with its name does not compile (E0530). One name is never shadowed: the path before a body of entries. In `body form { form; }`, `form` before the block is the function, resolved from where `api!` is invoked. |
 
+**The names that a description may not use** are also in one file, [`reserved-names.json`](reserved-names.json), for a program that writes descriptions (from an OpenAPI document, say). A test of the macro keeps the file equal to the macro's own tables. Every list holds exact names:
+
+| Key | What it lists |
+|---|---|
+| `keywords` | The Rust keywords: none is the name of a scope, an endpoint, a part or an input, raw (`r#type`) or not ([C1.4](contracts.md#c1-the-description)). `Self` is in the list for the client's module name. |
+| `inputs.names` | The names that no input may have: `client`. With `enclosing_scopes` true, an input may not have the name of a scope above it either (rule 4). |
+| `scopes.names`, `scopes.enclosing_scopes` | The same for a scope: it is not named `client`, and does not repeat the name of a scope above it. |
+| `scopes.in_client`, `scopes.in_scope`, `endpoints.in_client`, `endpoints.in_scope` | The names that a child of the client, or of a scope, may not have: the methods of the client, or of a handle ([C1.6](contracts.md#c1-the-description)). |
+| `setters.client`, `setters.scope`, `setters.endpoint` | The names that an optional input may not have, by the node it belongs to: its setter would be a method of the client, of a handle, or of the call. An optional input of a part counts for each node that spreads the part. |
+| `root` | The items at the root of a client's module. A child of the client may not have a name whose type would be one of them: `call`, `endpoint`, `error`, `result`, `retry` ([C1.5](contracts.md#c1-the-description) gives the type of a name). |
+| `patterns.reserved_prefix` | `with_`: no child and no optional input starts with it; Concord adds its own settings under it. |
+| `patterns.generated_prefix` | `__`: the names that the macro makes for itself start with it. No name of a description can (a name starts with a letter and has no doubled `_`), and the module where `api!` is written declares no item that starts with it. |
+| `client_module` | The rule that turns the name of a client into the name of its module, and three examples: `GitHub` becomes `git_hub`. |
+
 ## The request
 
 | # | | Rule |

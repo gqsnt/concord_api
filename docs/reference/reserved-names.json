@@ -1,0 +1,22 @@
+{
+  "about": "The names that a description of an API may not use, for programs that write descriptions. Its schema is at the top of docs/reference/rules.md. A test of the macro keeps it equal to the macro's own tables.",
+  "keywords": [
+    "abstract", "as", "async", "await", "become", "box", "break", "const",
+    "continue", "crate", "do", "dyn", "else", "enum", "extern", "false",
+    "final", "fn", "for", "gen", "if", "impl", "in", "let",
+    "loop", "macro", "match", "mod", "move", "mut", "override", "priv",
+    "pub", "ref", "return", "self", "Self", "static", "struct", "super",
+    "trait", "true", "try", "type", "typeof", "unsafe", "unsized", "use",
+    "virtual", "where", "while", "yield"
+  ],
+  "inputs": { "names": ["client"], "enclosing_scopes": true },
+  "scopes": { "names": ["client"], "enclosing_scopes": true, "in_client": ["call", "clone", "new"], "in_scope": ["call", "clone"] },
+  "endpoints": { "in_client": ["call", "clone", "new"], "in_scope": ["call", "clone"] },
+  "setters": { "client": ["call", "clone", "new"], "scope": ["call", "clone"], "endpoint": ["at_url", "clone", "edit_request", "into_future", "into_request", "pages", "read_response", "request", "send", "send_full", "send_if_none_match", "send_raw"] },
+  "root": ["Call", "Endpoint", "Error", "Result", "Retry"],
+  "patterns": { "reserved_prefix": "with_", "generated_prefix": "__" },
+  "client_module": {
+    "rule": "the client's name in lower case, with a _ before each capital that follows a lower-case letter or a digit, and before the last capital of a run that a lower-case letter follows",
+    "examples": [["Riot", "riot"], ["GitHub", "git_hub"], ["XMLHttpClient", "xml_http_client"]]
+  }
+}

@@ -283,7 +283,10 @@ fn repairs(fixture: &str, broken: &str, intended: &str, d: &crate::diag::Diagnos
             code_after(first, "write `client ").as_str(),
         ),
         "m07_input.rs" => {
-            rename_mutations(fixture, broken, "tournament", &code_after(first, "to `"))
+            // The help shows the renamed declaration: `tournament_value: TournamentCode`.
+            let declaration = code_after(first, "for example `");
+            let renamed = declaration.split(':').next().unwrap();
+            rename_mutations(fixture, broken, "tournament", renamed)
         }
         "m08.rs" => rename_mutations(fixture, broken, "top_3", &code_after(first, "to `")),
         "m16_child.rs" | "m16_part.rs" => move_to_client(broken, &code_after(first, "move `")),

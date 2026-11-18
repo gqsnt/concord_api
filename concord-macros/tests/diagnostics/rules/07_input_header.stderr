@@ -1,0 +1,13 @@
+error: name conflicts with an input owner
+       label: this name is already used by the client or a scope
+       help: rename this input and keep its key on the wire by writing the key in the block: `outer_value: String` and `headers { "outer" = outer_value; }`; update its other references
+ --> tests/diagnostics/rules/07_input_header.rs:2:90
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope outer { GET fetch(outer: String) { headers { outer; } } } }
+  |                                                                                          ^^^^^
+
+error: this owner is declared here
+ --> tests/diagnostics/rules/07_input_header.rs:2:72
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope outer { GET fetch(outer: String) { headers { outer; } } } }
+  |                                                                        ^^^^^

@@ -1,6 +1,6 @@
 error: name conflicts with an input owner
        label: this name is already used by the client or a scope
-       help: rename this input to `outer_id` and update its references in the existing `query` placements and expressions; keep the wire keys and fixed text that spell `outer`
+       help: rename this input and keep its key on the wire by writing the key in the block: `outer_value: String` and `query { "outer" = outer_value; }`; update its other references
  --> tests/diagnostics/rules/07_input_owner.rs:2:90
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; scope outer { GET fetch(outer: String) { query { outer; } } } }

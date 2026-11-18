@@ -14,63 +14,21 @@ use crate::{
 #[cfg(test)]
 use growth::{inspect, Inspection};
 
+// The tables of this file are the source of `docs/reference/reserved-names.json`, for
+// programs that write descriptions; a unit test keeps that file equal to them.
+
 /// C1.4's closed, edition-independent keyword set.
+pub(crate) const KEYWORDS: [&str; 52] = [
+    "abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "crate",
+    "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "gen", "if", "impl",
+    "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "Self", "static", "struct", "super", "trait", "true", "try", "type",
+    "typeof", "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
+];
+
+/// C1.4: a keyword is never a name.
 pub(crate) fn keyword(name: &str) -> bool {
-    matches!(
-        name,
-        "abstract"
-            | "as"
-            | "async"
-            | "await"
-            | "become"
-            | "box"
-            | "break"
-            | "const"
-            | "continue"
-            | "crate"
-            | "do"
-            | "dyn"
-            | "else"
-            | "enum"
-            | "extern"
-            | "false"
-            | "final"
-            | "fn"
-            | "for"
-            | "gen"
-            | "if"
-            | "impl"
-            | "in"
-            | "let"
-            | "loop"
-            | "macro"
-            | "match"
-            | "mod"
-            | "move"
-            | "mut"
-            | "override"
-            | "priv"
-            | "pub"
-            | "ref"
-            | "return"
-            | "self"
-            | "Self"
-            | "static"
-            | "struct"
-            | "super"
-            | "trait"
-            | "true"
-            | "try"
-            | "type"
-            | "typeof"
-            | "unsafe"
-            | "unsized"
-            | "use"
-            | "virtual"
-            | "where"
-            | "while"
-            | "yield"
-    )
+    KEYWORDS.contains(&name)
 }
 
 /// C1.5: a digit never cuts a type name.
@@ -140,33 +98,56 @@ pub(crate) fn replacement(name: &str) -> String {
     result
 }
 
+/// C1.6: a name with this prefix is reserved for the settings of every receiver.
+pub(crate) const SETTER_PREFIX: &str = "with_";
+
+/// C1.6: the methods of every receiver: a client, a handle and a call.
+pub(crate) const EVERY_RECEIVER: [&str; 1] = ["clone"];
+
+/// C1.6: the methods of a client, besides those of every receiver.
+pub(crate) const CLIENT_METHODS: [&str; 2] = ["call", "new"];
+
+/// C1.6: the methods of a scope's handle, besides those of every receiver.
+pub(crate) const HANDLE_METHODS: [&str; 1] = ["call"];
+
+/// C1.6: the methods of a call, besides those of every receiver.
+pub(crate) const CALL_METHODS: [&str; 11] = [
+    "send",
+    "send_full",
+    "send_raw",
+    "send_if_none_match",
+    "request",
+    "into_request",
+    "edit_request",
+    "read_response",
+    "pages",
+    "at_url",
+    "into_future",
+];
+
+/// C1.6: the type aliases at the root of a client's module. A child of the client may not
+/// generate one of these types. The module's other items, `Call` and `Endpoint`, are kept
+/// apart elsewhere: `call` is a method of the client, and the writer refuses `endpoint`.
+pub(crate) const ROOT_ALIASES: [&str; 3] = ["Error", "Result", "Retry"];
+
+fn root_alias(name: &str) -> bool {
+    ROOT_ALIASES.contains(&type_name(name).as_str())
+}
+
 /// Reserved methods are exact and depend on the receiver, not the child kind.
 pub(crate) fn reserved(name: &str, receiver: &NodeKind) -> bool {
-    name.starts_with("with_")
-        || name == "clone"
+    name.starts_with(SETTER_PREFIX)
+        || EVERY_RECEIVER.contains(&name)
         || match receiver {
-            NodeKind::Client => matches!(name, "call" | "new"),
-            NodeKind::Scope => name == "call",
-            NodeKind::Endpoint(_) => matches!(
-                name,
-                "send"
-                    | "send_full"
-                    | "send_raw"
-                    | "send_if_none_match"
-                    | "request"
-                    | "into_request"
-                    | "edit_request"
-                    | "read_response"
-                    | "pages"
-                    | "at_url"
-                    | "into_future"
-            ),
+            NodeKind::Client => CLIENT_METHODS.contains(&name),
+            NodeKind::Scope => HANDLE_METHODS.contains(&name),
+            NodeKind::Endpoint(_) => CALL_METHODS.contains(&name),
             NodeKind::Part => false,
         }
 }
 
 fn method_replacement(name: &str, suffix: &str) -> String {
-    let bare = name.strip_prefix("with_").unwrap_or(name);
+    let bare = name.strip_prefix(SETTER_PREFIX).unwrap_or(name);
     format!("{}_{suffix}", replacement(bare))
 }
 
@@ -230,16 +211,11 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                             );
                         }
                         if let Some((_, first)) = owners.iter().find(|(owner, _)| owner == &name) {
+                            let replacement = method_replacement(&name, "value");
                             diagnostics.raise(
                                 input.span,
-                                diag::owner_input(&name, &format!("{name}_id"), *first).help(
-                                    rename_input_help(
-                                        node,
-                                        &name,
-                                        &format!("{name}_id"),
-                                        &forbidden,
-                                    ),
-                                ),
+                                diag::owner_input(&name, &replacement, *first)
+                                    .help(owner_input_help(node, input, &replacement, &forbidden)),
                             );
                         }
                         if input.optional.is_some()
@@ -292,8 +268,7 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                     );
                 }
                 if reserved(name, &node.kind)
-                    || (matches!(node.kind, NodeKind::Client)
-                        && matches!(type_name(name).as_str(), "Error" | "Result" | "Retry"))
+                    || (matches!(node.kind, NodeKind::Client) && root_alias(name))
                 {
                     diagnostics.raise(
                         child.name.span(),
@@ -373,8 +348,7 @@ fn child_candidate(parent: &Node, current: &Node, name: &str, owners: &[String])
         && !keyword(name)
         && !reserved(name, &parent.kind)
         && !(matches!(current.kind, NodeKind::Scope) && owners.iter().any(|o| o == name))
-        && !(matches!(parent.kind, NodeKind::Client)
-            && matches!(type_name(name).as_str(), "Error" | "Result" | "Retry"))
+        && !(matches!(parent.kind, NodeKind::Client) && root_alias(name))
         && !parent.children.iter().chain(&parent.parts).any(|c| {
             #[cfg(test)]
             inspect(Inspection::ChildRepair);
@@ -482,10 +456,11 @@ pub(crate) fn expanded(
                 );
             }
             if let Some(owner) = owners.iter().find(|o| flat::owner_name(o.node) == name) {
+                let replacement = method_replacement(&name, "value");
                 diagnostics.raise(
                     input.input.span,
-                    diag::owner_input(&name, &format!("{name}_id"), owner.node.name.span()).help(
-                        rename_input_help(input.written, &name, &format!("{name}_id"), &forbidden),
+                    diag::owner_input(&name, &replacement, owner.node.name.span()).help(
+                        owner_input_help(input.written, input.input, &replacement, &forbidden),
                     ),
                 );
             }
@@ -554,6 +529,55 @@ fn rename_input_help(node: &Node, name: &str, replacement: &str, forbidden: &[St
         format!("{places} placements and expressions")
     };
     format!("rename this input to `{replacement}` and update its references in the existing {location}; keep the wire keys and fixed text that spell `{name}`")
+}
+
+/// Message 7's help: a renamed input never has the name of an owner, and a short entry
+/// that sent the old name as its key keeps that key by writing it.
+fn owner_input_help(node: &Node, input: &Input, replacement: &str, forbidden: &[String]) -> String {
+    if !input_candidate(node, replacement, true, forbidden) {
+        return "choose a distinct valid input name that conflicts with no owner, input or generated method, and update its existing references without changing wire names".into();
+    }
+    let name = input.name.to_string();
+    let declaration = format!(
+        "{replacement}{}: {}",
+        if input.optional.is_some() { "?" } else { "" },
+        Written::new(input.ty.to_token_stream()).text()
+    );
+    match short_entry_block(node, &name) {
+        Some(block) => format!(
+            "rename this input and keep its key on the wire by writing the key in the block: `{declaration}` and `{block} {{ \"{name}\" = {replacement}; }}`; update its other references"
+        ),
+        None => format!(
+            "rename this input, for example `{declaration}`, and update its references; no key on the wire is spelled by its name"
+        ),
+    }
+}
+
+/// The opening of the first block, in this node or below, where `name` is a short entry.
+fn short_entry_block(node: &Node, name: &str) -> Option<String> {
+    let short = |entries: &Entries| {
+        entries
+            .entries
+            .iter()
+            .any(|entry| matches!(&entry.kind, EntryKind::Short(r) if r.owner.is_none() && r.name == name))
+    };
+    let mut pending = vec![node];
+    while let Some(node) = pending.pop() {
+        for statement in &node.statements {
+            match &statement.kind {
+                StatementKind::Query(e) | StatementKind::Headers(e) if short(e) => {
+                    return Some(statement.keyword.to_string());
+                }
+                StatementKind::Body(Body::Entries { function, entries }) if short(entries) => {
+                    let function = Written::new(function.to_token_stream()).text();
+                    return Some(format!("{} {function}", statement.keyword));
+                }
+                _ => {}
+            }
+        }
+        pending.extend(node.children.iter().rev());
+    }
+    None
 }
 
 pub(crate) fn expression_uses(expr: &syn::Expr, name: &str) -> bool {
