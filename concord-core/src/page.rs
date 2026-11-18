@@ -353,8 +353,15 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
 
     /// Which input of the endpoint this slot names. A slot of yours that forwards to another
     /// returns the identity of the input it forwards to (`self.0.input()`), whatever it reads
-    /// or where its value lives. A slot names one input at a time: a pager reads `input()` and
-    /// `get` together, when it decides, never one when it is built and the other later.
+    /// or where its value lives.
+    ///
+    /// A slot names one input for the whole of a decision: for as long as a pager decides on a
+    /// page, `get` and `input` answer for the same input. A pager calls them one after the
+    /// other when it decides, and reads them again at the next page; it never reads one when it
+    /// is built and the other later. So a slot of yours that can change the input it names (by
+    /// a switch that another thread turns, say) changes it between two decisions, never during
+    /// one. Otherwise a pager may read the value of one input and the identity of another, and
+    /// report two moves for a call that sets one input, or miss a call that sets two.
     fn input(&self) -> InputId;
 }
 

@@ -342,12 +342,35 @@ where
     paging
 }
 
+static TO_Y_ON_PAGE_TWO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The same choices, with a switch that the caller turns between two pages.
+fn switched_by_the_caller<C, X, Y>(
+    x: X,
+    y: Y,
+    switch: &'static std::sync::atomic::AtomicBool,
+) -> Paging<C>
+where
+    C: Call<Value = Vec<u8>>,
+    X: Slot<C, Value = u8>,
+    Y: Slot<C, Value = u8>,
+{
+    by_cursor(x, |_| Some(99))
+        .or_when_set(x, by_cursor(x, |_| Some(1)))
+        .or_when_set(Switched(x, y, switch), by_cursor(y, |_| Some(2)))
+        .has_more(|page| !page.is_empty())
+}
+
 concord::api! {
     client Switching {
         base "https://switch.test";
         read Json;
         GET to_y(x?: u8, y?: u8) -> Vec<u8> { query { x; y; } paginate switching(x, y, &TO_Y_LATER); }
         GET to_x(x?: u8, y?: u8) -> Vec<u8> { query { x; y; } paginate switching(x, y, &TO_X_LATER); }
+        GET later(x?: u8, y?: u8) -> Vec<u8> {
+            query { x; y; }
+            paginate switched_by_the_caller(x, y, &TO_Y_ON_PAGE_TWO);
+        }
     }
 }
 
@@ -396,6 +419,40 @@ async fn c8_6_a_slot_that_names_the_same_input_at_the_decision_is_one_choice() {
         ]
     );
     assert_eq!(end, Ok(()));
+}
+
+/// Naming `x` at the first page and `y` at the second: each decision reads the identity anew, so
+/// the second sees two inputs that each choose a move, although the first saw one. The conflict
+/// is found before `has_more` ends the walk at the empty page.
+#[tokio::test]
+async fn c8_6_a_slot_that_names_another_input_at_a_later_page_is_that_input() {
+    use std::sync::atomic::Ordering;
+    TO_Y_ON_PAGE_TWO.store(false, Ordering::SeqCst);
+    let script = Script::new();
+    script.answer(200).body("[7]");
+    script.answer(200).body("[]");
+    let api = Switching::new().with_transport(script.clone());
+    let mut pages = api.later().x(5).y(6).pages();
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![7]));
+    TO_Y_ON_PAGE_TWO.store(true, Ordering::SeqCst);
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![]));
+    let end = pages
+        .try_next()
+        .await
+        .map_err(|error| error.reason().map(str::to_owned));
+    let urls: Vec<String> = script
+        .requests()
+        .iter()
+        .map(|request| request.url().to_string())
+        .collect();
+    assert_eq!(
+        urls,
+        [
+            "https://switch.test/?x=5&y=6",
+            "https://switch.test/?x=1&y=6"
+        ]
+    );
+    assert_eq!(end, Err(Some(TWO_MOVES.to_owned())));
 }
 
 // The numbering itself: each input of an endpoint is its position among the inputs of the
