@@ -88,13 +88,15 @@ async fn a_silent_server_ends_the_call_after_30_seconds() {
 
 | | |
 |---|---|
-| `script.answer(status: u16) -> Answer` | The next attempt gets a response with this status. Then, chained in one statement, each method taking the `Answer` and returning it: `.after(Duration)` (the head arrives later), `.header(name: &str, value: &str)`, `.body(piece: impl Into<Bytes>)` (one chunk per call), `.pause(Duration)` between chunks, `.stall()` (the body never ends), `.cut()` (the body fails halfway), `.declare_length(u64)` (a `content-length`: the body gives at most that many bytes, and fails when its chunks end before), `.read_upload()` and `.read_upload_paced(Duration)` (the request body is read first). |
-| `script.fail(error: TransportError) -> Failure` | The next attempt fails before any head, with this error; `.after(Duration)` and `.read_upload()` work here too. |
+| `script.answer(status: u16) -> Answer` | The next attempt gets a response with this status. Then, chained in one statement, each method taking the `Answer` and returning it: `.after(Duration)` (the head arrives later), `.header(name: &str, value: &str)`, `.body(piece: impl Into<Bytes>)` (one chunk per call), `.pause(Duration)` between chunks, `.stall()` (after its chunks, the body never ends and gives no more bytes), `.cut()` (after its chunks, reading the body fails, as when a connection is lost), `.declare_length(u64)` (a `content-length`: see below), `.read_upload()` and `.read_upload_paced(Duration)` (the request body is read first). |
+| `script.fail(error: TransportError) -> Failure` | The next attempt fails before any head, with this error; `.after(Duration)`, `.read_upload()` and `.read_upload_paced(Duration)` work here too. |
 | `script.never() -> Never` | The next attempt never gets a response. |
 | `script.requests() -> Vec<Request>` | A copy of every request the script received, in order (below). |
-| `script.unused() -> usize` | How many scripted attempts were not played. An attempt that finds nothing scripted gets a `599`, so that the test fails loudly. |
+| `script.unused() -> usize` | How many scripted attempts were not played. An attempt that finds nothing scripted gets a response with the status `599`, whose body names the attempt and the endpoint. Unless an arm handles that status, a call returns it as a Refused error; `send_raw()` returns the response itself. So a test sees it only through what it asserts: check the result, and `unused()` or the number of `requests()`. |
 
-**When an attempt is added.** `answer`, `fail` and `never` return a builder, and the attempt is added to the script when that builder is dropped. A chain written as one statement is dropped at its `;`, so the attempts are played in the order of the statements. A builder kept in a variable is added only when the variable goes out of scope: an attempt scripted after it, while it is still alive, is played first. To add a header only in some cases, give the builder a block of its own:
+**How a scripted body ends.** The chunks are given in order, with their pauses. Then the end decides: with nothing more, the body ends; with `.stall()`, it never ends; with `.cut()`, reading it fails with the error `concord_testkit::script::Cut`. A declared length (`.declare_length(n)`, or a `content-length` given to `.header`) comes first: the body gives at most `n` bytes, cutting the chunk that goes past them, and it ends as soon as `n` bytes are given, also with `.stall()` or `.cut()`. When the chunks end before `n` bytes, reading fails with `Cut`, as when a connection closes early.
+
+**When an attempt is added.** `answer`, `fail` and `never` return a builder, and the attempt is added to the script when that builder is dropped. A chain written as one statement is dropped at its `;`, so the attempts are played in the order of the statements. A builder kept in a variable is added only when the variable goes out of scope: an attempt scripted after it, while it is still alive, is played first. To add a header only in some cases, give the builder a block of its own (here `kind` is an `Option<&str>`):
 
 ```rust
 {
@@ -112,7 +114,7 @@ script.answer(200).body("{}");                          // played after the `429
 |---|---|
 | `method()` | `&Method`: `Method::GET`, `Method::POST`, … |
 | `url()` | `&str`: the whole URL, as text. For its parts, parse it: `concord::reqwest::Url::parse(request.url())?.query_pairs()`. (A transport receives a `reqwest::Request`, whose `url()` is a `&Url`; the text is the same. Code written for a `&Url` does not compile on the text: `rustc` reports no method `host_str` on `&str`, or, for `.as_str()`, the unstable feature `str_as_str`.) |
-| `header(name: &str)` | `Option<&str>`: the first value of that header, or `None` when it is absent or not UTF-8. `headers()` returns the whole `&HeaderMap`, repeated values and sensitive marks included. |
+| `header(name: &str)` | `Option<&str>`: the first value of that header, or `None` when it is absent or when its value holds a byte other than visible ASCII or a tab (as `HeaderValue::to_str` decides: a value in UTF-8 beyond ASCII is `None` too; read it as bytes through `headers()`). `headers()` returns the whole `&HeaderMap`, repeated values and sensitive marks included. |
 | `body()` | `Option<&[u8]>`: the bytes of a body held in memory; `None` for a request without a body and for a stream. `upload()` returns what the script read of a stream (`.read_upload()`): its `bytes()`, its `pieces()` and its `state()`. |
 | `info()` | `&TryInfo`: `number()` is the attempt (1 for the first), `endpoint()` the name of the endpoint (`tasks.get`). |
 | `at()` | `tokio::time::Instant`: when the request was handed to the transport, on virtual time. |

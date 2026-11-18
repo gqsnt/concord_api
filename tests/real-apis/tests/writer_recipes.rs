@@ -86,7 +86,7 @@ mod redirect {
             sent[1].url(),
             "https://eu.downloads.example.com/archives/7?sig=a%2Fb"
         );
-        assert_eq!(sent[1].header("authorization"), None);
+        assert!(!sent[1].headers().contains_key("authorization"));
         assert_eq!(sent[1].info().endpoint(), "downloads.fetch");
         assert_eq!(script.unused(), 0);
     }
@@ -97,7 +97,7 @@ mod empty_body {
     #[tokio::test(start_paused = true)]
     async fn c2_12_no_body_an_empty_body_and_an_optional_body_go_out_as_the_guide_says() {
         let script = concord_testkit::Script::new();
-        for _ in 0..4 {
+        for _ in 0..6 {
             script.answer(204);
         }
         let store = Store::new("PRIVATE_TOKEN").with_transport(script.clone());
@@ -109,18 +109,28 @@ mod empty_body {
             .options(DeleteOptions { grace_seconds: 30 })
             .await
             .unwrap();
+        remove(&store, 7, None).await.unwrap();
+        remove(&store, 7, Some(DeleteOptions { grace_seconds: 5 }))
+            .await
+            .unwrap();
 
         let sent = script.requests();
-        assert_eq!(sent.len(), 4);
+        assert_eq!(sent.len(), 6);
         assert_eq!(sent[0].body(), None);
         assert_eq!(sent[0].header("content-length"), Some("0"));
         for empty in &sent[1..3] {
             assert_eq!(empty.body(), Some(&b""[..]));
-            assert_eq!(empty.header("content-type"), None);
-            assert_eq!(empty.header("content-length"), None);
+            assert!(!empty.headers().contains_key("content-type"));
+            assert!(!empty.headers().contains_key("content-length"));
         }
         assert_eq!(sent[3].body(), Some(&br#"{"grace_seconds":30}"#[..]));
         assert_eq!(sent[3].header("content-type"), Some("application/json"));
+        // `remove` without options: the edit takes the empty body away.
+        assert_eq!(sent[4].method(), "DELETE");
+        assert_eq!(sent[4].body(), None);
+        assert!(!sent[4].headers().contains_key("content-type"));
+        assert!(!sent[4].headers().contains_key("content-length"));
+        assert_eq!(sent[5].body(), Some(&br#"{"grace_seconds":5}"#[..]));
     }
 }
 mod query {

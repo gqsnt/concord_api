@@ -316,6 +316,8 @@ let archive = download(&archives, 7, Downloads::new).await?;
 A test passes a function that gives the second client the same scripted transport as the first, so both calls are played and recorded in order ([a script](testing.md#a-script-a-transport-with-virtual-time)):
 
 ```rust
+use concord_testkit::Script;
+
 let script = Script::new();
 script.answer(302).header("location", "https://eu.downloads.example.com/archives/7?sig=a%2Fb");
 script.answer(200).body("the archive");
@@ -328,7 +330,7 @@ assert_eq!(archive.try_next().await?.as_deref(), Some(&b"the archive"[..]));
 
 let sent = script.requests();
 assert_eq!(sent[1].url(), "https://eu.downloads.example.com/archives/7?sig=a%2Fb");
-assert_eq!(sent[1].header("authorization"), None);      // the API's token stayed with the API
+assert!(!sent[1].headers().contains_key("authorization"));   // the API's token stayed with the API
 ```
 
 `transfer::at` validates the original URL spelling; the engine checks its origin against the download call's base before sending. The recipe copies none of the API client's credentials, headers or middleware. It does not replace the URL with an unchecked request edit. A relative Location needs an explicit resolution policy from the author. This function follows one Location: another redirect is returned as the second call's error, and the author decides whether another call is appropriate. Each call keeps its own retry and timeout policy; the downloaded bytes are streamed without buffering the whole file.

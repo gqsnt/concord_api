@@ -36,3 +36,14 @@ pub fn optional_json<T: serde::Serialize>(value: &Option<T>) -> Result<Body, Wri
         None => Ok(Body::from(Vec::new())),
     }
 }
+
+/// `delete` with its options, or, without them, with no body at all.
+pub async fn remove(store: &Store, id: u64, options: Option<DeleteOptions>) -> store::Result<()> {
+    let call = match options {
+        Some(options) => store.delete(id).options(options),
+        None => store.delete(id).edit_request(|request| {
+            request.body_mut().take();
+        }),
+    };
+    call.await
+}

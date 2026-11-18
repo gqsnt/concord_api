@@ -184,7 +184,7 @@ A signature has no default values. A filter that the provider documents as optio
 
 An entry whose value is `None` is left out: in `query`, in `headers`, and in a body of entries (below). No `if` is needed.
 
-**The order of the pairs** is the order in which they are written, not the order of the signature: the client's entries first, then those of each node down the tree, and in each node the entries of the parts that it names before its own ([a part](#a-part-the-same-inputs-on-many-endpoints)). So a part's `query` entries come before the endpoint's own, wherever `..page` stands among the inputs. With the `page` part below:
+**The order of the pairs** is the order in which the keys are first written, not the order of the signature: the client's keys first, then the new keys of each node down the tree, and in each node the new keys of the parts that it names before its own ([a part](#a-part-the-same-inputs-on-many-endpoints)). In the signature, the parts follow the explicit inputs (`list(email?: String, ..page)`), yet the part's new `query` keys go out before the endpoint's. A key that a node overrides keeps the position where it was first written above. With the `page` part below:
 
 ```text
 stripe.customers().list().email("a@b.example").limit(50)
@@ -316,7 +316,7 @@ let made = stripe.customers().create(new_customer, "order-7781").await?;
 
 A part is written in the block of the client, after the statements and before the children. A node names it at the end of its inputs, with `..`, and then has the inputs and the statements of the part **as if it had written them**: `list` has `.limit(…)` and `.starting_after(…)`, and it is paginated; `create` takes the key as its second argument, and may be retried. Inside a part, a bare name refers to an input of the part, and `client.x` to an input of the client.
 
-**The part's entries come first.** Its statements go before the node's own, so its entries are written first: in `query` and in `headers` (and, merged, in a body of entries), the entries of the parts, in the order in which the node names them, then the node's own ([rules](../reference/rules.md) 10 and 25). The inputs, on the other hand, follow the node's own: `list(email?: String, ..page)` has `email` first in its signature, and second on the wire:
+**The part's keys come first.** Its statements go before the node's own, so in `query` and in `headers` (and, merged, in a body of entries) the new keys of the parts, in the order in which the node names them, go out before the node's new keys ([rules](../reference/rules.md) 10 and 25). In the signature it is the other way round: the explicit inputs come first, and the parts after them, so `list(email?: String, ..page)` has `email` first in its signature, and second on the wire (a key that is overridden keeps the position where it was first written, above the node):
 
 ```text
 stripe.customers().list().email("a@b.example").limit(50)

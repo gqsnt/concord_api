@@ -27,17 +27,26 @@ pub async fn scale_to_five(kube: &Kubernetes) -> kubernetes::Result<()> {
     }
 }
 
-/// The pods of a namespace, then every change to them, for as long as the program runs.
-/// `listed` receives the whole list: first, and again after a `410 Gone`, when what the caller
-/// knows must be replaced. `changed` receives each `Added`, `Modified` and `Deleted` event.
+/// The pods of a namespace, then the changes to them, for as long as the program runs and the
+/// server keeps their history. `listed` receives the whole list: first, and again after each
+/// `410 Gone`. Such a list is a new snapshot: it replaces what the caller knows, and the changes
+/// between the old version and the new one are not delivered. `changed` receives each `Added`,
+/// `Modified` and `Deleted` event after a list.
 pub async fn follow(
     kube: &Kubernetes,
     mut listed: impl FnMut(Vec<Pod>),
     mut changed: impl FnMut(WatchEvent<Pod>),
 ) -> Result<(), BoxError> {
+    // A choice of this example: list again at once after a `410`, and give up after three in a
+    // row with no event between them. A caller that wants to wait and try again loops around it.
+    const EXPIRED_IN_A_ROW: u32 = 3;
     let pods = kube.core_v1().pods("shop");
+    let mut expired = 0;
     'list: loop {
-        // Every page of the list; the watch starts at the version of the list.
+        if expired == EXPIRED_IN_A_ROW {
+            return Err("the resource version expired three times in a row".into());
+        }
+        // Every page of the list: 500 objects a page, a size that you may tune.
         let (mut all, mut version) = (Vec::new(), None);
         let mut pages = pods.list().limit(500).pages();
         loop {
@@ -47,28 +56,41 @@ pub async fn follow(
                     all.extend(page.items);
                 }
                 Ok(None) => break,
-                Err(e) if e.is_status(410) => continue 'list,          // the token expired: list again
+                Err(e) if e.is_status(410) => {                    // the token expired
+                    expired += 1;
+                    continue 'list;
+                }
                 Err(e) => return Err(e.into()),
             }
         }
+        // The watch starts at the version of the list, never without one.
+        let mut version = version.ok_or("the list has no resourceVersion")?;
         listed(all);
         loop {
             let watch = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true);
             let mut events = match watch.await {
                 Ok(events) => events,
-                Err(e) if e.is_status(410) => continue 'list,          // the version is too old
+                Err(e) if e.is_status(410) => {                    // the version is too old
+                    expired += 1;
+                    continue 'list;
+                }
                 Err(e) => return Err(e.into()),
             };
             while let Some(event) = events.try_next().await? {
                 match &event {
                     WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
-                        version = pod.metadata.resource_version.clone();
+                        version = pod.metadata.resource_version.clone()
+                            .ok_or("an event has no resourceVersion")?;
                         changed(event);
                     }
-                    WatchEvent::Bookmark(head) => version = head.metadata.resource_version.clone(),
-                    WatchEvent::Error(status) if status.code == Some(410) => continue 'list,
+                    WatchEvent::Bookmark(mark) => version = mark.metadata.resource_version.clone(),
+                    WatchEvent::Error(status) if status.code == Some(410) => {
+                        expired += 1;
+                        continue 'list;                            // the rest of this stream is dropped
+                    }
                     WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
                 }
+                expired = 0;
             }
             // The server ended the watch: watch again from the last version seen.
         }

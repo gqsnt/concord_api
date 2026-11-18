@@ -21,6 +21,9 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
     use super::*;
     use concord_testkit::Script;
+    use std::time::Duration;
+
+    const PODS: &str = "https://k8s.test/api/v1/namespaces/shop/pods";
 
     fn pod(name: &str, version: &str) -> String {
         format!(
@@ -28,14 +31,22 @@ mod tests {
         )
     }
 
-    fn list(script: &Script, version: &str, next: Option<&str>, pods: &[&str]) {
-        let items: Vec<String> = pods.iter().map(|name| pod(name, version)).collect();
-        let next = next.map_or(String::new(), |token| format!(r#","continue":"{token}""#));
+    /// One page of a list; `version` is left out when it is `None`.
+    fn page(script: &Script, version: Option<&str>, next: Option<&str>, pods: &[&str]) {
+        let items: Vec<String> = pods.iter().map(|name| pod(name, "1")).collect();
+        let mut meta = Vec::new();
+        if let Some(version) = version {
+            meta.push(format!(r#""resourceVersion":"{version}""#));
+        }
+        if let Some(token) = next {
+            meta.push(format!(r#""continue":"{token}""#));
+        }
         script
             .answer(200)
             .header("content-type", "application/json")
             .body(format!(
-                r#"{{"metadata":{{"resourceVersion":"{version}"{next}}},"items":[{}]}}"#,
+                r#"{{"metadata":{{{}}},"items":[{}]}}"#,
+                meta.join(","),
                 items.join(",")
             ));
     }
@@ -44,37 +55,49 @@ mod tests {
         script
             .answer(410)
             .header("content-type", "application/json")
-            .body(r#"{"code":410,"reason":"Expired"}"#);
+            .body(r#"{"kind":"Status","code":410,"reason":"Expired"}"#);
+    }
+
+    fn line(kind: &str, object: &str) -> String {
+        format!("{{\"type\":\"{kind}\",\"object\":{object}}}\n")
+    }
+
+    fn watch(version: &str) -> String {
+        format!("{PODS}?watch=true&resourceVersion={version}&allowWatchBookmarks=true")
+    }
+
+    fn client(script: &Script) -> Kubernetes {
+        Kubernetes::new("https://k8s.test".parse::<concord::Base>().unwrap())
+            .with_transport(script.clone())
     }
 
     #[tokio::test(start_paused = true)]
-    async fn c11_8_follow_lists_again_after_a_410_as_a_status_or_as_an_event() {
+    async fn c11_8_follow_joins_pages_resumes_at_bookmarks_and_lists_again_after_a_410() {
         let script = Script::new();
-        list(&script, "10", Some("t1"), &["a"]);
-        gone(&script); // the continue token of the second page expired
-        list(&script, "11", None, &["a", "b"]);
+        // A list of two pages, one snapshot.
+        page(&script, Some("10"), Some("t1"), &["a"]);
+        page(&script, Some("10"), None, &["b"]);
+        // A change, then a bookmark as Kubernetes sends it, then the server ends the watch.
         script
             .answer(200)
-            .body(format!(
-                "{{\"type\":\"ADDED\",\"object\":{}}}\n",
-                pod("c", "12")
-            ))
-            .body("{\"type\":\"ERROR\",\"object\":{\"code\":410,\"reason\":\"Expired\"}}\n")
-            .body(format!(
-                "{{\"type\":\"MODIFIED\",\"object\":{}}}\n",
-                pod("c", "13")
+            .body(line("ADDED", &pod("c", "12")))
+            .body(line(
+                "BOOKMARK",
+                r#"{"kind":"Pod","apiVersion":"v1","metadata":{"resourceVersion":"15","annotations":{"k8s.io/initial-events-end":"true"}}}"#,
             ));
-        list(&script, "20", None, &["a"]);
-        gone(&script); // the watch is refused: the version is too old
-        list(&script, "21", None, &[]);
-        script.answer(200).body(
-            "{\"type\":\"BOOKMARK\",\"object\":{\"metadata\":{\"name\":\"\",\"uid\":\"\",\"resourceVersion\":\"25\"}}}\n",
-        );
+        // Watched again from the bookmark: an ERROR 410, and a line after it that is dropped.
         script
             .answer(200)
-            .body("{\"type\":\"ERROR\",\"object\":{\"code\":500,\"reason\":\"InternalError\"}}\n");
-        let kube = Kubernetes::new("https://k8s.test".parse::<concord::Base>().unwrap())
-            .with_transport(script.clone());
+            .body(line("ERROR", r#"{"code":410,"reason":"Expired"}"#))
+            .body(line("MODIFIED", &pod("c", "13")));
+        // A new snapshot; its continue token expires on the second page; the next list works.
+        page(&script, Some("20"), Some("t2"), &["a"]);
+        gone(&script);
+        page(&script, Some("21"), None, &["a", "c"]);
+        script
+            .answer(200)
+            .body(line("ERROR", r#"{"code":500,"reason":"InternalError"}"#));
+        let kube = client(&script);
 
         let mut lists = Vec::new();
         let mut changes = Vec::new();
@@ -96,12 +119,8 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error.to_string(), "Some(\"InternalError\")");
-        assert_eq!(lists, [vec!["a", "b"], vec!["a"], vec![]]);
+        assert_eq!(lists, [vec!["a", "b"], vec!["a", "c"]]);
         assert_eq!(changes, ["added c"]);
-        let pods = "https://k8s.test/api/v1/namespaces/shop/pods";
-        let watch = |version: &str| {
-            format!("{pods}?watch=true&resourceVersion={version}&allowWatchBookmarks=true")
-        };
         let urls: Vec<String> = script
             .requests()
             .iter()
@@ -110,17 +129,60 @@ mod tests {
         assert_eq!(
             urls,
             [
-                format!("{pods}?limit=500"),
-                format!("{pods}?limit=500&continue=t1"),
-                format!("{pods}?limit=500"),
-                watch("11"),
-                format!("{pods}?limit=500"),
-                watch("20"),
-                format!("{pods}?limit=500"),
+                format!("{PODS}?limit=500"),
+                format!("{PODS}?limit=500&continue=t1"),
+                watch("10"),
+                watch("15"),
+                format!("{PODS}?limit=500"),
+                format!("{PODS}?limit=500&continue=t2"),
+                format!("{PODS}?limit=500"),
                 watch("21"),
-                watch("25"),
             ]
         );
         assert_eq!(script.unused(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_8_follow_gives_up_after_three_410s_in_a_row() {
+        let script = Script::new();
+        page(&script, Some("10"), None, &["a"]);
+        gone(&script); // the watch: the version is too old
+        gone(&script); // the next list
+        page(&script, Some("30"), None, &["a"]);
+        script
+            .answer(200)
+            .body(line("ERROR", r#"{"code":410,"reason":"Expired"}"#));
+        let kube = client(&script);
+
+        let mut lists = 0;
+        let start = tokio::time::Instant::now();
+        let error = calling::follow(&kube, |_| lists += 1, |_| {})
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "the resource version expired three times in a row"
+        );
+        assert_eq!(lists, 2);
+        assert_eq!(script.requests().len(), 5);
+        assert_eq!(start.elapsed(), Duration::ZERO);
+        assert_eq!(script.unused(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_8_follow_refuses_to_watch_without_a_version() {
+        let script = Script::new();
+        page(&script, None, None, &["a"]);
+        let kube = client(&script);
+
+        let mut lists = 0;
+        let error = calling::follow(&kube, |_| lists += 1, |_| {})
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "the list has no resourceVersion");
+        assert_eq!(lists, 0);
+        assert_eq!(script.requests().len(), 1);
     }
 }

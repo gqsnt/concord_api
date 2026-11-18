@@ -127,7 +127,7 @@ A one-shot stream part or a part without one valid content type is refused with 
 
 **No body, or a body of no bytes.** An endpoint without a `body` statement sends no body. A body of no bytes is written like any other: `body concord::Body::from(Vec::new());` sends a body that is present and empty, with no content type (`Body::new(Vec::new(), "application/json")` gives it one). Over HTTP/1.1, the HTTP library sends a request without a body, or with an empty one, with no `Content-Length`. A server that refuses such a request (`411 Length Required`, for a `POST` or a `PUT` with nothing in it) needs the description to write it: `headers { "content-length" = "0"; }`. With no body, `0` is the only length that Concord accepts: any other is a Build error, and nothing is sent.
 
-**A body that the caller may leave out.** The `body` statement always sends a body: its expression returns a `Body`, or a `Result` of one, never an `Option`. So for a body that is present only when the caller sets an input, the description names a function of your own that returns a body of no bytes for `None`. `json(options)` would send `null` instead. (An API that must receive no body at all in that case needs two endpoints, one with `body` and one without.)
+**A body that the caller may leave out.** The description language has no optional body: the expression of `body` returns a `Body`, a `&Body`, or a `Result` of one (an `Err` is a Build error, and nothing is sent), never an `Option`. For a body that is present only when the caller sets an input, the description names a function of your own that returns a body of no bytes for `None`, as `optional_json` does below; `json(options)` would send `null` instead. Concord then hands the transport an empty body with no `Content-Type` and no `Content-Length`, and over HTTP/1.1 the HTTP library sends zero bytes and adds neither `Content-Length` nor `Transfer-Encoding`: what goes out is what a request without a body sends. A caller that needs the request to have no body at all removes it with `edit_request`, as `remove` does below.
 
 ```rust
 use concord::body::WriteError;
@@ -168,6 +168,17 @@ pub fn optional_json<T: serde::Serialize>(value: &Option<T>) -> Result<Body, Wri
         None => Ok(Body::from(Vec::new())),
     }
 }
+
+/// `delete` with its options, or, without them, with no body at all.
+pub async fn remove(store: &Store, id: u64, options: Option<DeleteOptions>) -> store::Result<()> {
+    let call = match options {
+        Some(options) => store.delete(id).options(options),
+        None => store.delete(id).edit_request(|request| {
+            request.body_mut().take();
+        }),
+    };
+    call.await
+}
 ```
 
 Tested: [`empty_body.rs`](../../tests/real-apis/fixtures/recipes/empty_body.rs), run by [`writer_recipes.rs`](../../tests/real-apis/tests/writer_recipes.rs), which compares this block with the file.
@@ -183,7 +194,7 @@ Tested: [`empty_body.rs`](../../tests/real-apis/fixtures/recipes/empty_body.rs),
 | `form` is flat | It writes pairs of strings. For a nested form (`metadata[key]=value`), `bracket_form` (feature `form`) writes `a[b]` for a map and `a[0]` for every list. An API with another convention (Rack and Rails read `a[0]` as a map key) needs your own function that returns a `Body`. |
 | `null` or absent | **With `body json(x)`, the body follows its type, not the rule for entries.** In an entry, a `None` sends nothing; in a path placeholder it is rejected. In a body built by an expression, a `None` is whatever the type serializes it as: `json!({ "cursor": cursor })` sends `null`, and a struct leaves it out with `#[serde(skip_serializing_if = "Option::is_none")]`. A body of entries is the shorter way. |
 | Retries | On a retry, bytes are sent again unchanged ([what holds for every retry](retries.md#what-holds-for-every-retry)), and a `Body::repeatable` is opened again from its first byte ([a body that is opened again](#a-body-that-is-opened-again-for-each-attempt)). **A `Body::stream` is sent once:** a call that has one gets one attempt, whatever the retry setting says ([a body that is a stream](#a-body-that-is-a-stream)). A clone of the call shares the stream of an input, and the first send consumes it: a second send of that same `Body`, through a clone or for the next page of a paginated call, is a Build error, and nothing is sent. (An expression that creates a new stream each time it runs gives each send its own stream.) A large upload that must survive a failure needs a body that can be opened again, or a loop in the caller's code. |
-| A stream has no length | When the server needs one, the description sets it: `headers { "content-length" = size; }`. For a `Body::stream`, it is sent as written. A `Body::repeatable` must give exactly that many bytes, or the attempt fails. For a body in memory, it must equal the length of the body, and without a body it must be `0`, or the request is rejected when it is built ([no body](#a-body-that-is-sent)). |
+| Declaring `Content-Length` | When the server needs one, the description sets it: `headers { "content-length" = size; }`. For a one-shot `Body::stream`, which has no length of its own, it is sent as written: Concord does not count the bytes of the stream, and a wrong length is for the HTTP library and the server to find. A `Body::repeatable` must give exactly that many bytes, or the attempt fails. For a body in memory, it must equal the length of the body, and without a body it must be `0`, or the request is rejected when it is built ([no body](#a-body-that-is-sent)). |
 
 ## The shipped writers
 
