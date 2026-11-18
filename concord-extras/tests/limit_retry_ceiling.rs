@@ -200,3 +200,59 @@ async fn c4_3_a_wait_the_timer_cannot_represent_ends_the_retries_whatever_the_ce
     assert_eq!(start.elapsed(), Duration::ZERO);
     assert_eq!(script.unused(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn c4_3_a_wait_beyond_the_timer_s_milliseconds_ends_the_retries() {
+    use futures_util::FutureExt;
+    // It fits an Instant, but not the timer's 64-bit count of milliseconds.
+    let wait = sec(u64::MAX / 1000 + 1);
+    assert!(Instant::now().checked_add(wait).is_some());
+    let script = Script::new();
+    script
+        .answer(429)
+        .header("retry-after", &wait.as_secs().to_string());
+    script.answer(200).body("unused");
+    let api = Data::new()
+        .with_transport(script.clone())
+        .with_retry(Retry::standard().max_retry_after(wait));
+    let mut call = Box::pin(api.get().send());
+    let mut result = call.as_mut().now_or_never();
+    for _ in 0..5 {
+        if result.is_some() {
+            break;
+        }
+        tokio::task::yield_now().await;
+        result = call.as_mut().now_or_never();
+    }
+    let error = result.expect("the call ends at once").unwrap_err();
+    assert!(error.is_status(429));
+    assert_eq!(error.tries(), 1);
+    assert_eq!(script.unused(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c4_3_a_deadline_past_the_timer_s_range_ends_the_retries_instead_of_firing_early() {
+    use futures_util::FutureExt;
+    // At this age of the runtime, even 120 s more is past the last millisecond the timer counts.
+    tokio::time::advance(sec(u64::MAX / 1000 + 3)).await;
+    let script = Script::new();
+    script.answer(429).header("retry-after", "120");
+    script.answer(200).body("unused");
+    let api = Data::new()
+        .with_transport(script.clone())
+        .with_retry(Retry::standard().max_retry_after(sec(600)));
+    let start = Instant::now();
+    let mut call = Box::pin(api.get().send());
+    let mut result = call.as_mut().now_or_never();
+    for _ in 0..8 {
+        if result.is_some() {
+            break;
+        }
+        tokio::task::yield_now().await;
+        result = call.as_mut().now_or_never();
+    }
+    assert_eq!(sent(&script, start), [Duration::ZERO]);
+    let error = result.expect("the call ends at once").unwrap_err();
+    assert!(error.is_status(429));
+    assert_eq!(error.tries(), 1);
+}

@@ -498,8 +498,11 @@ where
             SystemTime::now(),
             random(&random_state, n),
         );
+        // Tokio's timer counts milliseconds in 64 bits from its start: a wait it cannot count
+        // ends the attempts, as one that an Instant cannot hold does.
         let until = decision
             .wait
+            .filter(|wait| u64::try_from(wait.as_millis()).is_ok())
             .and_then(|wait| Instant::now().checked_add(wait));
         let Some(until) = until.filter(|until| run.total.is_none_or(|(end, _)| *until < end))
         else {
@@ -512,9 +515,11 @@ where
         }
         // A slow log sink must neither move the deadline nor discard the last
         // outcome. Keep it until the wait completes and another send can start.
+        // A deadline past the timer's range fires early: it ends the attempts too.
         if run.expired()
             || run.bounded(tokio::time::sleep_until(until)).await.is_err()
             || run.expired()
+            || Instant::now() < until
         {
             return result.finish(decision);
         }
