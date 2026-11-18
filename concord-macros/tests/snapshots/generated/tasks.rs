@@ -36,6 +36,10 @@ pub mod tasks {
             + ::core::marker::Send
             + ::core::marker::Sync
             + 'static;
+        type __Input4: ::core::clone::Clone
+            + ::core::marker::Send
+            + ::core::marker::Sync
+            + 'static;
         type __Node0: ::core::clone::Clone
             + ::core::marker::Send
             + ::core::marker::Sync
@@ -318,7 +322,7 @@ pub mod tasks {
     ///
     /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
     ///
-    /// Request: `GET https://tasks.example.com/api/tasks ?done`.
+    /// Request: `GET https://tasks.example.com/api/tasks ?done&tags`.
     ///
     /// Call type: `tasks::Call<tasks::List>`, returned by `Tasks::list`.
     ///
@@ -333,6 +337,10 @@ pub mod tasks {
     ///
     /// Filter tasks by completion state.
     ///
+    /// [`tags(impl Arg<Option<Vec<String>>>)`](Self::tags): Accepts a `Vec`<`String`>, a &`Vec`<`String`>, or an [`Option`]<`Vec`<`String`>>. `None` clears it. Text and list conversions: [`concord::arg::Arg`](https://docs.rs/concord-api/5.0.0-rc.1/concord/arg/index.html).
+    ///
+    /// Keep only tasks that carry every one of these tags.
+    ///
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<`Vec`<[`Task`](super::Task)>>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
@@ -341,7 +349,10 @@ pub mod tasks {
     #[doc(hidden)]
     pub type __Data1<__T = ()> = ::concord::__private::CallData<
         <__T as __Types>::__Node0,
-        (::core::option::Option<<__T as __Types>::__Input0>,),
+        (
+            ::core::option::Option<<__T as __Types>::__Input0>,
+            ::core::option::Option<<__T as __Types>::__Input1>,
+        ),
         List,
     >;
     /// Create a task with a title.
@@ -371,7 +382,7 @@ pub mod tasks {
     #[doc(hidden)]
     pub type __Data2<__T = ()> = ::concord::__private::CallData<
         <__T as __Types>::__Node0,
-        (<__T as __Types>::__Input1,),
+        (<__T as __Types>::__Input2,),
         Create,
     >;
     /// Fetch one task by its identifier.
@@ -399,7 +410,7 @@ pub mod tasks {
     #[doc(hidden)]
     pub type __Data3<__T = ()> = ::concord::__private::CallData<
         <__T as __Types>::__Node0,
-        (<__T as __Types>::__Input2,),
+        (<__T as __Types>::__Input3,),
         Get,
     >;
     /// Delete one task by its identifier.
@@ -427,7 +438,7 @@ pub mod tasks {
     #[doc(hidden)]
     pub type __Data4<__T = ()> = ::concord::__private::CallData<
         <__T as __Types>::__Node0,
-        (<__T as __Types>::__Input3,),
+        (<__T as __Types>::__Input4,),
         Delete,
     >;
 }
@@ -443,15 +454,17 @@ const _: () = {
     use ::concord::__private::AdaptValue as _;
     type __DeclaredProblem = ();
     type __Input0 = bool;
-    type __Input1 = NewTask;
-    type __Input2 = u64;
+    type __Input1 = Vec<String>;
+    type __Input2 = NewTask;
     type __Input3 = u64;
+    type __Input4 = u64;
     impl tasks::__Types for () {
         type __Node0 = Tasks;
         type __Input0 = __Input0;
         type __Input1 = __Input1;
         type __Input2 = __Input2;
         type __Input3 = __Input3;
+        type __Input4 = __Input4;
         type __Problem = __DeclaredProblem;
     }
     const _: () = {
@@ -631,7 +644,7 @@ const _: () = {
         ///
         /// Call: `tasks.list().await?`.
         ///
-        /// Request: `GET https://tasks.example.com/api/tasks ?done`.
+        /// Request: `GET https://tasks.example.com/api/tasks ?done&tags`.
         ///
         /// Options:
         ///
@@ -639,6 +652,10 @@ const _: () = {
         /// `done`: Accepts a [`bool`], a &[`bool`], or an [`Option`]<[`bool`]>. `None` clears it.
         ///
         /// Filter tasks by completion state.
+        ///
+        /// `tags`: Accepts a [`Vec`]<[`String`]>, a &[`Vec`]<[`String`]>, or an [`Option`]<[`Vec`]<[`String`]>>. `None` clears it. Text and list conversions: [`concord::arg::Arg`](https://docs.rs/concord-api/5.0.0-rc.1/concord/arg/index.html).
+        ///
+        /// Keep only tasks that carry every one of these tags.
         ///
         /// `.await` returns [`tasks::Result`]<[`Vec`]<[`Task`]>>.
         ///
@@ -648,7 +665,7 @@ const _: () = {
             tasks::Call::__new(
                 ::concord::__private::CallData::new(
                     ::core::clone::Clone::clone(self),
-                    (::core::option::Option::None,),
+                    (::core::option::Option::None, ::core::option::Option::None),
                 ),
             )
         }
@@ -768,6 +785,22 @@ const _: () = {
             (*__call.__data_mut()).__inputs.0 = ::concord::arg::Arg::into_input(done);
             __call
         }
+        /// Option `tags` of `list`.
+        ///
+        /// The first argument is the call.
+        ///
+        /// Keep only tasks that carry every one of these tags.
+        ///
+        /// Accepts a `Vec`<`String`>, a &`Vec`<`String`>, or an [`Option`]<`Vec`<`String`>>. `None` clears it. Text and list conversions: [`concord::arg::Arg`](https://docs.rs/concord-api/5.0.0-rc.1/concord/arg/index.html).
+        #[must_use = "a call does nothing until sent or awaited"]
+        #[doc(alias = "list tags")]
+        pub fn tags(
+            mut __call: tasks::Call<tasks::List>,
+            tags: impl ::concord::arg::Arg<::core::option::Option<Vec<String>>>,
+        ) -> tasks::Call<tasks::List> {
+            (*__call.__data_mut()).__inputs.1 = ::concord::arg::Arg::into_input(tags);
+            __call
+        }
     }
     #[doc(hidden)]
     impl tasks::Call<tasks::List> {
@@ -783,6 +816,19 @@ const _: () = {
             done: impl ::concord::arg::Arg<::core::option::Option<bool>>,
         ) -> Self {
             tasks::List::done(self, done)
+        }
+        /// Option `tags` of `list`.
+        ///
+        /// Keep only tasks that carry every one of these tags.
+        ///
+        /// Accepts a [`Vec`]<[`String`]>, a &[`Vec`]<[`String`]>, or an [`Option`]<[`Vec`]<[`String`]>>. `None` clears it. Text and list conversions: [`concord::arg::Arg`](https://docs.rs/concord-api/5.0.0-rc.1/concord/arg/index.html).
+        #[must_use = "a call does nothing until sent or awaited"]
+        #[allow(deprecated)]
+        pub fn tags(
+            self,
+            tags: impl ::concord::arg::Arg<::core::option::Option<Vec<String>>>,
+        ) -> Self {
+            tasks::List::tags(self, tags)
         }
     }
     impl tasks::Endpoint for tasks::List {
@@ -810,6 +856,12 @@ const _: () = {
                     "done",
                     "done",
                     (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                );
+                ::concord::__private::Draft::query_value(
+                    &mut __draft,
+                    "tags",
+                    "tags",
+                    (&::concord::__private::ValueRef(&__value.__inputs.1)).__adapt(),
                 );
             }
             ::core::result::Result::Ok(__draft)

@@ -20,8 +20,10 @@ pub client Tasks {
     GET list(
         /// Filter tasks by completion state.
         done?: bool,
+        /// Keep only tasks that carry every one of these tags.
+        tags?: Vec<String>,
     ) -> Vec<Task> {
-        query { done; }
+        query { done; tags; }
     }
     /// Create a task with a title.
     POST create(

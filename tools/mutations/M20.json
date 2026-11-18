@@ -4,6 +4,6 @@
   "contract": "C5.11",
   "description": "Classify a strict reader's label rejection as body limit",
   "file": "concord-core/src/read.rs",
-  "find": "            }\n            ReadKind::ContentType => MismatchFailure::ContentType,\n            ReadKind::Limit => MismatchFailure::BodyLimit,\n",
-  "replace": "            }\n            ReadKind::ContentType => MismatchFailure::BodyLimit,\n            ReadKind::Limit => MismatchFailure::BodyLimit,\n"
+  "find": "            ReadKind::ContentType => mismatch_of_a_body(\n                MismatchFailure::ContentType,\n",
+  "replace": "            ReadKind::ContentType => mismatch_of_a_body(\n                MismatchFailure::BodyLimit,\n"
 }

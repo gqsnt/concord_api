@@ -609,14 +609,19 @@ pub fn midnight(year: i64, month: i64, day: i64) -> i64 {
 /// A server on `127.0.0.1`, on threads of its own, that answers every connection with
 /// `answer`, written as it is, once it has read the head of the request, and then reads
 /// until the client closes; with no answer, it only reads until the client closes. It counts
-/// the connections. For what the test kit cannot write: a head that is not HTTP, two
-/// lengths.
-pub fn raw_server(answer: Option<Vec<u8>>) -> (String, Count) {
+/// the connections ([`Connections`]). For what the test kit cannot write: a head that is not
+/// HTTP, two lengths.
+pub fn raw_server(answer: Option<Vec<u8>>) -> (String, Connections) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
-    let base = format!("http://{}", listener.local_addr().expect("its address"));
-    let connections = Count::default();
-    let seen = connections.clone();
+    let address = listener.local_addr().expect("its address");
+    let base = format!("http://{address}");
+    let connections = Connections {
+        address,
+        count: Count::default(),
+        probes: Count::default(),
+    };
+    let seen = connections.count.clone();
     std::thread::spawn(move || {
         for socket in listener.incoming() {
             let Ok(mut socket) = socket else { return };
@@ -644,6 +649,38 @@ pub fn raw_server(answer: Option<Vec<u8>>) -> (String, Count) {
         }
     });
     (base, connections)
+}
+
+/// The connections a [`raw_server`] has accepted.
+///
+/// A client may give up on a connection before the server has taken it from the queue of
+/// the socket (a body of the caller's that fails, with no answer to wait for). So `get`
+/// first opens a connection of its own and waits until the server has answered or closed
+/// it: the server takes connections in the order they were made, so every connection made
+/// before the call has been counted by then. Its own connections are not in the number.
+#[derive(Debug)]
+pub struct Connections {
+    address: std::net::SocketAddr,
+    count: Count,
+    probes: Count,
+}
+
+impl Connections {
+    /// How many connections the server has accepted, every one made before this call
+    /// included.
+    pub fn get(&self) -> usize {
+        use std::io::{Read, Write};
+        let mut probe = std::net::TcpStream::connect(self.address).expect("the server");
+        // An empty head: the server answers it, or reads it and waits for the close.
+        probe.write_all(b"\r\n\r\n").expect("the probe is sent");
+        probe
+            .shutdown(std::net::Shutdown::Write)
+            .expect("the probe ends");
+        let mut answer = Vec::new();
+        let _ = probe.read_to_end(&mut answer);
+        self.probes.add();
+        self.count.get() - self.probes.get()
+    }
 }
 
 /// A stream of the caller's: one piece, then an error that holds [`CALLER_TEXT`].
