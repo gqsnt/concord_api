@@ -1,3 +1,4 @@
+use concord::bytes::Bytes;
 use concord::Fail;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -47,16 +48,19 @@ impl<T: Send> concord::page::IntoItems for SlackPage<T> {
 pub struct Acknowledged {}
 
 /// The arm of every `200`: `ok` says whether it is the success or the client's problem.
-pub fn slack_response<T: DeserializeOwned>(body: Value) -> Result<T, Fail<SlackProblem>> {
-    match body.get("ok").and_then(Value::as_bool) {
-        Some(true) => serde_json::from_value(body)
-            .map_err(|_| concord::mismatch("not the promised answer")),
-        Some(false) => {
-            let problem: SlackProblem = serde_json::from_value(body)
-                .map_err(|_| concord::mismatch("a refusal with no error code"))?;
-            Err(problem)?
-        }
-        None => Err(concord::mismatch("no `ok` in the answer")),
+/// The bytes are decoded twice, once for `ok` and once for the value or the problem, so a
+/// success that does not fit names its field, as under `read Json;`.
+pub fn slack_response<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<SlackProblem>> {
+    #[derive(Deserialize)]
+    struct Head {
+        ok: bool,
+    }
+    let head: Head = concord::Json::decode(&body).map_err(Fail::from_read)?;
+    if head.ok {
+        concord::Json::decode(&body).map_err(Fail::from_read)
+    } else {
+        let problem: SlackProblem = concord::Json::decode(&body).map_err(Fail::from_read)?;
+        Err(problem)?
     }
 }
 

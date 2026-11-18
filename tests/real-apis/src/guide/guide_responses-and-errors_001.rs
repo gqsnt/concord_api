@@ -1,0 +1,10 @@
+concord::api! {
+pub client Chat {
+        base "https://chat.example.test/api";
+        read Binary;                        // the arm decodes the body itself
+        problem ChatProblem read Json;      // the error of any other status
+        status { 2xx { body } => envelope(body)? }
+
+        GET info() -> Channel { path "conversations.info"; }
+    }
+}

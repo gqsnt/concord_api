@@ -2,7 +2,6 @@ use concord::bytes::Bytes;
 use concord::{multipart, Body, Fail, MultipartError};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_json::Value;
 use std::time::Duration;
 
 /// Telegram's error response: `{"ok": false, "error_code": 429, "description": "…", "parameters": {…}}`.
@@ -28,20 +27,25 @@ pub struct InputFile {
 }
 
 /// The arm of every 2xx: `{"ok": true, "result": …}` returns the result, and `{"ok": false, …}`
-/// returns the client's problem, even though the status is `200`.
-pub fn telegram_result<T: DeserializeOwned>(mut body: Value) -> Result<T, Fail<TgProblem>> {
-    match body.get("ok").and_then(Value::as_bool) {
-        Some(true) => {
-            let result = body.get_mut("result").map(Value::take)
-                .ok_or_else(|| concord::mismatch("no result"))?;
-            serde_json::from_value(result).map_err(|_| concord::mismatch("not the promised result"))
-        }
-        Some(false) => {
-            let problem: TgProblem = serde_json::from_value(body)
-                .map_err(|_| concord::mismatch("not a Telegram refusal"))?;
-            Err(problem)?
-        }
-        None => Err(concord::mismatch("no `ok` in the answer")),
+/// returns the client's problem, even though the status is `200`. The bytes are decoded once
+/// for `ok`, then as the result or the problem: a result that does not fit names its field
+/// (`result.chat.id`), as under `read Json;`.
+pub fn telegram_result<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<TgProblem>> {
+    #[derive(Deserialize)]
+    struct Head {
+        ok: bool,
+    }
+    #[derive(Deserialize)]
+    struct Reply<T> {
+        result: T,
+    }
+    let head: Head = concord::Json::decode(&body).map_err(Fail::from_read)?;
+    if head.ok {
+        let reply: Reply<T> = concord::Json::decode(&body).map_err(Fail::from_read)?;
+        Ok(reply.result)
+    } else {
+        let problem: TgProblem = concord::Json::decode(&body).map_err(Fail::from_read)?;
+        Err(problem)?
     }
 }
 

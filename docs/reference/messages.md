@@ -622,8 +622,14 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 | An empty body that the reader rejects | `mismatch: status 204, the body is empty, in tasks.get` |
 | A 2xx that no arm matches, under the arrow of a `HEAD` | `mismatch: status 204, no arm matches this status, in tasks.exists` |
 | `mismatch(…)` or `require(…)` in an arm | `mismatch: status 201, the status arm rejected the response, in tasks.create` |
-| A pager that rejects a page, or returns the request that was just sent as the next one | `mismatch: status 200, the next page cannot be requested, in tasks.list` |
+| A pager that rejects a page with `mismatch(…)`, or returns the request that was just sent as the next one | `mismatch: status 200, the next page cannot be requested, in tasks.list` |
 | A pager that fails with the API's problem | `refused: status 200, in tasks.list` |
+| An arm or a pager whose decoder's input, returned with `Fail::from_read(…)`, does not decode at its root | `mismatch: status 200, the decoder's input could not be decoded, in chat.info` |
+| The same, with an empty input | `mismatch: status 200, the decoder's input is empty, in tasks.list` |
+| The same, with the error of a reader that enforces its content type | `mismatch: status 202, the decoder rejected the content type of its input, in chat.info` |
+| The same, with the error of a reader's limit | `mismatch: status 200, the decoder's input exceeds the decoder's size limit, in chat.info` |
+
+**An arm or a pager that decodes a body itself** and returns `Fail::from_read(…)` produces, on a 2xx, texts said of the decoder's input, because Concord does not verify that the input was the body: a fault at a location prints as under a reader (`mismatch: status 200, name could not be decoded, in chat.info`), and the four other failures print the last four texts of the table, never the texts of a body. Their `source()` holds the same words, and none adds `(unexpected content type)`. A pager gives these texts too, not `the next page cannot be requested`. On another status it produces the text of a refusal (`refused: status 409, in tasks.create`). A `ReadError` of a body that broke while it was read keeps nothing of that body, and gives `mismatch: status 200, the status arm rejected the response, in chat.info` (in a pager, `the next page cannot be requested`).
 
 **When the content type was not the reader's.** When a reader reports that the content type of the response was not its own, the three texts of a body that could not be read end with ` (unexpected content type)`: `mismatch: status 200, items[3].kind could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body is empty (unexpected content type), in tasks.get`. An empty body gets it only when the response had a `Content-Type`.
 

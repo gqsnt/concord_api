@@ -194,6 +194,12 @@ impl<T: Send, E: Send> Pages<T, E> {
     /// `Fail::from(problem)` in a pager becomes a Refused error with that problem;
     /// `concord::mismatch(…)` becomes a Mismatch. Both are returned by the `try_next()`
     /// after the page that arrived.
+    /// [`Fail::from_read`] in a pager that decodes a part of the page itself becomes the error
+    /// that a reader gives for that page: on a 2xx, the Mismatch that names the location of the
+    /// fault. When a
+    /// pager fails, the caller receives, in this order: the page that arrived, as
+    /// `Ok(Some(page))`; the error, from the next `try_next()`; then `Ok(None)` from every
+    /// later one, and nothing more is sent.
     // The public signature explicitly promises a Send future.
     // PANIC-SAFETY: The explicit returned future states the hidden/public Send contract; no panic lint is relaxed.
     #[allow(clippy::manual_async_fn)]

@@ -63,6 +63,14 @@ pub(crate) enum MismatchFailure {
     NoArm,
     NextPage,
     Arm,
+    // What an arm or a pager decoded itself (`Fail::from_read`): said of the decoder's input,
+    // never of the body, which Concord does not verify the input to be.
+    InputContentType,
+    InputLimit,
+    InputDecode {
+        place: Place,
+    },
+    InputEmpty,
 }
 
 #[derive(Clone, Copy)]
@@ -239,6 +247,20 @@ impl Note {
                 MismatchFailure::NoArm => f.write_str("no arm matches this status"),
                 MismatchFailure::NextPage => f.write_str("the next page cannot be requested"),
                 MismatchFailure::Arm => f.write_str("the status arm rejected the response"),
+                MismatchFailure::InputContentType => {
+                    f.write_str("the decoder rejected the content type of its input")
+                }
+                MismatchFailure::InputLimit => {
+                    f.write_str("the decoder's input exceeds the decoder's size limit")
+                }
+                MismatchFailure::InputDecode { place } => {
+                    if place.to_string().is_empty() {
+                        f.write_str("the decoder's input could not be decoded")
+                    } else {
+                        write!(f, "{place} could not be decoded")
+                    }
+                }
+                MismatchFailure::InputEmpty => f.write_str("the decoder's input is empty"),
             },
         }
     }
@@ -318,6 +340,8 @@ struct Inner<E> {
     reason: Option<Cow<'static, str>>,
     reader_details: Option<String>,
     from_byte_stream: bool,
+    // The kept bytes are a decoder's input, not verified to be this response's body.
+    decoder_input: bool,
 }
 
 /// The kind of an error: what went wrong, in four cases.
@@ -381,6 +405,7 @@ impl<E> Error<E> {
                 reason: None,
                 reader_details: None,
                 from_byte_stream: false,
+                decoder_input: false,
             }),
         }
     }
@@ -536,7 +561,11 @@ impl<E> Error<E> {
             MismatchFailure::ContentType
             | MismatchFailure::BodyLimit
             | MismatchFailure::Empty { .. }
-            | MismatchFailure::Decode { .. } => {
+            | MismatchFailure::Decode { .. }
+            | MismatchFailure::InputContentType
+            | MismatchFailure::InputLimit
+            | MismatchFailure::InputDecode { .. }
+            | MismatchFailure::InputEmpty => {
                 Some(Box::new(ReaderCause(Note::Mismatch(failure.clone()))) as Source)
             }
             _ => None,
@@ -622,11 +651,18 @@ impl<E> Error<E> {
     }
 
     /// Returns the start of the body, if one was kept: at most 64 KiB, in a buffer of its own.
+    ///
+    /// After an arm or a pager that returned [`Fail::from_read`], it is the decoder's input
+    /// instead, which [`details`](Error::details) names `decoder input`.
     pub fn body(&self) -> Option<&[u8]> {
         self.inner.body.as_deref()
     }
 
     /// Returns the state of [`body`](Error::body), if one was kept.
+    ///
+    /// After an arm or a pager that returned [`Fail::from_read`], it is the state of the
+    /// decoder's input instead: `Cut` there means that a reader's limit cut that input, at the
+    /// length that `body()` returns.
     pub fn kept(&self) -> Option<Kept> {
         self.inner.kept
     }
@@ -670,6 +706,7 @@ impl<E> Error<E> {
             reason,
             reader_details,
             from_byte_stream,
+            decoder_input,
         } = *self.inner;
         Error {
             inner: Box::new(Inner {
@@ -687,6 +724,7 @@ impl<E> Error<E> {
                 reason,
                 reader_details,
                 from_byte_stream,
+                decoder_input,
             }),
         }
     }
@@ -698,6 +736,12 @@ impl<E> Error<E> {
 
     pub(crate) fn is_from_byte_stream(&self) -> bool {
         self.inner.from_byte_stream
+    }
+
+    /// Marks the kept bytes as the input of a decoder that an arm or a pager ran.
+    pub(crate) fn mark_decoder_input(mut self) -> Self {
+        self.inner.decoder_input = self.inner.body.is_some();
+        self
     }
 
     /// Returns how many attempts entered the middleware chain. A middleware layer may send
@@ -823,9 +867,17 @@ impl<E: fmt::Debug> fmt::Display for Details<'_, E> {
         if let Some(problem) = error.problem() {
             write!(f, "\nproblem: {problem:?}")?;
         } else if let Some(body) = error.body() {
-            f.write_str("\nbody (")?;
+            f.write_str(if error.inner.decoder_input {
+                "\ndecoder input ("
+            } else {
+                "\nbody ("
+            })?;
             match error.kept() {
                 Some(Kept::Complete) => write!(f, "complete, {} bytes", body.len())?,
+                // The input of a decoder can be cut shorter, by a reader's limit.
+                Some(Kept::Cut) if error.inner.decoder_input => {
+                    write!(f, "cut, {} bytes", body.len())?
+                }
                 Some(Kept::Cut) => f.write_str("cut at 64 KiB")?,
                 Some(Kept::Interrupted) => write!(f, "interrupted, {} bytes", body.len())?,
                 None => write!(f, "{} bytes", body.len())?,
@@ -855,6 +907,9 @@ impl<E: Send + Sync + 'static> From<Error<E>> for std::io::Error {
 ///
 /// `?` on a `Result<_, P>` creates one from the API's own problem: the call ends as Refused.
 /// [`mismatch`] creates one that says "this response is not what was promised".
+/// [`Fail::from_read`] creates one from a decoder's [`ReadError`](crate::read::ReadError), for
+/// an arm that decodes a body itself: the call ends with the error that a reader would have
+/// given, with the location of the fault.
 ///
 /// `Fail::from(problem)` in a pager becomes a Refused error with that problem;
 /// `concord::mismatch(…)` becomes a Mismatch. Both are returned by the `try_next()`
@@ -866,6 +921,8 @@ pub struct Fail<P> {
 enum Cause<P> {
     Problem(P),
     Mismatch(Cow<'static, str>),
+    // Boxed, so that a `Result<_, Fail<P>>` is no larger than before.
+    Read(Box<crate::read::Evidence>),
 }
 
 impl<P> From<P> for Fail<P> {
@@ -889,6 +946,69 @@ impl<P> fmt::Debug for Fail<P> {
         match self.cause {
             Cause::Problem(_) => f.write_str("Fail(problem)"),
             Cause::Mismatch(_) => f.write_str("Fail(mismatch)"),
+            Cause::Read(_) => f.write_str("Fail(read)"),
+        }
+    }
+}
+
+impl<P> Fail<P> {
+    /// Creates a failure from a decoder's error, for an arm or a pager that decodes a body
+    /// itself.
+    ///
+    /// It keeps only what a decoder's failure is: the location of the fault, the decoder's
+    /// message (at most 1 KiB), and at most 64 KiB of the bytes, as
+    /// [`ReadError::not_the_type`](crate::read::ReadError::not_the_type) kept them. The status,
+    /// the headers, the endpoint and the attempt always come from the response that the arm
+    /// or the pager is running on.
+    ///
+    /// For a `ReadError` that says the bytes do not fit (`not_the_type`, then `at` and
+    /// `with_details`, as `Json::decode` returns it), the call ends with the error that a
+    /// reader would have given for this response: on a 2xx, a Mismatch whose message and
+    /// `source()` name the location of the fault, with the decoder's message in `details()`; on
+    /// another status, a Refused error with no problem. `reason()` is `None`, as for a body
+    /// that a reader could not decode. Nothing of the response reaches the message or the
+    /// cause: the location is made of the program's names and of indexes.
+    ///
+    /// **Concord does not verify where the bytes came from.** By the time the arm returns, it
+    /// holds the body, and the decoder may have been given that body, a part of it (a cursor
+    /// that a pager decodes) or bytes kept from another call. So everything this error says
+    /// is said of the decoder's input, never of the body:
+    ///
+    /// - a fault at a location prints as under a reader (`items[3].kind could not be
+    ///   decoded`); at the root, `the decoder's input could not be decoded`; an empty input,
+    ///   `the decoder's input is empty`; `wrong_content_type()`, `the decoder rejected the
+    ///   content type of its input`; a reader's limit, `the decoder's input exceeds the
+    ///   decoder's size limit`. `source()` holds the same words;
+    /// - `body()` and `kept()` return the decoder's input, as the `ReadError` kept it (at most
+    ///   64 KiB), and its state, and `details()` names it `decoder input (complete, 31 bytes)`,
+    ///   or `decoder input (cut, 3 bytes)` with the length that was kept, never `body (…)`;
+    /// - the error never says that a content type was unexpected: that is a fact about the
+    ///   response that a reader read, and `Json::decode` does not look at one.
+    ///
+    /// Any other `ReadError` is a failure of a body that broke while it was read, or of a stream
+    /// whose error a reader forwarded with `?`. It belongs to the response that it came from,
+    /// so none of it is kept: the call ends, on any status, with the Mismatch of an arm that
+    /// rejected the response (`the status arm rejected the response`; in a pager, `the next page
+    /// cannot be requested`), with no reason, no bytes and no source.
+    ///
+    /// `?` cannot make this conversion, because `?` already turns any `P` into a `Fail<P>`:
+    /// write `.map_err(Fail::from_read)`.
+    ///
+    /// ```
+    /// # use concord_core as concord;
+    /// use concord::read::{Place, ReadError};
+    /// use concord::Fail;
+    ///
+    /// fn check(body: concord::bytes::Bytes) -> Result<u32, Fail<()>> {
+    ///     // a decoder of your own, which knows where the fault is
+    ///     Err(ReadError::not_the_type(body).at(Place::root().field("count")))
+    ///         .map_err(Fail::from_read)
+    /// }
+    /// # assert!(check(concord::bytes::Bytes::from_static(b"{}")).is_err());
+    /// ```
+    pub fn from_read(error: crate::read::ReadError) -> Fail<P> {
+        Fail {
+            cause: Cause::Read(Box::new(error.into_evidence())),
         }
     }
 }
@@ -918,6 +1038,12 @@ impl<P> Fail<P> {
                 error.inner.reason = Some(reason);
                 error
             }
+            Cause::Read(evidence) => evidence.into_error(
+                status,
+                headers,
+                &crate::transport::TryInfo::new(endpoint, tries),
+                next_page,
+            ),
         }
     }
 }
@@ -1647,6 +1773,81 @@ mod tests {
         assert_eq!(error.source().unwrap().to_string(), "PRIVATE_SENTINEL");
         assert!(!format!("{error:?}").contains("PRIVATE_SENTINEL"));
     }
+    #[test]
+    fn c5_8_a_fail_keeps_its_auto_traits_whatever_it_holds() {
+        use std::panic::{RefUnwindSafe, UnwindSafe};
+        fn all_four<T: UnwindSafe + RefUnwindSafe + Send + Sync>() {}
+        fn send_sync<T: Send + Sync>() {}
+        #[allow(dead_code)] // PANIC-SAFETY: A type for a compile-time check; no panic lint is relaxed.
+        struct Problem {
+            code: String,
+        }
+        all_four::<Fail<()>>();
+        all_four::<Fail<Problem>>();
+        // The call's error holds the cause of a transport, which is not unwind-safe.
+        send_sync::<Error<()>>();
+        send_sync::<Error<Problem>>();
+        let held: Fail<()> = Fail::from_read(crate::read::ReadError::not_the_type(
+            bytes::Bytes::from_static(b"{}"),
+        ));
+        assert!(std::panic::catch_unwind(move || format!("{held:?}")).is_ok());
+    }
+
+    #[test]
+    fn c5_6_a_fail_from_a_read_error_holds_at_most_64_kib_of_its_own() {
+        let large = bytes::Bytes::from(vec![b'x'; 1 << 20]);
+        let start = large.as_ptr() as usize;
+        let failure =
+            crate::read::ReadError::not_the_type(large.clone()).with_details("y".repeat(10_000));
+        let fail: Fail<()> = Fail::from_read(failure);
+        let Cause::Read(evidence) = &fail.cause else {
+            panic!("a read failure")
+        };
+        let crate::read::Evidence::Read { body, details, .. } = &**evidence else {
+            panic!("the evidence of a decode")
+        };
+        assert_eq!(body.len(), 64 * crate::KIB);
+        // Its own allocation, not a view that keeps the whole body alive.
+        assert!(!(start..start + large.len()).contains(&(body.as_ptr() as usize)));
+        assert!(details.as_deref().is_some_and(|text| text.len() <= 1024));
+    }
+
+    #[test]
+    fn c8_4_a_pager_that_fails_with_a_decoder_error_names_its_location() {
+        let failure =
+            crate::read::ReadError::not_the_type(bytes::Bytes::from_static(b"PRIVATE_SENTINEL"))
+                .at(Place::root().field("cursor"))
+                .with_details("PRIVATE_SENTINEL");
+        let error: Error = Fail::from_read(failure).into_error(
+            "tasks.list",
+            1,
+            StatusCode::OK,
+            Headers::default(),
+            true,
+        );
+        assert_eq!(
+            error.to_string(),
+            "mismatch: status 200, cursor could not be decoded, in tasks.list"
+        );
+        assert_eq!(error.reason(), None);
+        assert_eq!(error.body(), Some(b"PRIVATE_SENTINEL".as_slice()));
+        assert_eq!(
+            error.source().map(ToString::to_string).as_deref(),
+            Some("cursor could not be decoded")
+        );
+        assert!(error
+            .details()
+            .to_string()
+            .contains("reader: PRIVATE_SENTINEL"));
+        assert_eq!(
+            format!(
+                "{:?}",
+                Fail::<()>::from_read(crate::read::ReadError::wrong_content_type())
+            ),
+            "Fail(read)"
+        );
+    }
+
     #[test]
     fn c6_2_arm_and_pager_mismatch_use_distinct_whole_lines() {
         let arm: Error = super::mismatch("PRIVATE_SENTINEL").into_error(

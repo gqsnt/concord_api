@@ -1,4 +1,4 @@
-use concord::{by_cursor, form, json, Json, Secret};
+use concord::{by_cursor, form, json, Binary, Json, Secret};
 use std::time::Duration;
 
 concord::api! {
@@ -6,8 +6,8 @@ concord::api! {
     pub client Slack(token: Secret) {
         base "https://slack.com/api";
         headers { "authorization" = "Bearer {token}"; }
-        read Json;
-        problem SlackProblem;
+        read Binary;
+        problem SlackProblem read Json;
         status { 2xx { body } => slack_response(body)? }
 
         part page(limit?: u16, cursor?: String) {

@@ -1,13 +1,13 @@
 use concord::read::Stream;
-use concord::{json, ByteStream, Json, Secret};
+use concord::{json, Binary, ByteStream, Json, Secret};
 use std::time::Duration;
 
 concord::api! {
     /// The Telegram Bot API: messages, files, and updates by long poll or by webhook.
     pub client Telegram(token: Secret) {
         base "https://api.telegram.org/bot{token}";
-        read Json;
-        problem TgProblem;
+        read Binary;
+        problem TgProblem read Json;
         status { 2xx { body } => telegram_result(body)? }
 
         part formatted(parse_mode?: ParseMode, entities?: Vec<MessageEntity>) {

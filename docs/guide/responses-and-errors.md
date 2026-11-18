@@ -57,7 +57,7 @@ GET readme(owner: String, repo: String) -> String {
 | **`Accept`** | Concord does not send one. A reader says how to read a body; it does not negotiate. For an API that responds with XML unless the request asks for JSON, add one line to the client: `headers { "accept" = "application/json"; }` ([scope and limits](../design/scope.md)). |
 | **Text** | `Text` accepts UTF-8 only: bytes that are not valid UTF-8 are a Mismatch, and are never silently replaced. `Json` skips a byte order mark at the start. |
 | **An empty body** | What an empty body means is up to the reader: `Text` returns an empty string, `Binary` empty bytes, and `Json` a Mismatch, `the body is empty`. So a `204` on an endpoint with `-> T` and `read Json;` is a Mismatch, unless an arm handles it (`204 => None`). |
-| **Why it did not decode** | The printed error names the location (`data.items[3].kind`), built from your field names and from indexes. The reader provides the location, and `Json` provides it wherever `serde` does (not through a flattened or a tagged enum). Concord builds `e.source()` from the location and the kind of failure, so it never holds a value from the response. The decoder's message, which can quote the body, is available through `e.details()`, limited to 1 KiB; `e.reason()` is `None` for a body that did not decode, because only a message from the author's code sets it ([what a call returns](calling.md#what-a-call-returns); see [the messages](../reference/messages.md) for the exact texts). |
+| **Why it did not decode** | The printed error names the location (`data.items[3].kind`), built from your field names and from indexes. The reader provides the location, and `Json` provides it wherever `serde` does (not through a flattened or a tagged enum). Concord builds `e.source()` from the location and the kind of failure, so it never holds a value from the response. The decoder's message, which can quote the body, is available through `e.details()`, limited to 1 KiB; `e.reason()` is `None` for a body that did not decode, because only a message from the author's code sets it ([what a call returns](calling.md#what-a-call-returns); see [the messages](../reference/messages.md) for the exact texts). An arm that decodes a body itself keeps all of this with `Json::decode` ([an error inside a `200`](#the-apis-own-error)). |
 
 **Your own reader** is a type that implements one trait, `concord::Reader<T>`. An XML API writes one and names it once, on the client: `read Xml;`.
 
@@ -208,9 +208,10 @@ match answer.value() {
 | A value of a type other than the return type | Does not compile. |
 | `?` on a `Result` whose error is the API's problem type | The call ends with that problem, as a Refused error ([the API's own error](#the-apis-own-error)). |
 | `headers.require("location")?` | The header, as text. If it is missing, the call ends with a Mismatch: the response is not what was promised. |
+| `Json::decode(&body).map_err(Fail::from_read)?` | An arm that decodes the body itself ([an error inside a `200`](#the-apis-own-error)). If the body does not fit, the call ends with the error that a reader gives: on a 2xx, a Mismatch that names the location of the fault; on another status, a Refused error with the bytes and no problem. |
 | `.await` | Does not compile: an arm is not `async`. |
 
-**Your own function, used in an arm,** needs a type for its failure: `concord::Fail<E>`, where `E` is the API's problem type. `concord::mismatch(…)` and `headers.require(…)` return one, and `?` converts a problem into one.
+**Your own function, used in an arm,** needs a type for its failure: `concord::Fail<E>`, where `E` is the API's problem type. `concord::mismatch(…)` and `headers.require(…)` return one, `Fail::from_read(error)` makes one from the `ReadError` of a decoder, and `?` converts a problem into one. (`?` cannot convert a `ReadError` by itself, because it already converts the problem type, whatever that type is: write `.map_err(Fail::from_read)`.)
 
 ```rust
 // plain Rust, beside the macro
@@ -280,7 +281,9 @@ The `200` is read as a `Charge` and returned as `Ok`. A caller of `charge` handl
 
 **One endpoint whose errors have another shape.** `problem` is written once, on the client, because a client has one error type. When a single endpoint returns errors in a shape of its own, its arm reads that shape and converts it into the client's problem: `4xx { body } => Err(RiotProblem::from_upload(body))?`. The difference stays where it is written, and the caller still handles one error type.
 
-**An error inside a `200`.** Some APIs always respond with `200` and a body like `{ "error": […], "result": … }`. The status reports success and the body reports an error. That is handled once, on the client, with an arm that can fail:
+**An error inside a `200`.** Some APIs always respond with `200` and report an error in the body. The status reports success and the body reports an error. That is handled once, on the client, with an arm that can fail. How the arm is written depends on where the value sits in the body.
+
+*The value under a key of its own*, as in `{ "error": […], "result": … }`:
 
 ```rust
 pub client Vault {
@@ -305,25 +308,95 @@ impl<T> Reply<T> {
 }
 ```
 
-Every endpoint below still returns its own type. An arm on the client that binds a body applies to every endpoint below, which has two consequences. **An endpoint with no return type then does not compile,** because the arm would read a body into nothing. Give it a return type (`-> Ignored`, your own type that accepts any body), or remove the arm (`remove 2xx`). **An endpoint whose return type is an `Option` or a `Result` does not compile either,** because under the arm a `null` in the body would silently become a `None`. Such an endpoint writes the arm itself (`override 2xx { body } => Some(unpack(body))`), or removes it. An endpoint below that handles a `200` in its own way writes `override 200 { … } => …`. The arm does not apply to a `HEAD`, which has no body: a `HEAD` under this client behaves like any other `HEAD`. An error reported inside the `200` is a Refused error with `problem()` set, like any other error response. (An API that sends an error *together with* a result of another shape needs your own `Deserialize` implementation that looks at `problem` first: with this simple struct, such a body does not decode at all, and the call is a Mismatch.)
+The reader decodes the whole body as a `Reply<T>`, and Rust infers `T` from the return type of each endpoint, so the arm does not name it. A body that does not fit is the reader's Mismatch, which names the location of the fault (`result.items[3].kind`), as under the simple rule.
+
+*The value beside the flag*, as in `{ "ok": true, "id": "C1", "name": "general" }` and `{ "ok": false, "error": "channel_not_found" }`: there is no key to put `T` under. A generic type with `#[serde(flatten)] value: T` beside `ok` compiles and is inferred in the same way, but it does not do the job. A fault inside the value loses its location, because `serde` decodes a flattened value from a copy of its own: the error says `the body could not be decoded`, and its column is the end of the body. And a body with `ok: false` does not fit `T`, so the problem never arrives: the call is a Mismatch. (With `Option<T>`, a success that does not fit silently becomes `None`.) Instead, the client reads the bytes, and the arm decodes them itself with `Json::decode`, which returns the error that `read Json;` gives for bytes that do not fit. `Fail::from_read` makes that error the failure of the arm. The whole client:
+
+```rust
+use concord::{bytes::Bytes, Binary, Fail, Json};
+use serde::{de::DeserializeOwned, Deserialize};
+
+concord::api! {
+    pub client Chat {
+        base "https://chat.example.test/api";
+        read Binary;                        // the arm decodes the body itself
+        problem ChatProblem read Json;      // the error of any other status
+        status { 2xx { body } => envelope(body)? }
+
+        GET info() -> Channel { path "conversations.info"; }
+    }
+}
+
+/// `{"ok": false, "error": "channel_not_found"}`, with the status `200`.
+#[derive(Debug, Deserialize)]
+pub struct ChatProblem {
+    pub error: String,
+}
+
+/// `{"ok": true, "id": "C1", "name": "general"}`.
+#[derive(Debug, Deserialize)]
+pub struct Channel {
+    pub id: String,
+    pub name: String,
+}
+
+/// The arm of every 2xx: `ok` says whether the body is the value or the problem.
+pub fn envelope<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<ChatProblem>> {
+    #[derive(Deserialize)]
+    struct Head {
+        ok: bool,
+    }
+    let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    if head.ok {
+        Json::decode(&body).map_err(Fail::from_read)
+    } else {
+        let problem: ChatProblem = Json::decode(&body).map_err(Fail::from_read)?;
+        Err(problem)?
+    }
+}
+```
+
+For `{"ok": true, "id": "C1", "name": 5}`, the call fails with `mismatch: status 200, name could not be decoded, in chat.info`: the same text and `source()` as under `read Json;`, the decoder's message with its line and column in `details()`, and no `reason()`. `body()` returns what the decoder was given, and `details()` names it `decoder input (complete, 35 bytes)`, not `body (…)`: once the arm has the body, Concord does not verify that the decoder was given that body, rather than a part of it or bytes from another call. For the same reason, a fault at the root says `the decoder's input could not be decoded`, and an empty input `the decoder's input is empty` ([the messages](../reference/messages.md)). The rustdoc of `Json::decode` has this client with a call for each of the two errors.
+
+| | |
+|---|---|
+| **When the location is the same** | The arm decodes the bytes twice: first `ok`, then the value. When the first pass succeeds with `ok: true`, the second pass is the plain path, and a fault is found exactly where `read Json;` finds it. The first pass reads the whole body too, and it can fail where the plain path would not: a body with `ok` twice decodes under `read Json;` (the type ignores `ok`) and fails the first pass with ``duplicate field `ok` ``. The first pass can also catch broken JSON, where its syntax breaks, even after a value that does not fit: for `{"ok": true, "name": 5, "x": [1, }`, `read Json;` names `name`, and the arm names `[key]`, the field that the first pass was skipping. It does not catch every fault of what it skips: bytes that are not UTF-8 inside a string pass it, and the second pass meets them. A missing `ok` fails the first pass: `the decoder's input could not be decoded`, with ``missing field `ok` `` in `details()`. |
+| **What `Json::decode` does not do** | It has no byte limit of its own: the limit is the one of the reader that read the bytes, here `Binary` (10 MiB; `read Binary.limit(50 * concord::MIB);` sets another). `strict` does not apply. And it does not look at the content type, so its error never adds `(unexpected content type)`. |
+| **An endpoint without the arm** | Under `read Binary;`, an endpoint that removes the arm reads its body as bytes, unless it declares `read Json;` itself. |
+
+Every endpoint below still returns its own type. An arm on the client that binds a body applies to every endpoint below, which has two consequences. **An endpoint with no return type then does not compile,** because the arm would read a body into nothing. Give it a return type (`-> Ignored`, your own type that accepts any body), or remove the arm (`remove 2xx`). **An endpoint whose return type is an `Option` or a `Result` does not compile either,** because under the arm a `null` in the body would silently become a `None`. Such an endpoint writes the arm itself (`override 2xx { body } => Some(unpack(body))`), or removes it. An endpoint below that handles a `200` in its own way writes `override 200 { … } => …`. The arm does not apply to a `HEAD`, which has no body: a `HEAD` under this client behaves like any other `HEAD`. An error reported inside the `200` is a Refused error with `problem()` set, like any other error response. (An API that sends an error *together with* a result of another shape needs your own `Deserialize` implementation that looks at `problem` first: with the simple `Reply<T>` above, such a body does not decode at all, and the call is a Mismatch.)
 
 ## What an error keeps of a body
 
-Everything an error keeps from a response is bounded. It keeps at most 64 KiB of the body, in a buffer of its own, so a 200 MB error page does not stay in memory. It keeps at most 1 KiB of a reader's own message, available through `details()`. `e.retry_after()` returns the wait that was requested: the `Retry-After` of the response or the wait from a `when` rule, whichever is longer ([the standard policy](retries.md#the-standard-policy)). `kept()` says in what state the body was kept: whole, truncated at 64 KiB, or interrupted while it was read; it is `None` when no byte of a body was kept (for example, when the announced size was over the limit). `details()` describes the state in words: `body (complete, 18 bytes)`, `body (cut at 64 KiB)`, `body (interrupted, 120 bytes)`. `problem()` is decoded only from a whole body. An arm that ends with `?` produces an error with the typed problem and no bytes, because the body was already read into a value.
+Everything an error keeps from a response is bounded. It keeps at most 64 KiB of the body, in a buffer of its own, so a 200 MB error page does not stay in memory. It keeps at most 1 KiB of a reader's own message, available through `details()`. `e.retry_after()` returns the wait that was requested: the `Retry-After` of the response or the wait from a `when` rule, whichever is longer ([the standard policy](retries.md#the-standard-policy)). `kept()` says in what state the body was kept: whole, truncated at 64 KiB, or interrupted while it was read; it is `None` when no byte of a body was kept (for example, when the announced size was over the limit). `details()` describes the state in words: `body (complete, 18 bytes)`, `body (cut at 64 KiB)`, `body (interrupted, 120 bytes)`. `problem()` is decoded only from a whole body. An arm that ends with `?` produces an error with the typed problem and no bytes, because the body was already read into a value. An arm that decodes a body itself and returns `Fail::from_read(…)` keeps the decoder's input, at most 64 KiB, which `details()` names `decoder input (…)`.
 
 **A known failure stays known.** A `503` whose body then breaks while it is read is still a Refused error with status 503. Reading the details of a failure can never replace the original failure. See C5.6 to C5.8 of the [contracts](../reference/contracts.md) for the exact rules.
 
 ## Types that survive a growing API
 
-The types are yours, and Concord does not look inside them. One piece of advice comes from every SDK that has lasted: **a value that the provider can extend must have room for what you do not know yet.**
+The types are yours, and Concord does not look inside them. One piece of advice comes from every SDK that has lasted: **a value that the provider can extend must have room for what you do not know yet.** What kind of room depends on whether the value is only read, or also sent back to the API.
+
+Both forms below are for an enum that is written as a string in JSON, as most enums of an API are. **A value that is only read** can put every unknown string value in one variant, with `#[serde(other)]`:
 
 ```rust
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Queue { RankedSolo, RankedFlex, Aram, #[serde(other)] Unknown }
 ```
 
-Without the last variant, the day Riot adds a queue, every response that contains it stops decoding. `serde` already ignores unknown fields. Treat an id as a string, even when it looks like a number.
+Without the last variant, the day Riot adds a queue, every response that contains it stops decoding. `Unknown` keeps no text: every queue that you do not know becomes the same `Unknown`. So as the key of a map (`HashMap<Queue, u32>`), two unknown queues become one entry, and one of the two values is lost.
+
+**A value that is sent back** must keep what it does not know, or the next write sends something else. A variant marked `#[serde(untagged)]` keeps the text, and writes it back as it arrived:
+
+```rust
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TaxType { Input, Output, Exempt, #[serde(untagged)] Other(String) }
+```
+
+`"OUTPUT"` is read as `Output`, and `"TAX001"`, a string value that the enum does not list, as `Other("TAX001")`; written back, they are `"OUTPUT"` and `"TAX001"` again, also as the keys of a map. The untagged variant is tried last, after every named variant. Neither form accepts a number, or an unknown variant that carries data (`{"REFUND": {…}}`): those still fail to decode, and an enum that the API writes that way needs a variant of its own for them. An object whose only key has the value `null`, which `serde` reads as a variant without data, gives three cases: `Queue`, with `#[serde(other)]`, reads `{"NEW": null}` as `Unknown`; `TaxType` reads `{"OUTPUT": null}` as `Output`; and `TaxType` rejects `{"NEW": null}`, because `Other(String)` takes only a string.
+
+`serde` already ignores unknown fields. Treat an id as a string, even when it looks like a number.
 
 ## What the macro generates for an endpoint
 

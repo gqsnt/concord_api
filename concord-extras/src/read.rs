@@ -67,6 +67,109 @@ impl Json {
         self.strict = true;
         self
     }
+
+    /// Decodes JSON that is already in memory, with the error that `read Json;` gives for a
+    /// body that does not fit the type.
+    ///
+    /// It is for an arm that decodes the body itself, as for an API that reports its errors
+    /// inside a `200`. [`Fail::from_read`](concord_core::Fail::from_read) makes the error the
+    /// failure of the arm, and the call's error then names the location of the fault, as it
+    /// does under `read Json;` (`name could not be decoded`, below), with the decoder's
+    /// message, its line and its column in `details()`, and at most 64 KiB of its input in
+    /// `body()`, which `details()` names `decoder input`. A byte order mark at the start is
+    /// skipped.
+    ///
+    /// Three things that the reader does are not done here, because the bytes are already in
+    /// memory. No byte limit applies: the limit is the one of the reader that read the bytes
+    /// (10 MiB for `read Binary;`; `read Binary.limit(n);` sets another). `strict` does not
+    /// apply. And the content type is not looked at, so the error never adds
+    /// `(unexpected content type)`.
+    ///
+    /// The value of the API below sits beside `ok`, not under a key of its own, so the
+    /// client reads the bytes (`read Binary;`) and its arm decodes them twice: once for
+    /// `ok`, once for the value or the problem. When the first pass succeeds with `ok: true`,
+    /// the second pass meets a fault exactly where `read Json;` would. The first pass can fail
+    /// where `read Json;` would not: it can catch broken JSON, where its syntax breaks (which
+    /// can be after a value that does not fit), though not every fault of a part that it skips
+    /// (bytes that are not UTF-8 inside a string pass it); and it fails on a body with `ok`
+    /// twice.
+    ///
+    /// ```
+    /// use concord::{bytes::Bytes, error::Kind, fake, reply, Binary, Fail, Json};
+    /// use serde::{de::DeserializeOwned, Deserialize};
+    ///
+    /// concord::api! {
+    ///     pub client Chat {
+    ///         base "https://chat.example.test/api";
+    ///         read Binary;
+    ///         problem ChatProblem read Json;
+    ///         status { 2xx { body } => envelope(body)? }
+    ///
+    ///         GET info() -> Channel { path "conversations.info"; }
+    ///     }
+    /// }
+    ///
+    /// /// `{"ok": false, "error": "channel_not_found"}`, with the status `200`.
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct ChatProblem {
+    ///     pub error: String,
+    /// }
+    ///
+    /// /// `{"ok": true, "id": "C1", "name": "general"}`.
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct Channel {
+    ///     pub id: String,
+    ///     pub name: String,
+    /// }
+    ///
+    /// /// The arm of every 2xx: `ok` says whether the body is the value or the problem.
+    /// pub fn envelope<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<ChatProblem>> {
+    ///     #[derive(Deserialize)]
+    ///     struct Head {
+    ///         ok: bool,
+    ///     }
+    ///     let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    ///     if head.ok {
+    ///         Json::decode(&body).map_err(Fail::from_read)
+    ///     } else {
+    ///         let problem: ChatProblem = Json::decode(&body).map_err(Fail::from_read)?;
+    ///         Err(problem)?
+    ///     }
+    /// }
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let chat = Chat::new().with_transport(fake(|_| {
+    ///     Ok(reply(200, r#"{"ok": true, "id": "C1", "name": 5}"#))
+    /// }));
+    /// let error = chat.info().await.unwrap_err();
+    /// assert_eq!(error.kind(), Kind::Mismatch);
+    /// assert_eq!(
+    ///     error.to_string(),
+    ///     "mismatch: status 200, name could not be decoded, in chat.info"
+    /// );
+    /// assert!(error.details().to_string().contains("at line 1 column 34"));
+    ///
+    /// let chat = Chat::new().with_transport(fake(|_| {
+    ///     Ok(reply(200, r#"{"ok": false, "error": "channel_not_found"}"#))
+    /// }));
+    /// let error = chat.info().await.unwrap_err();
+    /// assert_eq!(error.kind(), Kind::Refused);
+    /// assert_eq!(error.problem().map(|p| p.error.as_str()), Some("channel_not_found"));
+    /// # }
+    /// ```
+    pub fn decode<T: serde::de::DeserializeOwned>(json: impl AsRef<[u8]>) -> Result<T, ReadError> {
+        let json = json.as_ref();
+        json_decode::decode(json, Some("application/json")).map_err(|error| {
+            // An error keeps at most 64 KiB; one byte more tells it that the bytes were cut.
+            // PANIC-SAFETY: The constant byte count fits usize on supported 32/64-bit targets.
+            let kept = json.len().min(64 * concord_core::KIB + 1);
+            not_json(
+                concord_core::bytes::Bytes::copy_from_slice(json.get(..kept).unwrap_or_default()),
+                error,
+            )
+        })
+    }
 }
 
 #[cfg(feature = "json")]
@@ -79,18 +182,21 @@ impl<T: serde::de::DeserializeOwned + Send> Reader<T> for Json {
         let bytes = body.bytes(self.limit.unwrap_or(LIMIT)).await?;
         match json_decode::decode(&bytes, label.as_deref()) {
             Ok(value) => Ok(value),
-            Err(error) => {
-                let _ = &error.source; // Decoder diagnostics are never passed as a cause.
-                let failure = ReadError::not_the_type(bytes)
-                    .at(error.place)
-                    .with_details(error.details);
-                Err(if error.unexpected_label {
-                    failure.label_was_not_expected()
-                } else {
-                    failure
-                })
-            }
+            Err(error) => Err(not_json(bytes, error)),
         }
+    }
+}
+
+#[cfg(feature = "json")]
+fn not_json(bytes: concord_core::bytes::Bytes, error: json_decode::Failure) -> ReadError {
+    let _ = &error.source; // Decoder diagnostics are never passed as a cause.
+    let failure = ReadError::not_the_type(bytes)
+        .at(error.place)
+        .with_details(error.details);
+    if error.unexpected_label {
+        failure.label_was_not_expected()
+    } else {
+        failure
     }
 }
 
