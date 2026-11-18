@@ -24,7 +24,7 @@ pub const TOTAL: &str = "the total of the list could not be read";
 /// The text of the Mismatch when an offset cannot grow.
 pub const OFFSET: &str = "the offset cannot grow any further";
 /// The text of the Mismatch when a call sets two inputs that each choose the move.
-pub const TWO_MOVES: &str = "the call sets more than one input that chooses how the list moves";
+pub const TWO_MOVES: &str = "the call chooses two moves: it sets two inputs that each choose one";
 /// What every Mismatch about the next page prints.
 pub const CANNOT_BE_REQUESTED: &str =
     "mismatch: status 200, the next page cannot be requested, in walk.list";

@@ -461,8 +461,10 @@ async fn c8_6_two_inputs_that_each_choose_the_move_end_the_list_at_the_first_dec
     assert_eq!(walked.end, End::mismatch(TWO_MOVES));
 }
 
+/// Two inputs that each choose the move are a mistake of the call, refused at the first
+/// decision whatever the page says: also when it says "no more", and before it is read.
 #[tokio::test]
-async fn c8_6_two_inputs_that_each_choose_are_not_read_when_the_page_says_no_more() {
+async fn c8_6_two_inputs_that_each_choose_are_refused_also_when_the_page_says_no_more() {
     let walked = walk::walk(
         &spec(
             Base::Cursor,
@@ -477,8 +479,29 @@ async fn c8_6_two_inputs_that_each_choose_are_not_read_when_the_page_says_no_mor
     )
     .await;
     assert_eq!(walked.urls, [url("before=p0&back=q0")]);
+    assert_eq!(walked.pages, [vec![1]]);
+    assert_eq!(walked.end, End::mismatch(TWO_MOVES));
+    assert_eq!(walked.events, []);
+}
+
+/// One input registered twice is one choice: the first written moves.
+#[tokio::test]
+async fn c8_6_one_input_given_to_two_or_when_set_counts_once() {
+    let walked = walk::walk(
+        &spec(
+            Base::Cursor,
+            &[Rule::Or(Input::Before), Rule::Or(Input::Before)],
+        ),
+        &Inputs {
+            before: Some("p0".into()),
+            ..none()
+        },
+        &[items(&[1]).prev("p1").reply(), items(&[2]).reply()],
+    )
+    .await;
+    assert_eq!(walked.urls, [url("before=p0"), url("before=p1")]);
+    assert_eq!(walked.pages, [vec![1], vec![2]]);
     assert_eq!(walked.end, End::Done);
-    assert_eq!(walked.events, [A]);
 }
 
 #[tokio::test]

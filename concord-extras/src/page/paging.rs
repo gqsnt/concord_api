@@ -12,7 +12,7 @@ const DISAGREE: &str = "the page's statements disagree on whether more items fol
 /// The text of the Mismatch when a total cannot be read as a number of items.
 const TOTAL: &str = "the total of the list could not be read";
 /// The text of the Mismatch when the call sets two inputs that each choose the move.
-const TWO_MOVES: &str = "the call sets more than one input that chooses how the list moves";
+const TWO_MOVES: &str = "the call chooses two moves: it sets two inputs that each choose one";
 /// The text of the Mismatch when an offset cannot be counted.
 const OFFSET: &str = "the offset cannot grow any further";
 
@@ -30,6 +30,10 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 /// For each page, a `Paging` decides **in this order, whatever the order in which its methods
 /// were written**:
 ///
+/// 0. **The call.** If it sets the inputs of two [`or_when_set`](Paging::or_when_set), the pages
+///    end with a Mismatch (`the call chooses two moves: it sets two inputs that each choose one`),
+///    whatever the page says: the same mistake does not pass on a list of one page. An input
+///    given to two `or_when_set` is one choice, and the first written moves.
 /// 1. **The gate.** If one input given to [`only_when_set`](Paging::only_when_set) is not set on
 ///    the call that fetched the page, this page is the last. Nothing else is read.
 /// 2. **What the page states.** Every statement ([`has_more`](Paging::has_more), and the total of
@@ -129,7 +133,7 @@ struct Parts<C: Call> {
     /// 2. The statements of the page: `true` for "more".
     statements: Vec<Statement<C>>,
     /// 3. The moves chosen by an input, then the move otherwise.
-    or_when_set: Vec<(Gate<C>, Move<C>)>,
+    or_when_set: Vec<(std::any::TypeId, Gate<C>, Move<C>)>,
     moves: Move<C>,
     /// 4. The short-page rules, read only when no statement spoke: each gives a size, and the
     ///    page is counted once, after the move.
@@ -494,7 +498,9 @@ impl<C: Call> Paging<C> {
     /// input for each (`starting_after` and `ending_before`): the caller chooses the direction by
     /// the input it sets. The statements, the short-page rules, the gates and the edits of this
     /// value apply to both moves. A call that sets the inputs of two `or_when_set` ends the pages
-    /// with a Mismatch.
+    /// with a Mismatch after the first page, whatever that page says; an input given to two
+    /// `or_when_set` is one choice, and the first written moves. An `other` that is a `Paging`
+    /// decides by the same order on its own, inside the move: the rules of this value come first.
     ///
     /// ```
     /// use concord::{by_cursor, Json};
@@ -525,6 +531,7 @@ impl<C: Call> Paging<C> {
     /// ```
     pub fn or_when_set<S: Slot<C>, P: Pager<C>>(mut self, input: S, other: P) -> Paging<C> {
         self.parts().or_when_set.push((
+            std::any::TypeId::of::<S>(),
             Box::new(move |call| input.get(call).is_some()),
             Box::new(other),
         ));
@@ -601,6 +608,18 @@ impl<C: Call> Pager<C> for Paging<C> {
         page: &Answer<C::Value>,
     ) -> Result<Option<C>, Fail<C::Problem>> {
         let parts = self.parts();
+        // 0. The call: two inputs set that each choose a move are a mistake, whatever the page
+        // says. One input given to two `or_when_set` is one choice: the first written.
+        let mut chosen: Option<(usize, std::any::TypeId)> = None;
+        for (index, (input, set, _)) in parts.or_when_set.iter().enumerate() {
+            if set(&call) {
+                match chosen {
+                    None => chosen = Some((index, *input)),
+                    Some((_, first)) if first != *input => return Err(mismatch(TWO_MOVES)),
+                    Some(_) => {}
+                }
+            }
+        }
         // 1. The gates.
         if !parts.only_when_set.iter().all(|set| set(&call)) {
             return Ok(None);
@@ -636,11 +655,10 @@ impl<C: Call> Pager<C> for Paging<C> {
             Some(_) => None,
         };
         // 3. The move: its failure is the result, also on a short page.
-        let mut chosen = parts.or_when_set.iter_mut().filter(|(set, _)| set(&call));
-        let next = match (chosen.next(), chosen.next()) {
-            (Some(_), Some(_)) => return Err(mismatch(TWO_MOVES)),
-            (Some((_, other)), None) => other.next_call(call, page)?,
-            (None, _) => parts.moves.next_call(call, page)?,
+        let alternative = chosen.and_then(|(index, _)| parts.or_when_set.get_mut(index));
+        let next = match alternative {
+            Some((_, _, other)) => other.next_call(call, page)?,
+            None => parts.moves.next_call(call, page)?,
         };
         // 4. With no statement, a short page ends the list: the page is counted after the move.
         if let (Some(size), Some(count)) = (size, parts.count) {

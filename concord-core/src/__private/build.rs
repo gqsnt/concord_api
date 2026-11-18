@@ -2059,7 +2059,11 @@ mod tests {
     fn c8_6_replacement_urls_keep_an_empty_query_as_given() {
         for (next, sent, query) in [
             ("/next?", "https://example.test/next?", Some("")),
-            ("/next?&&#fragment", "https://example.test/next?&&", Some("&&")),
+            (
+                "/next?&&#fragment",
+                "https://example.test/next?&&",
+                Some("&&"),
+            ),
             ("/next", "https://example.test/next", None),
         ] {
             let mut options = Options::default();
