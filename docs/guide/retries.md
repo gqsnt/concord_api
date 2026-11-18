@@ -25,6 +25,8 @@ A request is retried only if the answer to all three questions is yes ([rules](.
 | **May it be repeated?** | Yes, in three cases. Its method is idempotent as HTTP defines it, so repeating it has no further effect (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`). Or its author wrote `idempotent;`. Or the API rejected it with a status that the policy lists with `not_applied_on`. A `POST` that is not marked is not retried after a failed connection: the caller gets the error (`e.class()` says `Connect`) and decides what to do. |
 | **Is the failure worth another attempt?** | Yes for network failures and for the statuses listed in the standard table ([C4.2](../reference/contracts.md)), and for whatever your own rules add. |
 
+**An attempt** is one handoff of the request to the middleware, and `e.tries()` counts them. It counts from the moment it is handed over, so a timeout before the head of a response ends an attempt too. It ends with its outcome, or at the head for a body that is handed to you as a stream (`read Stream;`, `send_raw()`). A middleware that sends again inside one attempt is still one attempt; in a test, one scripted entry answers one call of the transport ([a script](testing.md#a-script-a-transport-with-virtual-time)).
+
 `idempotent` is a fact about the API, so its author writes it. What follows the keyword is a Rust expression that evaluates to a `bool`, with the inputs as variables. With no expression, `idempotent;` means `true`.
 
 ```rust
@@ -41,7 +43,7 @@ POST charge(new: NewCharge, key?: String) -> Charge {
 }
 ```
 
-The rare `PUT` or `DELETE` that must not be sent twice declares `idempotent false;`. An API where every `POST` takes an idempotency key writes those statements once, in a part: `part keyed(idempotency_key: String) { headers { "idempotency-key" = idempotency_key; } idempotent; }`, and then `POST create(customer: NewCustomer, ..keyed)`. The method that counts is the method of the request as it was built, after any edits and before any middleware: if an `.edit_request(…)` turns a `GET` into a `POST`, that request is a `POST`.
+The rare `PUT` or `DELETE` that the API does not let you repeat declares `idempotent false;`: its method then no longer makes it repeatable. The third way stays open: a status that the policy lists with `not_applied_on`, such as the `429` of `slack::retry()`, still permits another attempt after that status, because the API says that it did not apply the request. So `idempotent false;` means "not repeated because of its method", not "never sent twice": a policy for such an endpoint lists only the statuses after which the API promises that nothing was done. An API where every `POST` takes an idempotency key writes those statements once, in a part: `part keyed(idempotency_key: String) { headers { "idempotency-key" = idempotency_key; } idempotent; }`, and then `POST create(customer: NewCustomer, ..keyed)`. The method that counts is the method of the request as it was built, after any edits and before any middleware: if an `.edit_request(…)` turns a `GET` into a `POST`, that request is a `POST`.
 
 ## A key made for one write
 
