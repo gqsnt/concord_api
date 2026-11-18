@@ -896,6 +896,12 @@ impl Limit {
     /// the request was refused, and `retry_after` keeps the server's original value for
     /// a `429` that contributed to the wait.
     ///
+    /// The time counts from when the limit receives the request, so the key and cost
+    /// functions of the buckets take part of it, and a request that could leave only after
+    /// this limit fails with `MaxHold` instead. Those functions run to their end: a call can
+    /// return later than this limit by the time they take, without its request being sent.
+    /// With zero, a request that needs no wait still leaves, whatever its functions took.
+    ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new().max_hold(std::time::Duration::from_secs(10));
     /// ```
@@ -955,13 +961,15 @@ impl Middleware for Limit {
         info: TryInfo,
         next: Next<'_>,
     ) -> Result<Response, TransportError> {
+        // `max_hold` counts from here: the key and cost functions take part of it.
+        let start = Instant::now();
         let selected = self
             .inner
             .select(&request, &info)
             .map_err(|error| TransportError::blocked().with_source(error))?;
         let (reservation, permit) = self
             .inner
-            .reserve(selected)
+            .reserve(selected, start)
             .await
             .map_err(|error| TransportError::blocked().with_source(error))?;
         let response = next.send(request, info).await?;

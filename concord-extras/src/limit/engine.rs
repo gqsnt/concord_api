@@ -550,8 +550,9 @@ impl Inner {
     pub(super) async fn reserve(
         self: &Arc<Self>,
         selected: Vec<Selected>,
+        // When admission began, before the key and cost functions ran.
+        start: Instant,
     ) -> Result<(Reservation, Option<Permit>), LimitError> {
-        let start = Instant::now();
         let max_hold = self.lock().policy.max_hold;
         let deadline = start
             .checked_add(max_hold)
@@ -783,8 +784,8 @@ mod tests {
                 "https://one.test/data".parse().unwrap(),
             )
         };
-        let (older, _) = limit.inner.reserve(vec![]).await.unwrap();
-        let (newer, _) = limit.inner.reserve(vec![]).await.unwrap();
+        let (older, _) = limit.inner.reserve(vec![], Instant::now()).await.unwrap();
+        let (newer, _) = limit.inner.reserve(vec![], Instant::now()).await.unwrap();
         let first = script
             .send(make_request(), TryInfo::new("a", 1))
             .await
@@ -852,7 +853,7 @@ mod tests {
                     .is_none());
             }));
         }));
-        let (reservation, permit) = limit.inner.reserve(selected).await.unwrap();
+        let (reservation, permit) = limit.inner.reserve(selected, Instant::now()).await.unwrap();
         let response = script.send(request(), info).await.unwrap();
         limit.inner.observe(&reservation, &response);
         drop((response, reservation, permit));
@@ -943,7 +944,7 @@ mod tests {
                 .now_or_never()
                 .is_none());
         }));
-        let result = limit.inner.reserve(vec![]).await;
+        let result = limit.inner.reserve(vec![], Instant::now()).await;
         let error = match result {
             Err(error) => error,
             Ok(_) => panic!("admission outlived max_hold while taking the policy lock"),

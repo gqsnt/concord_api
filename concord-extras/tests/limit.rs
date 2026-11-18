@@ -2030,3 +2030,23 @@ async fn c11_7_concurrency_wait_has_max_hold_and_canceled_timeout_leaks_no_permi
     assert_eq!(api.get().await.unwrap(), "next");
     times(&script, start, &[0, 4]);
 }
+
+#[tokio::test(start_paused = true)]
+async fn c11_7_max_hold_counts_the_time_of_the_key_function() {
+    let script = Script::new();
+    script.answer(200);
+    // A key function that takes two seconds, under a max_hold of one.
+    let limit = Limit::new().max_hold(sec(1)).bucket(Bucket::new(|_| {
+        assert!(tokio::time::advance(sec(2)).now_or_never().is_none());
+        Some("k".into())
+    }));
+    let start = Instant::now();
+    let error = call(&limit, &script, "a").await.unwrap_err();
+    assert!(
+        matches!(cause(&error), LimitError::MaxHold { waited, .. } if *waited == sec(2)),
+        "{:?}",
+        cause(&error)
+    );
+    assert_eq!(start.elapsed(), sec(2));
+    assert!(script.requests().is_empty());
+}
