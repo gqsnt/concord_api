@@ -83,14 +83,15 @@ pub struct PartsPage {
     #[serde(rename = "NextPartNumberMarker")]
     pub next_part_number_marker: Option<u32>,
 }
+/// Every member is optional in the service's reference.
 #[derive(Debug, serde::Deserialize)]
 pub struct PartInfo {
     #[serde(rename = "PartNumber")]
-    pub part_number: u32,
+    pub part_number: Option<u32>,
     #[serde(rename = "ETag")]
     pub etag: Option<String>,
     #[serde(rename = "Size")]
-    pub size: u64,
+    pub size: Option<u64>,
 }
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct CreateBucketConfiguration {}

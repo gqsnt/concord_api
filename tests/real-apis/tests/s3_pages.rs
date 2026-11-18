@@ -82,8 +82,8 @@ async fn s3_parts_are_read_from_the_service_xml_and_the_marker_moves() {
     assert_eq!(
         parts,
         [
-            (1, Some("\"e1\"".to_owned()), 5),
-            (2, Some("\"e2\"".to_owned()), 6)
+            (Some(1), Some("\"e1\"".to_owned()), Some(5)),
+            (Some(2), Some("\"e2\"".to_owned()), Some(6))
         ]
     );
     let requests = script.requests();
@@ -190,6 +190,45 @@ async fn s3_a_part_without_an_etag_is_read() {
             page.parts[0].etag.clone(),
             page.parts[0].size
         ),
-        (1, None, 5)
+        (Some(1), None, Some(5))
     );
+}
+
+/// No member of a part is required: a page whose part lacks its `Size`, or its `PartNumber`, is
+/// read, and a truncated page with a marker still leads to the next.
+#[tokio::test(start_paused = true)]
+async fn s3_a_part_without_a_size_or_a_number_is_read() {
+    for (part, number, size) in [
+        (
+            "<PartNumber>1</PartNumber><ETag>\"e1\"</ETag>",
+            Some(1),
+            None,
+        ),
+        ("<ETag>\"e1\"</ETag><Size>5</Size>", None, Some(5)),
+    ] {
+        let script = Script::new();
+        script.answer(200).body(format!(
+            "<ListPartsResult><IsTruncated>true</IsTruncated>\
+             <NextPartNumberMarker>1</NextPartNumberMarker><Part>{part}</Part></ListPartsResult>"
+        ));
+        script
+            .answer(200)
+            .body("<ListPartsResult><IsTruncated>false</IsTruncated></ListPartsResult>");
+        let (store, bucket) = store(&script);
+        let mut pages = store
+            .bucket(bucket)
+            .object("o")
+            .upload("up")
+            .list_parts()
+            .pages();
+        let first = pages.try_next().await.unwrap().unwrap();
+        assert_eq!(
+            (first.parts[0].part_number, first.parts[0].size),
+            (number, size),
+            "{part}"
+        );
+        assert!(pages.try_next().await.unwrap().is_some(), "{part}");
+        assert!(pages.try_next().await.unwrap().is_none(), "{part}");
+        assert_eq!(script.requests().len(), 2, "{part}");
+    }
 }
