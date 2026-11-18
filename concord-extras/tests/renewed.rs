@@ -1746,3 +1746,31 @@ fn c11_3_renewal_error_find_finds_a_renewal_error_within_a_source_cycle() {
         renewal.as_ref()
     ));
 }
+
+#[tokio::test(start_paused = true)]
+async fn c11_3_renewed_treats_a_renewal_not_sent_as_a_failure_and_tries_again() {
+    let tokens = Script::new();
+    tokens.fail(concord::transport::TransportError::blocked());
+    mint(&tokens, 0);
+    let token_client = TokenApi::new().with_transport(tokens.clone());
+    let auth = Renewed::new(&base(), move || {
+        let token_client = token_client.clone();
+        async move {
+            let reply = token_client
+                .issue()
+                .await
+                .map_err(RenewalError::from_call)?;
+            AccessToken::expires_in(reply.access_token, seconds(reply.expires_in))
+        }
+    });
+    let api = Script::new();
+    api.answer(200).body("ok");
+    let client = client(&api, auth);
+    let error = client.get().await.unwrap_err();
+    assert_eq!(error.class(), Some(Class::Blocked));
+    assert!(matches!(renewal(&error), RenewalError::NotSent(_)));
+    assert_attempts(&api, &[]);
+    assert_eq!(client.get().await.unwrap(), "ok");
+    assert_attempts(&tokens, &[1, 1]);
+    assert_header(&api, 0, "authorization", "Bearer new-secret");
+}

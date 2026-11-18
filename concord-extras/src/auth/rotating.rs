@@ -286,8 +286,9 @@ pub enum RotationError {
     InvalidRefreshToken,
     /// No known refresh token is safe to use and no replacement is known: for example the
     /// store holds a `Refreshing` marker or an empty refresh token, or an exchange failed
-    /// or returned an invalid one. The application must recover the account with the
-    /// provider.
+    /// or returned an invalid one. An exchange that failed with `RenewalError::NotSent`
+    /// leads here only if saving the previous pair again failed. The application must
+    /// recover the account with the provider.
     NeedsReauthorization,
     /// The driver was not polled while this call waited.
     NotPolled,
@@ -383,7 +384,8 @@ impl StdError for RotationError {
 /// It is `Send` and `Unpin`, but neither `Sync` nor `Clone`. As long as it is polled,
 /// dropping every call to the API, or their timing out, does not cancel a renewal that
 /// has begun. A failed exchange yields no replacement; its error goes to the waiting
-/// calls. A valid replacement is saved, or kept pending after a failed save until the
+/// calls. After `RenewalError::NotSent`, the save of the previous pair is part of the
+/// renewal, and is not dropped either. A valid replacement is saved, or kept pending after a failed save until the
 /// next call that needs a token, or the drop of the last owner, retries the save; a
 /// pair that cannot be saved at the end is handed back in [`RotationError::Unsaved`].
 /// A renewal begins when saving its `Refreshing` marker begins; dropping the last
@@ -548,8 +550,13 @@ impl fmt::Debug for RotationDriver {
 /// `NeedsReauthorization`. After an unusable access token was saved (`Expired`, or a
 /// header that cannot be built), the next call renews with the saved refresh token and
 /// never sends that access token. When the outcome of an exchange is uncertain, the
-/// account must be authorized again. No store can commit the server's issuance and the
-/// local save atomically: a crash between the two can lose a token.
+/// account must be authorized again. An exchange that fails with
+/// [`RenewalError::NotSent`] states that its request never left: the pair from before the
+/// exchange is saved again over the marker, then becomes current again, the waiting
+/// calls fail with that error without being sent, and the next call exchanges the same
+/// refresh token. If that save fails, the marker stays, as after any failed exchange. No
+/// store can commit the server's issuance and the local save atomically: a crash between
+/// the two can lose a token.
 ///
 /// A `401` is returned unchanged and rejects only the access token that the request
 /// carried. Add `after_401` to the engine's retry policy; this middleware never resends

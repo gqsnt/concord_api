@@ -2787,3 +2787,299 @@ async fn c12_7_cancelled_initial_load_cleanup_panic_stops_the_credential() {
     rig.events(&["load"]);
     assert_eq!(rig.store.counts(), (1, 0));
 }
+
+// An exchange that states that its request never left.
+
+fn auth_mapped(rig: &Rig, map: fn(concord::Error) -> RenewalError) -> (Rotating, RotationDriver) {
+    let tokens = Tokens::new()
+        .with_transport(rig.tokens.clone())
+        .with_idle_timeout(sec(3600));
+    let events = rig.events.clone();
+    Rotating::new(&base(), rig.store.clone(), move |exchange: Exchange| {
+        let tokens = tokens.clone();
+        let events = events.clone();
+        async move {
+            events
+                .lock()
+                .unwrap()
+                .push(format!("exchange {}", &*exchange.refresh().expose()));
+            let reply = tokens.exchange(exchange.refresh()).await.map_err(map)?;
+            Ok(TokenPair::expires_in(
+                reply.access,
+                reply.refresh,
+                sec(reply.life),
+            ))
+        }
+    })
+}
+fn refuse(rig: &Rig, delay: u64) {
+    rig.tokens
+        .fail(concord::transport::TransportError::blocked())
+        .after(sec(delay));
+}
+fn not_sent(error: &concord::Error) -> bool {
+    match cause(error) {
+        RotationError::Renewal(RenewalError::NotSent(cause)) => cause
+            .downcast_ref::<concord::Error>()
+            .is_some_and(|endpoint| endpoint.class() == Some(concord::error::Class::Blocked)),
+        _ => false,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_an_exchange_not_sent_saves_the_pair_again_and_the_next_call_exchanges_it() {
+    let rig = Rig::new(Stored::Ready(TokenPair::new("a0", "r0", None)));
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    rig.store.ready("a0", "r0");
+    rig.sent(1, 0);
+    assert_eq!(api.get().await.unwrap(), "ok");
+    rig.store.ready("a1", "r1");
+    rig.sent(2, 1);
+    header(&rig.resource, 0, "Bearer a1");
+    // The states of the store, in order: the marker, the same pair again, the
+    // marker of the second exchange, its replacement.
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    assert_eq!(rig.store.counts(), (1, 4));
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_a_refused_save_of_the_previous_pair_keeps_the_marker() {
+    for ambiguous in [false, true] {
+        let rig = Rig::new(expired());
+        {
+            let mut s = rig.store.0.lock().unwrap();
+            s.fail_save = Some(2);
+            s.ambiguous = ambiguous;
+        }
+        refuse(&rig, 0);
+        rig.issue("a1", "r1", 0);
+        let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+        let api = rig.client(auth);
+        let task = tokio::spawn(driver);
+        assert!(not_sent(&api.get().await.unwrap_err()));
+        assert!(matches!(
+            cause(&api.get().await.unwrap_err()),
+            RotationError::NeedsReauthorization
+        ));
+        if ambiguous {
+            // The failed save took effect; the pair it wrote is still unused.
+            rig.store.ready("old", "r0");
+        } else {
+            rig.store.marker();
+        }
+        rig.sent(1, 0);
+        assert_eq!(rig.store.counts(), (1, 2));
+        rig.events(&["load", "mark", "exchange r0", "save r0"]);
+        drop(api);
+        assert!(task.await.unwrap().is_err());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_calls_waiting_on_an_exchange_not_sent_fail_without_being_sent() {
+    let rig = Rig::new(expired());
+    refuse(&rig, 3);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    for result in join_all((0..8).map(|_| api.get().send())).await {
+        assert!(not_sent(&result.unwrap_err()));
+    }
+    rig.sent(1, 0);
+    rig.store.ready("old", "r0");
+    api.get().await.unwrap();
+    rig.sent(2, 1);
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_two_exchanges_not_sent_in_a_row_keep_the_same_refresh_token() {
+    let rig = Rig::new(expired());
+    refuse(&rig, 0);
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    rig.store.ready("old", "r0");
+    api.get().await.unwrap();
+    rig.sent(3, 1);
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    assert_eq!(rig.store.counts(), (1, 6));
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_7_a_dropped_call_does_not_cancel_the_save_of_the_previous_pair() {
+    let rig = Rig::new(expired());
+    let gate = Arc::new(tokio::sync::Notify::new());
+    rig.store.0.lock().unwrap().gate_save = Some((2, gate.clone()));
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    let mut call = Box::pin(api.get().send());
+    assert!(call.as_mut().now_or_never().is_none());
+    ticks().await;
+    rig.events(&["load", "mark", "exchange r0", "save r0"]);
+    rig.store.marker();
+    drop(call);
+    ticks().await;
+    rig.store.marker();
+    gate.notify_one();
+    ticks().await;
+    rig.store.ready("old", "r0");
+    api.get().await.unwrap();
+    rig.sent(2, 1);
+    rig.store.ready("a1", "r1");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_7_a_driver_dropped_during_the_save_of_the_previous_pair_leaves_the_marker() {
+    let rig = Rig::new(expired());
+    let gate = Arc::new(tokio::sync::Notify::new());
+    rig.store.0.lock().unwrap().gate_save = Some((2, gate));
+    refuse(&rig, 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let mut driver = Box::pin(driver);
+    let mut call = Box::pin(api.get().send());
+    assert!(call.as_mut().now_or_never().is_none());
+    for _ in 0..16 {
+        assert!(driver.as_mut().now_or_never().is_none());
+    }
+    rig.events(&["load", "mark", "exchange r0", "save r0"]);
+    drop(driver);
+    assert!(matches!(
+        cause(&call.await.unwrap_err()),
+        RotationError::Stopped
+    ));
+    rig.store.marker();
+    // A later owner of the account finds the marker: the safe side.
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(matches!(
+        cause(&api.get().await.unwrap_err()),
+        RotationError::NeedsReauthorization
+    ));
+    rig.sent(1, 0);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_only_a_refusal_before_the_first_attempt_is_not_sent() {
+    use concord::transport::TransportError;
+    for (failure, sent) in [
+        (TransportError::blocked(), true),
+        (TransportError::connect(), false),
+        (TransportError::timeout(), false),
+    ] {
+        let rig = Rig::new(expired());
+        rig.tokens.fail(failure);
+        rig.issue("a1", "r1", 0);
+        rig.resource.answer(200).body("ok");
+        let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+        let api = rig.client(auth);
+        let task = tokio::spawn(driver);
+        let error = api.get().await.unwrap_err();
+        assert_eq!(not_sent(&error), sent);
+        let next = api.get().await;
+        if sent {
+            assert_eq!(next.unwrap(), "ok");
+            rig.store.ready("a1", "r1");
+            rig.sent(2, 1);
+            drop(api);
+            task.await.unwrap().unwrap();
+            continue;
+        } else {
+            assert_renewal(&error, |e| matches!(e, RenewalError::Failed(_)));
+            rig.store.marker();
+            assert!(matches!(
+                cause(&next.unwrap_err()),
+                RotationError::NeedsReauthorization
+            ));
+            rig.sent(1, 0);
+        }
+        drop(api);
+        assert!(task.await.unwrap().is_err());
+    }
+
+    // A refusal on a second attempt comes after a first one that may have been sent.
+    let tokens = Script::new();
+    tokens.answer(503);
+    tokens.fail(TransportError::blocked());
+    let client = Tokens::new().with_transport(tokens.clone()).with_retry(
+        Retry::none()
+            .tries(2)
+            .not_applied_on(503)
+            .when(|_: &concord::retry::Tried<'_, ()>| Some(Duration::ZERO)),
+    );
+    let Err(error) = client.exchange(Secret::new("r0")).await else {
+        panic!("the second attempt is refused");
+    };
+    assert_eq!(error.tries(), 2);
+    assert!(matches!(
+        RenewalError::from_call(error),
+        RenewalError::Failed(_)
+    ));
+
+    let error = RenewalError::not_sent(std::io::Error::other("private cause"));
+    assert_eq!(format!("{error:?}"), "RenewalError::NotSent");
+    assert_eq!(
+        error.to_string(),
+        "the credential could not be renewed, and its request was not sent"
+    );
+    assert!(error
+        .source()
+        .is_some_and(|s| s.to_string() == "private cause"));
+}

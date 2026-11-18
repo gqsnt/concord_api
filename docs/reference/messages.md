@@ -671,6 +671,7 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 | The request goes to another origin than the base of the credential. Attach the credential only to clients of that origin | `the request leaves the credential's origin` |
 | `renewal_timeout` is zero, or the settings do not agree; also a renewal that waits for itself (the renewal must use a client without this middleware) | `the credential renewal policy is invalid` |
 | A deadline cannot be represented | `the credential deadline cannot be represented` |
+| Your renewal function returned `RenewalError::not_sent(…)`, or `RenewalError::from_call(…)` on a call to the token endpoint that was blocked on its only attempt: it failed, and its request was not sent; the cause is `source()` | `the credential could not be renewed, and its request was not sent` |
 
 **A refresh token that is replaced at each use**, `concord::auth::RotationError`, behind a blocked request, or returned by the `RotationDriver`:
 
@@ -680,7 +681,7 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 | The store's `save` failed; its outcome may be unknown, so the record is loaded again | `the credential could not be saved` |
 | The exchange failed, a wait timed out, a callback panicked, or another failure of `RenewalError`, which is `source()` | `the credential could not be renewed or installed` |
 | The refresh token is empty, or an exchange returned the token that it consumed | `the refresh token is empty or was not replaced` |
-| No known refresh token is safe to use: the store holds a `Refreshing` marker or an empty refresh token, or an exchange failed or returned an invalid one. Authorize the account again with the provider | `the account requires reauthorization` |
+| No known refresh token is safe to use: the store holds a `Refreshing` marker or an empty refresh token, or an exchange failed or returned an invalid one (an exchange that failed with `RenewalError::NotSent` only when saving the previous pair again failed too). Authorize the account again with the provider | `the account requires reauthorization` |
 | The driver was not polled while the call waited. Poll the `RotationDriver`, or spawn it | `the rotation driver was not polled during renewal_timeout` |
 | The driver was dropped, or a panic in the store stopped the account | `the rotation driver has stopped` |
 | Returned by the driver: a replacement could not be saved durably. Save the `pair` that the error holds | `the replacement credential must be saved by the application` |

@@ -549,9 +549,34 @@ impl Inner {
             Err(error) => Err(RotationError::Renewal(error)),
         };
         let cleanup = catch_unwind(AssertUnwindSafe(|| drop(work)));
+        if let (Ok(()), Err(RotationError::Renewal(error @ RenewalError::NotSent(_)))) =
+            (&cleanup, &next)
+        {
+            return self.restore(current, error.clone()).await;
+        }
         let next = next?;
         self.commit(next).await?;
         cleanup.map_err(|_| RotationError::Renewal(RenewalError::Panicked))
+    }
+
+    // The exchange stated that its request never left, so the refresh token is
+    // still unused. Save the previous pair over the marker first; only an
+    // acknowledged save makes it current again in memory. A refused save keeps
+    // the marker and the block, as after any failed exchange.
+    async fn restore(&self, previous: Version, error: RenewalError) -> Result<(), RotationError> {
+        match self.save(Stored::Ready(previous.pair.clone()), None).await {
+            Ok(_) => {
+                let retired = {
+                    let mut state = self.lock();
+                    state.blocked = false;
+                    state.current.replace(previous)
+                };
+                drop(retired);
+            }
+            Err(RotationError::Stopped) => return Err(RotationError::Stopped),
+            Err(_) => {}
+        }
+        Err(RotationError::Renewal(error))
     }
 
     pub(super) fn hand_back(&self, cause: RenewalError) -> Option<RotationError> {

@@ -165,7 +165,7 @@ impl fmt::Debug for AccessToken {
 
 /// Why a token could not be renewed or added to a request; `source()` keeps the cause.
 ///
-/// `Failed` shares the author's error with every waiting call. `InvalidHeader` and
+/// `Failed` and `NotSent` share the author's error with every waiting call. `InvalidHeader` and
 /// `TimedOut` keep their causes too; the errors of the settings and of expiry have no
 /// lower-level cause. A panic while calling or polling the renewal, formatting the
 /// header or running `on_renewed` becomes `Panicked` for every waiting call. The panic
@@ -207,6 +207,10 @@ pub enum RenewalError {
     InvalidPolicy,
     /// A deadline cannot be represented.
     TimeOverflow,
+    /// The renewal failed before its request left: the token it would have sent is still
+    /// unused. Only the author's code says so, with [`not_sent`](Self::not_sent) or
+    /// [`from_call`](Self::from_call); the shared cause is kept.
+    NotSent(Arc<dyn StdError + Send + Sync>),
 }
 
 impl RenewalError {
@@ -265,6 +269,82 @@ impl RenewalError {
     pub fn failed(cause: impl StdError + Send + Sync + 'static) -> Self {
         Self::Failed(Arc::new(cause))
     }
+
+    /// Wraps an error of the author's as `NotSent`: the renewal failed, and no byte of
+    /// the request that carries the refresh token left the process. The cause is shared
+    /// and never printed.
+    ///
+    /// `Rotating` then saves the pair it had before the exchange again, and the next call
+    /// exchanges the same refresh token. Use it only when nothing was written to the
+    /// connection: a check of your own that fails before the call to the token endpoint,
+    /// or a refusal that you know happened before the request was handed to the network.
+    ///
+    /// These failures are **not** `NotSent`, and must stay [`failed`](Self::failed): a
+    /// timeout, whatever its kind; a connection that failed or broke, even one refused
+    /// or reset, because the request may already have been written; a failure while the
+    /// body of the request or of the response was sent or read; and any response, of any
+    /// status. The server may have consumed the refresh token in each of these cases,
+    /// and a provider that sees a consumed refresh token used again usually revokes every
+    /// token of the account. When in doubt, use `failed`: the account then requires a
+    /// new authorization, which is the safe side. `Renewed` treats `NotSent` as `Failed`.
+    ///
+    /// ```no_run
+    /// use concord::auth::{Exchange, RenewalError, TokenPair};
+    /// async fn exchange(exchange: Exchange, offline: bool) -> Result<TokenPair, RenewalError> {
+    ///     if offline {
+    ///         // Checked before the call: the refresh token was never sent.
+    ///         return Err(RenewalError::not_sent(std::io::Error::other("offline")));
+    ///     }
+    ///     # let _ = exchange;
+    ///     Err(RenewalError::failed(std::io::Error::other("token endpoint required")))
+    /// }
+    /// ```
+    pub fn not_sent(cause: impl StdError + Send + Sync + 'static) -> Self {
+        Self::NotSent(Arc::new(cause))
+    }
+
+    /// Wraps the error of the one call to the token endpoint, the call that carries the
+    /// refresh token: `NotSent` when Concord states that nothing of it was sent, and
+    /// `Failed` otherwise.
+    ///
+    /// Concord states it for one failure only: a request blocked, before it was sent, on
+    /// its first and only attempt (`error.class()` is `Some(Class::Blocked)` and
+    /// `error.tries()` is 1), as by a `concord::limit::Limit` that refuses to wait, or a
+    /// middleware layer or transport that refuses the request. A middleware layer or
+    /// a transport returns `blocked()` only when no request left during its call. Every
+    /// other error is `Failed`, a connection failure included: a failed connection does
+    /// not prove that nothing was written. A Build error is `Failed` too, because a
+    /// request that was sent once can fail to be built again for a retry.
+    ///
+    /// Use it in place of `?` on that call, not on a call made after it:
+    ///
+    /// ```no_run
+    /// # use concord::auth::{Exchange, RenewalError, TokenPair};
+    /// # use concord::Secret;
+    /// # #[derive(serde::Deserialize)] struct Reply { access_token: String, refresh_token: String, expires_in: u64 }
+    /// concord::api! {
+    ///     client Tokens {
+    ///         base "https://identity.example.test";
+    ///         POST refresh(refresh_token: Secret) -> Reply {
+    ///             path "token";
+    ///             body concord::form { "grant_type" = "refresh_token"; refresh_token; }
+    ///             read concord::Json;
+    ///         }
+    ///     }
+    /// }
+    /// async fn exchange(tokens: Tokens, exchange: Exchange) -> Result<TokenPair, RenewalError> {
+    ///     let reply = tokens.refresh(exchange.refresh()).await.map_err(RenewalError::from_call)?;
+    ///     Ok(TokenPair::expires_in(reply.access_token, reply.refresh_token,
+    ///         std::time::Duration::from_secs(reply.expires_in)))
+    /// }
+    /// ```
+    pub fn from_call<P: Send + Sync + 'static>(error: Error<P>) -> Self {
+        if error.class() == Some(concord_core::error::Class::Blocked) && error.tries() == 1 {
+            Self::not_sent(error)
+        } else {
+            Self::failed(error)
+        }
+    }
 }
 
 impl<P: Send + Sync + 'static> From<Error<P>> for RenewalError {
@@ -284,6 +364,7 @@ impl fmt::Debug for RenewalError {
             Self::WrongOrigin => "RenewalError::WrongOrigin",
             Self::InvalidPolicy => "RenewalError::InvalidPolicy",
             Self::TimeOverflow => "RenewalError::TimeOverflow",
+            Self::NotSent(_) => "RenewalError::NotSent",
         })
     }
 }
@@ -299,6 +380,7 @@ impl fmt::Display for RenewalError {
             Self::WrongOrigin => "the request leaves the credential's origin",
             Self::InvalidPolicy => "the credential renewal policy is invalid",
             Self::TimeOverflow => "the credential deadline cannot be represented",
+            Self::NotSent(_) => "the credential could not be renewed, and its request was not sent",
         })
     }
 }
@@ -306,7 +388,9 @@ impl fmt::Display for RenewalError {
 impl StdError for RenewalError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
-            Self::Failed(cause) | Self::TimedOut(cause) => Some(cause.as_ref()),
+            Self::Failed(cause) | Self::TimedOut(cause) | Self::NotSent(cause) => {
+                Some(cause.as_ref())
+            }
             Self::InvalidHeader(cause) => Some(cause.as_ref()),
             _ => None,
         }
