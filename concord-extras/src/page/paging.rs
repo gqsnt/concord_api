@@ -33,10 +33,12 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 /// 1. **The gate.** If one input given to [`only_when_set`](Paging::only_when_set) is not set on
 ///    the call that fetched the page, this page is the last. Nothing else is read.
 /// 2. **What the page states.** Every statement ([`has_more`](Paging::has_more), and the total of
-///    [`by_offset_total`]) is read. A statement that cannot be read is a Mismatch. If one says
-///    "no more" and another "more", the pages end with a Mismatch
+///    [`by_offset_total`]) is read, once, in the order written, whatever the others say. If one
+///    cannot be read, its failure is the result (the first written, when several fail). Otherwise,
+///    if one says "no more" and another "more", the pages end with a Mismatch
 ///    (`the page's statements disagree on whether more items follow`). If all say "no more", this
-///    page is the last.
+///    page is the last. The order of the methods does not matter for statements that read only
+///    the page; two statements that share state of their own see each other in the order written.
 /// 3. **The move.** The next call is computed: by the pager of [`or_when_set`](Paging::or_when_set)
 ///    whose input the call set, or else by the pager this value was made from. Its failure (an
 ///    unreadable `Link`, a pager of your own that fails, two inputs set that each choose the
@@ -466,10 +468,19 @@ impl<C: Call> Pager<C> for Paging<C> {
         if !self.only_when_set.iter().all(|set| set(&call)) {
             return Ok(None);
         }
-        // 2. What the page states: every statement is read.
+        // 2. What the page states: every statement is read, once, in the order written; the
+        // first that cannot be read is the result, then a disagreement.
+        let read: Vec<_> = self
+            .statements
+            .iter_mut()
+            .map(|statement| statement(&call, page.value()))
+            .collect();
+        let mut said = Vec::with_capacity(read.len());
+        for more in read {
+            said.push(more?);
+        }
         let mut stated = None;
-        for statement in &mut self.statements {
-            let more = statement(&call, page.value())?;
+        for more in said {
             if stated.is_some_and(|before| before != more) {
                 return Err(mismatch(DISAGREE));
             }
@@ -567,12 +578,11 @@ where
 {
     let mut paging = super::by_offset(start);
     paging.statements.push(Box::new(move |call, value| {
-        let at: u64 = start
-            .get(call)
-            .copied()
-            .unwrap_or_default()
-            .try_into()
-            .map_err(|_| mismatch(OFFSET))?;
+        // An offset that is not set is zero, whatever the type's `Default` says.
+        let at: u64 = match start.get(call) {
+            Some(at) => (*at).try_into().map_err(|_| mismatch(OFFSET))?,
+            None => 0,
+        };
         let count = u64::try_from(value.count()).map_err(|_| mismatch(OFFSET))?;
         let reached = at.checked_add(count).ok_or_else(|| mismatch(OFFSET))?;
         let total: u64 = total(value).try_into().map_err(|_| mismatch(TOTAL))?;

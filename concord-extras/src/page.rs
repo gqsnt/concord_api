@@ -24,11 +24,13 @@ where
     S: Slot<C>,
     S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
 {
-    let at = start.get(&call).copied().unwrap_or_default();
+    // An offset that is not set is zero, whatever the type's `Default` says.
+    let at = match start.get(&call) {
+        Some(at) => (*at).try_into().ok(),
+        None => Some(0),
+    };
     // counted in `u64`, with a check: an offset that cannot grow is an error, never a wrap
     let next = at
-        .try_into()
-        .ok()
         // PANIC-SAFETY: usize is at most 64 bits on supported targets; offset addition is checked.
         .and_then(|at: u64| at.checked_add(got as u64))
         .and_then(|next| S::Value::try_from(next).ok());
@@ -893,6 +895,88 @@ mod tests {
             .next_call(short(5), &answer(&[1, 2], None, None))
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn c8_6_every_statement_is_read_once_also_after_a_disagreement() {
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let third = read.clone();
+        let mut pager = by_cursor(After, Page::next)
+            .has_more(|_| true)
+            .has_more(|_| false)
+            .has_more(move |_| {
+                third.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                true
+            });
+        let error = pager
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap_err();
+        assert_eq!(format!("{error:?}"), "Fail(mismatch)");
+        assert_eq!(read.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// An offset whose type says that its default is seven.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Seven(u64);
+    impl Default for Seven {
+        fn default() -> Self {
+            Seven(7)
+        }
+    }
+    impl From<u64> for Seven {
+        fn from(at: u64) -> Self {
+            Seven(at)
+        }
+    }
+    impl From<Seven> for u64 {
+        fn from(at: Seven) -> u64 {
+            at.0
+        }
+    }
+    #[derive(Clone, Debug)]
+    struct Positioned(Option<Seven>);
+    impl Call for Positioned {
+        type Value = Page;
+        type Problem = ();
+        fn at_url(self, _: &str) -> Positioned {
+            self
+        }
+    }
+    #[derive(Clone, Copy)]
+    struct At;
+    impl Slot<Positioned> for At {
+        type Value = Seven;
+        fn get<'a>(&self, call: &'a Positioned) -> Option<&'a Seven> {
+            call.0.as_ref()
+        }
+        fn set(&self, _: Positioned, value: Seven) -> Positioned {
+            Positioned(Some(value))
+        }
+    }
+    fn page(items: &[u32]) -> Answer<Page> {
+        Answer::new(
+            StatusCode::OK,
+            Headers::from(HeaderMap::new()),
+            Page {
+                items: items.to_vec(),
+                next: None,
+            },
+        )
+    }
+
+    #[test]
+    fn c8_6_an_offset_that_is_not_set_is_zero_whatever_its_default() {
+        let next = by_offset(At)
+            .next_call(Positioned(None), &page(&[1, 2]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.0, Some(Seven(2)));
+        // one of three received: the total is not reached, and the walk goes on from 1
+        let next = by_offset_total(At, |_: &Page| 3u32)
+            .next_call(Positioned(None), &page(&[1]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.0, Some(Seven(1)));
     }
 
     #[test]
