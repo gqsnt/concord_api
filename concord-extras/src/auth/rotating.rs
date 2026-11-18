@@ -225,11 +225,12 @@ pub trait CredentialStore: Send + Sync + 'static {
 
 /// What one exchange receives: its own copy of the refresh token to send.
 ///
-/// More inputs may be added later. Use a separate client for the token endpoint, with no
-/// retry policy and a transport that does not resend: `concord::Http`, the default,
-/// resends nothing on its own; a `reqwest::Client` of your own needs
-/// `.retry(reqwest::retry::never())`. Set a timeout on that client's request yourself: the
-/// driver never cancels the exchange.
+/// More inputs may be added later. Use a separate client for the token endpoint, call it
+/// once per exchange, with no retry policy and no middleware that sends again, over a
+/// transport that neither resends nor follows a redirect: `concord::Http`, the default, does
+/// neither; a `reqwest::Client` of your own needs `.retry(reqwest::retry::never())` and
+/// `.redirect(reqwest::redirect::Policy::none())`. Set a timeout on that client's request
+/// yourself: the driver never cancels the exchange.
 ///
 /// ```no_run
 /// fn token(exchange: &concord::auth::Exchange) -> concord::Secret { exchange.refresh().clone() }

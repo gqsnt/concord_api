@@ -50,9 +50,11 @@ pub trait Transport: Send + Sync + 'static {
 /// Concord does not retry an unmarked, non-idempotent call after a failed connection, but
 /// `reqwest`'s default resends a request whose body is in memory or empty, up to twice and
 /// whatever its method, after a remote HTTP/2 `REFUSED_STREAM` reset or a `GOAWAY` with
-/// `NO_ERROR`, below Concord's count of attempts; [`Http`] does not. Build the client with
-/// `.retry(reqwest::retry::never())` to leave every repetition to Concord's engine. Its
-/// failures never state that nothing was sent ([`TransportError::not_sent`]).
+/// `NO_ERROR`, below Concord's count of attempts; [`Http`] does not. It also follows up to
+/// ten redirects by default, and after a `307` or a `308` it sends the method and a body
+/// that can be copied again. Build the client with `.retry(reqwest::retry::never())` and
+/// `.redirect(reqwest::redirect::Policy::none())` to prevent both. Its failures never state
+/// that nothing was sent ([`TransportError::not_sent`]).
 impl Transport for reqwest::Client {
     // Not `async`: the send is recorded when it is created, before its first poll.
     fn send(
@@ -174,14 +176,17 @@ impl TransportError {
     /// or the transport stopped before handing the request over.
     ///
     /// The call's error then reports it with
-    /// [`Error::request_not_sent`](crate::Error::request_not_sent), unless something else
-    /// was sent during the call. A caller may rely on it to reuse what the request carried,
-    /// such as a single-use refresh token: state it only when it is certain. A connection
-    /// that broke after it was made, a timeout that may have expired after a write, a send
-    /// that another task may still be making, and an error of your HTTP library that you
-    /// did not classify yourself are not certain. [`Http`] states it for a connection that
-    /// it could not make; [`TransportError::from`] for a `reqwest::Error` never does. The
-    /// retry policy does not read it: the class decides, as before.
+    /// [`Error::request_not_sent`](crate::Error::request_not_sent), under the conditions
+    /// that method states: every send of the call stated it, none is still outstanding, and
+    /// no earlier attempt or page may have written anything. A caller may rely on it to
+    /// reuse what the request carried, such as a single-use refresh token: state it only
+    /// when it is certain. It may be stated after a connection was opened, when no byte of
+    /// the request was written and none can still be. A connection that broke when you
+    /// cannot tell whether the request was written, a timeout that may have expired after a
+    /// write, a send that another task may still be making, and an error of your HTTP
+    /// library that you did not classify yourself are not certain. [`Http`] states it for a
+    /// failure that it recognizes as one of its connector's; [`TransportError::from`] for a
+    /// `reqwest::Error` never does. The retry policy does not read it: the class decides.
     ///
     /// ```
     /// # use concord_core as concord;
@@ -596,20 +601,24 @@ pub fn reply_with(
 /// permits SOCKS proxies configured through [`Http::with`]. These features are
 /// not defaults. See [`Http::with`] for a compression example.
 ///
-/// It puts a request on the wire once per attempt: `reqwest`'s own resends are off,
+/// It writes a request at most once for each send: `reqwest`'s own resends are off,
 /// including its default resend of an HTTP/2 request that the server refused with
-/// `REFUSED_STREAM` or `GOAWAY`. A request is repeated only by Concord's engine, when the
-/// retry policy and the request allow it, and each repeat is an attempt. One resend
-/// remains below the count of attempts: when a reused connection turns out to be
-/// closed and hands the request back before writing any of it, the connection pool
-/// sends it on another connection.
+/// `REFUSED_STREAM` or `GOAWAY`. With it and only the middleware that Concord ships, a
+/// request is repeated only by Concord's engine, when the retry policy and the request
+/// allow it, and each repeat is an attempt; a middleware of your own may send again within
+/// one attempt. Below the count of attempts, the connection pool can send a request again
+/// on another connection when a reused connection turns out to be unusable and hands the
+/// request back before writing any of it, as often as that happens.
 ///
-/// When it cannot make a connection (refused, a host name not resolved, a TLS handshake
-/// or a proxy that failed, its connect timeout), its error states that nothing was sent:
-/// see [`TransportError::not_sent`] and [`Error::request_not_sent`](crate::Error::request_not_sent).
-/// Any other failure states nothing, including one whose chain of causes it does not
-/// expect, and every failure over HTTP/3: that is the safe side, not a proof that the
-/// request was sent.
+/// Its error states that nothing was sent when it recognizes the failure as one of its
+/// connector's, so that the connection was not made (refused, a host name not resolved, a
+/// TLS handshake or a proxy that failed, its connect timeout): a request error of
+/// `reqwest` that carries the connector's mark, with no other error of `reqwest` or
+/// `hyper` in its chain. See [`TransportError::not_sent`], and
+/// [`Error::request_not_sent`](crate::Error::request_not_sent) for when the call's error
+/// reports it. Any other failure states nothing, including one whose chain of causes it
+/// does not expect, and every failure over HTTP/3: that is the safe side, not a proof
+/// that the request was sent.
 ///
 /// Both promises rest on how `reqwest`, `hyper-util`, `hyper` and `h2` behave, read in the
 /// versions of Concord's own `Cargo.lock` (reqwest 0.13.5, hyper-util 0.1.21, hyper 1.12.0,

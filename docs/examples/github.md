@@ -550,7 +550,7 @@ pub async fn work_as_user(github: Github, driver: RotationDriver, store: FileSto
 }
 ```
 
-Make `login` with `GithubLogin::new().with_timeout(…).with_retry(Retry::none())`: its default transport, `concord::Http`, resends nothing on its own, and a `reqwest::Client` of your own as its transport needs `.retry(reqwest::retry::never())`. When the token endpoint refuses the refresh token, the call that waited for it fails with a `RotationError`, every later call fails with `RotationError::NeedsReauthorization`, and the driver returns the failure when it ends: the user must sign in again (see [the messages](../reference/messages.md#2-when-a-request-is-built-or-answered)). The first pair comes from the sign-in flow of the app, which Concord does not run; save it in the store before the first call.
+Make `login` with `GithubLogin::new().with_timeout(…).with_retry(Retry::none())`: its default transport, `concord::Http`, resends nothing and follows no redirect; a `reqwest::Client` of your own as its transport needs `.retry(reqwest::retry::never())` and `.redirect(reqwest::redirect::Policy::none())` ([what can send a request twice](../guide/retries.md#what-can-send-a-request-twice)). When the token endpoint refuses the refresh token, the call that waited for it fails with a `RotationError`, every later call fails with `RotationError::NeedsReauthorization`, and the driver returns the failure when it ends: the user must sign in again (see [the messages](../reference/messages.md#2-when-a-request-is-built-or-answered)). The first pair comes from the sign-in flow of the app, which Concord does not run; save it in the store before the first call.
 
 ## What does not fit well, and the workaround
 

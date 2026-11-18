@@ -374,8 +374,8 @@ Every entry has the same form: Concord's choice, the other design, what that des
 - **The other design.** A controlled mode, `gh.with_redirects(same_origin().max_hops(3))`, where each hop goes through the middleware again, inside the deadline.
 - **It wins.** A renamed GitHub repository works on every endpoint, and GitHub asks clients to follow redirects.
 - **It loses.** Concord would own redirect state and cycles.
-- **Tradeoff.** Moved resources that work with no extra code, or one call that is one exchange.
-- **Why Concord's way.** One call is one exchange, and a credential is never carried elsewhere by a redirect that nobody described.
+- **Tradeoff.** Moved resources that work with no extra code, or no request that nobody described.
+- **Why Concord's way.** Concord's own client sends only the requests that it is handed, and a credential is never carried elsewhere by a redirect that nobody described.
 - **Can come later without breaking.**
 
 ### A limit, described bucket by bucket

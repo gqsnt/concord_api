@@ -46,7 +46,7 @@ What a scope's method returns (`riot.matches(Asia)`) is a **handle**: a value th
 | U3 | An optional value (marked `?` in the description) has one setter, with exactly the name of the value and no prefix. |
 | U4 | An argument is a value of the declared type, or a reference to one (`&puuid`; it is cloned internally). Text (`"Faker"`) is also accepted where a `String` or a `Secret` is declared, and an array or a slice where a `Vec` is declared. Nothing else is accepted: for `puuid: Puuid`, `ids("p-1")` does not compile ([arguments](#arguments)). |
 | U5 | The setter of an optional input accepts whatever an argument of its type accepts, or an `Option` of it. `None` unsets it: `.count(5).count(None)` sends nothing. |
-| U6 | `.await` sends the call: one request, or a few when retries are enabled. `send()` does the same thing, as a method. A call to a paginated endpoint is not awaited directly: `.send()` fetches one page, on purpose, and `.pages()` yields them all ([what a call returns](#what-a-call-returns)). |
+| U6 | `.await` sends the call: one attempt of the engine, or a few when retries are enabled ([what can send a request twice](retries.md#what-can-send-a-request-twice)). `send()` does the same thing, as a method. A call to a paginated endpoint is not awaited directly: `.send()` fetches one page, on purpose, and `.pages()` yields them all ([what a call returns](#what-a-call-returns)). |
 | U7 | A handle and a call own their data. You can keep them, clone them, and move a call to another task. |
 | U8 | A call is never reset: it is built, sent, and then consumed. |
 | U9 | A required value has no method to change it later: for another route, make another handle. The only value that changes in place is a `Secret`: `key.replace(…)` ([a credential is a value](credentials.md#a-credential-is-a-value)). |
@@ -87,7 +87,7 @@ let billing = Billing::new().with_transport(http.clone());
 let other   = Other::new(token).with_transport(http);          // two clients share one engine
 ```
 
-Concord applies its defaults before your closure, and "no redirects" after it, so nothing in the closure can make this client follow a redirect.
+Concord applies its defaults before your closure, and "no redirects" and "no resends of `reqwest`'s own" after it, so nothing in the closure can make this client follow a redirect or turn those resends on.
 
 **A `reqwest::Client` that you bring** is used as it is, and you are responsible for what it does on its own, such as following redirects or keeping cookies. Promise [G3](promises.md#three-promises) is stated for a client that follows no redirects. [The timeouts](#timeouts) are Concord's own, and apply with any client.
 

@@ -244,7 +244,7 @@ The three crates that appear in public signatures are re-exported as they are: `
 | `Error<E>` | `reqwest::Error` prints URLs, drops the body of an error response, and knows nothing of the API's own problem. |
 | `Reader`, `Middleware`, `Transport` | One method each. `tower::Service` was considered for the transport and kept as an adapter only: every fake would otherwise carry `poll_ready`. |
 | `Http` | A `reqwest::Client` that follows no redirect, whatever settings you give it: a `3xx` is a response ([Concord's own HTTP client](../reference/crates.md#concords-own-http-client)). |
-| `Retry`, `Pages`, `Items`, `IntoItems` | `reqwest` 0.13 has a retry of its own, with a budget; it has no wait between attempts, does not read `Retry-After`, and cannot know which endpoint is idempotent. It stays on, below Concord's, in `Http` and in your own `reqwest::Client`. No shared type exists for pages, nor a trait for "a list of items" that `Option` and `Result` do not implement. |
+| `Retry`, `Pages`, `Items`, `IntoItems` | `reqwest` 0.13 has a retry of its own, with a budget; it has no wait between attempts, does not read `Retry-After`, and cannot know which endpoint is idempotent. `Http` turns it off; a `reqwest::Client` of your own keeps it, below Concord's. No shared type exists for pages, nor a trait for "a list of items" that `Option` and `Result` do not implement. |
 
 ### It composes with the ecosystem
 

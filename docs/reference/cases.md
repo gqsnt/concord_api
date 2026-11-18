@@ -133,7 +133,7 @@ Three conditions must hold for another attempt: the request can be copied; it ma
 
 ### 6.1 Retries are off
 
-Retries are off until a policy is set (rule 18): the policy is "one attempt" (engine, [The attempts](../internals/engine.md#the-attempts)). With `concord::Http`, nothing below the engine sends that attempt again ([what can send a request twice](../guide/retries.md#what-can-send-a-request-twice)).
+Retries are off until a policy is set (rule 18): the policy is "one attempt" (engine, [The attempts](../internals/engine.md#the-attempts)). With `concord::Http` and the middleware that Concord ships, nothing below the engine sends that attempt again ([what can send a request twice](../guide/retries.md#what-can-send-a-request-twice)).
 
 | Outcome | A `GET` | A `POST` | A `POST` with `idempotent;` | A `PUT` with `idempotent false;` | A body made by `Body::stream` |
 |---|---|---|---|---|---|

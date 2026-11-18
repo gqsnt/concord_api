@@ -81,14 +81,14 @@ starts no task. The application supplies the exchange, which returns a `TokenPai
 `Stored::Refreshing`. `Refreshing` is saved before the exchange, the new pair is saved before either
 token is used, a failed save is tried again as a save only, and a refresh token is exchanged once,
 again only after an exchange that states that its request was never sent. The token client must not
-resend: no retry policy, and `concord::Http` or a `reqwest::Client` with `retry::never()`. A pair
-that the store could not keep is handed back to the application in `RotationError::Unsaved`, never
-dropped. `renewal_timeout` (30 seconds by default) bounds how long a call waits and never cancels
-the exchange; a call that waits while nobody polls the driver fails with `NotPolled`, and a dropped
-driver stops the credential (`Stopped`). As with `Renewed`, the token goes only to the origin of the
-base, in a sensitive header, and a `401` is returned as it is. One `Rotating` and its clones own one
-account: the store has no lock between processes, and no client can save a token at the moment the
-server issues it.
+send an exchange twice: no retry policy, and `concord::Http`, or a `reqwest::Client` with
+`retry::never()` and no redirect policy. A pair that the store could not keep is handed back to the
+application in `RotationError::Unsaved`, never dropped. `renewal_timeout` (30 seconds by default)
+bounds how long a call waits and never cancels the exchange; a call that waits while nobody polls
+the driver fails with `NotPolled`, and a dropped driver stops the credential (`Stopped`). As with
+`Renewed`, the token goes only to the origin of the base, in a sensitive header, and a `401` is
+returned as it is. One `Rotating` and its clones own one account: the store has no lock between
+processes, and no client can save a token at the moment the server issues it.
 
 ## Signing
 
