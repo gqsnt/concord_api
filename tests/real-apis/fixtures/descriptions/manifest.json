@@ -50,21 +50,21 @@
   },
   {
     "page": "docs/guide/describing-an-api.md",
-    "block": 5,
+    "block": 6,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_002.api",
     "compiled": "tests/real-apis/src/guide/guide_describing-an-api_002.rs",
     "client": "Search"
   },
   {
     "page": "docs/guide/describing-an-api.md",
-    "block": 10,
+    "block": 11,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_003.api",
     "compiled": "tests/real-apis/src/guide/guide_describing-an-api_003.rs",
     "client": "Stripe"
   },
   {
     "page": "docs/guide/describing-an-api.md",
-    "block": 13,
+    "block": 15,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_004.api",
     "compiled": "tests/real-apis/src/guide/guide_describing-an-api_004.rs",
     "client": "Vault"
@@ -141,7 +141,7 @@
   },
   {
     "page": "docs/guide/testing.md",
-    "block": 6,
+    "block": 7,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_testing_001.api",
     "compiled": "tests/real-apis/src/guide/guide_testing_001.rs",
     "client": "Stations"
