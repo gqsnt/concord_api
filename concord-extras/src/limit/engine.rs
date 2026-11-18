@@ -110,12 +110,9 @@ impl Account {
                     || (window.remaining < cost && cost <= window.capacity))
                 && window.refilled
             {
-                // Keep the slot for reconciliation with other windows in the snapshot.
+                // Keep the slot, and the reset it consumed, while the key is kept.
                 window.kind = Kind::Fixed(None);
             }
-        }
-        if self.windows.iter().all(History::unknown) {
-            self.windows.clear();
         }
     }
 
@@ -129,7 +126,7 @@ impl Account {
             && self
                 .windows
                 .iter_mut()
-                .all(|window| window.unknown() || window.available(now) == window.capacity)
+                .all(|window| window.is_unknown() || window.available(now) == window.capacity)
     }
 
     fn inspect(
@@ -151,7 +148,7 @@ impl Account {
             .checked_add(u128::from(cost))
             .ok_or(LimitError::InvalidPolicy)?;
         for window in &mut self.windows {
-            if window.unknown() {
+            if window.is_unknown() {
                 wait.unknown |= self.in_flight != 0;
                 continue;
             }
@@ -180,7 +177,9 @@ impl Account {
             return;
         }
         // Validate the complete snapshot before touching any slot.
-        if !self.windows.is_empty()
+        // A key that knows no window, or no longer knows any, takes a list of any length.
+        let fresh = self.windows.iter().all(History::is_unknown);
+        if !fresh
             && (windows.len() != self.windows.len()
                 || self
                     .windows
@@ -191,14 +190,19 @@ impl Account {
             return;
         }
         let others = self.in_flight.saturating_sub(u128::from(cost));
-        if self.windows.is_empty() {
-            self.windows = windows
-                .iter()
-                .map(|window| History::new(window, now, false))
+        if fresh && self.windows.len() != windows.len() {
+            let consumed: Vec<_> = self.windows.iter().map(|window| window.reset_at).collect();
+            self.windows = (0..windows.len())
+                .map(|at| History::unknown(consumed.get(at).copied().flatten()))
                 .collect();
         }
         for (old, new) in self.windows.iter_mut().zip(windows) {
-            if old.unknown() {
+            if old.is_unknown() {
+                // A dated reset already consumed by this key gives no second refill.
+                if matches!((old.reset_at, new.reset_at), (Some(known), Some(seen)) if seen <= known)
+                {
+                    continue;
+                }
                 *old = History::new(new, now, false);
             }
             old.observe(new, cost, others, now);
@@ -241,7 +245,21 @@ impl History {
         history
     }
 
-    fn unknown(&self) -> bool {
+    /// A slot whose window is not known, with the dated reset it last consumed.
+    fn unknown(reset_at: Option<SystemTime>) -> Self {
+        Self {
+            capacity: 0,
+            kind: Kind::Fixed(None),
+            remaining: 0,
+            refilled: true,
+            configured: false,
+            events: VecDeque::new(),
+            used: 0,
+            reset_at,
+        }
+    }
+
+    fn is_unknown(&self) -> bool {
         // Public window settings reject this value; here it marks a forgotten slot.
         matches!(self.kind, Kind::Fixed(None))
     }

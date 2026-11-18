@@ -364,3 +364,38 @@ async fn c11_5_remaining_in_unix_seconds_honours_a_lower_balance_on_its_one_cloc
     // The wall clock moves a little while the test runs.
     assert!(at[2] > sec(10) && at[2] <= sec(11), "{at:?}");
 }
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_reset_already_consumed_grants_no_refill_when_learning_resumes() {
+    let script = Script::new();
+    let old = || {
+        script
+            .answer(200)
+            .header("date", &http_date(T))
+            .header("x-limit", "2")
+            .header("x-remaining", "0")
+            .header("x-reset", &rfc3339(T + 2));
+    };
+    // Nothing left until T + 2; two responses that teach nothing spend the refill, so the
+    // key learns again; its next head names the same reset once more.
+    old();
+    script.answer(200);
+    script.answer(200);
+    old();
+    for _ in 0..2 {
+        script.answer(200).after(sec(10));
+    }
+    let limit = requests();
+    let start = Instant::now();
+    for _ in 0..4 {
+        call(&limit, &script).await.unwrap();
+    }
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    // The repeated reset gives no second refill: the key goes on learning, one call at a time.
+    assert_eq!(
+        sent(&script, start),
+        [sec(0), sec(2), sec(2), sec(2), sec(2), sec(12)]
+    );
+}

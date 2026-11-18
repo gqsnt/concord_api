@@ -1043,7 +1043,11 @@ pub fn remaining(
 /// capacity, at that reset. A later response that reports less left, for the same reset or a
 /// later one, lowers what is left at once, and the later of the two deadlines is kept, even
 /// when its own `Date` makes its reset look nearer. A later response that names the same reset
-/// again, after that refill, teaches nothing, however late it arrives.
+/// again, after that refill, teaches nothing, however late it arrives, also once the key has
+/// returned to learning. The key remembers the last reset it consumed for as long as the limit
+/// keeps the key; a key that is forgotten to make room forgets it too. This assumes that the
+/// resets an API gives for one key move forward: two servers whose clocks differ by a second
+/// can still name one refill twice.
 ///
 /// ```no_run
 /// use concord::limit::{remaining_rfc3339, Bucket, Limit};
