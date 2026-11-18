@@ -286,16 +286,28 @@ async fn c4_3_a_wait_longer_than_the_runtime_s_longest_sleep_ends_the_retries() 
     assert_eq!(error.tries(), 1);
     assert_eq!(script.unused(), 1);
 
-    // The longest sleep itself is waited for.
+    // The longest sleep itself is waited for, to the millisecond, and a nanosecond more is
+    // not. A rule asks for it: a Retry-After holds whole seconds only.
     let longest = Duration::from_millis(68_719_476_734);
-    let script = Script::new();
-    script
-        .answer(429)
-        .header("retry-after", &(longest.as_secs()).to_string());
-    script.answer(200).body("ok");
-    let api = Data::new()
-        .with_transport(script.clone())
-        .with_retry(Retry::standard().max_retry_after(longest));
-    assert_eq!(api.get().await.unwrap(), "ok");
-    assert_eq!(script.requests().len(), 2);
+    for (asked, retried) in [(longest, true), (longest + Duration::from_nanos(1), false)] {
+        let script = Script::new();
+        script.answer(418);
+        script.answer(200).body("ok");
+        let api = Data::new().with_transport(script.clone()).with_retry(
+            Retry::none()
+                .tries(2)
+                .max_retry_after(asked)
+                .when(move |_| Some(asked)),
+        );
+        let start = Instant::now();
+        let result = api.get().await;
+        if retried {
+            assert_eq!(result.unwrap(), "ok");
+            assert_eq!(sent(&script, start), [Duration::ZERO, longest]);
+        } else {
+            assert!(result.unwrap_err().is_status(418));
+            assert_eq!(sent(&script, start), [Duration::ZERO]);
+            assert_eq!(start.elapsed(), Duration::ZERO);
+        }
+    }
 }
