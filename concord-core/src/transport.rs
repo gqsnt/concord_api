@@ -58,7 +58,7 @@ impl Transport for reqwest::Client {
     ) -> Result<reqwest::Response, TransportError> {
         let sends = info.sends();
         let sending = async move { self.execute(request).await.map_err(TransportError::from) };
-        counted(sends.as_deref(), sending).await
+        counted(sends, sending).await
     }
 }
 
@@ -327,6 +327,13 @@ impl From<reqwest::Error> for TransportError {
 /// ([`Error::request_not_sent`](crate::Error::request_not_sent)), since a send made with it
 /// could still write. To keep what it says, keep [`endpoint`](TryInfo::endpoint) and
 /// [`number`](TryInfo::number), or `TryInfo::new(info.endpoint(), info.number())`.
+///
+/// Before a middleware layer or a transport states [`TransportError::not_sent`] or
+/// [`TransportError::blocked`], or forwards such a failure, it accounts for every send that
+/// it made or still holds, through the chain or beside it: a send that it makes with a
+/// transport of its own, without this `TryInfo`, is not seen by Concord. A false statement
+/// can make a credential send a refresh token twice, and a server that sees a token used
+/// twice may revoke every session of the account.
 #[derive(Clone)]
 pub struct TryInfo {
     endpoint: &'static str,
@@ -341,11 +348,13 @@ pub struct TryInfo {
 /// ended with a failure stating that nothing was written.
 ///
 /// The engine creates one for each attempt and owns it. The `Next` that it hands to the
-/// middleware borrows it, and every send that the chain hands to a transport is counted
-/// there, whatever `TryInfo` a middleware passes with it. The attempt's `TryInfo` holds a
-/// clone as well, through which [`Http`] and `reqwest::Client` count themselves again, so
-/// that a transport of the author's that wraps them is checked too. A send that was dropped
-/// before it returned is counted as started and never as unsent.
+/// middleware borrows it, and every `Next::send` is counted there when it is called,
+/// whatever `TryInfo` a middleware passes with it; the layers below receive that `TryInfo`
+/// bound to the record again. The attempt's `TryInfo` holds a clone, through which a
+/// `Next::to` chain, [`Http`], `reqwest::Client` and [`fake`] count their sends too, so that
+/// a send beside the chain or a transport of the author's that wraps them is checked. A send
+/// that was dropped before it returned, or before its first poll, is counted as started and
+/// never as unsent.
 ///
 /// The engine reads it only once it holds the record alone ([`Sends::none_written`]): after
 /// the attempt, when no borrow through `Next` remains and every clone held by a `TryInfo`
@@ -379,23 +388,27 @@ impl Sends {
     }
 }
 
-/// Counts one send in the attempt's record, if the send belongs to an attempt.
-pub(crate) async fn counted<F>(
-    sends: Option<&Sends>,
+/// Counts one send in this record, if there is one: as started now, when the send is
+/// created, and as unsent when it ends with a failure stating that nothing was written.
+pub(crate) fn counted<F>(
+    sends: Option<Arc<Sends>>,
     send: F,
-) -> Result<reqwest::Response, TransportError>
+) -> impl Future<Output = Result<reqwest::Response, TransportError>>
 where
     F: Future<Output = Result<reqwest::Response, TransportError>>,
 {
-    let Some(sends) = sends else {
-        return send.await;
-    };
-    Sends::add(&sends.started);
-    let result = send.await;
-    if result.as_ref().is_err_and(TransportError::states_not_sent) {
-        Sends::add(&sends.unsent);
+    if let Some(sends) = &sends {
+        Sends::add(&sends.started);
     }
-    result
+    async move {
+        let result = send.await;
+        if let Some(sends) = &sends {
+            if result.as_ref().is_err_and(TransportError::states_not_sent) {
+                Sends::add(&sends.unsent);
+            }
+        }
+        result
+    }
 }
 
 impl std::fmt::Debug for TryInfo {
@@ -455,6 +468,12 @@ impl TryInfo {
         self.sends.clone()
     }
 
+    /// The same information, carrying this record of the engine's attempt.
+    pub(crate) fn bound_to(mut self, record: &Arc<Sends>) -> Self {
+        self.sends = Some(record.clone());
+        self
+    }
+
     /// Returns the name of the endpoint: `riot.matches.get`.
     pub fn endpoint(&self) -> &'static str {
         self.endpoint
@@ -512,9 +531,9 @@ where
     async fn send(
         &self,
         request: reqwest::Request,
-        _info: TryInfo,
+        info: TryInfo,
     ) -> Result<reqwest::Response, TransportError> {
-        (self.0)(&request)
+        counted(info.sends(), std::future::ready((self.0)(&request))).await
     }
 }
 
@@ -699,7 +718,7 @@ impl Transport for Http {
                 .map_err(|error| self.classify_error(error))
         };
         let sends = info.sends();
-        counted(sends.as_deref(), sending).await
+        counted(sends, sending).await
     }
 }
 

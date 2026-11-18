@@ -579,6 +579,9 @@ impl Request {
     }
 
     /// Returns the endpoint and the number of the attempt.
+    ///
+    /// It is a snapshot made with `TryInfo::new`: it carries neither the deadlines of the
+    /// call nor its record of sends, so a send made with a clone of it is outside that call.
     pub fn info(&self) -> &TryInfo {
         &self.info
     }

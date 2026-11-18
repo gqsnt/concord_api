@@ -710,3 +710,127 @@ fn c9_6_a_send_that_holds_the_attempts_metadata_takes_the_statement_away() {
         });
     }
 }
+
+/// Replaces the metadata with a `TryInfo` of its own making before the layers below.
+struct Rebuilds;
+
+impl Middleware for Rebuilds {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: Next<'_>,
+    ) -> Result<reqwest::Response, TransportError> {
+        next.send(request, TryInfo::new(info.endpoint(), info.number()))
+            .await
+    }
+}
+
+/// How `Sideways` sends besides the chain.
+#[derive(Clone, Copy, Debug)]
+enum Aside {
+    /// A copy through `Next::to(other)` with the metadata it received, answered `200`.
+    Alternate,
+    /// A copy kept, with the metadata it received, and sent later.
+    Kept,
+    /// A send created through the chain and dropped before its first poll.
+    NeverPolled,
+}
+
+struct Sideways {
+    aside: Aside,
+    other: Arc<Recorded>,
+    kept: Arc<std::sync::Mutex<Option<(reqwest::Request, TryInfo)>>>,
+}
+
+impl Middleware for Sideways {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: Next<'_>,
+    ) -> Result<reqwest::Response, TransportError> {
+        let copy = request.try_clone().unwrap();
+        match self.aside {
+            Aside::Alternate => {
+                let response = Next::to(&*self.other).send(copy, info.clone()).await?;
+                assert_eq!(response.status(), 200);
+            }
+            Aside::Kept => *self.kept.lock().unwrap() = Some((copy, info.clone())),
+            Aside::NeverPolled => drop(next.send(copy, info.clone())),
+        }
+        next.send(request, info).await
+    }
+}
+
+#[test]
+fn c9_6_a_send_beside_the_chain_with_the_attempts_metadata_takes_the_statement_away() {
+    for (aside, rebuilt) in [
+        (Aside::Alternate, false),
+        (Aside::Kept, true),
+        (Aside::NeverPolled, false),
+        (Aside::NeverPolled, true),
+    ] {
+        let other = Arc::new(Recorded {
+            arrivals: Arc::new(AtomicUsize::new(0)),
+            failure: TransportError::connect,
+        });
+        let kept = Arc::new(std::sync::Mutex::new(None));
+        let sideways = Sideways {
+            aside,
+            other: other.clone(),
+            kept: kept.clone(),
+        };
+        run(async {
+            let mut core = Core::<()>::default();
+            if rebuilt {
+                core = core.with_middleware(Rebuilds);
+            }
+            let core = core
+                .with_middleware(sideways)
+                .with_transport(Fails(|| TransportError::connect().not_sent()));
+            let error = post(&core, "http://identity.test/token").await;
+            assert!(!error.request_not_sent(), "{aside:?}, rebuilt: {rebuilt}");
+            assert!(!matches!(aside, Aside::Kept) || other.arrivals.load(Ordering::SeqCst) == 0);
+            let kept = kept.lock().unwrap().take();
+            if let Some((copy, info)) = kept {
+                // The kept copy reaches a transport after the call returned its error.
+                let response = Next::to(&*other).send(copy, info).await.unwrap();
+                assert_eq!(response.status(), 200);
+            }
+        });
+        let expected = usize::from(matches!(aside, Aside::Alternate | Aside::Kept));
+        assert_eq!(other.arrivals.load(Ordering::SeqCst), expected, "{aside:?}");
+    }
+}
+
+/// What the `fake` of `Direct` answers.
+type Answering = fn(&reqwest::Request) -> Result<reqwest::Response, TransportError>;
+
+/// Calls a `fake` directly, beside the chain, with the metadata it received.
+struct Direct(concord_core::transport::Fake<Answering>);
+
+impl Middleware for Direct {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: Next<'_>,
+    ) -> Result<reqwest::Response, TransportError> {
+        let copy = request.try_clone().unwrap();
+        assert_eq!(self.0.send(copy, info.clone()).await?.status(), 200);
+        next.send(request, info).await
+    }
+}
+
+#[test]
+fn c9_6_a_direct_send_to_a_fake_with_the_attempts_metadata_is_recorded() {
+    let answer: Answering = |_| Ok(concord_core::reply(200, ""));
+    let error = run(async {
+        let core = Core::<()>::default()
+            .with_middleware(Direct(concord_core::fake(answer)))
+            .with_transport(Fails(|| TransportError::connect().not_sent()));
+        post(&core, "http://identity.test/token").await
+    });
+    assert!(!error.request_not_sent(), "{error}");
+}

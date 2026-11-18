@@ -95,6 +95,13 @@ use std::sync::Arc;
 /// at the final middleware handoff, including validation of a repeatable body declared
 /// empty. Both deadlines are checked before the validated request reaches the transport.
 /// `request()` and `into_request()` return the request before any middleware runs.
+///
+/// Before a middleware layer returns [`TransportError::blocked`] or
+/// [`TransportError::not_sent`], or forwards such a failure from `next.send`, it accounts
+/// for every send that it made or still holds, through `next`, through `Next::to`, or with a
+/// transport of its own: Concord sees the first two, and the third is its author's to
+/// account for. A false statement can make a credential send a refresh token twice (see
+/// [`TryInfo`]).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a middleware",
     note = "implement `concord::Middleware` with `handle(request, info, next)`; `next.send(request, info)` passes the request on"
@@ -113,29 +120,17 @@ type ResponseFuture<'a> =
     Pin<Box<dyn Future<Output = Result<reqwest::Response, TransportError>> + Send + 'a>>;
 
 pub(crate) trait ErasedTransport: Send + Sync {
-    fn send<'a>(
-        &'a self,
-        request: reqwest::Request,
-        info: TryInfo,
-        sends: Option<&'a Sends>,
-    ) -> ResponseFuture<'a>;
+    fn send(&self, request: reqwest::Request, info: TryInfo) -> ResponseFuture<'_>;
 }
 
 impl<T: Transport> ErasedTransport for T {
-    fn send<'a>(
-        &'a self,
-        request: reqwest::Request,
-        info: TryInfo,
-        sends: Option<&'a Sends>,
-    ) -> ResponseFuture<'a> {
+    fn send(&self, request: reqwest::Request, info: TryInfo) -> ResponseFuture<'_> {
         let url = request.url().clone();
-        // Every send that reaches a transport is recorded in the record of the `Next` that
-        // the engine created, whatever `TryInfo` comes with it.
-        Box::pin(crate::transport::counted(sends, async move {
+        Box::pin(async move {
             Transport::send(self, request, info)
                 .await
                 .map(|response| crate::transport::__response_at(response, url))
-        }))
+        })
     }
 }
 
@@ -173,7 +168,7 @@ pub struct Next<'a> {
     pub(crate) middlewares: &'a [Arc<dyn ErasedMiddleware>],
     pub(crate) transport: &'a dyn ErasedTransport,
     // The record of the engine's attempt; `None` for a chain made with `Next::to`.
-    pub(crate) sends: Option<&'a Sends>,
+    pub(crate) sends: Option<&'a Arc<Sends>>,
 }
 
 impl std::fmt::Debug for Next<'_> {
@@ -202,7 +197,7 @@ impl<'a> Next<'a> {
         use std::task::Poll;
         use tokio::time::Instant;
         let Some(run) = info.run().cloned() else {
-            return self.transport.send(request, info, self.sends).await;
+            return self.transport.send(request, info).await;
         };
         if run.expired() {
             return Err(TransportError::clock(run.total_timeout()));
@@ -265,11 +260,11 @@ impl<'a> Next<'a> {
                 {
                     return Err(TransportError::clock(run.idle_timeout()));
                 }
-                self.transport.send(request, info, self.sends).await
+                self.transport.send(request, info).await
             })
         } else {
             // Keep construction and ownership of ordinary transport work unchanged.
-            futures_util::future::Either::Right(self.transport.send(request, info, self.sends))
+            futures_util::future::Either::Right(self.transport.send(request, info))
         });
         let mut work = work;
         let mut timer = started
@@ -295,12 +290,30 @@ impl<'a> Next<'a> {
     }
 
     /// Sends through the remaining middleware and then the transport.
+    ///
+    /// The send is recorded for its attempt from the moment this method is called, not from
+    /// its first poll: in the record that the engine bound to this chain, and in the one that
+    /// `info` carries, when they differ (a chain made with `Next::to` has none of its own).
+    /// The layers below receive `info` bound to the engine's record again, whatever `TryInfo`
+    /// was passed. See [`Error::request_not_sent`](crate::Error::request_not_sent).
     pub fn send(
         self,
         request: reqwest::Request,
         info: TryInfo,
     ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send + 'a {
-        match self.middlewares.split_first() {
+        let carried = info.sends();
+        let (info, bound) = match self.sends {
+            Some(record) => (info.bound_to(record), Some(record.clone())),
+            None => (info, None),
+        };
+        // The record of the metadata, when it is not the bound one: `Next::to`, or a
+        // `TryInfo` of another attempt.
+        let carried = carried.filter(|carried| {
+            bound
+                .as_ref()
+                .is_none_or(|bound| !Arc::ptr_eq(bound, carried))
+        });
+        let sending = match self.middlewares.split_first() {
             Some((middleware, rest)) => middleware.handle(
                 request,
                 info,
@@ -310,6 +323,7 @@ impl<'a> Next<'a> {
                 },
             ),
             None => Box::pin(self.send_transport(request, info)),
-        }
+        };
+        crate::transport::counted(bound, crate::transport::counted(carried, sending))
     }
 }

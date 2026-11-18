@@ -427,7 +427,7 @@ where
         // attempt's `TryInfo` holds a clone.
         let record = Arc::new(Sends::default());
         let next = crate::Next {
-            sends: Some(&*record),
+            sends: Some(&record),
             ..next
         };
         let info = TryInfo::for_run(run.clone(), n, record.clone());

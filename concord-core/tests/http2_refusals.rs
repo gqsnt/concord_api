@@ -142,8 +142,10 @@ mod peer {
     }
 
     impl Reply {
+        /// Writes the frame; a failure to write it fails the test, so that a closed
+        /// connection cannot pass for a refusal.
         fn send(self, stream: &mut TcpStream, id: u32) {
-            let _ = match self {
+            let written = match self {
                 // `:status: 200`, HPACK static index 8, and no body.
                 Reply::Ok => {
                     stream.write_all(&frame(HEADERS, END_STREAM | END_HEADERS, id, &[0x88]))
@@ -158,6 +160,7 @@ mod peer {
                     stream.write_all(&frame(GOAWAY, 0, 0, &payload))
                 }
             };
+            written.expect("the server writes its reply or its refusal");
         }
     }
 
