@@ -87,6 +87,8 @@ struct Account {
     gate: Gate,
     // The last dated reset of each position, kept for the key whatever its windows become.
     resets: [Option<SystemTime>; MAX_WINDOWS],
+    // For each position, one bit: the refill of that last dated reset has been granted.
+    paid: u8,
 }
 
 impl Account {
@@ -100,6 +102,7 @@ impl Account {
             in_use: 0,
             gate: Gate::default(),
             resets: [None; MAX_WINDOWS],
+            paid: 0,
         }
     }
 
@@ -200,6 +203,13 @@ impl Account {
         for (at, (old, new)) in self.windows.iter_mut().zip(windows).enumerate() {
             // Valid lists hold at most MAX_WINDOWS windows, so a spare is never used.
             let identity = self.resets.get_mut(at).unwrap_or(&mut spare);
+            let bit = u32::try_from(at)
+                .ok()
+                .and_then(|at| 1u8.checked_shl(at))
+                .unwrap_or(0);
+            // The dated window in this slot has refilled: its date has paid out.
+            old.available(now);
+            let mut paid = (self.paid & bit) != 0 || (old.dated && old.refilled);
             if old.is_unknown() {
                 // A dated reset already consumed by this key gives no second refill.
                 if matches!((*identity, new.reset_at), (Some(known), Some(seen)) if seen <= known) {
@@ -208,7 +218,12 @@ impl Account {
                 // PANIC-SAFETY: This assigns through a reference to the slot; it is not a multiplication.
                 *old = History::new(new, now, false);
             }
-            old.observe(new, cost, others, now, identity);
+            old.observe(new, cost, others, now, identity, &mut paid);
+            self.paid = if paid {
+                self.paid | bit
+            } else {
+                self.paid & !bit
+            };
         }
     }
 }
@@ -218,6 +233,8 @@ struct History {
     kind: Kind,
     remaining: u64,
     refilled: bool,
+    // The window came with the date that the key remembers for this position.
+    dated: bool,
     configured: bool,
     events: VecDeque<(Instant, u128)>,
     used: u128,
@@ -230,6 +247,7 @@ impl History {
             kind: window.kind.clone(),
             remaining: window.remaining.unwrap_or(window.capacity),
             refilled: false,
+            dated: window.reset_at.is_some(),
             configured,
             events: VecDeque::new(),
             used: 0,
@@ -252,6 +270,7 @@ impl History {
             kind: Kind::Fixed(None),
             remaining: 0,
             refilled: true,
+            dated: false,
             configured: false,
             events: VecDeque::new(),
             used: 0,
@@ -346,25 +365,28 @@ impl History {
         others: u128,
         now: Instant,
         identity: &mut Option<SystemTime>,
+        paid: &mut bool,
     ) {
         // Give a refill that is due before deciding whether it has been given.
         self.available(now);
+        *paid |= self.dated && self.refilled;
         let mut same_reset = None;
         if let (Kind::Fixed(Some(old)), Kind::Fixed(Some(at))) = (&self.kind, &new.kind) {
             match (*identity, new.reset_at) {
                 // A reset that the server dated: its date, not the instant that this
                 // response's own clock gives, says whether it is older, the same or newer.
                 (Some(known), Some(seen)) if seen < known => return,
+                // The same reset, whose refill has been granted, whatever window is in the slot
+                // now: what this late head reports was spent before it.
+                (Some(known), Some(seen)) if seen == known && *paid => return,
                 (Some(known), Some(seen)) => {
-                    if self.refilled {
-                        // The same reset, whose refill has been given: what this late head
-                        // reports was spent before it. A newer one opens the next window.
-                        if seen == known || *at <= now {
-                            return;
-                        }
-                    } else {
-                        // The same or a later reset, before the known one: what is left can
-                        // only go down, at once, and the later of the two deadlines is kept.
+                    if *at <= now {
+                        return;
+                    }
+                    // A newer reset after the window in the slot refilled opens the next
+                    // window. Otherwise what is left can only go down, at once, and the later
+                    // of the two deadlines is kept.
+                    if !(self.refilled && seen > known) {
                         same_reset = Some((*old).max(*at));
                     }
                 }
@@ -401,8 +423,12 @@ impl History {
                 self.kind = Kind::Fixed(same_reset.or(reset));
                 // A window without a date leaves the last dated reset in place.
                 if new.reset_at.is_some() {
+                    if *identity != new.reset_at {
+                        *paid = false;
+                    }
                     *identity = new.reset_at;
                 }
+                self.dated = new.reset_at.is_some();
                 self.refilled = false;
                 self.remaining = previous.min(target).min(new.capacity);
             }
@@ -907,7 +933,7 @@ mod tests {
         let debit = std::mem::size_of::<(Instant, u128)>();
         let bound = MAX_KEY_BYTES + entry + MAX_WINDOWS * (history + MAX_HISTORY * debit);
         #[cfg(all(target_pointer_width = "64", target_os = "linux"))]
-        assert_eq!((entry, history, debit, bound), (256, 96, 32, 1_050_112));
+        assert_eq!((entry, history, debit, bound), (272, 96, 32, 1_050_128));
         assert!(bound >= MAX_KEY_BYTES);
     }
 

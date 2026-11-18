@@ -600,3 +600,62 @@ async fn c11_5_a_consumed_reset_survives_a_window_without_a_date() {
         [sec(0), sec(2), sec(2), sec(2), sec(3), sec(3), sec(3)]
     );
 }
+
+/// A dated window of 4, spent until T + 2; then an undated window of 2 until 8 s later; then
+/// `replay`, a response that names a dated reset again, or nothing.
+async fn through_an_undated_window(replay: Option<u64>) -> Vec<Duration> {
+    let script = Script::new();
+    let dated = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    let limit =
+        Limit::new()
+            .max_hold(sec(120))
+            .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+                if seen.header("undated").is_some() {
+                    vec![concord::limit::Window::fixed(2, sec(8)).remaining(2)]
+                } else {
+                    dated(seen)
+                }
+            }));
+    let spent = |script: &Script, reset: u64| {
+        script
+            .answer(200)
+            .header("date", &http_date(T))
+            .header("x-limit", "4")
+            .header("x-remaining", "0")
+            .header("x-reset", &rfc3339(reset));
+    };
+    spent(&script, T + 2);
+    script.answer(200).header("undated", "1");
+    match replay {
+        Some(reset) => spent(&script, reset),
+        None => {
+            script.answer(200);
+        }
+    }
+    let start = Instant::now();
+    for _ in 0..3 {
+        call(&limit, &script).await.unwrap();
+    }
+    for _ in 0..4 {
+        script.answer(200).after(sec(6));
+    }
+    let calls: Vec<_> = (0..4)
+        .map(|_| {
+            let (limit, script) = (limit.clone(), script.clone());
+            tokio::spawn(async move { call(&limit, &script).await.map(drop) })
+        })
+        .collect();
+    for call in calls {
+        call.await.unwrap().unwrap();
+    }
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_named_again_leaves_a_live_undated_window_alone() {
+    let expected = [sec(0), sec(2), sec(2), sec(10), sec(10), sec(16), sec(22)];
+    assert_eq!(through_an_undated_window(None).await, expected);
+    // An older reset, and the reset already consumed: the window of two stays a window of two.
+    assert_eq!(through_an_undated_window(Some(T + 1)).await, expected);
+    assert_eq!(through_an_undated_window(Some(T + 2)).await, expected);
+}

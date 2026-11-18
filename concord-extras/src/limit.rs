@@ -146,8 +146,8 @@
 //! (until the end of its body, including a first request still awaiting its response).
 //! Learned windows are then learned again; configured windows still apply. Other bounds
 //! are constants: 8 windows per bucket, 512 UTF-8 bytes per key, 4096 history entries
-//! per window. On 64-bit Linux, one key's retained payload is at most 1,050,112 bytes:
-//! 512 key bytes + 256 bytes for the map entry + 8 × (96 window bytes +
+//! per window. On 64-bit Linux, one key's retained payload is at most 1,050,128 bytes:
+//! 512 key bytes + 272 bytes for the map entry + 8 × (96 window bytes +
 //! 4096 × 32 debit bytes). Spare slots of the hash table, allocator metadata, the shared
 //! settings and the calls and bodies owned by the caller come on top of this bound.
 //! A full history merges its two oldest entries at the later expiry, which errs on the
