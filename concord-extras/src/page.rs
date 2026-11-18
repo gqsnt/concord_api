@@ -1,24 +1,36 @@
-//! Six pagers. Each is a function that returns a function from the call and its response to the
-//! next call.
+//! Six pagers, and what they combine with. Each returns a [`Paging`]: a pager, which
+//! `paginate` takes as it is, with methods for what the page states.
 //!
 //! In a `paginate` statement, an input of the endpoint names its slot on the call
 //! ([`Slot`]). So `paginate by_offset_limit(start, count);` hands two slots to
 //! [`by_offset_limit`]. Nothing here is known to the macro.
+//!
+//! A [`Paging`] decides in one fixed order, whatever the order in which its methods are written:
+//! the gate ([`only_when_set`](Paging::only_when_set)), what the page states
+//! ([`has_more`](Paging::has_more), [`by_offset_total`]), the move (with
+//! [`or_when_set`](Paging::or_when_set)), the short-page rule
+//! ([`stop_on_short_page`](Paging::stop_on_short_page)) when nothing is stated, and the edits
+//! ([`map_next`](Paging::map_next)):
+//! `paginate by_cursor(after, |page| page.next.clone()).has_more(|page| page.has_more);`.
+
+mod paging;
+pub use paging::{by_offset_total, Paging};
 
 use concord_core::error::{mismatch, Fail};
 use concord_core::page::{Call, IntoItems, Slot};
-use concord_core::Answer;
 
 fn advance<C: Call, S>(start: S, call: C, got: usize) -> Result<Option<C>, Fail<C::Problem>>
 where
     S: Slot<C>,
     S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
 {
-    let at = start.get(&call).copied().unwrap_or_default();
+    // An offset that is not set is zero, whatever the type's `Default` says.
+    let at = match start.get(&call) {
+        Some(at) => (*at).try_into().ok(),
+        None => Some(0),
+    };
     // counted in `u64`, with a check: an offset that cannot grow is an error, never a wrap
     let next = at
-        .try_into()
-        .ok()
         // PANIC-SAFETY: usize is at most 64 bits on supported targets; offset addition is checked.
         .and_then(|at: u64| at.checked_add(got as u64))
         .and_then(|next| S::Value::try_from(next).ok());
@@ -30,22 +42,17 @@ where
 
 /// `paginate by_offset(start);`: the next call starts after the items that arrived. The pages end
 /// with an empty page.
-// Keep the public pager signature's explicit call, answer and problem types.
-// PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
-#[allow(clippy::type_complexity)]
-pub fn by_offset<C, S>(
-    start: S,
-) -> impl Fn(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + 'static
+pub fn by_offset<C, S>(start: S) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
     S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
     C::Value: IntoItems,
 {
-    move |call, answer| match answer.value().count() {
+    Paging::<C>::from_fn(move |call, answer| match answer.value().count() {
         0 => Ok(None),
         got => advance(start, call, got),
-    }
+    })
 }
 
 /// `paginate by_offset_limit(start, count);`: like [`by_offset`], and the pages also end with a
@@ -56,13 +63,7 @@ where
 /// no offset pair (it counts as 0), and with no `count` no limit pair. Each next request has
 /// `start` plus the number of items that arrived, and the same `count`. When the caller set
 /// no `count`, only an empty page ends the pages, as with [`by_offset`].
-// Keep the public pager signature's explicit call, answer and problem types.
-// PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
-#[allow(clippy::type_complexity)]
-pub fn by_offset_limit<C, S, K>(
-    start: S,
-    limit: K,
-) -> impl Fn(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + 'static
+pub fn by_offset_limit<C, S, K>(start: S, limit: K) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
@@ -71,34 +72,39 @@ where
     K::Value: Copy + TryInto<usize>,
     C::Value: IntoItems,
 {
-    move |call, answer| {
+    // The short page is a rule of the short-page stage, so that a statement of the page has
+    // authority over it. The move still ends quietly when the offset could not grow past a short
+    // page, which needs no next call.
+    let short = move |call: &C, got: usize| {
+        limit
+            .get(call)
+            .copied()
+            .and_then(|asked| asked.try_into().ok())
+            .is_some_and(|asked: usize| got < asked)
+    };
+    Paging::<C>::from_fn(move |call, answer| {
         let got = answer.value().count();
         if got == 0 {
             return Ok(None);
         }
-        if let Some(asked) = limit
-            .get(&call)
+        let ended = short(&call, got);
+        match advance(start, call, got) {
+            Err(_) if ended => Ok(None),
+            next => next,
+        }
+    })
+    .short_page_rule(move |call| {
+        limit
+            .get(call)
             .copied()
             .and_then(|asked| asked.try_into().ok())
-        {
-            if got < asked {
-                return Ok(None);
-            }
-        }
-        advance(start, call, got)
-    }
+    })
 }
 
 /// `paginate by_page(page, 1);`: the next call requests the following page number.
 /// When no number was supplied, the page just received is `first`. An empty page ends
 /// the sequence; a number that cannot be incremented is a Mismatch.
-// Keep the public pager signature's explicit call, answer and problem types.
-// PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
-#[allow(clippy::type_complexity)]
-pub fn by_page<C, S>(
-    page: S,
-    first: S::Value,
-) -> impl Fn(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + 'static
+pub fn by_page<C, S>(page: S, first: S::Value) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
@@ -106,7 +112,7 @@ where
     C::Value: IntoItems,
 {
     let first = first.try_into().ok();
-    move |call, answer| {
+    Paging::<C>::from_fn(move |call, answer| {
         if answer.value().count() == 0 {
             return Ok(None);
         }
@@ -121,34 +127,33 @@ where
             Some(next) => Ok(Some(page.set(call, next))),
             None => Err(mismatch("the page number cannot grow any further")),
         }
-    }
+    })
 }
 
 /// `paginate by_cursor(after, Page::next);`: the input takes what your function finds in the
 /// page. The pages end when it finds nothing. The length of a page is never checked.
-pub fn by_cursor<C, S, F>(
-    input: S,
-    next: F,
-) -> impl Fn(C, &Answer<C::Value>) -> Option<C> + Send + 'static
+pub fn by_cursor<C, S, F>(input: S, next: F) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
     F: Fn(&C::Value) -> Option<S::Value> + Send + 'static,
 {
-    move |call, answer| next(answer.value()).map(|value| input.set(call, value))
+    Paging::<C>::from_fn(move |call, answer| {
+        next(answer.value()).map(|value| input.set(call, value))
+    })
 }
 
 /// `paginate by_next_url(Page::next);`: the same call, sent to the URL that your function reads
 /// from the page. The pages end when it finds none.
-pub fn by_next_url<C, F, U>(next: F) -> impl Fn(C, &Answer<C::Value>) -> Option<C> + Send + 'static
+pub fn by_next_url<C, F, U>(next: F) -> Paging<C>
 where
     C: Call,
     F: Fn(&C::Value) -> Option<U> + Send + 'static,
     U: AsRef<str>,
 {
-    move |call, answer| {
+    Paging::<C>::from_fn(move |call, answer| {
         next(answer.value()).map(|url| call.at_url(concord_core::page::fragmentless(url.as_ref())))
-    }
+    })
 }
 
 /// `paginate by_link();`: the same call, sent to the URL of `Link: <…>; rel="next"` (RFC 8288).
@@ -157,12 +162,8 @@ where
 /// The target is parsed as `reqwest` parses a URL (using the `url` crate, like a browser),
 /// so `</a|b>` and bad percent escapes are accepted. This pager checks the field's
 /// brackets, parameters and quotes; the core checks every page's origin.
-// Keep the public pager signature's explicit call, answer and problem types.
-// PANIC-SAFETY: The closure preserves the call, answer and problem types without boxing; no panic lint is relaxed.
-#[allow(clippy::type_complexity)]
-pub fn by_link<C: Call>(
-) -> impl Fn(C, &Answer<C::Value>) -> Result<Option<C>, Fail<C::Problem>> + Send + 'static {
-    move |call, answer| {
+pub fn by_link<C: Call>() -> Paging<C> {
+    Paging::<C>::from_fn(move |call, answer| {
         let mut next = None;
         for header in answer.headers().as_map().get_all("link").iter() {
             // HeaderValue::to_str rejects non-ASCII, including legal UTF-8 quoted text.
@@ -173,7 +174,7 @@ pub fn by_link<C: Call>(
             }
         }
         Ok(next.map(|url| call.at_url(concord_core::page::fragmentless(url))))
-    }
+    })
 }
 
 /// Read quoted text as bytes, including RFC quoted-pairs and UTF-8 octets.
@@ -324,6 +325,8 @@ mod tests {
     //! These tests run: a pager is a plain function, so it needs no network and no engine.
     use super::*;
     use concord_core::http::{HeaderMap, HeaderValue, StatusCode};
+    use concord_core::page::Pager;
+    use concord_core::Answer;
     use concord_core::Headers;
 
     /// A call written by hand, as the macro would write one: two optional inputs, and a URL.
@@ -424,58 +427,83 @@ mod tests {
 
     #[test]
     fn c8_6_by_offset_moves_by_what_came_and_ends_on_an_empty_page() {
-        let pager = by_offset(Start);
-        let second = pager(list(), &answer(&[1, 2, 3], None, None))
+        let mut pager = by_offset(Start);
+        let second = pager
+            .next_call(list(), &answer(&[1, 2, 3], None, None))
             .unwrap()
             .unwrap();
         assert_eq!(second.start, Some(3));
-        let third = pager(second, &answer(&[4], None, None)).unwrap().unwrap();
+        let third = pager
+            .next_call(second, &answer(&[4], None, None))
+            .unwrap()
+            .unwrap();
         assert_eq!(third.start, Some(4)); // a short page is not the end
-        assert!(pager(third, &answer(&[], None, None)).unwrap().is_none());
+        assert!(pager
+            .next_call(third, &answer(&[], None, None))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn c8_6_an_offset_that_cannot_grow_is_an_error_and_not_a_wrap() {
-        let pager = by_offset(Start);
+        let mut pager = by_offset(Start);
         let at_the_end = List {
             start: Some(u32::MAX - 1),
             ..list()
         };
-        assert!(pager(at_the_end, &answer(&[1, 2, 3], None, None)).is_err());
+        assert!(pager
+            .next_call(at_the_end, &answer(&[1, 2, 3], None, None))
+            .is_err());
     }
 
     #[test]
     fn c8_6_by_offset_limit_also_ends_on_a_short_page() {
-        let pager = by_offset_limit(Start, Count);
+        let mut pager = by_offset_limit(Start, Count);
         let first = List {
             count: Some(3),
             ..list()
         };
-        let second = pager(first, &answer(&[1, 2, 3], None, None))
+        let second = pager
+            .next_call(first, &answer(&[1, 2, 3], None, None))
             .unwrap()
             .unwrap();
         assert_eq!((second.start, second.count), (Some(3), Some(3))); // the other inputs are kept
-        assert!(pager(second, &answer(&[4], None, None)).unwrap().is_none());
+        assert!(pager
+            .next_call(second, &answer(&[4], None, None))
+            .unwrap()
+            .is_none());
         // with no count given by the caller, only an empty page ends
-        assert!(pager(list(), &answer(&[1], None, None)).unwrap().is_some());
+        assert!(pager
+            .next_call(list(), &answer(&[1], None, None))
+            .unwrap()
+            .is_some());
     }
 
     #[test]
     fn c8_6_by_cursor_never_looks_at_the_length() {
-        let pager = by_cursor(After, Page::next);
-        let second = pager(list(), &answer(&[], Some("c2"), None)).unwrap(); // an empty page in the middle
+        let mut pager = by_cursor(After, Page::next);
+        let second = pager
+            .next_call(list(), &answer(&[], Some("c2"), None))
+            .unwrap()
+            .unwrap(); // an empty page in the middle
         assert_eq!(second.after.as_deref(), Some("c2"));
-        assert!(pager(second, &answer(&[7, 8], None, None)).is_none());
+        assert!(pager
+            .next_call(second, &answer(&[7, 8], None, None))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn c8_6_by_next_url_sends_the_same_call_elsewhere() {
-        let pager = by_next_url(Page::next);
+        let mut pager = by_next_url(Page::next);
         let first = List {
             count: Some(50),
             ..list()
         };
-        let second = pager(first, &answer(&[1], Some("/v2/items?page=2"), None)).unwrap();
+        let second = pager
+            .next_call(first, &answer(&[1], Some("/v2/items?page=2"), None))
+            .unwrap()
+            .unwrap();
         assert_eq!(
             (second.url.as_deref(), second.count),
             (Some("/v2/items?page=2"), Some(50))
@@ -484,10 +512,11 @@ mod tests {
 
     #[test]
     fn c8_6_by_link_follows_rel_next_only() {
-        let pager = by_link();
+        let mut pager = by_link();
         let github = r#"<https://api.github.com/repos?page=3>; rel="next", <https://api.github.com/repos?page=9>; rel="last""#;
         assert_eq!(
-            pager(list(), &answer(&[1], None, Some(github)))
+            pager
+                .next_call(list(), &answer(&[1], None, Some(github)))
                 .unwrap()
                 .unwrap()
                 .url
@@ -495,10 +524,14 @@ mod tests {
             Some("https://api.github.com/repos?page=3")
         );
         let last = r#"<https://api.github.com/repos?page=1>; rel="first", <https://api.github.com/repos?page=8>; rel="prev""#;
-        assert!(pager(list(), &answer(&[1], None, Some(last)))
+        assert!(pager
+            .next_call(list(), &answer(&[1], None, Some(last)))
             .unwrap()
             .is_none());
-        assert!(pager(list(), &answer(&[1], None, None)).unwrap().is_none());
+        assert!(pager
+            .next_call(list(), &answer(&[1], None, None))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -507,7 +540,8 @@ mod tests {
             ("/a|b", "</a|b>; rel=\"next\""),
             ("/bad%GG", "</bad%GG>; rel=\"next\""),
         ] {
-            let next = by_link()(list(), &answer(&[1], None, Some(field)))
+            let next = by_link()
+                .next_call(list(), &answer(&[1], None, Some(field)))
                 .unwrap()
                 .unwrap();
             assert_eq!(next.url.as_deref(), Some(target));
@@ -539,38 +573,46 @@ mod tests {
             },
         );
         assert_eq!(
-            by_link()(list(), &answer).unwrap().unwrap().url.as_deref(),
+            by_link()
+                .next_call(list(), &answer)
+                .unwrap()
+                .unwrap()
+                .url
+                .as_deref(),
             Some("/items?page=3")
         );
     }
 
     #[test]
     fn c8_6_by_link_keeps_quoted_semicolons_and_commas_inside_their_parameter() {
-        let pager = by_link();
-        assert!(pager(
-            list(),
-            &answer(
-                &[1],
-                None,
-                Some(r#"</prev>; rel=prev; title="x; rel=next""#)
+        let mut pager = by_link();
+        assert!(pager
+            .next_call(
+                list(),
+                &answer(
+                    &[1],
+                    None,
+                    Some(r#"</prev>; rel=prev; title="x; rel=next""#)
+                )
             )
-        )
-        .unwrap()
-        .is_none());
-        assert!(pager(
-            list(),
-            &answer(&[1], None, Some(r#"</prev>; title="x; rel=next""#))
-        )
-        .unwrap()
-        .is_none());
-        let next = pager(
-            list(),
-            &answer(&[1], None, Some(r#"</a>; rel="next"; title="a, b""#)),
-        )
-        .unwrap()
-        .unwrap();
+            .unwrap()
+            .is_none());
+        assert!(pager
+            .next_call(
+                list(),
+                &answer(&[1], None, Some(r#"</prev>; title="x; rel=next""#))
+            )
+            .unwrap()
+            .is_none());
+        let next = pager
+            .next_call(
+                list(),
+                &answer(&[1], None, Some(r#"</a>; rel="next"; title="a, b""#)),
+            )
+            .unwrap()
+            .unwrap();
         assert_eq!(next.url.as_deref(), Some("/a"));
-        let next = pager(list(), &answer(&[1], None,
+        let next = pager.next_call(list(), &answer(&[1], None,
             Some(r#"</prev>; title="a, </fake>; rel=next"; rel=prev, </a>; title="a; b, c"; rel=next"#))).unwrap().unwrap();
         assert_eq!(next.url.as_deref(), Some("/a"));
     }
@@ -633,7 +675,9 @@ mod tests {
             r#"</a>; rel="next"garbage"#,
         ] {
             assert!(
-                by_link()(list(), &answer(&[1], None, Some(field))).is_err(),
+                by_link()
+                    .next_call(list(), &answer(&[1], None, Some(field)))
+                    .is_err(),
                 "{field}"
             );
         }
@@ -648,7 +692,7 @@ mod tests {
                 next: None,
             },
         );
-        assert!(by_link()(list(), &response).is_err());
+        assert!(by_link().next_call(list(), &response).is_err());
     }
 
     #[test]
@@ -667,7 +711,8 @@ mod tests {
             },
         );
         assert_eq!(
-            by_link()(list(), &response)
+            by_link()
+                .next_call(list(), &response)
                 .unwrap()
                 .unwrap()
                 .url
@@ -682,7 +727,8 @@ mod tests {
             r#"</a>; rel=next; anchor="/elsewhere""#,
             r#"</a>; anchor="/"; rel=next"#,
         ] {
-            assert!(by_link()(list(), &answer(&[1], None, Some(field)))
+            assert!(by_link()
+                .next_call(list(), &answer(&[1], None, Some(field)))
                 .unwrap()
                 .is_none());
         }
@@ -702,7 +748,8 @@ mod tests {
             },
         );
         assert_eq!(
-            by_link()(list(), &response)
+            by_link()
+                .next_call(list(), &response)
                 .unwrap()
                 .unwrap()
                 .url
@@ -714,14 +761,17 @@ mod tests {
     #[test]
     fn c8_6_next_urls_drop_fragments() {
         assert_eq!(
-            by_next_url(Page::next)(list(), &answer(&[1], Some("/a?x=1#part"), None))
+            by_next_url(Page::next)
+                .next_call(list(), &answer(&[1], Some("/a?x=1#part"), None))
+                .unwrap()
                 .unwrap()
                 .url
                 .as_deref(),
             Some("/a?x=1")
         );
         assert_eq!(
-            by_link()(list(), &answer(&[1], None, Some("</a?x=1#part>; rel=next")))
+            by_link()
+                .next_call(list(), &answer(&[1], None, Some("</a?x=1#part>; rel=next")))
                 .unwrap()
                 .unwrap()
                 .url
@@ -732,25 +782,27 @@ mod tests {
 
     #[test]
     fn c8_6_numbered_pages_advance_the_number_that_was_answered() {
-        let pager = by_page(Start, 1);
-        let next = pager(
-            List {
-                start: Some(7),
-                count: Some(20),
-                ..list()
-            },
-            &answer(&[1], None, None),
-        )
-        .unwrap()
-        .unwrap();
+        let mut pager = by_page(Start, 1);
+        let next = pager
+            .next_call(
+                List {
+                    start: Some(7),
+                    count: Some(20),
+                    ..list()
+                },
+                &answer(&[1], None, None),
+            )
+            .unwrap()
+            .unwrap();
         assert_eq!((next.start, next.count), (Some(8), Some(20)));
     }
 
     #[test]
     fn c8_6_numbered_pages_use_first_when_no_number_was_given() {
-        let pager = by_page(Start, 3);
+        let mut pager = by_page(Start, 3);
         assert_eq!(
-            pager(list(), &answer(&[1], None, None))
+            pager
+                .next_call(list(), &answer(&[1], None, None))
                 .unwrap()
                 .unwrap()
                 .start,
@@ -760,31 +812,338 @@ mod tests {
 
     #[test]
     fn c8_6_numbered_pages_end_on_an_empty_page() {
-        let pager = by_page(Start, 1);
-        assert!(pager(list(), &answer(&[], None, None)).unwrap().is_none());
-        assert!(pager(
-            List {
-                start: Some(u32::MAX),
-                ..list()
-            },
-            &answer(&[], None, None)
-        )
-        .unwrap()
-        .is_none());
+        let mut pager = by_page(Start, 1);
+        assert!(pager
+            .next_call(list(), &answer(&[], None, None))
+            .unwrap()
+            .is_none());
+        assert!(pager
+            .next_call(
+                List {
+                    start: Some(u32::MAX),
+                    ..list()
+                },
+                &answer(&[], None, None)
+            )
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn c8_6_a_page_number_that_cannot_grow_is_a_mismatch() {
-        let pager = by_page(Start, 1);
-        let error = pager(
-            List {
-                start: Some(u32::MAX),
-                ..list()
-            },
-            &answer(&[1], None, None),
-        )
-        .unwrap_err();
+        let mut pager = by_page(Start, 1);
+        let error = pager
+            .next_call(
+                List {
+                    start: Some(u32::MAX),
+                    ..list()
+                },
+                &answer(&[1], None, None),
+            )
+            .unwrap_err();
         assert_eq!(format!("{error:?}"), "Fail(mismatch)");
+    }
+
+    /// A short page ends a list only after the move: the move's failure is the result.
+    fn short(count: u32) -> List {
+        List {
+            count: Some(count),
+            ..list()
+        }
+    }
+
+    #[test]
+    fn c8_6_an_unreadable_link_is_a_mismatch_also_on_a_short_page() {
+        let mut pager = by_link().stop_on_short_page(Count, 10);
+        let page = answer(&[1], None, Some(r#"</a>; rel="next"#));
+        assert_eq!(
+            format!("{:?}", pager.next_call(short(5), &page).unwrap_err()),
+            "Fail(mismatch)"
+        );
+    }
+
+    #[test]
+    fn c8_6_a_failing_pager_of_your_own_fails_also_on_a_short_page() {
+        let mut pager = Paging::from_fn(|_: List, _: &Answer<Page>| {
+            Err::<Option<List>, _>(mismatch("the pager of the author failed"))
+        })
+        .stop_on_short_page(Count, 10);
+        assert!(pager
+            .next_call(short(5), &answer(&[1], None, None))
+            .is_err());
+    }
+
+    #[test]
+    fn c8_6_two_inputs_that_choose_the_move_fail_also_on_a_short_page() {
+        let mut pager = by_cursor(After, Page::next)
+            .or_when_set(Start, by_offset(Start))
+            .or_when_set(Count, by_page(Count, 1))
+            .stop_on_short_page(Count, 10);
+        let call = List {
+            start: Some(0),
+            ..short(5)
+        };
+        assert!(pager.next_call(call, &answer(&[1], None, None)).is_err());
+    }
+
+    #[test]
+    fn c8_6_a_statement_has_authority_over_the_count_of_by_offset_limit() {
+        let mut pager = by_offset_limit(Start, Count).has_more(|_| true);
+        let next = pager
+            .next_call(short(5), &answer(&[1, 2], None, None))
+            .unwrap()
+            .unwrap();
+        assert_eq!((next.start, next.count), (Some(2), Some(5)));
+        // without a statement, the short page ends the list, as before
+        let mut bare = by_offset_limit(Start, Count);
+        assert!(bare
+            .next_call(short(5), &answer(&[1, 2], None, None))
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn c8_6_every_statement_is_read_once_also_after_a_disagreement() {
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let third = read.clone();
+        let mut pager = by_cursor(After, Page::next)
+            .has_more(|_| true)
+            .has_more(|_| false)
+            .has_more(move |_| {
+                third.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                true
+            });
+        let error = pager
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap_err();
+        assert_eq!(format!("{error:?}"), "Fail(mismatch)");
+        assert_eq!(read.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// An offset whose type says that its default is seven.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Seven(u64);
+    impl Default for Seven {
+        fn default() -> Self {
+            Seven(7)
+        }
+    }
+    impl From<u64> for Seven {
+        fn from(at: u64) -> Self {
+            Seven(at)
+        }
+    }
+    impl From<Seven> for u64 {
+        fn from(at: Seven) -> u64 {
+            at.0
+        }
+    }
+    #[derive(Clone, Debug)]
+    struct Positioned(Option<Seven>);
+    impl Call for Positioned {
+        type Value = Page;
+        type Problem = ();
+        fn at_url(self, _: &str) -> Positioned {
+            self
+        }
+    }
+    #[derive(Clone, Copy)]
+    struct At;
+    impl Slot<Positioned> for At {
+        type Value = Seven;
+        fn get<'a>(&self, call: &'a Positioned) -> Option<&'a Seven> {
+            call.0.as_ref()
+        }
+        fn set(&self, _: Positioned, value: Seven) -> Positioned {
+            Positioned(Some(value))
+        }
+    }
+    fn page(items: &[u32]) -> Answer<Page> {
+        Answer::new(
+            StatusCode::OK,
+            Headers::from(HeaderMap::new()),
+            Page {
+                items: items.to_vec(),
+                next: None,
+            },
+        )
+    }
+
+    #[test]
+    fn c8_6_an_offset_that_is_not_set_is_zero_whatever_its_default() {
+        let next = by_offset(At)
+            .next_call(Positioned(None), &page(&[1, 2]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.0, Some(Seven(2)));
+        // one of three received: the total is not reached, and the walk goes on from 1
+        let next = by_offset_total(At, |_: &Page| 3u32)
+            .next_call(Positioned(None), &page(&[1]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.0, Some(Seven(1)));
+    }
+
+    #[test]
+    fn c8_6_what_each_shipped_pager_returns_is_send_and_sync() {
+        fn send_and_sync<T: Send + Sync>(_: &T) {}
+        send_and_sync(&by_offset(Start));
+        send_and_sync(&by_offset_limit(Start, Count));
+        send_and_sync(&by_page(Start, 1));
+        send_and_sync(&by_cursor(After, Page::next));
+        send_and_sync(&by_next_url::<List, _, _>(Page::next));
+        send_and_sync(&by_link::<List>());
+        send_and_sync(&by_offset_total(Start, |_: &Page| 3u32));
+        // also when a function it holds is not `Sync`
+        let seen = std::cell::Cell::new(0);
+        let counted = by_cursor(After, move |page: &Page| {
+            seen.set(seen.get() + 1);
+            page.next()
+        })
+        .has_more(|_| true)
+        .stop_on_short_page_of(10);
+        send_and_sync(&counted);
+    }
+
+    #[test]
+    fn c8_6_a_fixed_page_size_ends_a_list_that_states_nothing() {
+        let mut pager = by_cursor(After, Page::next).stop_on_short_page_of(3);
+        assert!(pager
+            .next_call(list(), &answer(&[1, 2], Some("c2"), None))
+            .unwrap()
+            .is_none());
+        let next = pager
+            .next_call(list(), &answer(&[1, 2, 3], Some("c2"), None))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.after.as_deref(), Some("c2"));
+    }
+
+    /// A page whose `count` records each read.
+    struct Seen {
+        items: Vec<u32>,
+        reads: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl IntoItems for Seen {
+        type Item = u32;
+        fn into_items(self) -> Vec<u32> {
+            self.items
+        }
+        fn count(&self) -> usize {
+            self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.items.len()
+        }
+    }
+    #[derive(Clone)]
+    struct Watched;
+    impl Call for Watched {
+        type Value = Seen;
+        type Problem = ();
+        fn at_url(self, _: &str) -> Watched {
+            self
+        }
+    }
+
+    #[test]
+    fn c8_6_the_short_page_rule_is_read_after_the_move() {
+        let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let page = Answer::new(
+            StatusCode::OK,
+            Headers::from(HeaderMap::new()),
+            Seen {
+                items: vec![1],
+                reads: reads.clone(),
+            },
+        );
+        // the move continues only if no rule has read the page before it
+        let mut pager = Paging::from_fn(|call: Watched, answer: &Answer<Seen>| {
+            (answer
+                .value()
+                .reads
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == 0)
+                .then_some(call)
+        })
+        .stop_on_short_page_of(1);
+        assert!(pager.next_call(Watched, &page).unwrap().is_some());
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    /// A call whose data the move takes as the only owner.
+    struct Owned {
+        unique: std::sync::Arc<usize>,
+        clones: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl Clone for Owned {
+        fn clone(&self) -> Self {
+            self.clones
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Owned {
+                unique: self.unique.clone(),
+                clones: self.clones.clone(),
+            }
+        }
+    }
+    impl Call for Owned {
+        type Value = Vec<u8>;
+        type Problem = ();
+        fn at_url(self, _: &str) -> Owned {
+            self
+        }
+    }
+
+    #[test]
+    fn c8_6_the_short_page_rule_takes_nothing_from_the_call_but_the_size() {
+        let clones = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let call = Owned {
+            unique: std::sync::Arc::new(1),
+            clones: clones.clone(),
+        };
+        let page = Answer::new(StatusCode::OK, Headers::from(HeaderMap::new()), vec![1u8]);
+        // the move needs to be the only owner of the call's data
+        let mut pager = Paging::from_fn(|mut call: Owned, _: &Answer<Vec<u8>>| {
+            *std::sync::Arc::get_mut(&mut call.unique)? += 1;
+            Some(call)
+        })
+        .stop_on_short_page_of(1);
+        assert!(pager.next_call(call, &page).unwrap().is_some());
+        assert_eq!(clones.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn c8_6_an_outer_no_more_skips_the_statements_of_a_converted_pager() {
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let inner = read.clone();
+        let converted = by_cursor(After, Page::next)
+            .has_more(move |_| {
+                inner.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                true
+            })
+            .into_fn();
+        let mut pager = Paging::from_fn(converted).has_more(|_| false);
+        assert!(pager
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap()
+            .is_none());
+        assert_eq!(read.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn c8_6_an_outer_short_page_rule_ends_a_list_that_a_converted_pager_says_goes_on() {
+        let converted = by_cursor(After, Page::next).has_more(|_| true).into_fn();
+        let mut pager = Paging::from_fn(converted).stop_on_short_page_of(10);
+        assert!(pager
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap()
+            .is_none());
+        // the same pager, not converted: its statement has authority over the rule
+        let mut direct = by_cursor(After, Page::next)
+            .has_more(|_| true)
+            .stop_on_short_page_of(10);
+        assert!(direct
+            .next_call(list(), &answer(&[1], Some("c2"), None))
+            .unwrap()
+            .is_some());
     }
 
     #[test]

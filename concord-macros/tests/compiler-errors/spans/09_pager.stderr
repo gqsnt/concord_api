@@ -1,16 +1,19 @@
-error[E0277]: expected an `FnMut(c::Call<Get>, &Answer<Vec<u32>>)` closure, found `{integer}`
+error[E0277]: `paginate` reads this expression as a closure, and its value is `{integer}`, which is not a closure
  --> tests/compiler-errors/spans/09_pager.rs:2:10
   |
 2 | paginate 42;
-  |          ^^ expected an `FnMut(c::Call<Get>, &Answer<Vec<u32>>)` closure, found `{integer}`
+  |          ^^ a closure is needed here
   |
   = help: the trait `for<'a> FnMut(c::Call<Get>, &'a Answer<Vec<u32>>)` is not implemented for `{integer}`
-note: required by a bound in `concord::__private::pages_with_pager`
+  = note: if the value is a pager, write `.into_fn()` after a `Paging<…>` (`by_cursor(…).into_fn()`) or `Paging::from_pager(…).into_fn()` around a pager of yours; or write the pager as a call or a path, alone or at each tail of a plain block, `if` or `match`
+  = note: if it is not, it is neither a closure nor a pager, and `paginate` cannot use it
+  = note: required for `{integer}` to implement `concord::__private::InferredPager<c::Call<Get>, _>`
+note: required by a bound in `concord::__private::pages_inferred`
  --> $WORKSPACE/concord-core/src/__private/page.rs
   |
-  | pub fn pages_with_pager<C, N, F>(
-  |        ---------------- required by a bound in this function
+  | pub fn pages_inferred<C, N, F>(
+  |        -------------- required by a bound in this function
 ...
-  |     F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
-  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_with_pager`
+  |     F: InferredPager<C, N> + Send + 'static,
+  |        ^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_inferred`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

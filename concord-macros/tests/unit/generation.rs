@@ -552,7 +552,7 @@ fn c1_16_every_call_delegates_once_without_copying_common_methods() {
                 assert!(pager.insert(owner.clone()), "duplicate pager {owner}");
                 assert_eq!(methods.len(), 1);
                 assert_eq!(methods[0].sig.ident, "__pages");
-                assert_eq!(calls(&methods[0].block, "pages_with_pager"), 1);
+                assert_eq!(calls(&methods[0].block, "pages_of_pager"), 1);
                 assert_eq!(calls(&methods[0].block, "by_offset"), 1);
             }
             Some("::concord::__private::Call") => {

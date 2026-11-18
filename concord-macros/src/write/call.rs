@@ -75,6 +75,132 @@ fn problem_needs_alias(ty: &syn::Type) -> bool {
     references.0
 }
 
+/// Whether `paginate` may take the expression as any `Pager`. The rule, word for word:
+///
+/// The pager path is taken only when the expression is certain to need no inference: after
+/// removing parentheses, it is a path, a call or a method call; or a plain block, an `if`/`else` or
+/// a `match` whose every value position is such a form again; and nowhere in the whole expression
+/// is there a closure literal or a macro invocation in a value position, a `return`, a `break` with
+/// a value, a loop, a label, or a `#[cfg]` or `#[cfg_attr]` attribute; and, at any depth (nested
+/// closures, `async` blocks and blocks included), no attribute of any kind, no macro invocation of
+/// any kind (also in a pattern or a type) and no item. Everything else takes the path of earlier
+/// releases, unchanged. No name is interpreted.
+///
+/// So everything in a certain expression is plain Rust that the macro has read. The `return`s,
+/// `?`s, loops and labels of a nested closure or `async` block cannot give the expression its
+/// value, and are allowed there.
+fn certain_pager(expr: &syn::Expr) -> bool {
+    certain_form(expr) && {
+        let mut scan = Uncertain {
+            found: false,
+            nested: false,
+        };
+        scan.visit_expr(expr);
+        !scan.found
+    }
+}
+
+/// A path, a call or a method call; or a plain block, `if`/`else` or `match` of such forms.
+fn certain_form(expr: &syn::Expr) -> bool {
+    match expr {
+        syn::Expr::Paren(paren) => certain_form(&paren.expr),
+        syn::Expr::Group(group) => certain_form(&group.expr),
+        syn::Expr::Path(_) | syn::Expr::Call(_) | syn::Expr::MethodCall(_) => true,
+        syn::Expr::Block(block) => block.label.is_none() && certain_tail(&block.block),
+        syn::Expr::If(branch) => {
+            certain_tail(&branch.then_branch)
+                && branch
+                    .else_branch
+                    .as_ref()
+                    .is_some_and(|(_, otherwise)| certain_form(otherwise))
+        }
+        syn::Expr::Match(choice) => choice.arms.iter().all(|arm| certain_form(&arm.body)),
+        _ => false,
+    }
+}
+
+fn certain_tail(block: &syn::Block) -> bool {
+    matches!(block.stmts.last(), Some(syn::Stmt::Expr(tail, None)) if certain_form(tail))
+}
+
+/// Whether a closure is written where the expression's value is: at the top, or at a tail of a
+/// block of any kind, a branch or an arm. Such a form keeps the entry of earlier releases exactly,
+/// messages included; other forms that are not certain take the entry that words the refusal of a
+/// pager value.
+fn closure_in_value_position(expr: &syn::Expr) -> bool {
+    let tail = |block: &syn::Block| matches!(block.stmts.last(), Some(syn::Stmt::Expr(tail, None)) if closure_in_value_position(tail));
+    match expr {
+        syn::Expr::Closure(_) => true,
+        syn::Expr::Paren(paren) => closure_in_value_position(&paren.expr),
+        syn::Expr::Group(group) => closure_in_value_position(&group.expr),
+        syn::Expr::Block(block) => tail(&block.block),
+        syn::Expr::Unsafe(block) => tail(&block.block),
+        syn::Expr::Const(block) => tail(&block.block),
+        syn::Expr::If(branch) => {
+            tail(&branch.then_branch)
+                || branch
+                    .else_branch
+                    .as_ref()
+                    .is_some_and(|(_, otherwise)| closure_in_value_position(otherwise))
+        }
+        syn::Expr::Match(choice) => choice
+            .arms
+            .iter()
+            .any(|arm| closure_in_value_position(&arm.body)),
+        _ => false,
+    }
+}
+
+/// Finds what could give the expression a value that the forms above do not show, and what the
+/// macro cannot read.
+struct Uncertain {
+    found: bool,
+    /// Inside a nested closure or `async` block: its exits are its own.
+    nested: bool,
+}
+impl Uncertain {
+    fn nested(&mut self, visit: impl FnOnce(&mut Self)) {
+        let outer = std::mem::replace(&mut self.nested, true);
+        visit(self);
+        self.nested = outer;
+    }
+}
+impl<'ast> Visit<'ast> for Uncertain {
+    fn visit_expr(&mut self, expr: &'ast syn::Expr) {
+        match expr {
+            syn::Expr::Closure(closure) => {
+                self.nested(|this| visit::visit_expr_closure(this, closure))
+            }
+            syn::Expr::Async(block) => self.nested(|this| visit::visit_expr_async(this, block)),
+            syn::Expr::Return(_)
+            | syn::Expr::Try(_)
+            | syn::Expr::Loop(_)
+            | syn::Expr::While(_)
+            | syn::Expr::ForLoop(_)
+                if !self.nested =>
+            {
+                self.found = true
+            }
+            syn::Expr::Break(exit)
+                if !self.nested && (exit.expr.is_some() || exit.label.is_some()) =>
+            {
+                self.found = true
+            }
+            syn::Expr::Block(block) if !self.nested && block.label.is_some() => self.found = true,
+            _ => visit::visit_expr(self, expr),
+        }
+    }
+    fn visit_macro(&mut self, _: &'ast syn::Macro) {
+        self.found = true;
+    }
+    fn visit_attribute(&mut self, _: &'ast syn::Attribute) {
+        self.found = true;
+    }
+    fn visit_item(&mut self, _: &'ast syn::Item) {
+        self.found = true;
+    }
+}
+
 impl Writer<'_> {
     pub(super) fn data_path(&self, index: usize) -> TokenStream {
         if self.nodes.get(index).is_some_and(|n| n.deprecated) {
@@ -393,7 +519,14 @@ impl Writer<'_> {
                     _ => break,
                 }
             }
-            let build = if matches!(unwrapped, syn::Expr::Closure(_)) {
+            // Certain: any `Pager`. A closure at the top: the helper of earlier releases. A closure
+            // at another value position: the entry of earlier releases. Anything else: the `FnMut`
+            // bound of earlier releases, with a message for a pager value.
+            let build = if certain_pager(expression) {
+                emit_at!(expression.span()=>
+                    ::concord::__private::pages_of_pager(__call, || { #bindings #expression })
+                )
+            } else if matches!(unwrapped, syn::Expr::Closure(_)) {
                 emit_at!(expression.span()=>
                     fn __pager<__C, __N, __F>(_: &__C, __make: impl ::core::ops::FnOnce() -> __F) -> __F
                     where __C: ::concord::page::Call,
@@ -404,9 +537,13 @@ impl Writer<'_> {
                     let __pager = __pager(&__call, || { #bindings #expression });
                     ::concord::__private::pages_with_pager(__call, || __pager)
                 )
-            } else {
+            } else if closure_in_value_position(expression) {
                 emit_at!(expression.span()=>
                     ::concord::__private::pages_with_pager(__call, || { #bindings #expression })
+                )
+            } else {
+                emit_at!(expression.span()=>
+                    ::concord::__private::pages_inferred(__call, || { #bindings #expression })
                 )
             };
             emit_at!(expression.span()=>

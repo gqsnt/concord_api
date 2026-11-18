@@ -1,0 +1,10 @@
+error[E0282]: type annotations needed
+  --> tests/pagers/refused/labelled_break.rs:19:196
+   |
+19 | ...ext| after.set(call, next)); } move |call, page| page.value().next.clone().map(|next| after.set(call, next)) }; }
+   |                                               ^^^^  ---- type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+19 |         GET list(after?: String) -> Page { query { after; } paginate 'pager: { if true { break 'pager move |call, page| page.value().next.clone().map(|next| after.set(call, next)); } move |call, page: /* Type */| page.value().next.clone().map(|next| after.set(call, next)) }; }
+   |                                                                                                                                                                                                        ++++++++++++

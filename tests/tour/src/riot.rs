@@ -838,10 +838,10 @@ const _: () = {
         fn pages(call: riot::Call<riot::matches::Ids>) -> ::concord::Pages<Vec<MatchId>, RiotProblem> {
             // The owners in reach, as views of references, then each input as its
             // place. `call` moves into the machine before the pager is written in
-            // place (a closure there takes its type from `pages`), so the views borrow
-            // a clone of the handle. The pager owns what it holds.
+            // place (a pager that is a call is built by `pages_of_pager`), so the
+            // views borrow a clone of the handle. The pager owns what it holds.
             let __owners = call.__inputs.__scope.clone();
-            ::concord::__private::pages(call, {
+            ::concord::__private::pages_of_pager(call, || {
                 #[allow(unused_variables)]
                 let client = __Client {
                     key: &__owners.__client.key,

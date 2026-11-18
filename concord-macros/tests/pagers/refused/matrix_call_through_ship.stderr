@@ -1,0 +1,7 @@
+error[E0618]: expected function, found `Paging<probe::Call<List>>`
+  --> tests/pagers/refused/matrix_call_through_ship.rs:35:130
+   |
+35 | ...aginate { let p = concord::by_cursor(after, tok); move |call, page| p(call, page) }; }
+   |                  -                                                     ^------------
+   |                  |                                                     |
+   |                  `p` has type `Paging<probe::Call<List>>`              call expression requires function

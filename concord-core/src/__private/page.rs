@@ -3,7 +3,7 @@ use super::Prepared;
 use super::{Call, RequestSecrets};
 use crate::answer::Answer;
 use crate::error::{BuildFailure, Error, MismatchFailure};
-use crate::page::{IntoNext, PageSource, Pages};
+use crate::page::{IntoNext, PageSource, Pager, Pages};
 use crate::{Headers, Sending};
 use std::future::Future;
 use std::pin::Pin;
@@ -51,6 +51,54 @@ where
     C: Call,
     N: IntoNext<C>,
     F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
+{
+    pages(first, make())
+}
+
+/// `paginate` with an expression certain to need no inference: it may be any [`Pager`]. Every
+/// other form goes through [`pages_with_pager`] or [`pages_inferred`], whose `FnMut` bound infers
+/// a closure.
+#[rustfmt::skip] // Keep the function name on its own line in diagnostics about the pager bound.
+pub fn pages_of_pager<C, P>(
+    first: C,
+    make: impl FnOnce() -> P,
+) -> Pages<C::Value, C::Problem>
+where
+    C: Call,
+    P: Pager<C>,
+{
+    let mut pager = make();
+    pages(first, move |call: C, answer: &Answer<C::Value>| pager.next_call(call, answer))
+}
+
+/// What a `paginate` expression that is not certain to be a pager must produce: a closure,
+/// inferred as in [`pages_with_pager`] through this trait's `FnMut` supertrait; its own bound only
+/// words the error for a pager value.
+#[diagnostic::on_unimplemented(
+    message = "`paginate` reads this expression as a closure, and its value is `{Self}`, which is not a closure",
+    label = "a closure is needed here",
+    note = "if the value is a pager, write `.into_fn()` after a `Paging<…>` (`by_cursor(…).into_fn()`) or `Paging::from_pager(…).into_fn()` around a pager of yours; or write the pager as a call or a path, alone or at each tail of a plain block, `if` or `match`",
+    note = "if it is not, it is neither a closure nor a pager, and `paginate` cannot use it"
+)]
+pub trait InferredPager<C: Call, N>: FnMut(C, &Answer<C::Value>) -> N {}
+impl<C, F, N> InferredPager<C, N> for F
+where
+    C: Call,
+    F: FnMut(C, &Answer<C::Value>) -> N,
+{
+}
+
+/// `paginate` with an expression that is not certain to need no inference (a block with a
+/// `return`, a macro, a loop): [`pages_with_pager`], with the wording of [`InferredPager`].
+#[rustfmt::skip] // Keep the function name on its own line in diagnostics about the pager bound.
+pub fn pages_inferred<C, N, F>(
+    first: C,
+    make: impl FnOnce() -> F,
+) -> Pages<C::Value, C::Problem>
+where
+    C: Call,
+    N: IntoNext<C>,
+    F: InferredPager<C, N> + Send + 'static,
 {
     pages(first, make())
 }

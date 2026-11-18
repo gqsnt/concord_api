@@ -1,0 +1,19 @@
+error: implementation of `FnMut` is not general enough
+  --> tests/pagers/refused/second_if_empty.rs:13:96
+   |
+13 | ...ch { query { after; before; } paginate if true { |_, _| None } else { |_, _| None }; }
+   |                                           ^^ implementation of `FnMut` is not general enough
+   |
+   = note: `fn(probe::Call<List>, &'2 Answer<Batch>) -> std::option::Option<probe::Call<List>>` must implement `FnMut<(probe::Call<List>, &'1 Answer<Batch>)>`, for any lifetime `'1`...
+   = note: ...but it actually implements `FnMut<(probe::Call<List>, &'2 Answer<Batch>)>`, for some specific lifetime `'2`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: implementation of `FnOnce` is not general enough
+  --> tests/pagers/refused/second_if_empty.rs:13:96
+   |
+13 | ...ch { query { after; before; } paginate if true { |_, _| None } else { |_, _| None }; }
+   |                                           ^^ implementation of `FnOnce` is not general enough
+   |
+   = note: `fn(probe::Call<List>, &'2 Answer<Batch>) -> std::option::Option<probe::Call<List>>` must implement `FnOnce<(probe::Call<List>, &'1 Answer<Batch>)>`, for any lifetime `'1`...
+   = note: ...but it actually implements `FnOnce<(probe::Call<List>, &'2 Answer<Batch>)>`, for some specific lifetime `'2`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

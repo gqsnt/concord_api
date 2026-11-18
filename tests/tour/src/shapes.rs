@@ -6322,7 +6322,7 @@ const _: () = {
         fn pages(call: shapes::Call<shapes::Offset>) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
             // The owner in reach, then each input as its place; the expression is
             // copied as written.
-            ::concord::__private::pages(call, {
+            ::concord::__private::pages_of_pager(call, || {
                 #[allow(unused_variables)]
                 let client = __Client;
                 #[allow(unused_variables)]
@@ -6502,7 +6502,7 @@ const _: () = {
         fn pages(call: shapes::Call<shapes::Numbered>) -> ::concord::Pages<Vec<Item>, ShapesProblem> {
             // The owner in reach, then each input as its place; the expression is
             // copied as written.
-            ::concord::__private::pages(call, {
+            ::concord::__private::pages_of_pager(call, || {
                 #[allow(unused_variables)]
                 let client = __Client;
                 #[allow(unused_variables)]
@@ -6618,7 +6618,7 @@ const _: () = {
         fn pages(call: shapes::Call<shapes::Addressed>) -> ::concord::Pages<Batch, ShapesProblem> {
             // The owner in reach, then each input as its place; the expression is
             // copied as written.
-            ::concord::__private::pages(call, {
+            ::concord::__private::pages_of_pager(call, || {
                 #[allow(unused_variables)]
                 let client = __Client;
                 by_next_url(Batch::next_url)

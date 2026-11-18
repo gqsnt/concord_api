@@ -30,6 +30,8 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 
 [dev-dependencies]
 trybuild = "1"
+# An attribute that expands to a `return` inside a `paginate` block, for one compiler fixture.
+concord-attr-probe = { path = "tests/attr-probe" }
 # `multipart`: the page of the language shows a multipart body, and its doc test checks the bytes.
 concord = { package = "concord-api", path = "../concord-api", features = ["multipart"] }
 prettyplease = "0.2"

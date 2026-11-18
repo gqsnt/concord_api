@@ -1,0 +1,10 @@
+error[E0282]: type annotations needed
+  --> tests/pagers/refused/closure_method.rs:19:83
+   |
+19 | ...   GET list(after?: String) -> Page { query { after; } paginate (move |call, page| page.value().next.clone().map(|next| after.set...
+   |                                                                                 ^^^^  ---- type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+19 |         GET list(after?: String) -> Page { query { after; } paginate (move |call, page: /* Type */| page.value().next.clone().map(|next| after.set(call, next))).clone(); }
+   |                                                                                       ++++++++++++
