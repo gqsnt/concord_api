@@ -332,7 +332,8 @@ impl Writer<'_> {
         };
         // The check of the declared type against the client's problem type, for every endpoint:
         // a function that is never called, in a module of its own, where none of the author's
-        // names is in scope. The declared type is named here, in the author's scope.
+        // names is in scope. The type is the endpoint's own `Value`, as the compiler resolved it:
+        // the author's tokens are written once, in the endpoint, and never again here.
         let check = ident(&format!("__check_problem_{index}"));
         let declared = endpoint
             .node
@@ -346,7 +347,7 @@ impl Writer<'_> {
         );
         let problem_check = emit!(
             #(#cfg)* impl #check::Declared for #check::Witness {
-                type Value = #output;
+                type Value = <#marker as #root::Endpoint>::Value;
                 type Problem = #problem_alias;
             }
             #(#cfg)*

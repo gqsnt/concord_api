@@ -1,0 +1,10 @@
+error[E0308]: mismatched types
+  --> tests/compiler-errors/problem-type/05_type_macro.rs:20:27
+   |
+20 |     let _rows: R<Other> = client.events().await.unwrap();
+   |                --------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `RecordStream<u8, Error<Other>>`, found `RecordStream<u8, Error<Local>>`
+   |                |
+   |                expected due to this
+   |
+   = note: expected struct `RecordStream<u8, Error<Other>>`
+              found struct `RecordStream<u8, Error<Local>>`

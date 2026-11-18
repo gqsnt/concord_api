@@ -786,7 +786,7 @@ const _: () = {
         }
     }
     impl __check_problem_1::Declared for __check_problem_1::Witness {
-        type Value = Vec<Task>;
+        type Value = <tasks::List as tasks::Endpoint>::Value;
         type Problem = __DeclaredProblem;
     }
     #[allow(dead_code, clippy::needless_borrow)]
@@ -856,7 +856,7 @@ const _: () = {
         }
     }
     impl __check_problem_2::Declared for __check_problem_2::Witness {
-        type Value = Task;
+        type Value = <tasks::Create as tasks::Endpoint>::Value;
         type Problem = __DeclaredProblem;
     }
     #[allow(dead_code, clippy::needless_borrow)]
@@ -929,7 +929,7 @@ const _: () = {
         }
     }
     impl __check_problem_3::Declared for __check_problem_3::Witness {
-        type Value = Task;
+        type Value = <tasks::Get as tasks::Endpoint>::Value;
         type Problem = __DeclaredProblem;
     }
     #[allow(dead_code, clippy::needless_borrow)]
@@ -997,7 +997,7 @@ const _: () = {
         }
     }
     impl __check_problem_4::Declared for __check_problem_4::Witness {
-        type Value = ();
+        type Value = <tasks::Delete as tasks::Endpoint>::Value;
         type Problem = __DeclaredProblem;
     }
     #[allow(dead_code, clippy::needless_borrow)]

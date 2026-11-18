@@ -260,6 +260,7 @@ dependencies = [
  "syn 2.0.119",
  "tokio",
  "trybuild",
+ "type-macro",
 ]
 
 [[package]]
@@ -2032,6 +2033,10 @@ dependencies = [
  "termcolor",
  "toml",
 ]
+
+[[package]]
+name = "type-macro"
+version = "5.0.0-rc.1"
 
 [[package]]
 name = "typeid"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["concord-core", "concord-macros", "concord-extras", "concord-api", "tests/tour", "concord-testkit", "tests/conformance", "tests/tour-gen", "tests/conformance-gen", "tests/real-apis"]
+members = ["concord-core", "concord-macros", "concord-extras", "concord-api", "tests/tour", "concord-testkit", "tests/conformance", "tests/tour-gen", "tests/conformance-gen", "tests/real-apis", "tests/type-macro"]
 
 [workspace.package]
 edition = "2021"

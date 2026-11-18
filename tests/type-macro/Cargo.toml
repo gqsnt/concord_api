@@ -1,0 +1,9 @@
+[package]
+name = "type-macro"
+edition.workspace = true
+version.workspace = true
+publish = false
+description = "A type macro that expands differently each time, for the compiler tests of the macro. Never published."
+
+[lib]
+proc-macro = true
