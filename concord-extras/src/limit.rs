@@ -65,8 +65,9 @@
 //!
 //! When the server announces its budget, have the bucket learn it from each response
 //! instead. [`counts`] reads paired headers of capacities and counts; [`remaining`] reads
-//! a capacity, the units left and a reset date in Unix seconds. Each bucket can also set
-//! its own cost (one by default).
+//! a capacity, the units left and a reset date in Unix seconds, and [`remaining_rfc3339`]
+//! the same with a reset written as an RFC 3339 date-time. Each bucket can also set its
+//! own cost (one by default).
 //!
 //! ```no_run
 //! use concord::limit::{Bucket, Limit, counts};
@@ -118,7 +119,9 @@
 //! may leave to learn the windows. The next request of that key may leave once the
 //! response head has been learned from, or once the first request fails or is dropped
 //! before that, and only if the other limits allow it. It does not wait for the body.
-//! Nothing can prove that this first request fits a budget not yet seen. A fixed window
+//! Nothing can prove that this first request fits a budget not yet seen. A bucket that has
+//! a cap on the calls in flight ([`Bucket::max_in_flight`]) and no `learn` function is the
+//! exception: it can learn nothing, so it lets up to its cap leave at once. A fixed window
 //! refills once to its whole capacity at the stated reset; it invents no other reset.
 //! Once a learned fixed window's refill cannot pay a request within its capacity, and no
 //! request awaiting its head reports a newer reset, that window is no longer known.
@@ -143,8 +146,8 @@
 //! (until the end of its body, including a first request still awaiting its response).
 //! Learned windows are then learned again; configured windows still apply. Other bounds
 //! are constants: 8 windows per bucket, 512 UTF-8 bytes per key, 4096 history entries
-//! per window. On 64-bit Linux, one key's retained payload is at most 1,049,984 bytes:
-//! 512 key bytes + 128 bytes for the map entry + 8 × (96 window bytes +
+//! per window. On 64-bit Linux, one key's retained payload is at most 1,050,128 bytes:
+//! 512 key bytes + 272 bytes for the map entry + 8 × (96 window bytes +
 //! 4096 × 32 debit bytes). Spare slots of the hash table, allocator metadata, the shared
 //! settings and the calls and bodies owned by the caller come on top of this bound.
 //! A full history merges its two oldest entries at the later expiry, which errs on the
@@ -246,6 +249,7 @@ pub struct Bucket {
     learn: Option<Arc<Learn>>,
     hit: Option<Arc<Hit>>,
     windows: Vec<Window>,
+    max_in_flight: Option<usize>,
 }
 
 impl Bucket {
@@ -257,7 +261,9 @@ impl Bucket {
     /// known window, one request of that key at a time may leave: the next one may leave
     /// once the response head has been learned from, or once the earlier request has
     /// failed or been dropped, and only if the other limits allow it. It does not wait for
-    /// the body.
+    /// the body. If the responses teach nothing, that lasts for good. A bucket with a
+    /// [`max_in_flight`](Self::max_in_flight) cap and no [`learn`](Self::learn) function is
+    /// the exception: nothing can be learned, so its cap is its limit.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|call| Some(call.info().endpoint().into()));
@@ -270,10 +276,18 @@ impl Bucket {
             learn: None,
             hit: None,
             windows: Vec::new(),
+            max_in_flight: None,
         }
     }
 
     /// Adds a window known in advance; call it again to add more, up to eight.
+    ///
+    /// A window set here is where the budget of each key starts. When [`learn`](Self::learn)
+    /// returns a window at the same position, the capacity that the API reports replaces
+    /// this one, also upward, from that response on; what is left can still only go down.
+    /// The same code can then serve keys of different sizes: Riot gives a development key
+    /// 20 requests a second and a production key far more, so a bucket declared for the
+    /// first learns the second from its headers.
     ///
     /// ```no_run
     /// let bucket = concord::limit::Bucket::new(|_| Some("requests".into()))
@@ -285,13 +299,67 @@ impl Bucket {
         self
     }
 
+    /// Allows at most `n` requests of each key of this bucket at once; a request keeps its
+    /// place until its response body is read to the end, fails or is dropped.
+    ///
+    /// By default a bucket has no cap of its own; [`Limit::max_in_flight`] caps the whole
+    /// limit, and a client can use both: five calls for each tenant, and twenty in all. They
+    /// apply with the windows, all at once: a request that waits for a place holds nothing
+    /// in another bucket. A bucket that has a cap and no [`learn`](Self::learn) function
+    /// lets up to `n` requests of a key leave at once, from the first call; a bucket that
+    /// learns still lets one request of a key leave at a time until a response has taught
+    /// it a window (see [`new`](Self::new)). A request that finds no free place before
+    /// `max_hold` ends fails with `MaxHold`, whose `required` is `None`; when another wait
+    /// that is known, a window or a `429`, is longer than what is left of `max_hold`, the
+    /// request fails at once instead, and `required` is that wait. A cap of zero fails
+    /// every call with `InvalidPolicy` before any key or cost function runs.
+    ///
+    /// The cap counts what this process holds, and does not protect against three things.
+    /// A request dropped by its caller, or by a call `timeout`, frees its place at once,
+    /// even while the server still works on it. A response whose body is kept and never
+    /// read holds its place for as long as it is kept. And a key with a request in progress
+    /// is never forgotten, so that its count is never lost: when every key that
+    /// [`Limit::max_keys`] allows has a request in progress, a request with a new key fails
+    /// at once with `TooManyKeys`.
+    ///
+    /// ```no_run
+    /// use concord::limit::{Bucket, Limit};
+    /// concord::api! {
+    ///     client Books {
+    ///         base "https://books.example.test";
+    ///         GET invoices(tenant: String) -> String {
+    ///             path "invoices";
+    ///             headers { "tenant-id" = tenant; }
+    ///             read concord::Text;
+    ///         }
+    ///     }
+    /// }
+    /// async fn invoices(tenant: String) -> Result<String, concord::Error> {
+    ///     // Five calls in progress at once for each tenant, whatever the other tenants do.
+    ///     let per_tenant = Bucket::new(|call| {
+    ///         Some(call.request().headers().get("tenant-id")?.to_str().ok()?.to_owned())
+    ///     })
+    ///     .max_in_flight(5);
+    ///     Books::new().with_middleware(Limit::new().bucket(per_tenant)).invoices(tenant).await
+    /// }
+    /// ```
+    #[must_use = "attach the configured value to its bucket or client"]
+    pub fn max_in_flight(self, n: usize) -> Self {
+        Self {
+            max_in_flight: Some(n),
+            ..self
+        }
+    }
+
     /// Sets the function that reads the windows from each response.
     ///
     /// By default a bucket learns nothing. An empty list teaches nothing.
     ///
     /// The list describes every window of the bucket, in order: a window's position
     /// identifies it across responses and the windows set with [`window`](Self::window).
-    /// The header helpers keep that order by sorting rolling periods. A list that is
+    /// So the order must stay the same from one response to the next: an API that changes the
+    /// order of its windows between reports is read wrongly. The header helpers keep that
+    /// order by sorting rolling periods. A list that is
     /// incompatible, too large or invalid is ignored as a whole. What is learned can
     /// only tighten an active window, taking into account the cost of other requests in
     /// progress; an older reset is ignored. No result fails the request that received
@@ -413,6 +481,8 @@ pub struct Window {
     capacity: u64,
     kind: Kind,
     remaining: Option<u64>,
+    // The reset of a fixed window as the server dated it, when a reader of dates knows it.
+    reset_at: Option<SystemTime>,
 }
 
 #[derive(Clone)]
@@ -433,6 +503,7 @@ impl Window {
             capacity,
             kind: Kind::Rolling(period),
             remaining: None,
+            reset_at: None,
         }
     }
 
@@ -453,6 +524,7 @@ impl Window {
             capacity,
             kind: Kind::Fixed(Instant::now().checked_add(resets_in)),
             remaining: None,
+            reset_at: None,
         }
     }
 
@@ -565,6 +637,47 @@ impl Seen<'_> {
     pub fn until_unix(&self, seconds: u64) -> Option<Duration> {
         let date = std::time::UNIX_EPOCH.checked_add(Duration::from_secs(seconds))?;
         Some(date.duration_since(self.now).unwrap_or_default())
+    }
+
+    /// Returns the time until an RFC 3339 date-time, such as `2026-11-17T12:00:30Z`, counted
+    /// on the server's clock when the response gives it.
+    ///
+    /// The time is counted from the response's `Date` header when it appears once, holds at
+    /// most 4096 bytes and is an HTTP date in any of its three forms, read as `Retry-After` is
+    /// read (`Sun, 06 Nov 1994 08:49:37 GMT`, and the two obsolete forms), so that a wrong clock
+    /// in this process does not move the reset. As that grammar allows, `23:59:60` is read as
+    /// the next second on any day, also on one when UTC had no leap second, and a two-digit year
+    /// takes its century from this process's clock. Without such a header it is counted from
+    /// [`now()`](Self::now), and a wrong clock then costs this much: a clock that is fast by
+    /// some minutes makes each reset that much nearer, so a window refills that much early,
+    /// and a reset nearer than the error looks past and teaches nothing; a clock that is
+    /// slow makes requests wait that much longer than the server needs. The limit then waits
+    /// on its internal timer, not on the wall clock. [`until_unix`](Self::until_unix) always
+    /// counts from `now()`, and has no bound of fifty years.
+    ///
+    /// Accepted: a full date, then `T`, `t` or one space, a full time with seconds, an
+    /// optional fraction, then `Z`, `z` or an offset such as `+01:00`; spaces and tabs around
+    /// the text are ignored. A leap second, `23:59:60` UTC on the last day of a month, counts
+    /// as the next second. A fraction finer than a nanosecond is rounded up, never down.
+    /// Returns zero if the date is past. Returns `None` for any other separator, a date that
+    /// does not exist, a malformed offset, a leap second at another time, a text over 4096
+    /// bytes, a date that cannot be represented, or a reset more than fifty years (of 365.2425
+    /// days) ahead, as an HTTP date's two-digit year is never read further ahead.
+    ///
+    /// ```no_run
+    /// fn reset(seen: &concord::limit::Seen<'_>) -> Option<std::time::Duration> {
+    ///     seen.until_rfc3339(seen.header("x-reset")?)
+    /// }
+    /// ```
+    pub fn until_rfc3339(&self, text: &str) -> Option<Duration> {
+        headers::until(headers::rfc3339(text)?, self.server_now())
+    }
+
+    /// The response's `Date` when it is one valid HTTP date; otherwise the local clock.
+    fn server_now(&self) -> SystemTime {
+        self.header("date")
+            .and_then(|date| headers::http_date(date, self.now))
+            .unwrap_or(self.now)
     }
 }
 
@@ -785,11 +898,22 @@ impl Limit {
 
     /// Sets the longest total wait of a request: 60 seconds by default.
     ///
-    /// A request whose known wait is longer fails at once; a request whose wait is
-    /// unknown fails when this limit is reached. Zero lets a request leave only if it
-    /// needs no wait. The error is `MaxHold`: `required` is the wait still needed when
+    /// It bounds waiting: a request that needs no wait leaves, for every valid value of this
+    /// setting. A value that no deadline can represent, such as `Duration::MAX`, is invalid:
+    /// every call fails with `InvalidPolicy`, even one that needs no wait. A request whose known wait is longer fails at once; a request whose wait is
+    /// unknown fails when this limit is reached. Zero lets a request leave only if it needs
+    /// no wait. The error is `MaxHold`: `required` is the wait still needed when
     /// the request was refused, and `retry_after` keeps the server's original value for
     /// a `429` that contributed to the wait.
+    ///
+    /// The time counts from when the limit receives the request, the key and cost functions
+    /// of the buckets included: a request that must wait may wait until this limit has
+    /// passed since then, and fails with `MaxHold` if its wait would end later. A request
+    /// that needs no wait leaves whatever those functions took: their time is the author's.
+    /// They run to their end, so a call that fails can return later than this limit by the
+    /// time they take, with nothing sent. The limit is checked when the waiting task runs
+    /// again, and Tokio's timer wakes with a granularity of about a millisecond: a request
+    /// whose wait and `max_hold` are both shorter than that can be refused after waiting.
     ///
     /// ```no_run
     /// let limit = concord::limit::Limit::new().max_hold(std::time::Duration::from_secs(10));
@@ -850,13 +974,15 @@ impl Middleware for Limit {
         info: TryInfo,
         next: Next<'_>,
     ) -> Result<Response, TransportError> {
+        // `max_hold` counts from here: the key and cost functions take part of it.
+        let start = Instant::now();
         let selected = self
             .inner
             .select(&request, &info)
             .map_err(|error| TransportError::blocked().with_source(error))?;
         let (reservation, permit) = self
             .inner
-            .reserve(selected)
+            .reserve(selected, start)
             .await
             .map_err(|error| TransportError::blocked().with_source(error))?;
         let response = next.send(request, info).await?;
@@ -925,4 +1051,51 @@ pub fn remaining(
     reset: impl Into<String>,
 ) -> Box<dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync> {
     headers::remaining(limit.into(), remaining.into(), reset.into())
+}
+
+/// Returns a `learn` function for headers of a capacity, the units left and a reset as an RFC 3339 date-time.
+///
+/// It reads as [`remaining`] does, with the reset written as a date-time such as
+/// `2026-11-17T12:00:30Z`, read as [`Seen::until_rfc3339`] reads it: counted from the
+/// response's `Date` header when it has a valid one, otherwise from the local clock. Each
+/// header may be at most 4096 bytes. The capacity and the units left must be readable
+/// nonnegative integers, written with digits only; the capacity must be positive, the units
+/// left must not exceed it, and the reset must be in the future. Otherwise nothing is
+/// learned. The result is one current fixed window that refills once, to its whole
+/// capacity, at that reset. A later response that reports less left, for the same reset or a
+/// later one, lowers what is left at once, and the later of the two deadlines is kept, even
+/// when its own `Date` makes its reset look nearer. A later response that names the same reset
+/// again, after that refill, teaches nothing, however late it arrives, also once the key has
+/// returned to learning. The key remembers the last reset it consumed, at each position, for as
+/// long as the limit keeps the key, also when a response gives it fewer windows or a window
+/// without a date; a key that is forgotten to make room forgets it too. This assumes that the
+/// resets an API gives for one key move forward: two servers whose clocks differ by a second
+/// can still name one refill twice.
+///
+/// ```no_run
+/// use concord::limit::{remaining_rfc3339, Bucket, Limit};
+/// concord::api! {
+///     client Messages {
+///         base "https://messages.example.test";
+///         POST create() -> String { path "messages"; read concord::Text; }
+///     }
+/// }
+/// async fn create() -> Result<String, concord::Error> {
+///     let limit = Limit::new().bucket(Bucket::new(|_| Some("requests".into())).learn(remaining_rfc3339(
+///         "x-requests-limit",
+///         "x-requests-remaining",
+///         "x-requests-reset",
+///     )));
+///     Messages::new().with_middleware(limit).create().await
+/// }
+/// ```
+#[must_use = "attach the configured value to its bucket or client"]
+// PANIC-SAFETY: This lint exception keeps the public callback type explicit; it permits no panic.
+#[allow(clippy::type_complexity)]
+pub fn remaining_rfc3339(
+    limit: impl Into<String>,
+    remaining: impl Into<String>,
+    reset: impl Into<String>,
+) -> Box<dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync> {
+    headers::remaining_rfc3339(limit.into(), remaining.into(), reset.into())
 }

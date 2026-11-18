@@ -1,0 +1,873 @@
+//! Contracts for resets given as RFC 3339 dates, using scripted HTTP and virtual time.
+#![cfg(feature = "limit")]
+// Test fixtures intentionally fail on invalid URLs, headers or error types, and index fixed tables.
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+
+use concord::limit::{remaining, remaining_rfc3339, Bucket, Limit, LimitError, Seen};
+use concord::reqwest::{Method, Request, Response};
+use concord::transport::{TransportError, TryInfo};
+use concord::{Middleware, Next};
+use concord_testkit::Script;
+use std::error::Error as _;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::time::Instant;
+
+fn sec(n: u64) -> Duration {
+    Duration::from_secs(n)
+}
+fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
+}
+
+/// 2030-01-01T00:00:00Z, a server clock unrelated to this machine's.
+const T: u64 = 1_893_456_000;
+
+fn civil(seconds: u64) -> (u64, u64, u64, u64, u64, u64) {
+    let days = seconds / 86_400;
+    let rest = seconds % 86_400;
+    // Days to a civil date (proleptic Gregorian), for days since 1970.
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + u64::from(month <= 2);
+    (year, month, day, rest / 3600, rest % 3600 / 60, rest % 60)
+}
+fn rfc3339(seconds: u64) -> String {
+    let (y, mo, d, h, mi, s) = civil(seconds);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
+fn http_date(seconds: u64) -> String {
+    let (y, mo, d, h, mi, s) = civil(seconds);
+    let weekday =
+        ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][(seconds / 86_400 % 7) as usize];
+    let month = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ][(mo - 1) as usize];
+    format!("{weekday}, {d:02} {month} {y:04} {h:02}:{mi:02}:{s:02} GMT")
+}
+fn local_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+async fn call(limit: &Limit, script: &Script) -> Result<Response, TransportError> {
+    let request = Request::new(Method::GET, "https://one.test/data".parse().unwrap());
+    limit
+        .handle(request, TryInfo::new("data", 1), Next::to(script))
+        .await
+}
+fn cause(error: &TransportError) -> &LimitError {
+    error.source().unwrap().downcast_ref().unwrap()
+}
+fn sent(script: &Script, start: Instant) -> Vec<Duration> {
+    script.requests().iter().map(|r| r.at() - start).collect()
+}
+fn requests() -> Limit {
+    Limit::new().max_hold(sec(120)).bucket(
+        Bucket::new(|_| Some("requests".into())).learn(remaining_rfc3339(
+            "x-limit",
+            "x-remaining",
+            "x-reset",
+        )),
+    )
+}
+
+/// What `until_rfc3339` returned for the `x-reset` of each response.
+fn recorder() -> (Limit, Arc<Mutex<Vec<Option<Duration>>>>) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let kept = seen.clone();
+    let limit = Limit::new().bucket(Bucket::new(|_| Some("k".into())).learn(
+        move |seen: &Seen<'_>| {
+            let until = seen
+                .header("x-reset")
+                .and_then(|text| seen.until_rfc3339(text));
+            kept.lock().unwrap().push(until);
+            Vec::new()
+        },
+    ));
+    (limit, seen)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_rfc3339_reset_counts_from_a_valid_date_whatever_the_local_clock() {
+    let local = local_now();
+    let script = Script::new();
+    // Server clocks behind this one by ten minutes, ahead by ten minutes, and years ahead.
+    for server in [local - 600, local + 600, T] {
+        script
+            .answer(200)
+            .header("date", &http_date(server))
+            .header("x-reset", &rfc3339(server + 90));
+    }
+    script
+        .answer(200)
+        .header("date", &http_date(T))
+        .header("x-reset", "2030-01-01T00:00:01.0000000001Z");
+    script
+        .answer(200)
+        .header("date", &http_date(T))
+        .header("x-reset", &rfc3339(T - 1));
+    let (limit, seen) = recorder();
+    for _ in 0..5 {
+        call(&limit, &script).await.unwrap();
+    }
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            Some(sec(90)),
+            Some(sec(90)),
+            Some(sec(90)),
+            // A fraction finer than a nanosecond is rounded up.
+            Some(Duration::new(1, 1)),
+            // A reset in the past is zero.
+            Some(Duration::ZERO),
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_rfc3339_without_one_valid_date_counts_from_the_local_clock() {
+    let local = local_now();
+    let reset = rfc3339(local + 3600);
+    let script = Script::new();
+    script.answer(200).header("x-reset", &reset);
+    // Repeated, with a weekday that is not the date's, and not a date: each falls back to
+    // this clock.
+    script
+        .answer(200)
+        .header("date", &http_date(T))
+        .header("date", &http_date(T))
+        .header("x-reset", &reset);
+    script
+        .answer(200)
+        .header("date", "Monday, 01-Jan-30 00:00:00 GMT")
+        .header("x-reset", &reset);
+    script
+        .answer(200)
+        .header("date", "yesterday")
+        .header("x-reset", &reset);
+    let (limit, seen) = recorder();
+    for _ in 0..4 {
+        call(&limit, &script).await.unwrap();
+    }
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 4);
+    for until in seen.iter() {
+        let until = until.unwrap();
+        // The wall clock moves a little while the test runs.
+        assert!(until <= sec(3600) && until > sec(3590), "{until:?}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_learned_dated_reset_holds_the_next_call_until_it() {
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("date", &http_date(T))
+        .header("x-limit", "1")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(T + 90));
+    script.answer(200);
+    let limit = requests();
+    let start = Instant::now();
+    call(&limit, &script).await.unwrap();
+    call(&limit, &script).await.unwrap();
+    assert_eq!(sent(&script, start), [sec(0), sec(90)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_wrong_local_clock_without_date_costs_in_each_direction() {
+    let local = local_now();
+    // This clock is ten minutes fast: the server's reset looks past and teaches nothing,
+    // so the next call is not held (the server would refuse it with a 429).
+    let server = local - 600;
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "1")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(server + 90));
+    script.answer(200);
+    let limit = requests();
+    let start = Instant::now();
+    call(&limit, &script).await.unwrap();
+    call(&limit, &script).await.unwrap();
+    assert_eq!(sent(&script, start), [sec(0), sec(0)]);
+
+    // With the server's Date, the same reset holds for its 90 seconds.
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("date", &http_date(server))
+        .header("x-limit", "1")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(server + 90));
+    script.answer(200);
+    let limit = requests();
+    let start = Instant::now();
+    call(&limit, &script).await.unwrap();
+    call(&limit, &script).await.unwrap();
+    assert_eq!(sent(&script, start), [sec(0), sec(90)]);
+
+    // This clock is ten minutes slow: the reset looks 690 seconds away, longer than
+    // max_hold, so the next call fails at once.
+    let server = local + 600;
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "1")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(server + 90));
+    let limit = requests();
+    let start = Instant::now();
+    call(&limit, &script).await.unwrap();
+    let error = call(&limit, &script).await.unwrap_err();
+    assert!(
+        matches!(cause(&error), LimitError::MaxHold { required: Some(wait), .. }
+            if *wait > sec(680) && *wait <= sec(690)),
+        "{:?}",
+        cause(&error)
+    );
+    assert_eq!(sent(&script, start), [sec(0)]);
+    assert_eq!(start.elapsed(), Duration::ZERO);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_past_or_unreadable_dated_reset_teaches_nothing() {
+    let script = Script::new();
+    for (limit, left, reset) in [
+        ("1", "0", rfc3339(T - 1)),
+        ("1", "0", rfc3339(T)),
+        ("+1", "0", rfc3339(T + 90)),
+        ("1", "+0", rfc3339(T + 90)),
+        ("1", "2", rfc3339(T + 90)),
+        ("1", "0", "2030-01-01X00:01:30Z".into()),
+        ("1", "0", format!("{}{}", rfc3339(T + 90), " ".repeat(4097))),
+    ] {
+        script
+            .answer(200)
+            .header("date", &http_date(T))
+            .header("x-limit", limit)
+            .header("x-remaining", left)
+            .header("x-reset", &reset);
+    }
+    script.answer(200);
+    let limit = requests();
+    let start = Instant::now();
+    for _ in 0..8 {
+        call(&limit, &script).await.unwrap();
+    }
+    assert_eq!(sent(&script, start), [Duration::ZERO; 8]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_late_head_naming_the_same_reset_grants_no_second_refill() {
+    let script = Script::new();
+    let answer = |after: Duration, date: u64, left: &str, reset: u64| {
+        script
+            .answer(200)
+            .after(after)
+            .header("date", &http_date(date))
+            .header("x-limit", "2")
+            .header("x-remaining", left)
+            .header("x-reset", &rfc3339(reset));
+    };
+    // A: the budget is 2 until T + 2. B: written at T too, its head arrives after the reset.
+    answer(Duration::ZERO, T, "1", T + 2);
+    answer(sec(3), T, "0", T + 2);
+    // C and D spend the refill; their heads, which name the next reset, come late.
+    answer(sec(10), T + 2, "1", T + 62);
+    answer(sec(10), T + 2, "0", T + 62);
+    answer(Duration::ZERO, T + 72, "1", T + 122);
+    answer(Duration::ZERO, T + 72, "0", T + 122);
+    let limit = requests();
+    let start = Instant::now();
+    let spawn = |limit: &Limit| {
+        let (limit, script) = (limit.clone(), script.clone());
+        tokio::spawn(async move { call(&limit, &script).await.map(drop) })
+    };
+    call(&limit, &script).await.unwrap();
+    let b = spawn(&limit);
+    tokio::time::sleep_until(start + ms(2500)).await;
+    let (c, d) = (spawn(&limit), spawn(&limit));
+    // B's head arrives at 3 s: after the refill that its reset gave, it names that reset again.
+    tokio::time::sleep_until(start + ms(3500)).await;
+    let (e, f) = (spawn(&limit), spawn(&limit));
+    for call in [b, c, d, e, f] {
+        call.await.unwrap().unwrap();
+    }
+    // E and F wait for the reset that C's and D's heads name: 60 s after their Date, counted
+    // from their arrival at 12.5 s. Two units per period, never four.
+    assert_eq!(
+        sent(&script, start),
+        [ms(0), ms(0), ms(2500), ms(2500), ms(72_500), ms(72_500)]
+    );
+    assert!(script.requests().iter().all(|r| r.info().number() == 1));
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_lower_balance_with_a_newer_dated_reset_is_honoured_at_once() {
+    // Two units left until T + 10; then none left until T + 11, three seconds after that
+    // response's own Date: on this clock, its reset comes before the one already known.
+    let script = Script::new();
+    for (date, reset, left) in [(T, T + 10, "2"), (T + 8, T + 11, "0")] {
+        script
+            .answer(200)
+            .header("date", &http_date(date))
+            .header("x-limit", "3")
+            .header("x-remaining", left)
+            .header("x-reset", &rfc3339(reset));
+    }
+    script.answer(200);
+    let limit = requests();
+    let start = Instant::now();
+    for _ in 0..3 {
+        call(&limit, &script).await.unwrap();
+    }
+    // The zero is honoured at once, and the later of the two deadlines is kept.
+    assert_eq!(sent(&script, start), [sec(0), sec(0), sec(10)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_remaining_in_unix_seconds_honours_a_lower_balance_on_its_one_clock() {
+    // The reader of Unix seconds counts every reset from this process's clock, so a reset
+    // that is the same or later never comes earlier: its zero is honoured at once.
+    let local = local_now();
+    let script = Script::new();
+    for (reset, left) in [(local + 10, "2"), (local + 11, "0")] {
+        script
+            .answer(200)
+            .header("x-limit", "3")
+            .header("x-remaining", left)
+            .header("x-reset", &reset.to_string());
+    }
+    script.answer(200);
+    let limit = Limit::new().bucket(Bucket::new(|_| Some("requests".into())).learn(remaining(
+        "x-limit",
+        "x-remaining",
+        "x-reset",
+    )));
+    let start = Instant::now();
+    for _ in 0..3 {
+        call(&limit, &script).await.unwrap();
+    }
+    let at = sent(&script, start);
+    assert_eq!(&at[..2], [sec(0), sec(0)]);
+    // The wall clock moves a little while the test runs.
+    assert!(at[2] > sec(10) && at[2] <= sec(11), "{at:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_reset_already_consumed_grants_no_refill_when_learning_resumes() {
+    let script = Script::new();
+    let old = || {
+        script
+            .answer(200)
+            .header("date", &http_date(T))
+            .header("x-limit", "2")
+            .header("x-remaining", "0")
+            .header("x-reset", &rfc3339(T + 2));
+    };
+    // Nothing left until T + 2; two responses that teach nothing spend the refill, so the
+    // key learns again; its next head names the same reset once more.
+    old();
+    script.answer(200);
+    script.answer(200);
+    old();
+    for _ in 0..2 {
+        script.answer(200).after(sec(10));
+    }
+    let limit = requests();
+    let start = Instant::now();
+    for _ in 0..4 {
+        call(&limit, &script).await.unwrap();
+    }
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    // The repeated reset gives no second refill: the key goes on learning, one call at a time.
+    assert_eq!(
+        sent(&script, start),
+        [sec(0), sec(2), sec(2), sec(2), sec(2), sec(12)]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_the_date_header_is_read_in_the_three_http_forms_and_bounded() {
+    let long_date = format!("{}{}", http_date(T), " ".repeat(4097));
+    let script = Script::new();
+    let (limit, seen) = recorder();
+    let cases = [
+        // RFC 850, asctime, a leap second, and a date before 1970.
+        (
+            "Sunday, 06-Nov-94 08:49:37 GMT",
+            "1994-11-06T08:49:39Z".to_owned(),
+        ),
+        (
+            "Sun Nov  6 08:49:37 1994",
+            "1994-11-06T08:49:39Z".to_owned(),
+        ),
+        (
+            "Sat, 31 Dec 2016 23:59:60 GMT",
+            "2017-01-01T00:00:02Z".to_owned(),
+        ),
+        (
+            "Wed, 31 Dec 1969 23:59:57 GMT",
+            "1969-12-31T23:59:59Z".to_owned(),
+        ),
+        // Offsets.
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "2030-01-01T00:00:00-00:30".to_owned(),
+        ),
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "2030-01-01T00:00:00-99:59".to_owned(),
+        ),
+        // Fifty years ahead of the Date, and one second more.
+        ("Tue, 01 Jan 2030 00:00:00 GMT", rfc3339(T + 1_577_847_600)),
+        ("Tue, 01 Jan 2030 00:00:00 GMT", rfc3339(T + 1_577_847_601)),
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "9999-12-31T23:59:59-23:59".to_owned(),
+        ),
+        (
+            "Tue, 01 Jan 2030 00:00:00 GMT",
+            "9999-12-31T23:59:60Z".to_owned(),
+        ),
+        // A Date over 4,096 bytes is not read: the local clock counts instead.
+        (long_date.as_str(), rfc3339(T + 2)),
+    ];
+    for (date, reset) in &cases {
+        script
+            .answer(200)
+            .header("date", date)
+            .header("x-reset", reset);
+        call(&limit, &script).await.unwrap();
+    }
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        seen[..10],
+        [
+            Some(sec(2)),
+            Some(sec(2)),
+            Some(sec(2)),
+            Some(sec(2)),
+            Some(sec(1800)),
+            None,
+            Some(sec(1_577_847_600)),
+            None,
+            None,
+            None,
+        ]
+    );
+    let local = seen[10].unwrap();
+    assert!(
+        local > sec(T + 2 - local_now() - 60) && local <= sec(T + 2 - local_now()),
+        "{local:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_remaining_in_unix_seconds_learns_a_reset_fifty_years_ahead() {
+    // The reader of Unix seconds has no such bound: it learns the window, and the next call,
+    // which would wait sixty years, fails at once.
+    let script = Script::new();
+    script
+        .answer(200)
+        .header("x-limit", "1")
+        .header("x-remaining", "0")
+        .header("x-reset", &(local_now() + 60 * 31_556_952).to_string());
+    let limit = Limit::new().bucket(Bucket::new(|_| Some("requests".into())).learn(remaining(
+        "x-limit",
+        "x-remaining",
+        "x-reset",
+    )));
+    call(&limit, &script).await.unwrap();
+    let error = call(&limit, &script).await.unwrap_err();
+    assert!(matches!(
+        cause(&error),
+        LimitError::MaxHold { required: Some(wait), .. } if *wait > sec(59 * 31_556_952)
+    ));
+    assert_eq!(script.requests().len(), 1);
+}
+
+/// A learner of eight windows from the headers of each response: `width` says how many; the
+/// eighth reads its own `tail-…` headers. `prime` starts a new window of twenty.
+fn eight(script: &Script, width: u8, prime: bool) {
+    script
+        .answer(200)
+        .header("date", &http_date(T))
+        .header("width", &width.to_string())
+        .header("x-limit", if prime { "20" } else { "2" })
+        .header("x-remaining", if prime { "20" } else { "0" })
+        .header("x-reset", &rfc3339(if prime { T + 60 } else { T + 2 }))
+        .header("tail-limit", "2")
+        .header("tail-remaining", "0")
+        .header("tail-reset", &rfc3339(T + 2));
+}
+
+async fn widths(short: u8) -> Vec<Duration> {
+    let script = Script::new();
+    let body = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    let tail = remaining_rfc3339("tail-limit", "tail-remaining", "tail-reset");
+    let limit =
+        Limit::new()
+            .max_hold(sec(120))
+            .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+                let Some(width) = seen.header("width").and_then(|w| w.parse::<usize>().ok()) else {
+                    return Vec::new();
+                };
+                (0..width)
+                    .flat_map(|at| if at == 7 { tail(seen) } else { body(seen) })
+                    .collect()
+            }));
+    // Eight windows spent until T + 2; two responses that teach nothing spend the refill;
+    // then `short` windows, and eight again, the eighth naming T + 2 once more.
+    eight(&script, 8, false);
+    script.answer(200);
+    script.answer(200);
+    eight(&script, short, false);
+    eight(&script, 8, true);
+    for _ in 0..2 {
+        script.answer(200).after(sec(10));
+    }
+    let start = Instant::now();
+    for _ in 0..5 {
+        call(&limit, &script).await.unwrap();
+    }
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_survives_a_change_in_the_number_of_windows() {
+    let expected = [sec(0), sec(2), sec(2), sec(2), sec(2), sec(2), sec(12)];
+    assert_eq!(widths(8).await, expected);
+    // Seven windows for one response, then eight again: the eighth still knows its reset.
+    assert_eq!(widths(7).await, expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_survives_a_window_without_a_date() {
+    let script = Script::new();
+    let dated = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    let limit =
+        Limit::new()
+            .max_hold(sec(120))
+            .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+                if seen.header("plain") == Some("1") {
+                    vec![concord::limit::Window::fixed(1, sec(1)).remaining(0)]
+                } else {
+                    dated(seen)
+                }
+            }));
+    let spent = |script: &Script| {
+        script
+            .answer(200)
+            .header("date", &http_date(T))
+            .header("x-limit", "2")
+            .header("x-remaining", "0")
+            .header("x-reset", &rfc3339(T + 2));
+    };
+    // Spent until T + 2; the refill is spent; an undated window comes and is spent; then the
+    // reset of T + 2 is named again.
+    spent(&script);
+    script.answer(200);
+    script.answer(200);
+    script.answer(200).header("plain", "1");
+    script.answer(200);
+    spent(&script);
+    script.answer(200);
+    let start = Instant::now();
+    for _ in 0..7 {
+        call(&limit, &script).await.unwrap();
+    }
+    // The last call learns no refill from the repeated reset: it is the next learning call.
+    assert_eq!(
+        sent(&script, start),
+        [sec(0), sec(2), sec(2), sec(2), sec(3), sec(3), sec(3)]
+    );
+}
+
+/// A dated window of 4, spent until T + 2; then an undated window of 2 until 8 s later; then
+/// `replay`, a response that names a dated reset again, or nothing.
+async fn through_an_undated_window(replay: Option<u64>) -> Vec<Duration> {
+    let script = Script::new();
+    let dated = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    let limit =
+        Limit::new()
+            .max_hold(sec(120))
+            .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+                if seen.header("undated").is_some() {
+                    vec![concord::limit::Window::fixed(2, sec(8)).remaining(2)]
+                } else {
+                    dated(seen)
+                }
+            }));
+    let spent = |script: &Script, reset: u64| {
+        script
+            .answer(200)
+            .header("date", &http_date(T))
+            .header("x-limit", "4")
+            .header("x-remaining", "0")
+            .header("x-reset", &rfc3339(reset));
+    };
+    spent(&script, T + 2);
+    script.answer(200).header("undated", "1");
+    match replay {
+        Some(reset) => spent(&script, reset),
+        None => {
+            script.answer(200);
+        }
+    }
+    let start = Instant::now();
+    for _ in 0..3 {
+        call(&limit, &script).await.unwrap();
+    }
+    for _ in 0..4 {
+        script.answer(200).after(sec(6));
+    }
+    let calls: Vec<_> = (0..4)
+        .map(|_| {
+            let (limit, script) = (limit.clone(), script.clone());
+            tokio::spawn(async move { call(&limit, &script).await.map(drop) })
+        })
+        .collect();
+    for call in calls {
+        call.await.unwrap().unwrap();
+    }
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_named_again_leaves_a_live_undated_window_alone() {
+    let expected = [sec(0), sec(2), sec(2), sec(10), sec(10), sec(16), sec(22)];
+    assert_eq!(through_an_undated_window(None).await, expected);
+    // An older reset, and the reset already consumed: the window of two stays a window of two.
+    assert_eq!(through_an_undated_window(Some(T + 1)).await, expected);
+    assert_eq!(through_an_undated_window(Some(T + 2)).await, expected);
+}
+
+/// A learner whose `mode` header says what each of `width` positions is: all dated, a one-unit
+/// window, a live undated window of two at `target` (twenty elsewhere), or a replay of the
+/// dated reset at `target` (twenty elsewhere).
+fn resizing(target: usize) -> Limit {
+    let dated = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    Limit::new()
+        .max_hold(sec(120))
+        .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+            let Some(width) = seen.header("width").and_then(|w| w.parse::<usize>().ok()) else {
+                return Vec::new();
+            };
+            let mode = seen.header("mode").unwrap_or_default();
+            let mut windows = Vec::new();
+            for at in 0..width {
+                if mode == "all-dated" || (mode == "replay" && at == target) {
+                    windows.extend(dated(seen));
+                } else if mode == "single-unit" {
+                    windows.push(concord::limit::Window::fixed(1, sec(1)).remaining(0));
+                } else if at == target {
+                    windows.push(concord::limit::Window::fixed(2, sec(8)).remaining(1));
+                } else {
+                    windows.push(concord::limit::Window::fixed(20, sec(8)).remaining(20));
+                }
+            }
+            windows
+        }))
+}
+
+fn report(script: &Script, mode: &str, width: usize, reset: u64) {
+    script
+        .answer(200)
+        .header("mode", mode)
+        .header("width", &width.to_string())
+        .header("date", &http_date(T))
+        .header("x-limit", "4")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(T + reset));
+}
+
+/// Dated windows spent until T + 2, whose refill responses that teach nothing spend; maybe
+/// one window of one unit; then a live undated window, during which `replay` names the
+/// consumed reset again, or nothing does; then four calls at once.
+async fn resized(
+    initial: usize,
+    shrink: bool,
+    last: usize,
+    target: usize,
+    replay: bool,
+) -> Vec<Duration> {
+    let script = Script::new();
+    let limit = resizing(target);
+    let start = Instant::now();
+    report(&script, "all-dated", initial, 2);
+    call(&limit, &script).await.unwrap();
+    for _ in 0..4 {
+        script.answer(200);
+        call(&limit, &script).await.unwrap();
+    }
+    if shrink {
+        report(&script, "single-unit", 1, 0);
+        call(&limit, &script).await.unwrap();
+        script.answer(200);
+        call(&limit, &script).await.unwrap();
+    }
+    report(&script, "live-undated", last, 0);
+    call(&limit, &script).await.unwrap();
+    if replay {
+        report(&script, "replay", last, 2);
+    } else {
+        script.answer(200);
+    }
+    call(&limit, &script).await.unwrap();
+    for _ in 0..4 {
+        script.answer(200).after(sec(6));
+    }
+    let calls: Vec<_> = (0..4)
+        .map(|_| {
+            let (limit, script) = (limit.clone(), script.clone());
+            tokio::spawn(async move { call(&limit, &script).await.map(drop) })
+        })
+        .collect();
+    for call in calls {
+        call.await.unwrap().unwrap();
+    }
+    let sent = sent(&script, start);
+    sent[sent.len() - 4..].to_vec()
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_stays_paid_when_a_key_grows_its_windows() {
+    let expected = [sec(10), sec(10), sec(16), sec(22)];
+    assert_eq!(resized(1, false, 2, 0, false).await, expected);
+    assert_eq!(resized(1, false, 2, 0, true).await, expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_stays_paid_when_a_position_is_removed_and_restored() {
+    let expected = [sec(11), sec(11), sec(17), sec(23)];
+    assert_eq!(resized(8, true, 8, 7, false).await, expected);
+    assert_eq!(resized(8, true, 8, 7, true).await, expected);
+}
+
+/// A head written at T: two units, none left, reset at T + 4; arriving `after` seconds late.
+fn spent_until_four(script: &Script, after: u64) {
+    script
+        .answer(200)
+        .after(sec(after))
+        .header("date", &http_date(T))
+        .header("x-limit", "2")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(T + 4));
+}
+
+/// The learner that `remaining_rfc3339` returns.
+type Reader = Box<dyn Fn(&Seen<'_>) -> Vec<concord::limit::Window> + Send + Sync>;
+
+fn reader() -> Reader {
+    remaining_rfc3339("x-limit", "x-remaining", "x-reset")
+}
+
+async fn declared(replay: bool) -> Vec<Duration> {
+    let start = Instant::now();
+    // The window is read once from a response, and declared on the bucket of another limit.
+    let capture = Script::new();
+    spent_until_four(&capture, 0);
+    let kept = Arc::new(Mutex::new(None));
+    let into = kept.clone();
+    let read = reader();
+    let first = Limit::new().bucket(Bucket::new(|_| Some("k".into())).learn(move |seen| {
+        *into.lock().unwrap() = read(seen).pop();
+        Vec::new()
+    }));
+    call(&first, &capture).await.unwrap();
+    let window = kept.lock().unwrap().take().unwrap();
+    let limit = Limit::new().max_hold(Duration::ZERO).bucket(
+        Bucket::new(|_| Some("k".into()))
+            .window(window)
+            .learn(reader()),
+    );
+    let script = Script::new();
+    if replay {
+        spent_until_four(&script, 1);
+    } else {
+        script.answer(200).after(sec(1));
+    }
+    script.answer(200);
+    tokio::time::advance(sec(4)).await;
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    tokio::time::advance(sec(4)).await;
+    for _ in 0..2 {
+        script.answer(200);
+        if let Err(error) = call(&limit, &script).await {
+            assert!(matches!(cause(&error), LimitError::MaxHold { .. }));
+        }
+    }
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_declared_dated_window_pays_its_reset_once() {
+    assert_eq!(declared(false).await, [sec(4), sec(4)]);
+    // Its reset named again by a head after the refill gives nothing more.
+    assert_eq!(declared(true).await, [sec(4), sec(4)]);
+}
+
+async fn straddling(replay: bool) -> Vec<Duration> {
+    use futures_util::FutureExt;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let start = Instant::now();
+    let script = Script::new();
+    let first = AtomicBool::new(true);
+    let read = reader();
+    // The first head is learned from only after its own reset has passed.
+    let limit =
+        Limit::new()
+            .max_hold(Duration::ZERO)
+            .bucket(Bucket::new(|_| Some("k".into())).learn(move |seen| {
+                let windows = read(seen);
+                if first.swap(false, Ordering::SeqCst) {
+                    assert!(tokio::time::advance(sec(4)).now_or_never().is_none());
+                }
+                windows
+            }));
+    spent_until_four(&script, 0);
+    call(&limit, &script).await.unwrap();
+    if replay {
+        spent_until_four(&script, 1);
+    } else {
+        script.answer(200).after(sec(1));
+    }
+    script.answer(200);
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    b.unwrap();
+    tokio::time::advance(sec(4)).await;
+    script.answer(200).after(sec(1));
+    script.answer(200);
+    let (a, b) = tokio::join!(call(&limit, &script), call(&limit, &script));
+    a.unwrap();
+    drop(b);
+    sent(&script, start)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_first_head_learned_after_its_reset_pays_it_once() {
+    let expected = [sec(0), sec(4), sec(4), sec(9)];
+    assert_eq!(straddling(false).await, expected);
+    assert_eq!(straddling(true).await, expected);
+}

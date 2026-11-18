@@ -39,7 +39,7 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"],
 hmac = { version = "0.13", optional = true }
 sha2 = { version = "0.11", optional = true }
 hex = { version = "0.4", optional = true }
-time = { version = "0.3", default-features = false, features = ["std", "formatting"], optional = true }
+time = { version = "0.3", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 bincode = "1.3.3"
@@ -58,9 +58,9 @@ auth = ["dep:tokio", "dep:futures-util", "dep:http-body"]
 # Single-use refresh tokens and an application-polled renewal future.
 rotating = ["auth", "tokio/sync"]
 # Request-signing helpers and Signature Version 4 middleware.
-sign = ["dep:hmac", "dep:sha2", "dep:hex", "dep:time", "dep:tokio"]
+sign = ["dep:hmac", "dep:sha2", "dep:hex", "dep:time", "time/formatting", "dep:tokio"]
 # Shared Retry-After gates, concurrency and keyed budgets.
-limit = ["dep:tokio", "tokio/sync", "dep:http-body"]
+limit = ["dep:tokio", "tokio/sync", "dep:http-body", "dep:time", "time/parsing"]
 # JSON bodies and records, and their readers.
 json = ["dep:serde_json", "dep:serde_path_to_error"]
 # Flat and nested forms, and nested query pairs.
