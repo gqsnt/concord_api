@@ -426,6 +426,7 @@ impl History {
                     if *identity != new.reset_at {
                         *paid = false;
                     }
+                    // PANIC-SAFETY: This assigns through a reference to the date; it is not a multiplication.
                     *identity = new.reset_at;
                 }
                 self.dated = new.reset_at.is_some();
