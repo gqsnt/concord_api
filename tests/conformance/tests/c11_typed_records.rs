@@ -354,6 +354,105 @@ async fn c11_13_row_03_skips_spend_one_budget_per_pull_and_the_pull_yields_and_g
     }
 }
 
+/// Skipped records, then the item last, in one chunk of exactly `total` bytes.
+fn exactly(reader: Reader, total: usize) -> Vec<u8> {
+    let ping = reader.record(PING);
+    let item = reader.record(ITEM_1);
+    let mut body = Vec::new();
+    let mut left = total - item.len();
+    while left >= 2 * ping.len() {
+        body.extend_from_slice(&ping);
+        left -= ping.len();
+    }
+    // The last skipped record fills what is left, with spaces inside its JSON.
+    let padded = format!("{{\"kind\":\"ping\"{}}}", " ".repeat(left - ping.len()));
+    body.extend(reader.record(&padded));
+    body.extend(item);
+    assert_eq!(body.len(), total);
+    body
+}
+
+/// The first poll of the first item of this stream, with a waker that does nothing.
+fn first_poll(
+    stream: &mut RecordStream<u32, feed::Error>,
+) -> Poll<Option<Result<u32, feed::Error>>> {
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    poll(stream, &mut cx)
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_13_row_03_the_byte_budget_of_a_poll_is_exactly_16_kib() {
+    for reader in BOTH {
+        for (total, ready) in [(16_384, true), (16_385, false)] {
+            let script = Script::new();
+            answer(&script, &[exactly(reader, total)]);
+            let mut stream = reader.open(&feed(&script), false).await;
+            match first_poll(&mut stream) {
+                Poll::Ready(Some(Ok(1))) if ready => {}
+                Poll::Pending if !ready => assert_eq!(item(stream.try_next().await), 1),
+                other => panic!(
+                    "{reader:?}, {total} bytes: {:?}",
+                    other.map(|o| o.map(|r| r.map_err(|e| e.to_string())))
+                ),
+            }
+            end(stream.try_next().await);
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_13_row_03_the_chunk_budget_of_a_poll_is_exactly_64_chunks() {
+    for reader in BOTH {
+        for (chunks, ready) in [(64, true), (65, false)] {
+            let mut pieces: Vec<Vec<u8>> = (1..chunks).map(|_| reader.record(PING)).collect();
+            pieces.push(reader.record(ITEM_1));
+            let script = Script::new();
+            answer(&script, &pieces);
+            let mut stream = reader.open(&feed(&script), false).await;
+            match first_poll(&mut stream) {
+                Poll::Ready(Some(Ok(1))) if ready => {}
+                Poll::Pending if !ready => assert_eq!(item(stream.try_next().await), 1),
+                other => panic!(
+                    "{reader:?}, {chunks} chunks: {:?}",
+                    other.map(|o| o.map(|r| r.map_err(|e| e.to_string())))
+                ),
+            }
+            end(stream.try_next().await);
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_13_row_01_a_crlf_cut_between_its_two_bytes_is_one_line_end() {
+    // An event of two data lines whose first CRLF is cut between the CR and the LF: the LF
+    // that opens the next chunk ends the same line, and no blank line dispatches the event.
+    let script = Script::new();
+    answer(
+        &script,
+        &[
+            b"data: {\"kind\":\"item\",\r".to_vec(),
+            b"\ndata: \"n\":7}\r\n\r\n".to_vec(),
+        ],
+    );
+    let mut stream = Reader::Sse.open(&feed(&script), false).await;
+    assert_eq!(item(stream.try_next().await), 7);
+    end(stream.try_next().await);
+    // A JSON line whose CRLF is cut the same way.
+    let script = Script::new();
+    answer(
+        &script,
+        &[
+            b"{\"kind\":\"item\",\"n\":7}\r".to_vec(),
+            b"\n{\"kind\":\"item\",\"n\":8}\r\n".to_vec(),
+        ],
+    );
+    let mut stream = Reader::Lines.open(&feed(&script), false).await;
+    assert_eq!(item(stream.try_next().await), 7);
+    assert_eq!(item(stream.try_next().await), 8);
+    end(stream.try_next().await);
+}
+
 // Row 4 ------------------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
@@ -853,6 +952,37 @@ async fn c11_13_row_17_a_body_that_breaks_is_the_cores_transport_error() {
             .cut();
         let mut stream = reader.open(&feed(&script), false).await;
         assert_eq!(item(stream.try_next().await), 1);
+        let error = failed(stream.try_next().await);
+        assert_eq!(error.kind(), Kind::Transport);
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "transport error: the response body could not be read after status 200, in {}",
+                reader.endpoint(false)
+            )
+        );
+        end(stream.try_next().await);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_13_row_17_a_body_one_byte_short_of_its_length_is_the_cores_transport_error() {
+    for reader in BOTH {
+        // A transport that passes the body as it is, with its `content-length`: only the
+        // reader can see that the body ended one byte short.
+        let body = reader.records(&[ITEM_1, ITEM_2]);
+        let length = (body.len() + 1).to_string();
+        let short = concord::fake(move |_| {
+            Ok(concord::reply_with(
+                200,
+                &[("content-length", length.as_str()), ("x-trace", "t1")],
+                body.clone(),
+            ))
+        });
+        let mut stream = reader.open(&Feed::new().with_transport(short), false).await;
+        assert_eq!(item(stream.try_next().await), 1);
+        assert_eq!(item(stream.try_next().await), 2);
+        // A clean end under `until_end_of_body`, but one byte is missing: not the end.
         let error = failed(stream.try_next().await);
         assert_eq!(error.kind(), Kind::Transport);
         assert_eq!(
