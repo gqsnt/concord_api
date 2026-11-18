@@ -11,8 +11,17 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+mod mapped;
+pub use mapped::{Mapped, Step};
+
 /// The status and headers of a response, and a stream of its records that ends after
 /// the first error.
+///
+/// `E` is the error of the stream. A reader of records gives [`RecordError`], the default:
+/// `RecordStream<SseEvent>`. A reader whose records go through a mapping of your own
+/// ([`Sse::map`], [`JsonLines::map`]) gives the client's own error, `concord::Error<P>`, so
+/// that `?` on the call and `?` on `try_next` meet in one type:
+/// `RecordStream<StreamEvent, concord::Error<ApiProblem>>`.
 ///
 /// `try_next` and `Stream` drive the same parser; you can switch from one to the other
 /// between records. Dropping this stream releases its body and its place in any cap on
@@ -42,13 +51,13 @@ use std::time::Duration;
 /// }
 /// ```
 #[must_use = "pull records from the stream or drop it to release the body"]
-pub struct RecordStream<T> {
-    records: Option<Box<dyn Pull<T> + Send>>,
+pub struct RecordStream<T, E = RecordError> {
+    records: Option<Box<dyn Pull<T, E> + Send>>,
     status: StatusCode,
     headers: Headers,
 }
 
-impl<T> RecordStream<T> {
+impl<T, E> RecordStream<T, E> {
     /// Returns the response status, kept when the stream was created; it stays available
     /// after the end of the body or a framing error.
     ///
@@ -75,10 +84,11 @@ impl<T> RecordStream<T> {
 
     /// Reads the next record, or `None` at the end of the body.
     ///
-    /// The first error is returned once and ends the stream. A [`RecordError`] is
-    /// returned directly, never inside a `concord::Error`. Dropping this future, even
-    /// before it is polled, keeps the partial record and stops the idle timer, like
-    /// [`ByteStream::try_next`]. The call timeout keeps running.
+    /// The first error is returned once and ends the stream. With the default `E`, a
+    /// [`RecordError`] is returned directly, never inside a `concord::Error`; a mapped
+    /// stream returns the client's own `concord::Error<P>` instead ([`Step`]). Dropping
+    /// this future, even before it is polled, keeps the partial record and stops the idle
+    /// timer, like [`ByteStream::try_next`]. The call timeout keeps running.
     ///
     /// ```no_run
     /// async fn first<T>(mut records: concord::read::RecordStream<T>)
@@ -87,16 +97,16 @@ impl<T> RecordStream<T> {
     ///     records.try_next().await
     /// }
     /// ```
-    pub fn try_next(&mut self) -> impl Future<Output = Result<Option<T>, RecordError>> + Send + '_ {
-        struct Wait<'a, T>(&'a mut RecordStream<T>);
-        impl<T> Future for Wait<'_, T> {
-            type Output = Result<Option<T>, RecordError>;
+    pub fn try_next(&mut self) -> impl Future<Output = Result<Option<T>, E>> + Send + '_ {
+        struct Wait<'a, T, E>(&'a mut RecordStream<T, E>);
+        impl<T, E> Future for Wait<'_, T, E> {
+            type Output = Result<Option<T>, E>;
 
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 Pin::new(&mut *self.0).poll_next(cx).map(Option::transpose)
             }
         }
-        impl<T> Drop for Wait<'_, T> {
+        impl<T, E> Drop for Wait<'_, T, E> {
             fn drop(&mut self) {
                 if let Some(records) = &mut self.0.records {
                     records.cancel_wait();
@@ -107,7 +117,7 @@ impl<T> RecordStream<T> {
     }
 }
 
-impl<T> fmt::Debug for RecordStream<T> {
+impl<T, E> fmt::Debug for RecordStream<T, E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RecordStream")
             .field("status", &self.status)
@@ -120,8 +130,8 @@ impl<T> fmt::Debug for RecordStream<T> {
 /// wait for bytes includes the time between polls. This implementation cannot see an
 /// outer `next()` future being dropped; use [`RecordStream::try_next`] when dropping a
 /// read must stop that timer.
-impl<T> Stream for RecordStream<T> {
-    type Item = Result<T, RecordError>;
+impl<T, E> Stream for RecordStream<T, E> {
+    type Item = Result<T, E>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -518,7 +528,7 @@ fn decode<T: serde::de::DeserializeOwned>(
 // The byte stream owns its pending transport operation. Framing and field state
 // live here, never in a temporary pull future. Polling cannot yield between
 // consuming a byte and retaining its effect.
-trait Pull<T>: Stream<Item = Result<T, RecordError>> + Unpin {
+trait Pull<T, E = RecordError>: Stream<Item = Result<T, E>> + Unpin {
     fn cancel_wait(&mut self);
 }
 

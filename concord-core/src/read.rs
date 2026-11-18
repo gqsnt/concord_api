@@ -1159,6 +1159,152 @@ impl ByteStream {
     }
 }
 
+impl ByteStream {
+    /// Returns the call's own error for a fault that a reader of records found in this body,
+    /// after the head was handed over.
+    ///
+    /// The error is the one that the call would have returned for the same fault in a body
+    /// read whole: the endpoint, the attempts, the status and the headers of this response,
+    /// and nothing of the body. [`RecordFault::problem`] gives a Refused error whose
+    /// `problem()` is the API's own error, as an arm does that finds a problem inside a `2xx`;
+    /// every other fault gives a Mismatch, whose text names the record by its one-based
+    /// position and never by a value: `mismatch: status 200, record 3 could not be decoded,
+    /// in events.watch`. Its `source()` holds the same words; it keeps no body, no decoder
+    /// message and no cause of the reader.
+    ///
+    /// A failure of the body itself is not a `RecordFault`: it is the [`StreamError`] that the
+    /// stream returned, and `?` converts it into the call's error.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// use concord::read::RecordFault;
+    ///
+    /// /// A line of a body that a reader of lines of your own found too long.
+    /// fn too_long<P>(body: &concord::ByteStream, line: usize) -> concord::Error<P> {
+    ///     body.record_error(RecordFault::too_large(line))
+    /// }
+    /// ```
+    // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
+    #[allow(clippy::unimplemented)]
+    pub fn record_error<P>(&self, fault: RecordFault<P>) -> Error<P> {
+        if let Fault::Problem { problem, .. } = fault.fault {
+            let _ = (problem, &self.info);
+        }
+        unimplemented!()
+    }
+}
+
+/// A fault in a body that a reader of records found after the head: the API's own problem
+/// sent as a record, or a record that is not what the client promised.
+/// [`ByteStream::record_error`] makes it the call's own error.
+///
+/// A record is named by its one-based position, as the reader counts its records (a line, an
+/// event block). `Debug` prints the kind of fault and the position, never the problem.
+///
+/// ```no_run
+/// # use concord_core as concord;
+/// use concord::read::RecordFault;
+///
+/// let fault: RecordFault<()> = RecordFault::not_the_type(3);
+/// ```
+pub struct RecordFault<P> {
+    fault: Fault<P>,
+}
+
+enum Fault<P> {
+    Problem { record: usize, problem: P },
+    TooLarge { record: usize },
+    NotUtf8 { record: usize },
+    NotTheType { record: usize },
+    Unfinished,
+}
+
+impl<P> RecordFault<P> {
+    /// Record `record` is the API's own error: the call's error is Refused, with this
+    /// `problem()`, the status of the response (a `200` most often) and its headers.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// use concord::read::RecordFault;
+    ///
+    /// struct Problem { code: u16 }
+    /// let fault = RecordFault::problem(7, Problem { code: 410 });
+    /// ```
+    pub fn problem(record: usize, problem: P) -> Self {
+        Self {
+            fault: Fault::Problem { record, problem },
+        }
+    }
+
+    /// Record `record` is larger than the bound of the reader:
+    /// `mismatch: status 200, record 3 exceeds the reader's size limit, in events.watch`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::too_large(3);
+    /// ```
+    pub fn too_large(record: usize) -> Self {
+        Self {
+            fault: Fault::TooLarge { record },
+        }
+    }
+
+    /// Record `record` is not valid UTF-8:
+    /// `mismatch: status 200, record 3 is not UTF-8, in events.watch`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::not_utf8(3);
+    /// ```
+    pub fn not_utf8(record: usize) -> Self {
+        Self {
+            fault: Fault::NotUtf8 { record },
+        }
+    }
+
+    /// Record `record` does not decode as the type that the client expects:
+    /// `mismatch: status 200, record 3 could not be decoded, in events.watch`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::not_the_type(3);
+    /// ```
+    pub fn not_the_type(record: usize) -> Self {
+        Self {
+            fault: Fault::NotTheType { record },
+        }
+    }
+
+    /// The body ended cleanly before the record that its reader requires to end it:
+    /// `mismatch: status 200, the body ended before its last record, in events.watch`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::unfinished();
+    /// ```
+    pub fn unfinished() -> Self {
+        Self {
+            fault: Fault::Unfinished,
+        }
+    }
+}
+
+impl<P> std::fmt::Debug for RecordFault<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (name, record) = match &self.fault {
+            Fault::Problem { record, .. } => ("Problem", Some(record)),
+            Fault::TooLarge { record } => ("TooLarge", Some(record)),
+            Fault::NotUtf8 { record } => ("NotUtf8", Some(record)),
+            Fault::NotTheType { record } => ("NotTheType", Some(record)),
+            Fault::Unfinished => ("Unfinished", None),
+        };
+        match record {
+            Some(record) => f.debug_struct(name).field("record", record).finish(),
+            None => f.write_str(name),
+        }
+    }
+}
+
 /// The idle timeout runs from a poll that finds no chunk until the next chunk,
 /// including the time between polls. This implementation cannot observe that a `next()`
 /// future was dropped. Use [`ByteStream::try_next`] to count only the time spent
