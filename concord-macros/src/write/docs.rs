@@ -137,16 +137,16 @@ impl Writer<'_> {
                     };
                     match target {
                         Some(target) => format!("[`{shown}`]({target})"),
-                        None if path.path.leading_colon.is_some() => format!("`::{spelling}`"),
+                        None if path.path.leading_colon.is_some() => format!("[`::{spelling}`]"),
                         None if first == "crate" => format!("[`{shown}`]({spelling})"),
                         None => format!("`{shown}`"),
                     }
                 } else if path.path.leading_colon.is_some() {
-                    // A path that starts with `::` names a crate, but an intra-doc link has no
-                    // way to say so: a module of the author's with the crate's name would take
-                    // `concord::Secret`, and rustdoc leaves `::concord::Secret` unresolved.
-                    // It is shown as written, without a link.
-                    format!("`::{spelling}`")
+                    // A path that starts with `::` names a crate. It is linked as a shortcut
+                    // with its `::`, which rustdoc resolves past a module of the author's with
+                    // the crate's name (`mod concord`, `mod std`); written as the target of a
+                    // link, `(::concord::Secret)`, it would not resolve.
+                    format!("[`::{spelling}`]")
                 } else {
                     format!("[`{shown}`]")
                 };
