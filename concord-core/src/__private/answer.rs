@@ -520,6 +520,67 @@ mod c5_tests {
     }
 
     #[test]
+    fn c5_8_a_read_error_of_another_response_brings_none_of_its_context() {
+        fn broken(status: u16) -> reqwest::Response {
+            let body = futures_util::stream::iter([Err::<bytes::Bytes, _>(std::io::Error::other(
+                "PRIVATE_SENTINEL",
+            ))]);
+            crate::reply_with(
+                status,
+                &[("x-other", "yes")],
+                reqwest::Body::wrap_stream(body),
+            )
+        }
+        // A whole body that broke off, and a stream whose error a reader forwarded with `?`.
+        let whole = || ready(Incoming::new(broken(418)).bytes(64)).unwrap_err();
+        let forwarded = || {
+            ready(async {
+                let mut stream = Incoming::new(broken(418)).stream();
+                stream.try_next().await.map(|_| ()).map_err(ReadError::from)
+            })
+            .unwrap_err()
+        };
+        let headers = Headers::from(
+            crate::reply_with(200, &[("x-id", "one")], "")
+                .headers()
+                .clone(),
+        );
+        for (status, next_page, text) in [
+            (200, false, "mismatch: status 200, the status arm rejected the response, in tasks.get, after 3 attempts"),
+            (409, false, "mismatch: status 409, the status arm rejected the response, in tasks.get, after 3 attempts"),
+            (200, true, "mismatch: status 200, the next page cannot be requested, in tasks.get, after 3 attempts"),
+        ] {
+            for failure in [whole(), forwarded()] {
+                let error: Error = Fail::from_read(failure).into_error(
+                    "tasks.get",
+                    3,
+                    http::StatusCode::from_u16(status).unwrap(),
+                    headers.clone(),
+                    next_page,
+                );
+                assert_eq!(error.kind(), Kind::Mismatch);
+                assert_eq!(error.to_string(), text);
+                assert_eq!(error.headers().unwrap().get("x-id"), Some("one"));
+                assert_eq!(error.headers().unwrap().get("x-other"), None);
+                assert_eq!(error.reason(), None);
+                assert_eq!(error.body(), None);
+                assert!(error.source().is_none());
+            }
+        }
+        // Through the arm of a call, the same.
+        let error: Error = arm::<(), _>(
+            Err(Fail::from_read(whole())),
+            http::StatusCode::OK,
+            &headers,
+            &info(),
+        )
+        .unwrap_err();
+        assert_eq!(error.endpoint(), "tasks.get");
+        assert_eq!(error.tries(), 3);
+        assert!(error.is_status(200));
+    }
+
+    #[test]
     fn c5_8_a_decoder_error_returned_by_an_arm_is_the_error_of_the_reader() {
         for status in [200, 409] {
             let response = || crate::reply_with(status, &[("x-id", "one")], "PRIVATE_SENTINEL");

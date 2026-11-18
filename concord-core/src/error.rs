@@ -870,7 +870,7 @@ enum Cause<P> {
     Problem(P),
     Mismatch(Cow<'static, str>),
     // Boxed, so that a `Result<_, Fail<P>>` is no larger than before.
-    Read(Box<crate::read::ReadError>),
+    Read(Box<crate::read::Evidence>),
 }
 
 impl<P> From<P> for Fail<P> {
@@ -900,14 +900,30 @@ impl<P> fmt::Debug for Fail<P> {
 }
 
 impl<P> Fail<P> {
-    /// Creates a failure from a decoder's error, for an arm that decodes a body itself.
+    /// Creates a failure from a decoder's error, for an arm or a pager that decodes a body
+    /// itself.
     ///
-    /// The call ends with the error that a reader would have given for this response: on a
-    /// 2xx, a Mismatch whose message and `source()` name the location of the fault, with the
-    /// decoder's message in `details()` and the bytes that the error keeps in `body()`; on
-    /// another status, a Refused error with those bytes and no problem. `reason()` is `None`,
-    /// as for a body that a reader could not decode. Nothing of the response reaches the
-    /// message or the cause: the location is made of the program's names and of indexes.
+    /// It keeps only what a decoder's failure is: the location of the fault, the decoder's
+    /// message (at most 1 KiB), and at most 64 KiB of the bytes, as
+    /// [`ReadError::not_the_type`](crate::read::ReadError::not_the_type) kept them. The status,
+    /// the headers, the endpoint and the attempt always come from the response that the arm
+    /// or the pager is running on.
+    ///
+    /// For a `ReadError` that says the bytes do not fit (`not_the_type`, then `at` and
+    /// `with_details`, as `Json::decode` returns it), the call ends with the error that a
+    /// reader would have given for this response: on a 2xx, a Mismatch whose message and
+    /// `source()` name the location of the fault, with the decoder's message in `details()` and
+    /// the bytes in `body()`; on another status, a Refused error with those bytes and no
+    /// problem. `wrong_content_type()` and a body over a reader's limit give their own texts in
+    /// the same way. `reason()` is `None`, as for a body that a reader could not decode.
+    /// Nothing of the response reaches the message or the cause: the location is made of the
+    /// program's names and of indexes.
+    ///
+    /// Any other `ReadError` is a failure of a body that broke while it was read, or of a stream
+    /// whose error a reader forwarded with `?`. It belongs to the response that it came from,
+    /// so none of it is kept: the call ends, on any status, with the Mismatch of an arm that
+    /// rejected the response (`the status arm rejected the response`; in a pager, `the next page
+    /// cannot be requested`), with no reason, no bytes and no source.
     ///
     /// `?` cannot make this conversion, because `?` already turns any `P` into a `Fail<P>`:
     /// write `.map_err(Fail::from_read)`.
@@ -926,7 +942,7 @@ impl<P> Fail<P> {
     /// ```
     pub fn from_read(error: crate::read::ReadError) -> Fail<P> {
         Fail {
-            cause: Cause::Read(Box::new(error)),
+            cause: Cause::Read(Box::new(error.into_evidence())),
         }
     }
 }
@@ -956,10 +972,11 @@ impl<P> Fail<P> {
                 error.inner.reason = Some(reason);
                 error
             }
-            Cause::Read(error) => error.into_returned(
+            Cause::Read(evidence) => evidence.into_error(
                 status,
                 headers,
                 &crate::transport::TryInfo::new(endpoint, tries),
+                next_page,
             ),
         }
     }
@@ -1690,6 +1707,45 @@ mod tests {
         assert_eq!(error.source().unwrap().to_string(), "PRIVATE_SENTINEL");
         assert!(!format!("{error:?}").contains("PRIVATE_SENTINEL"));
     }
+    #[test]
+    fn c5_8_a_fail_keeps_its_auto_traits_whatever_it_holds() {
+        use std::panic::{RefUnwindSafe, UnwindSafe};
+        fn all_four<T: UnwindSafe + RefUnwindSafe + Send + Sync>() {}
+        fn send_sync<T: Send + Sync>() {}
+        #[allow(dead_code)] // PANIC-SAFETY: A type for a compile-time check; no panic lint is relaxed.
+        struct Problem {
+            code: String,
+        }
+        all_four::<Fail<()>>();
+        all_four::<Fail<Problem>>();
+        // The call's error holds the cause of a transport, which is not unwind-safe.
+        send_sync::<Error<()>>();
+        send_sync::<Error<Problem>>();
+        let held: Fail<()> = Fail::from_read(crate::read::ReadError::not_the_type(
+            bytes::Bytes::from_static(b"{}"),
+        ));
+        assert!(std::panic::catch_unwind(move || format!("{held:?}")).is_ok());
+    }
+
+    #[test]
+    fn c5_6_a_fail_from_a_read_error_holds_at_most_64_kib_of_its_own() {
+        let large = bytes::Bytes::from(vec![b'x'; 1 << 20]);
+        let start = large.as_ptr() as usize;
+        let failure =
+            crate::read::ReadError::not_the_type(large.clone()).with_details("y".repeat(10_000));
+        let fail: Fail<()> = Fail::from_read(failure);
+        let Cause::Read(evidence) = &fail.cause else {
+            panic!("a read failure")
+        };
+        let crate::read::Evidence::Read { body, details, .. } = &**evidence else {
+            panic!("the evidence of a decode")
+        };
+        assert_eq!(body.len(), 64 * crate::KIB);
+        // Its own allocation, not a view that keeps the whole body alive.
+        assert!(!(start..start + large.len()).contains(&(body.as_ptr() as usize)));
+        assert!(details.as_deref().is_some_and(|text| text.len() <= 1024));
+    }
+
     #[test]
     fn c8_4_a_pager_that_fails_with_a_decoder_error_names_its_location() {
         let failure =

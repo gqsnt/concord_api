@@ -76,12 +76,20 @@ impl Json {
     /// failure of the arm, and the call's error then names the location of the fault, as it
     /// does under `read Json;` (`name could not be decoded`, below), with the decoder's
     /// message, its line and its column in `details()`, and at most 64 KiB of the bytes in
-    /// `body()`. A byte order mark at the start is skipped. A limit and `strict` apply to a body that is being read, so
-    /// they do not apply here.
+    /// `body()`. A byte order mark at the start is skipped.
+    ///
+    /// Three things that the reader does are not done here, because the bytes are already in
+    /// memory. No byte limit applies: the limit is the one of the reader that read the bytes
+    /// (10 MiB for `read Binary;`; `read Binary.limit(n);` sets another). `strict` does not
+    /// apply. And the content type is not looked at, so the error never adds
+    /// `(unexpected content type)`.
     ///
     /// The value of the API below sits beside `ok`, not under a key of its own, so the
     /// client reads the bytes (`read Binary;`) and its arm decodes them twice: once for
-    /// `ok`, once for the value or the problem.
+    /// `ok`, once for the value or the problem. When the body is valid JSON with `"ok": true`,
+    /// the second pass meets a fault exactly where `read Json;` would. A body whose
+    /// JSON is broken fails in the first pass instead, where its syntax breaks, which can be
+    /// after a value that does not fit.
     ///
     /// ```
     /// use concord::{bytes::Bytes, error::Kind, fake, reply, Binary, Fail, Json};

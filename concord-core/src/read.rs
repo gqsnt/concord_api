@@ -426,7 +426,7 @@ enum ReadKind {
 }
 
 #[derive(Debug)]
-struct ReadSource {
+pub(crate) struct ReadSource {
     place: Place,
     unexpected_label: bool,
 }
@@ -569,61 +569,64 @@ impl ReadError {
         headers: Headers,
         info: &TryInfo,
     ) -> Error<P> {
-        let failure = match self.kind {
+        match self.kind {
             ReadKind::Transport(read) => {
-                return read
-                    .failure
+                read.failure
                     .into_error(read.status, read.headers, &read.info)
             }
             ReadKind::Forward(error) => {
                 let status = error.status().unwrap_or(status);
                 let headers = error.headers().cloned().unwrap_or(headers);
-                return error.without_problem().with_response(status, headers);
+                error.without_problem().with_response(status, headers)
             }
-            ReadKind::ContentType => MismatchFailure::ContentType,
-            ReadKind::Limit => MismatchFailure::BodyLimit,
+            ReadKind::ContentType => mismatch_of_a_body(
+                MismatchFailure::ContentType,
+                &self.body,
+                self.kept,
+                self.details,
+                status,
+                headers,
+                info,
+            ),
+            ReadKind::Limit => mismatch_of_a_body(
+                MismatchFailure::BodyLimit,
+                &self.body,
+                self.kept,
+                self.details,
+                status,
+                headers,
+                info,
+            ),
             ReadKind::Decode => {
-                let unexpected_label = self.source.unexpected_label
-                    && headers.as_map().contains_key(http::header::CONTENT_TYPE);
-                if self.body.is_empty() && self.kept == Some(Kept::Complete) {
-                    MismatchFailure::Empty { unexpected_label }
-                } else {
-                    MismatchFailure::Decode {
-                        place: self.source.place,
-                        unexpected_label,
-                    }
-                }
+                let failure = decode_failure(self.source, &self.body, self.kept, &headers);
+                mismatch_of_a_body(
+                    failure,
+                    &self.body,
+                    self.kept,
+                    self.details,
+                    status,
+                    headers,
+                    info,
+                )
             }
-        };
-        let mut error = Error::mismatch(info.endpoint(), info.number(), status, headers, failure);
-        if let Some(kept) = self.kept {
-            error = error.with_body(&self.body, kept);
         }
-        if let Some(details) = self.details {
-            error = error.with_reader_details(details);
-        }
-        error
     }
 
-    /// A decoder's failure returned by an arm or a pager, after the body was read: the error
-    /// that a reader would have given for a response with this status.
-    pub(crate) fn into_returned<P>(
-        self,
-        status: http::StatusCode,
-        headers: Headers,
-        info: &TryInfo,
-    ) -> Error<P> {
-        if status.is_success() {
-            return self.into_error(status, headers, info);
+    /// Keeps of this failure only what a decoder's failure is, for `Fail::from_read`: never
+    /// the status, headers, endpoint or attempt of the response it came from.
+    pub(crate) fn into_evidence(self) -> Evidence {
+        let failure = match self.kind {
+            ReadKind::Decode => EvidenceKind::Decode(self.source),
+            ReadKind::ContentType => EvidenceKind::ContentType,
+            ReadKind::Limit => EvidenceKind::Limit,
+            ReadKind::Transport(_) | ReadKind::Forward(_) => return Evidence::NotRead,
+        };
+        Evidence::Read {
+            failure,
+            body: self.body.as_ref().into(),
+            kept: self.kept,
+            details: self.details,
         }
-        let mut error = Error::refused(info.endpoint(), info.number(), status, headers, None);
-        if let Some(kept) = self.kept {
-            error = error.with_body(&self.body, kept);
-        }
-        if let Some(details) = self.details {
-            error = error.with_reader_details(details);
-        }
-        error
     }
 
     pub(crate) fn into_refused<P>(
@@ -656,6 +659,106 @@ impl From<Error> for ReadError {
         }
         failure.kept = None;
         failure
+    }
+}
+
+fn decode_failure(
+    source: ReadSource,
+    body: &[u8],
+    kept: Option<Kept>,
+    headers: &Headers,
+) -> MismatchFailure {
+    let unexpected_label =
+        source.unexpected_label && headers.as_map().contains_key(http::header::CONTENT_TYPE);
+    if body.is_empty() && kept == Some(Kept::Complete) {
+        MismatchFailure::Empty { unexpected_label }
+    } else {
+        MismatchFailure::Decode {
+            place: source.place,
+            unexpected_label,
+        }
+    }
+}
+
+fn mismatch_of_a_body<P>(
+    failure: MismatchFailure,
+    body: &[u8],
+    kept: Option<Kept>,
+    details: Option<String>,
+    status: http::StatusCode,
+    headers: Headers,
+    info: &TryInfo,
+) -> Error<P> {
+    let mut error = Error::mismatch(info.endpoint(), info.number(), status, headers, failure);
+    if let Some(kept) = kept {
+        error = error.with_body(body, kept);
+    }
+    if let Some(details) = details {
+        error = error.with_reader_details(details);
+    }
+    error
+}
+
+/// What `Fail::from_read` keeps of a [`ReadError`]: the bounded evidence of a body that was
+/// read (its location, the reader's message, at most 64 KiB of bytes), and nothing of the
+/// response that it came from. Its parts are unwind-safe, so `Fail<P>` keeps that trait.
+pub(crate) enum Evidence {
+    Read {
+        failure: EvidenceKind,
+        body: Box<[u8]>,
+        kept: Option<Kept>,
+        details: Option<String>,
+    },
+    /// The body itself failed (a transport error, or a stream error forwarded with `?`).
+    NotRead,
+}
+
+pub(crate) enum EvidenceKind {
+    Decode(ReadSource),
+    ContentType,
+    Limit,
+}
+
+impl Evidence {
+    /// The error of an arm or a pager that returned this evidence, in the context of the
+    /// response that the arm or the pager is running on.
+    pub(crate) fn into_error<P>(
+        self,
+        status: http::StatusCode,
+        headers: Headers,
+        info: &TryInfo,
+        next_page: bool,
+    ) -> Error<P> {
+        let Evidence::Read {
+            failure,
+            body,
+            kept,
+            details,
+        } = self
+        else {
+            let failure = if next_page {
+                MismatchFailure::NextPage
+            } else {
+                MismatchFailure::Arm
+            };
+            return Error::mismatch(info.endpoint(), info.number(), status, headers, failure);
+        };
+        if !status.is_success() {
+            let mut error = Error::refused(info.endpoint(), info.number(), status, headers, None);
+            if let Some(kept) = kept {
+                error = error.with_body(&body, kept);
+            }
+            if let Some(details) = details {
+                error = error.with_reader_details(details);
+            }
+            return error;
+        }
+        let failure = match failure {
+            EvidenceKind::Decode(source) => decode_failure(source, &body, kept, &headers),
+            EvidenceKind::ContentType => MismatchFailure::ContentType,
+            EvidenceKind::Limit => MismatchFailure::BodyLimit,
+        };
+        mismatch_of_a_body(failure, &body, kept, details, status, headers, info)
     }
 }
 
