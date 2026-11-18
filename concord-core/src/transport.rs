@@ -16,7 +16,8 @@ use std::sync::Arc;
 /// `concord::auth::Rotating`, `concord::sign::SigV4` and `concord::limit::Limit`.
 ///
 /// Concord counts each trip through the chain as one attempt. Any resend that the HTTP
-/// library makes internally is below that count and follows the library's settings.
+/// library of a transport makes internally is below that count and follows that library's
+/// settings; [`Http`] lets `reqwest` resend nothing on its own.
 /// The idle timeout starts when the request is handed to the transport, after middleware.
 /// `timeout` is checked there too: an expired call is never handed over.
 /// All time spent inside a transport counts as transport time. A transport must
@@ -47,9 +48,11 @@ pub trait Transport: Send + Sync + 'static {
 /// Your own `reqwest::Client` sends the request, keeping its own settings for redirects,
 /// decompression and internal retries. Concord's middleware runs before it.
 /// Concord does not retry an unmarked, non-idempotent call after a failed connection, but
-/// `reqwest`'s default resends a buffered or empty request after an HTTP/2
-/// `REFUSED_STREAM` or `GOAWAY`, whatever its method, below Concord's count of attempts;
-/// [`Http`] does not.
+/// `reqwest`'s default resends a request whose body is in memory or empty, up to twice and
+/// whatever its method, after a remote HTTP/2 `REFUSED_STREAM` reset or a `GOAWAY` with
+/// `NO_ERROR`, below Concord's count of attempts; [`Http`] does not. Build the client with
+/// `.retry(reqwest::retry::never())` to leave every repetition to Concord's engine. Its
+/// failures never state that nothing was sent ([`TransportError::not_sent`]).
 impl Transport for reqwest::Client {
     // Not `async`: the send is recorded when it is created, before its first poll.
     fn send(
@@ -604,6 +607,14 @@ pub fn reply_with(
 /// When it cannot make a connection (refused, a host name not resolved, a TLS handshake
 /// or a proxy that failed, its connect timeout), its error states that nothing was sent:
 /// see [`TransportError::not_sent`] and [`Error::request_not_sent`](crate::Error::request_not_sent).
+/// Any other failure states nothing, including one whose chain of causes it does not
+/// expect, and every failure over HTTP/3: that is the safe side, not a proof that the
+/// request was sent.
+///
+/// Both promises rest on how `reqwest`, `hyper-util`, `hyper` and `h2` behave, read in the
+/// versions of Concord's own `Cargo.lock` (reqwest 0.13.5, hyper-util 0.1.21, hyper 1.12.0,
+/// h2 0.4.20), which its tests run with. The `Cargo.lock` of your application decides the
+/// versions that it builds with.
 #[derive(Clone)]
 pub struct Http {
     client: reqwest::Client,

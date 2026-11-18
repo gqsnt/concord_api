@@ -794,8 +794,8 @@ impl<E> Error<E> {
     }
 
     /// Returns `true` when Concord states that no byte of this call's request was written to
-    /// the network, on any attempt and any page. `false` means that it may have been: it does
-    /// not mean that the request arrived.
+    /// the network, on any attempt and any page. `false` means that it may have been, or that
+    /// Concord cannot tell: it does not mean that the request arrived.
     ///
     /// It is stated for a Transport error only, when every send that reached a transport
     /// during the call ended with a failure stating it, or a middleware layer stated it
@@ -809,11 +809,13 @@ impl<E> Error<E> {
     ///   [`TransportError::not_sent`](crate::transport::TransportError::not_sent).
     ///
     /// A connection that failed after it was made, a timeout of the call or of the response,
-    /// a `reqwest::Client` used as the transport, a send dropped before it returned, and a
-    /// second send through the same chain after a response make it `false`, whatever
-    /// `TryInfo` a middleware passed with that send. So does a `TryInfo` of the attempt that
-    /// is still held when the attempt ends, for example by a task that a middleware started:
-    /// a send made with it could still write. A send that a middleware makes entirely
+    /// a failure that [`Http`](crate::Http) does not recognize as one of its connector's
+    /// (an error chain that it does not expect, HTTP/3), a `reqwest::Client` used as the
+    /// transport, a send dropped before it returned, and a second send through the same
+    /// chain after a response make it `false`, whatever `TryInfo` a middleware passed with
+    /// that send. So does a `TryInfo` of the attempt that is still held when the attempt
+    /// ends, for example by a task that a middleware started: a send made with it could
+    /// still write. A send that a middleware makes entirely
     /// outside the chain, with a transport of its own and without the attempt's `TryInfo`,
     /// is not seen: that is its author's responsibility.
     ///
@@ -821,6 +823,9 @@ impl<E> Error<E> {
     /// does, so that `Rotating` sends the same refresh token again. A false `true` makes that
     /// token be used twice, and a server that sees it may revoke every session of the
     /// account.
+    ///
+    /// For [`Http`](crate::Http), it rests on the versions of the HTTP libraries in your build
+    /// (see [`Http`](crate::Http)).
     ///
     /// The retry policy does not read it: the class decides whether an attempt is repeated.
     pub fn request_not_sent(&self) -> bool {

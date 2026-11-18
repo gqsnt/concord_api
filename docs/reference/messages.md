@@ -677,7 +677,7 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 | The request goes to another origin than the base of the credential. Attach the credential only to clients of that origin | `the request leaves the credential's origin` |
 | `renewal_timeout` is zero, or the settings do not agree; also a renewal that waits for itself (the renewal must use a client without this middleware) | `the credential renewal policy is invalid` |
 | A deadline cannot be represented | `the credential deadline cannot be represented` |
-| Your renewal function returned `RenewalError::not_sent(…)`, or `RenewalError::from_call(…)` on a call to the token endpoint that was blocked on its only attempt: it failed, and its request was not sent; the cause is `source()` | `the credential could not be renewed, and its request was not sent` |
+| Your renewal function returned `RenewalError::not_sent(…)`, or `RenewalError::from_call(…)` on a call to the token endpoint that failed on its only attempt with an error that states that nothing was sent (`error.request_not_sent()`: a blocked request, a connection that `concord::Http` could not make, its connect timeout included, or a failure that a transport or middleware stated with `not_sent()`): it failed, and its request was not sent; the cause is `source()` | `the credential could not be renewed, and its request was not sent` |
 
 **A refresh token that is replaced at each use**, `concord::auth::RotationError`, behind a blocked request, or returned by the `RotationDriver`:
 

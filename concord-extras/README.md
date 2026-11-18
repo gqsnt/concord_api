@@ -79,7 +79,9 @@ future that runs the exchanges and the saves: the application polls it or spawns
 starts no task. The application supplies the exchange, which returns a `TokenPair`, and a
 `CredentialStore`, whose `load` and `save` keep one record: `Stored::Ready(pair)` or
 `Stored::Refreshing`. `Refreshing` is saved before the exchange, the new pair is saved before either
-token is used, a failed save is tried again as a save only, and a refresh token is sent once. A pair
+token is used, a failed save is tried again as a save only, and a refresh token is exchanged once,
+again only after an exchange that states that its request was never sent. The token client must not
+resend: no retry policy, and `concord::Http` or a `reqwest::Client` with `retry::never()`. A pair
 that the store could not keep is handed back to the application in `RotationError::Unsaved`, never
 dropped. `renewal_timeout` (30 seconds by default) bounds how long a call waits and never cancels
 the exchange; a call that waits while nobody polls the driver fails with `NotPolled`, and a dropped

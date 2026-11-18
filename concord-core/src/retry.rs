@@ -84,7 +84,7 @@ impl<P> Retry<P> {
     ///
     /// | Failure | Worth another attempt |
     /// | --- | --- |
-    /// | No connection (`Connect`) | Yes |
+    /// | A failed connection (`Connect`) | Yes |
     /// | No response (`Timeout`) | Yes |
     /// | A response that broke off (`Body`) | Yes |
     /// | Status 408, 429, 502, 503, 504 | Yes |
