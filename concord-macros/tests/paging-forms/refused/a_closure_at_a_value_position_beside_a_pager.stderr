@@ -1,0 +1,10 @@
+error[E0308]: `if` and `else` have incompatible types
+  --> tests/paging-forms/refused/a_closure_at_a_value_position_beside_a_pager.rs:64:57
+   |
+64 |             paginate if DESCENDING { by_link() } else { |call, page| None };
+   |                                      ---------          ^^^^^^^^^^^^^^^^^ expected `Paging<_>`, found closure
+   |                                      |
+   |                                      expected because of this
+   |
+   = note: expected struct `Paging<_>`
+             found closure `{closure@$DIR/tests/paging-forms/refused/a_closure_at_a_value_position_beside_a_pager.rs:64:57: 64:69}`

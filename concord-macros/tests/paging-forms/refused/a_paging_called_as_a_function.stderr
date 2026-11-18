@@ -1,0 +1,7 @@
+error[E0618]: expected function, found `Paging<_>`
+  --> tests/paging-forms/refused/a_paging_called_as_a_function.rs:64:69
+   |
+64 |             paginate { let mut pager = by_link(); move |call, page| pager(call, page) };
+   |                            ---------                                ^^^^^------------
+   |                            |                                        |
+   |                            `pager` has type `Paging<_>`             call expression requires function
