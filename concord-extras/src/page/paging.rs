@@ -557,10 +557,8 @@ where
             .unwrap_or_default()
             .try_into()
             .map_err(|_| mismatch(OFFSET))?;
-        // PANIC-SAFETY: usize is at most 64 bits on supported targets; the addition is checked.
-        let reached = at
-            .checked_add(value.count() as u64)
-            .ok_or_else(|| mismatch(OFFSET))?;
+        let count = u64::try_from(value.count()).map_err(|_| mismatch(OFFSET))?;
+        let reached = at.checked_add(count).ok_or_else(|| mismatch(OFFSET))?;
         let total: u64 = total(value).try_into().map_err(|_| mismatch(TOTAL))?;
         Ok(reached < total)
     }));
