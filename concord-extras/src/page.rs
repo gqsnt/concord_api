@@ -19,25 +19,45 @@ pub use paging::{by_offset_total, Paging};
 use concord_core::error::{mismatch, Fail};
 use concord_core::page::{Call, IntoItems, Slot};
 
-fn advance<C: Call, S>(start: S, call: C, got: usize) -> Result<Option<C>, Fail<C::Problem>>
+/// The text of the Mismatch when the offset of the call cannot be read as a number of items.
+const UNREADABLE: &str = "the offset of the call is not a number of items";
+/// The text of the Mismatch when a valid offset has no successor that its type can hold.
+const OVERFLOW: &str = "the offset cannot grow any further";
+
+/// Why the offset of the next call could not be computed.
+enum Stuck {
+    /// The offset of the call is not a number of items (a negative one).
+    Unreadable,
+    /// A valid offset, whose successor its type cannot hold.
+    Overflow,
+}
+
+impl Stuck {
+    fn fail<P>(self) -> Fail<P> {
+        mismatch(match self {
+            Stuck::Unreadable => UNREADABLE,
+            Stuck::Overflow => OVERFLOW,
+        })
+    }
+}
+
+fn advance<C: Call, S>(start: S, call: C, got: usize) -> Result<C, Stuck>
 where
     S: Slot<C>,
-    S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
+    S::Value: Copy + TryFrom<u64> + TryInto<u64>,
 {
-    // An offset that is not set is zero, whatever the type's `Default` says.
-    let at = match start.get(&call) {
-        Some(at) => (*at).try_into().ok(),
-        None => Some(0),
+    // An offset that is not set is zero.
+    let at: u64 = match start.get(&call) {
+        Some(at) => (*at).try_into().map_err(|_| Stuck::Unreadable)?,
+        None => 0,
     };
     // counted in `u64`, with a check: an offset that cannot grow is an error, never a wrap
-    let next = at
-        // PANIC-SAFETY: usize is at most 64 bits on supported targets; offset addition is checked.
-        .and_then(|at: u64| at.checked_add(got as u64))
-        .and_then(|next| S::Value::try_from(next).ok());
-    match next {
-        Some(next) => Ok(Some(start.set(call, next))),
-        None => Err(mismatch("the offset cannot grow any further")),
-    }
+    let next = u64::try_from(got)
+        .ok()
+        .and_then(|got| at.checked_add(got))
+        .and_then(|next| S::Value::try_from(next).ok())
+        .ok_or(Stuck::Overflow)?;
+    Ok(start.set(call, next))
 }
 
 /// `paginate by_offset(start);`: the next call starts after the items that arrived. The pages end
@@ -46,12 +66,12 @@ pub fn by_offset<C, S>(start: S) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
-    S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
+    S::Value: Copy + TryFrom<u64> + TryInto<u64>,
     C::Value: IntoItems,
 {
     Paging::<C>::from_fn(move |call, answer| match answer.value().count() {
         0 => Ok(None),
-        got => advance(start, call, got),
+        got => advance(start, call, got).map(Some).map_err(Stuck::fail),
     })
 }
 
@@ -67,14 +87,14 @@ pub fn by_offset_limit<C, S, K>(start: S, limit: K) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
-    S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
+    S::Value: Copy + TryFrom<u64> + TryInto<u64>,
     K: Slot<C>,
     K::Value: Copy + TryInto<usize>,
     C::Value: IntoItems,
 {
     // The short page is a rule of the short-page stage, so that a statement of the page has
-    // authority over it. The move still ends quietly when the offset could not grow past a short
-    // page, which needs no next call.
+    // authority over it. The move still ends quietly when a valid offset could not grow past a
+    // short page, which needs no next call.
     let short = move |call: &C, got: usize| {
         limit
             .get(call)
@@ -88,9 +108,12 @@ where
             return Ok(None);
         }
         let ended = short(&call, got);
+        // A valid offset whose successor cannot be held ends a short page quietly: no next call
+        // is needed. An offset that cannot be read is a Mismatch, short page or not.
         match advance(start, call, got) {
-            Err(_) if ended => Ok(None),
-            next => next,
+            Ok(next) => Ok(Some(next)),
+            Err(Stuck::Overflow) if ended => Ok(None),
+            Err(stuck) => Err(stuck.fail()),
         }
     })
     .short_page_rule(move |call| {

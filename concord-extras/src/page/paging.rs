@@ -730,16 +730,16 @@ pub fn by_offset_total<C, S, F, T>(start: S, mut total: F) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
-    S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
+    S::Value: Copy + TryFrom<u64> + TryInto<u64>,
     F: FnMut(&C::Value) -> T + Send + 'static,
     T: TryInto<u64>,
     C::Value: IntoItems,
 {
     let mut paging = super::by_offset(start);
     paging.parts().statements.push(Box::new(move |call, value| {
-        // An offset that is not set is zero, whatever the type's `Default` says.
+        // An offset that is not set is zero.
         let at: u64 = match start.get(call) {
-            Some(at) => (*at).try_into().map_err(|_| mismatch(OFFSET))?,
+            Some(at) => (*at).try_into().map_err(|_| mismatch(super::UNREADABLE))?,
             None => 0,
         };
         let count = u64::try_from(value.count()).map_err(|_| mismatch(OFFSET))?;

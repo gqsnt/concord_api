@@ -163,3 +163,129 @@ mod a_glob_import {
         assert_eq!(script.requests().len(), 1);
     }
 }
+
+/// An offset that cannot be read as a number of items is not an offset that cannot grow, and a
+/// short page does not hide it; an offset type needs no `Default`.
+mod offsets {
+    use super::Page;
+    use concord::error::Kind;
+    use concord::page::by_offset_total;
+    use concord::{by_offset, by_offset_limit, Json};
+    use concord_testkit::Script;
+    use serde::Serialize;
+
+    /// A total that the page states.
+    #[derive(Debug, serde::Deserialize)]
+    pub struct Counted {
+        /// The numbers.
+        pub items: Vec<u32>,
+        /// How many the list holds.
+        pub total: u64,
+    }
+    impl concord::page::IntoItems for Counted {
+        type Item = u32;
+        fn into_items(self) -> Vec<u32> {
+            self.items
+        }
+        fn count(&self) -> usize {
+            self.items.len()
+        }
+    }
+
+    /// An offset with no `Default`.
+    #[derive(Clone, Copy, Debug, Serialize)]
+    #[serde(transparent)]
+    pub struct At(u64);
+    impl From<u64> for At {
+        fn from(at: u64) -> At {
+            At(at)
+        }
+    }
+    impl From<At> for u64 {
+        fn from(at: At) -> u64 {
+            at.0
+        }
+    }
+
+    concord::api! {
+        client Offsets {
+            base "https://offsets.test";
+            read Json;
+            GET total(start?: i32) -> Counted {
+                path "total";
+                query { start; }
+                paginate by_offset_total(start, |page: &Counted| page.total);
+            }
+            GET limited(start?: i32, count?: u32) -> Page {
+                path "limited";
+                query { start; count; }
+                paginate by_offset_limit(start, count);
+            }
+            GET plain(start?: At) -> Page { path "plain"; query { start; } paginate by_offset(start); }
+            GET bounded(start?: At, count?: u32) -> Page {
+                path "bounded";
+                query { start; count; }
+                paginate by_offset_limit(start, count);
+            }
+            GET stated(start?: At) -> Counted {
+                path "stated";
+                query { start; }
+                paginate by_offset_total(start, |page: &Counted| page.total);
+            }
+        }
+    }
+
+    const UNREADABLE: &str = "the offset of the call is not a number of items";
+
+    #[tokio::test(start_paused = true)]
+    async fn c8_6_an_offset_that_cannot_be_read_is_its_own_mismatch() {
+        // by_offset_total at -3: the statement cannot read the offset
+        let script = Script::new();
+        script.answer(200).body(r#"{"items":[1],"total":9}"#);
+        let mut pages = Offsets::new()
+            .with_transport(script.clone())
+            .total()
+            .start(-3)
+            .pages();
+        assert!(pages.try_next().await.unwrap().is_some());
+        let error = pages.try_next().await.unwrap_err();
+        assert_eq!(
+            (error.kind(), error.reason()),
+            (Kind::Mismatch, Some(UNREADABLE))
+        );
+        // by_offset_limit at -3, on a short page that is not empty: not a quiet end
+        let script = Script::new();
+        script.answer(200).body(r#"{"items":[1]}"#);
+        let mut pages = Offsets::new()
+            .with_transport(script.clone())
+            .limited()
+            .start(-3)
+            .count(5u32)
+            .pages();
+        assert!(pages.try_next().await.unwrap().is_some());
+        let error = pages.try_next().await.unwrap_err();
+        assert_eq!(
+            (error.kind(), error.reason()),
+            (Kind::Mismatch, Some(UNREADABLE))
+        );
+        assert_eq!(script.requests().len(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c8_6_an_offset_type_needs_no_default() {
+        let script = Script::new();
+        script.answer(200).body(r#"{"items":[1,2]}"#);
+        script.answer(200).body(r#"{"items":[]}"#);
+        let mut pages = Offsets::new()
+            .with_transport(script.clone())
+            .plain()
+            .pages();
+        while pages.try_next().await.unwrap().is_some() {}
+        assert_eq!(
+            script.requests()[1].url().as_str(),
+            "https://offsets.test/plain?start=2"
+        );
+        let _ = Offsets::new().bounded();
+        let _ = Offsets::new().stated();
+    }
+}
