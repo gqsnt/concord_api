@@ -1040,8 +1040,10 @@ pub fn remaining(
 /// nonnegative integers, written with digits only; the capacity must be positive, the units
 /// left must not exceed it, and the reset must be in the future. Otherwise nothing is
 /// learned. The result is one current fixed window that refills once, to its whole
-/// capacity, at that reset. A later response that names the same reset again, after that
-/// refill, teaches nothing, however late it arrives.
+/// capacity, at that reset. A later response that reports less left, for the same reset or a
+/// later one, lowers what is left at once, and the later of the two deadlines is kept, even
+/// when its own `Date` makes its reset look nearer. A later response that names the same reset
+/// again, after that refill, teaches nothing, however late it arrives.
 ///
 /// ```no_run
 /// use concord::limit::{remaining_rfc3339, Bucket, Limit};

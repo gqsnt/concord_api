@@ -331,12 +331,18 @@ impl History {
                 // A reset that the server dated: its date, not the instant that this
                 // response's own clock gives, says whether it is older, the same or newer.
                 (Some(known), Some(seen)) if seen < known => return,
-                (Some(known), Some(seen)) if seen == known => {
-                    // Its refill has been given: what this late head reports is spent before it.
+                (Some(known), Some(seen)) => {
                     if self.refilled {
-                        return;
+                        // The same reset, whose refill has been given: what this late head
+                        // reports was spent before it. A newer one opens the next window.
+                        if seen == known || *at <= now {
+                            return;
+                        }
+                    } else {
+                        // The same or a later reset, before the known one: what is left can
+                        // only go down, at once, and the later of the two deadlines is kept.
+                        same_reset = Some((*old).max(*at));
                     }
-                    same_reset = Some((*old).max(*at));
                 }
                 _ => {
                     if at < old || *at <= now {

@@ -3,7 +3,7 @@
 // Test fixtures intentionally fail on invalid URLs, headers or error types, and index fixed tables.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
-use concord::limit::{remaining_rfc3339, Bucket, Limit, LimitError, Seen};
+use concord::limit::{remaining, remaining_rfc3339, Bucket, Limit, LimitError, Seen};
 use concord::reqwest::{Method, Request, Response};
 use concord::transport::{TransportError, TryInfo};
 use concord::{Middleware, Next};
@@ -311,4 +311,56 @@ async fn c11_5_a_late_head_naming_the_same_reset_grants_no_second_refill() {
         [ms(0), ms(0), ms(2500), ms(2500), ms(72_500), ms(72_500)]
     );
     assert!(script.requests().iter().all(|r| r.info().number() == 1));
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_lower_balance_with_a_newer_dated_reset_is_honoured_at_once() {
+    // Two units left until T + 10; then none left until T + 11, three seconds after that
+    // response's own Date: on this clock, its reset comes before the one already known.
+    let script = Script::new();
+    for (date, reset, left) in [(T, T + 10, "2"), (T + 8, T + 11, "0")] {
+        script
+            .answer(200)
+            .header("date", &http_date(date))
+            .header("x-limit", "3")
+            .header("x-remaining", left)
+            .header("x-reset", &rfc3339(reset));
+    }
+    script.answer(200);
+    let limit = requests();
+    let start = Instant::now();
+    for _ in 0..3 {
+        call(&limit, &script).await.unwrap();
+    }
+    // The zero is honoured at once, and the later of the two deadlines is kept.
+    assert_eq!(sent(&script, start), [sec(0), sec(0), sec(10)]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_remaining_in_unix_seconds_honours_a_lower_balance_on_its_one_clock() {
+    // The reader of Unix seconds counts every reset from this process's clock, so a reset
+    // that is the same or later never comes earlier: its zero is honoured at once.
+    let local = local_now();
+    let script = Script::new();
+    for (reset, left) in [(local + 10, "2"), (local + 11, "0")] {
+        script
+            .answer(200)
+            .header("x-limit", "3")
+            .header("x-remaining", left)
+            .header("x-reset", &reset.to_string());
+    }
+    script.answer(200);
+    let limit = Limit::new().bucket(Bucket::new(|_| Some("requests".into())).learn(remaining(
+        "x-limit",
+        "x-remaining",
+        "x-reset",
+    )));
+    let start = Instant::now();
+    for _ in 0..3 {
+        call(&limit, &script).await.unwrap();
+    }
+    let at = sent(&script, start);
+    assert_eq!(&at[..2], [sec(0), sec(0)]);
+    // The wall clock moves a little while the test runs.
+    assert!(at[2] > sec(10) && at[2] <= sec(11), "{at:?}");
 }
