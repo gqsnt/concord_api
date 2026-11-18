@@ -100,6 +100,8 @@ pub mod tasks {
 
     /// List tasks in their current order.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://tasks.example.com/api/tasks`.
     ///
     /// Call type: `tour::tasks::Call<tour::tasks::List>`. Create it with `Tasks::list`.
@@ -115,6 +117,8 @@ pub mod tasks {
     pub enum List {}
 
     /// Create a task with a title.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `POST https://tasks.example.com/api/tasks`.
     ///
@@ -143,6 +147,8 @@ pub mod tasks {
 
     /// Fetch one task by its identifier.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://tasks.example.com/api/tasks/{id}`.
     ///
     /// Call type: `tour::tasks::Call<tour::tasks::Get>`. Create it with `Tasks::get`.
@@ -162,6 +168,8 @@ pub mod tasks {
     pub enum Get {}
 
     /// Delete one task by its identifier.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `DELETE https://tasks.example.com/api/tasks/{id}`.
     ///
@@ -350,6 +358,8 @@ pub mod riot {
     pub mod matches {
         /// Match ids of a player, newest first.
         ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::riot::Endpoint::NAME).
+        ///
         /// Request: `GET https://{route}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids`.
         ///
         /// Call type: `tour::riot::Call<tour::riot::matches::Ids>`. Create it with `Matches::ids`.
@@ -384,6 +394,8 @@ pub mod riot {
 
         /// One match.
         ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::riot::Endpoint::NAME).
+        ///
         /// Request: `GET https://{route}.api.riotgames.com/lol/match/v5/matches/{id}`.
         ///
         /// Call type: `tour::riot::Call<tour::riot::matches::Get>`. Create it with `Matches::get`.
@@ -404,6 +416,8 @@ pub mod riot {
     /// Calls on [`riot::Account`](crate::riot::Account).
     pub mod account {
         /// The account behind a Riot ID (`name#tag`). `None` when there is no such player.
+        ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::riot::Endpoint::NAME).
         ///
         /// Request: `GET https://{route}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}`.
         ///
@@ -428,6 +442,8 @@ pub mod riot {
 
         /// The account of a signed-in player.
         /// Uses the player's own token instead of the API key.
+        ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::riot::Endpoint::NAME).
         ///
         /// Request: `GET https://{route}.api.riotgames.com/riot/account/v1/accounts/me`.
         ///
@@ -554,6 +570,8 @@ pub mod files {
     /// Exchange credentials with `body form { grant_type; client_id; client_secret; }`.
     /// Text arguments accept owned or borrowed strings; the secret also accepts `Secret`.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `POST https://files.example.com/oauth/token`.
     ///
     /// Call type: `tour::files::Call<tour::files::Grant>`. Create it with `Files::grant`.
@@ -598,6 +616,8 @@ pub mod files {
 
     /// Is it there?
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `HEAD https://files.example.com/{id}`.
     ///
     /// Call type: `tour::files::Call<tour::files::Exists>`. Create it with `Files::exists`.
@@ -618,6 +638,8 @@ pub mod files {
 
     /// Plain text, not JSON.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://files.example.com/{repo}/readme`.
     ///
     /// Call type: `tour::files::Call<tour::files::Readme>`. Create it with `Files::readme`.
@@ -634,6 +656,8 @@ pub mod files {
 
     /// A large file, as it comes.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://files.example.com/files/{id}`.
     ///
     /// Call type: `tour::files::Call<tour::files::Download>`. Create it with `Files::download`.
@@ -649,6 +673,8 @@ pub mod files {
     pub enum Download {}
 
     /// An upload, on another host.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `PUT https://uploads.example.com/files/{name}`.
     ///
@@ -680,6 +706,8 @@ pub mod files {
     pub enum Upload {}
 
     /// A body made of several inputs. A `cursor` that was not set is left out.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `POST https://files.example.com/search`.
     ///
@@ -810,6 +838,8 @@ pub mod feed {
 
     /// List feed entries using the cursor returned by the server.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://feed.example.com/items`.
     ///
     /// Call type: `tour::feed::Call<tour::feed::List>`. Create it with `Feed::list`.
@@ -834,6 +864,8 @@ pub mod feed {
 
     /// List feed entries with an ordinary cursor pager.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://feed.example.com/cursor-items`.
     ///
     /// Call type: `tour::feed::Call<tour::feed::ByCursor>`. Create it with `Feed::by_cursor`.
@@ -857,6 +889,8 @@ pub mod feed {
     pub enum ByCursor {}
 
     /// List feed entries by following the next Link header.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://feed.example.com/linked-items`.
     ///
@@ -1311,6 +1345,8 @@ pub mod shapes {
 
     /// Send an item again. This `POST` may be repeated.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `POST https://shapes.example.com/again/{id}`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Again>`. Create it with `Shapes::again`.
@@ -1326,6 +1362,8 @@ pub mod shapes {
     pub enum Again {}
 
     /// Replace an item. This `PUT` may not be repeated.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `PUT https://shapes.example.com/items/{id}`.
     ///
@@ -1347,6 +1385,8 @@ pub mod shapes {
 
     /// Note when each expression of a send runs.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `POST https://shapes.example.com/order`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Order>`. Create it with `Shapes::order`.
@@ -1364,6 +1404,8 @@ pub mod shapes {
     pub enum Order {}
 
     /// Upload a body that the caller gives: bytes, or a stream.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `POST https://shapes.example.com/upload`.
     ///
@@ -1386,6 +1428,8 @@ pub mod shapes {
 
     /// An item, or the conflict that holds it.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/outcome/{id}`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Outcome>`. Create it with `Shapes::outcome`.
@@ -1404,6 +1448,8 @@ pub mod shapes {
 
     /// Check that the service answers.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `HEAD https://shapes.example.com/ping`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Ping>`. Create it with `Shapes::ping`.
@@ -1415,6 +1461,8 @@ pub mod shapes {
     pub enum Ping {}
 
     /// Whether an item is present. Only a `204` says yes.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `HEAD https://shapes.example.com/items/{id}`.
     ///
@@ -1435,6 +1483,8 @@ pub mod shapes {
     pub enum Present {}
 
     /// Create an item, and keep where it was put.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `POST https://shapes.example.com/items`.
     ///
@@ -1461,6 +1511,8 @@ pub mod shapes {
 
     /// An item, on the host of a tenant.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://{tenant}.shapes.example.com/tenant`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Hosted>`. Create it with `Shapes::hosted`.
@@ -1476,6 +1528,8 @@ pub mod shapes {
     pub enum Hosted {}
 
     /// Search with a number, and a filter that a query cannot hold.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/search`.
     ///
@@ -1496,6 +1550,8 @@ pub mod shapes {
     pub enum Search {}
 
     /// Send an item with a length written by hand, in a body that may fail.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `POST https://shapes.example.com/measured`.
     ///
@@ -1519,6 +1575,8 @@ pub mod shapes {
 
     /// An item, asked with a number that is parsed when the request is built.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/parsed`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Parsed>`. Create it with `Shapes::parsed`.
@@ -1535,6 +1593,8 @@ pub mod shapes {
 
     /// Counts by name.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/counts`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Counts>`. Create it with `Shapes::counts`.
@@ -1546,6 +1606,8 @@ pub mod shapes {
     pub enum Counts {}
 
     /// An item, read only when the answer is labelled JSON.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/strict`.
     ///
@@ -1559,6 +1621,8 @@ pub mod shapes {
 
     /// An item, read by a reader whose message is long.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/long-message`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::LongMessage>`. Create it with `Shapes::long_message`.
@@ -1570,6 +1634,8 @@ pub mod shapes {
     pub enum LongMessage {}
 
     /// An item, read by a reader that notes each answer it reads.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/noted`.
     ///
@@ -1586,6 +1652,8 @@ pub mod shapes {
     pub enum Noted {}
 
     /// An item; a missing one is made of what was asked.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/titled/{id}`.
     ///
@@ -1605,6 +1673,8 @@ pub mod shapes {
     pub enum Titled {}
 
     /// An item, or the conflict that holds it, asked by an input named `body`.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/held/{body}`.
     ///
@@ -1688,6 +1758,8 @@ pub mod shapes {
 
     /// An item. A refusal is read by the arm of the endpoint, and ends with its problem.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/refusal/{id}`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Refusal>`. Create it with `Shapes::refusal`.
@@ -1705,6 +1777,8 @@ pub mod shapes {
     pub enum Refusal {}
 
     /// Pages of items behind three keys: one in the path, one in the query, one in a header.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/guarded/{path_key}`.
     ///
@@ -1732,6 +1806,8 @@ pub mod shapes {
 
     /// Pages of items whose cursor goes in a header.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/headed`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Headed>`. Create it with `Shapes::headed`.
@@ -1752,6 +1828,8 @@ pub mod shapes {
 
     /// Pages of items asked with a body of entries: a token and the cursor.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `POST https://shapes.example.com/posted`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Posted>`. Create it with `Shapes::posted`.
@@ -1770,6 +1848,8 @@ pub mod shapes {
     pub enum Posted {}
 
     /// Pages of items asked with a body that the caller gives: bytes, or a stream.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `POST https://shapes.example.com/streamed`.
     ///
@@ -1793,6 +1873,8 @@ pub mod shapes {
 
     /// Pages of items asked with a body that is a new stream for each send.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `POST https://shapes.example.com/renewed`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Renewed>`. Create it with `Shapes::renewed`.
@@ -1810,6 +1892,8 @@ pub mod shapes {
     pub enum Renewed {}
 
     /// Pages of items on a host whose first label is a key.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://{host_key}.shapes.example.com/keyed`.
     ///
@@ -1833,6 +1917,8 @@ pub mod shapes {
 
     /// Pages of items whose pager moves the tenant, which stands in the host.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://{tenant}.shapes.example.com/roaming`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Roaming>`. Create it with `Shapes::roaming`.
@@ -1855,6 +1941,8 @@ pub mod shapes {
 
     /// Pages of items that start at an offset.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/offset`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Offset>`. Create it with `Shapes::offset`.
@@ -1872,6 +1960,8 @@ pub mod shapes {
     pub enum Offset {}
 
     /// Pages of items asked by their number.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/numbered`.
     ///
@@ -1891,6 +1981,8 @@ pub mod shapes {
 
     /// Pages of items whose page gives the address of the next one.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/addressed`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Addressed>`. Create it with `Shapes::addressed`.
@@ -1905,6 +1997,8 @@ pub mod shapes {
 
 
     /// Remove an item. An accepted removal is not done; a missing item is removed.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `DELETE https://shapes.example.com/items/{id}`.
     ///
@@ -1926,6 +2020,8 @@ pub mod shapes {
 
     /// An item, or the conflict that holds it. An accepted change is a conflict too.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
+    ///
     /// Request: `GET https://shapes.example.com/settled/{id}`.
     ///
     /// Call type: `tour::shapes::Call<tour::shapes::Settled>`. Create it with `Shapes::settled`.
@@ -1943,6 +2039,8 @@ pub mod shapes {
     pub enum Settled {}
 
     /// A part of a file, as it comes, or none when there is nothing to send.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`].
     ///
     /// Request: `GET https://shapes.example.com/parts/{id}`.
     ///
@@ -1966,6 +2064,8 @@ pub mod shapes {
     pub mod wrapped {
         /// An item, out of its envelope.
         ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::shapes::Endpoint::NAME).
+        ///
         /// Request: `GET https://shapes.example.com/wrapped/{id}`.
         ///
         /// Call type: `tour::shapes::Call<tour::shapes::wrapped::Get>`. Create it with `Wrapped::get`.
@@ -1984,6 +2084,8 @@ pub mod shapes {
 
         /// The envelope itself.
         ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::shapes::Endpoint::NAME).
+        ///
         /// Request: `GET https://shapes.example.com/wrapped/raw/{id}`.
         ///
         /// Call type: `tour::shapes::Call<tour::shapes::wrapped::Raw>`. Create it with `Wrapped::raw`.
@@ -1999,6 +2101,8 @@ pub mod shapes {
         pub enum Raw {}
 
         /// An item out of its envelope, or none.
+        ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::shapes::Endpoint::NAME).
         ///
         /// Request: `GET https://shapes.example.com/wrapped/find/{id}`.
         ///
@@ -2020,6 +2124,8 @@ pub mod shapes {
 
         /// Touch an item. An accepted touch is not done; a missing item is fine.
         ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::shapes::Endpoint::NAME).
+        ///
         /// Request: `HEAD https://shapes.example.com/wrapped/touch/{id}`.
         ///
         /// Call type: `tour::shapes::Call<tour::shapes::wrapped::Touch>`. Create it with `Wrapped::touch`.
@@ -2039,6 +2145,8 @@ pub mod shapes {
         pub enum Touch {}
 
         /// Whether an item is held. Only a `204` says yes.
+        ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::shapes::Endpoint::NAME).
         ///
         /// Request: `HEAD https://shapes.example.com/wrapped/holds/{id}`.
         ///
@@ -2062,6 +2170,8 @@ pub mod shapes {
     /// Calls on [`shapes::Sealed`](crate::shapes::Sealed).
     pub mod sealed {
         /// A file, as it comes, once the seal of its answer is checked.
+        ///
+        /// Its name in errors and logs: [`Endpoint::NAME`](crate::shapes::Endpoint::NAME).
         ///
         /// Request: `GET https://shapes.example.com/sealed/{id}`.
         ///

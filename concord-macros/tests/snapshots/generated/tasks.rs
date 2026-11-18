@@ -316,6 +316,8 @@ pub mod tasks {
     }
     /// List tasks in their current order.
     ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
+    ///
     /// Request: `GET https://tasks.example.com/api/tasks ?done`.
     ///
     /// Call type: `tasks::Call<tasks::List>`, returned by `Tasks::list`.
@@ -334,8 +336,6 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Vec`](Vec)<[`Task`](super::Task)>>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
-    ///
-    /// Name: `tasks.list` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum List {}
     #[doc(hidden)]
@@ -345,6 +345,8 @@ pub mod tasks {
         List,
     >;
     /// Create a task with a title.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
     ///
     /// Request: `POST https://tasks.example.com/api/tasks`.
     ///
@@ -364,8 +366,6 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Task`](super::Task)>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
-    ///
-    /// Name: `tasks.create` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum Create {}
     #[doc(hidden)]
@@ -375,6 +375,8 @@ pub mod tasks {
         Create,
     >;
     /// Fetch one task by its identifier.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
     ///
     /// Request: `GET https://tasks.example.com/api/tasks/{id}`.
     ///
@@ -392,8 +394,6 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<[`Task`](super::Task)>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
-    ///
-    /// Name: `tasks.get` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum Get {}
     #[doc(hidden)]
@@ -403,6 +403,8 @@ pub mod tasks {
         Get,
     >;
     /// Delete one task by its identifier.
+    ///
+    /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
     ///
     /// Request: `DELETE https://tasks.example.com/api/tasks/{id}`.
     ///
@@ -420,8 +422,6 @@ pub mod tasks {
     /// `.await` returns [`tasks::Result`](super::tasks::Result)<`()`>.
     ///
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
-    ///
-    /// Name: `tasks.delete` ([`Endpoint::NAME`](super::tasks::Endpoint::NAME)).
     #[allow(missing_debug_implementations)]
     pub enum Delete {}
     #[doc(hidden)]

@@ -139,13 +139,13 @@ impl Writer<'_> {
             .get(&(node.node as *const Node))
             .map(|endpoint| {
                 let docs = self.endpoint_type_doc(index, endpoint);
+                // Beside the author's description; the implementation shows the text itself.
                 let name = format!(
-                    " Name: `{}` ([`Endpoint::NAME`]({}{}::Endpoint::NAME)).",
-                    endpoint.path,
+                    " Its name in errors and logs: [`Endpoint::NAME`]({}{}::Endpoint::NAME).",
                     "super::".repeat(depth),
                     self.root
                 );
-                emit!(#docs #[doc = ""] #[doc = #name])
+                emit!(#[doc = ""] #[doc = #name] #docs)
             });
         emit! {
             #(#attrs)* #docs
