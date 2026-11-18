@@ -34,3 +34,8 @@ fn c1_5_a_client_name_is_read_after_normalization() {
 fn c10_1_c2_4_names_of_the_author_s_module_do_not_reach_generated_code() {
     trybuild::TestCases::new().pass("tests/accepted/hostile_names.rs");
 }
+
+#[test]
+fn c1_16_a_status_arm_may_name_its_field_after_an_owner() {
+    trybuild::TestCases::new().pass("tests/accepted/arm_owner_names.rs");
+}

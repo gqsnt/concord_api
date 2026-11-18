@@ -194,7 +194,8 @@ impl Writer<'_> {
             }
         }
         // As for the owners' bindings: a constant of the author's with a field's name
-        // cannot take the closure's parameter.
+        // cannot take the closure's parameter. The imports are inside the block that makes
+        // the closure, apart from the owners' own: a field may have an owner's name.
         let shadows = line
             .value
             .fields
@@ -205,9 +206,11 @@ impl Writer<'_> {
                 emit!(#[allow(unused_imports)] use ::core::mem::drop as #name;)
             });
         let arm = emit_at!(expression.span()=>
-            #(#shadows)*
-            let __arm = |#(#parameters),*| -> ::core::result::Result<#output, ::concord::Fail<#problem>> {
-                ::core::result::Result::Ok({ #expression })
+            let __arm = {
+                #(#shadows)*
+                |#(#parameters),*| -> ::core::result::Result<#output, ::concord::Fail<#problem>> {
+                    ::core::result::Result::Ok({ #expression })
+                }
             };
         );
         let call = emit_at!(expression.span()=>
