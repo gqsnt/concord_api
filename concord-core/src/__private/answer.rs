@@ -3,7 +3,7 @@ use std::future::Future;
 
 use crate::answer::{Answer, Headers, KnownKind, KnownOutcome};
 use crate::error::{Error, Fail, Kept, MismatchFailure};
-use crate::read::{Incoming, Reader};
+use crate::read::{Incoming, Reader, ReaderFor};
 use crate::transport::TryInfo;
 
 /// The response evidence retained for an answer or a status arm.
@@ -61,7 +61,7 @@ impl<P: Send, R: Reader<P>, F: FnOnce() -> R + Send> Refusal<P> for ProblemRefus
 }
 
 /// Read and frame an ordinary successful response, or read the refusal.
-pub async fn answer_read<T: Send, U, P: Send, R: Reader<T>>(
+pub async fn answer_read<T: Send, U, P: Send, R: ReaderFor<T, P>>(
     response: reqwest::Response,
     info: TryInfo,
     reader: impl FnOnce() -> R + Send,
@@ -108,8 +108,11 @@ pub fn reader<T, R: Reader<T>>(reader: R) -> CheckedReader<T, R> {
 
 /// Check the reader at its declaration and hide its concrete type from the response framing.
 #[inline]
-pub fn reader_for_response<T, R: Reader<T>>(value: R) -> impl Reader<T> {
-    reader(value)
+///
+/// The client's problem type `P` is inferred from the call that reads the response, so that a
+/// reader whose value holds the client's error is checked against the client's problem type.
+pub fn reader_for_response<T, P>(value: impl ReaderFor<T, P>) -> impl ReaderFor<T, P> {
+    value
 }
 
 /// Check the reader for the type declared in a problem statement.
@@ -156,7 +159,7 @@ pub fn read_body<'a, T, P, R>(
     info: &'a TryInfo,
 ) -> impl Future<Output = Result<T, Error<P>>> + Send + 'a
 where
-    R: Reader<T>,
+    R: ReaderFor<T, P>,
     T: Send + 'a,
     P: Send + 'a,
 {
@@ -166,7 +169,7 @@ where
         let headers = incoming.headers().clone();
         let clock = incoming.clock();
         let evidence = (!status.is_success()).then(|| incoming.keep_refusal());
-        match reader.read(incoming).await {
+        match reader.read_for(incoming).await {
             Ok(value) => Ok(value),
             Err(error) => Err(match evidence {
                 Some(evidence) => {

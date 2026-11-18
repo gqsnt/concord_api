@@ -12,16 +12,18 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 mod mapped;
-pub use mapped::{Mapped, Step};
+#[cfg(feature = "json")]
+pub use mapped::JsonLine;
+pub use mapped::{EndOfRecords, RecordFail, Step, TryMap};
 
 /// The status and headers of a response, and a stream of its records that ends after
 /// the first error.
 ///
 /// `E` is the error of the stream. A reader of records gives [`RecordError`], the default:
 /// `RecordStream<SseEvent>`. A reader whose records go through a mapping of your own
-/// ([`Sse::map`], [`JsonLines::map`]) gives the client's own error, `concord::Error<P>`, so
-/// that `?` on the call and `?` on `try_next` meet in one type:
-/// `RecordStream<StreamEvent, concord::Error<ApiProblem>>`.
+/// ([`Sse::try_map`], `JsonLines::try_map`) gives the client's own error, `concord::Error<P>`,
+/// so that `?` on the call and `?` on `try_next` meet in one type:
+/// `RecordStream<StreamEvent, anthropic::Error>`.
 ///
 /// `try_next` and `Stream` drive the same parser; you can switch from one to the other
 /// between records. Dropping this stream releases its body and its place in any cap on
@@ -135,14 +137,17 @@ impl<T, E> Stream for RecordStream<T, E> {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        let Some(records) = &mut this.records else {
+        // Held outside the stream while it is polled: a panic of a mapping unwinds through
+        // this frame and drops the body, its place in any cap on concurrency and the partial
+        // framing, and a later poll finds the stream ended.
+        let Some(mut records) = this.records.take() else {
             return Poll::Ready(None);
         };
         let result = Pin::new(records.as_mut()).poll_next(cx);
-        if matches!(result, Poll::Ready(None | Some(Err(_)))) {
-            // Release the body and all partial framing immediately, even if the
-            // caller keeps the exhausted stream to inspect its response head.
-            this.records = None;
+        // Release the body and all partial framing immediately at the end or after an
+        // error, even if the caller keeps the exhausted stream to inspect its response head.
+        if !matches!(result, Poll::Ready(None | Some(Err(_)))) {
+            this.records = Some(records);
         }
         result
     }

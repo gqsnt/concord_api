@@ -6,6 +6,7 @@ use crate::transport::{TransportError, TryInfo};
 use bytes::Bytes;
 use futures_core::Stream;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -45,7 +46,7 @@ use std::task::{Context, Poll};
 /// ```
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot read a `{T}`",
-    note = "declare `read Json;` with `use concord::Json;`, or implement `concord::Reader<{T}>` for `{Self}`"
+    note = "the value of `read` must be a reader of the endpoint's type: one of `concord::read`, or a type that implements `concord::Reader<{T}>`"
 )]
 pub trait Reader<T>: Send + Sync {
     /// Consume the Incoming body once and return the declared value or a ReadError.
@@ -56,6 +57,37 @@ pub trait Reader<T>: Send + Sync {
     /// reader's own work between body reads. Do not retain or print response values
     /// in an error source; optional decoder text belongs in [`ReadError::with_details`].
     fn read(&self, body: Incoming) -> impl Future<Output = Result<T, ReadError>> + Send;
+}
+
+/// A reader of `T` for a client whose problem type is `P`: what the generated code requires of
+/// the value of `read`.
+///
+/// Every [`Reader`] is one, for every problem type, and you implement `Reader`, not this
+/// trait. A reader whose value holds the client's own error, such as a mapped reader of records
+/// (`RecordStream<T, concord::Error<P>>`), implements `ReaderFor` for that problem type only:
+/// so a stream whose error names another problem type than the client's does not compile.
+///
+/// ```
+/// # use concord_core as concord;
+/// use concord::read::{ReaderFor, Reader};
+///
+/// fn for_any_client<R: Reader<String>>(reader: R) -> impl ReaderFor<String, u16> {
+///     reader
+/// }
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot read a `{T}`",
+    note = "the value of `read` must be a reader of the endpoint's type: one of `concord::read`, or a type that implements `concord::Reader<{T}>`"
+)]
+pub trait ReaderFor<T, P>: Send + Sync {
+    /// Reads the body, as [`Reader::read`] does.
+    fn read_for(&self, body: Incoming) -> impl Future<Output = Result<T, ReadError>> + Send;
+}
+
+impl<T, P, R: Reader<T>> ReaderFor<T, P> for R {
+    fn read_for(&self, body: Incoming) -> impl Future<Output = Result<T, ReadError>> + Send {
+        self.read(body)
+    }
 }
 
 impl<T, R: Reader<T>> Reader<T> for &R {
@@ -1160,148 +1192,300 @@ impl ByteStream {
 }
 
 impl ByteStream {
-    /// Returns the call's own error for a fault that a reader of records found in this body,
-    /// after the head was handed over.
+    /// Hands this body to a reader of records whose stream fails with the call's own error,
+    /// `Error<P>`, where `P` is the problem type of the client.
     ///
-    /// The error is the one that the call would have returned for the same fault in a body
-    /// read whole: the endpoint, the attempts, the status and the headers of this response,
-    /// and nothing of the body. [`RecordFault::problem`] gives a Refused error whose
-    /// `problem()` is the API's own error, as an arm does that finds a problem inside a `2xx`;
-    /// every other fault gives a Mismatch, whose text names the record by its one-based
-    /// position and never by a value: `mismatch: status 200, record 3 could not be decoded,
-    /// in events.watch`. Its `source()` holds the same words; it keeps no body, no decoder
-    /// message and no cause of the reader.
-    ///
-    /// A failure of the body itself is not a `RecordFault`: it is the [`StreamError`] that the
-    /// stream returned, and `?` converts it into the call's error.
+    /// A [`RecordBody`] is the only way to make the call's error for a record: its count of
+    /// records is the framer's own, and each of its errors consumes it, so that a body gives
+    /// at most one error, and a reader cannot report a fault of another body or a number of its
+    /// own as this body's record. A reader of records that implements [`ReaderFor`] for the
+    /// client's problem type receives `P` from the endpoint, so a refusal holds the client's
+    /// problem type.
     ///
     /// ```no_run
     /// # use concord_core as concord;
-    /// use concord::read::RecordFault;
+    /// fn records<P>(body: concord::read::Incoming) -> concord::read::RecordBody<P> {
+    ///     body.stream().into_records()
+    /// }
+    /// ```
+    pub fn into_records<P>(self) -> RecordBody<P> {
+        RecordBody {
+            stream: self,
+            record: 0,
+            problem: PhantomData,
+        }
+    }
+}
+
+/// A body read as records: its bytes, the count of records that its framer has started, and the
+/// only way to make the call's own error for one of them.
+///
+/// A framer calls [`start_record`](RecordBody::start_record) when a record begins (a line, an
+/// event block, counting blocks that dispatch nothing), and reads the bytes with
+/// [`bytes`](RecordBody::bytes). A fault is reported with [`fail`](RecordBody::fail), and the
+/// API's own error with [`refuse`](RecordBody::refuse); both consume the body, which is released
+/// when the error is made. The error names the record by this count, never by a number that the
+/// reader supplies. A failure of the bytes themselves is the [`StreamError`] that `bytes()`
+/// returned: `?` converts it into the call's error.
+///
+/// `Debug` prints the status, the names of the headers and the count.
+///
+/// ```no_run
+/// # use concord_core as concord;
+/// use concord::read::{RecordBody, RecordFault};
+///
+/// /// A reader of lines of your own: each line is one record.
+/// async fn next_line<P>(mut body: RecordBody<P>) -> Result<(RecordBody<P>, Vec<u8>), concord::Error<P>> {
+///     body.start_record();
+///     let line = Vec::new();
+///     match body.bytes().try_next().await? {
+///         Some(chunk) if chunk.len() > 4096 => Err(body.fail(RecordFault::too_large())),
+///         _ => Ok((body, line)),
+///     }
+/// }
+/// ```
+pub struct RecordBody<P> {
+    stream: ByteStream,
+    record: usize,
+    problem: PhantomData<fn() -> P>,
+}
+
+impl<P> RecordBody<P> {
+    /// Returns the body's bytes, to read them as they arrive.
     ///
-    /// /// A line of a body that a reader of lines of your own found too long.
-    /// fn too_long<P>(body: &concord::ByteStream, line: usize) -> concord::Error<P> {
-    ///     body.record_error(RecordFault::too_large(line))
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn bytes(body: &mut concord::read::RecordBody<()>) -> &mut concord::ByteStream {
+    ///     body.bytes()
+    /// }
+    /// ```
+    pub fn bytes(&mut self) -> &mut ByteStream {
+        &mut self.stream
+    }
+
+    /// Counts one more record: the record that begins now, and that a later error names.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn begin(body: &mut concord::read::RecordBody<()>) {
+    ///     body.start_record();
+    /// }
+    /// ```
+    pub fn start_record(&mut self) {
+        self.record = self.record.saturating_add(1);
+    }
+
+    /// Returns the one-based position of the record that began last, or zero before the first.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn position(body: &concord::read::RecordBody<()>) -> usize {
+    ///     body.record()
+    /// }
+    /// ```
+    pub fn record(&self) -> usize {
+        self.record
+    }
+
+    /// Returns the status of the response.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn status(body: &concord::read::RecordBody<()>) -> concord::http::StatusCode {
+    ///     body.status()
+    /// }
+    /// ```
+    pub fn status(&self) -> http::StatusCode {
+        self.stream.status()
+    }
+
+    /// Returns the headers of the response.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn headers(body: &concord::read::RecordBody<()>) -> &concord::Headers {
+    ///     body.headers()
+    /// }
+    /// ```
+    pub fn headers(&self) -> &Headers {
+        self.stream.headers()
+    }
+
+    /// Returns the call's error for the API's own problem, sent as the current record: a
+    /// Refused error whose `problem()` is `problem`, with the status and the headers of the
+    /// response, the endpoint and the attempts. It prints `refused: status 200, in
+    /// events.watch`. The body is released.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// fn refuse(body: concord::read::RecordBody<u16>) -> concord::Error<u16> {
+    ///     body.refuse(410)
     /// }
     /// ```
     // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
     #[allow(clippy::unimplemented)]
-    pub fn record_error<P>(&self, fault: RecordFault<P>) -> Error<P> {
-        if let Fault::Problem { problem, .. } = fault.fault {
-            let _ = (problem, &self.info);
-        }
+    pub fn refuse(self, problem: P) -> Error<P> {
+        let _ = (problem, self.record, &self.stream.info);
         unimplemented!()
     }
-}
 
-/// A fault in a body that a reader of records found after the head: the API's own problem
-/// sent as a record, or a record that is not what the client promised.
-/// [`ByteStream::record_error`] makes it the call's own error.
-///
-/// A record is named by its one-based position, as the reader counts its records (a line, an
-/// event block). `Debug` prints the kind of fault and the position, never the problem.
-///
-/// ```no_run
-/// # use concord_core as concord;
-/// use concord::read::RecordFault;
-///
-/// let fault: RecordFault<()> = RecordFault::not_the_type(3);
-/// ```
-pub struct RecordFault<P> {
-    fault: Fault<P>,
-}
-
-enum Fault<P> {
-    Problem { record: usize, problem: P },
-    TooLarge { record: usize },
-    NotUtf8 { record: usize },
-    NotTheType { record: usize },
-    Unfinished,
-}
-
-impl<P> RecordFault<P> {
-    /// Record `record` is the API's own error: the call's error is Refused, with this
-    /// `problem()`, the status of the response (a `200` most often) and its headers.
+    /// Returns the call's error for a fault of the current record, or of the body as a sequence
+    /// of records ([`RecordFault`]): a Mismatch whose text names the record by its position,
+    /// `mismatch: status 200, record 7 could not be decoded, in events.watch`. The body is
+    /// released.
     ///
     /// ```no_run
     /// # use concord_core as concord;
     /// use concord::read::RecordFault;
-    ///
-    /// struct Problem { code: u16 }
-    /// let fault = RecordFault::problem(7, Problem { code: 410 });
+    /// fn not_utf8(body: concord::read::RecordBody<()>) -> concord::Error {
+    ///     body.fail(RecordFault::not_utf8())
+    /// }
     /// ```
-    pub fn problem(record: usize, problem: P) -> Self {
-        Self {
-            fault: Fault::Problem { record, problem },
-        }
-    }
-
-    /// Record `record` is larger than the bound of the reader:
-    /// `mismatch: status 200, record 3 exceeds the reader's size limit, in events.watch`.
-    ///
-    /// ```no_run
-    /// # use concord_core as concord;
-    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::too_large(3);
-    /// ```
-    pub fn too_large(record: usize) -> Self {
-        Self {
-            fault: Fault::TooLarge { record },
-        }
-    }
-
-    /// Record `record` is not valid UTF-8:
-    /// `mismatch: status 200, record 3 is not UTF-8, in events.watch`.
-    ///
-    /// ```no_run
-    /// # use concord_core as concord;
-    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::not_utf8(3);
-    /// ```
-    pub fn not_utf8(record: usize) -> Self {
-        Self {
-            fault: Fault::NotUtf8 { record },
-        }
-    }
-
-    /// Record `record` does not decode as the type that the client expects:
-    /// `mismatch: status 200, record 3 could not be decoded, in events.watch`.
-    ///
-    /// ```no_run
-    /// # use concord_core as concord;
-    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::not_the_type(3);
-    /// ```
-    pub fn not_the_type(record: usize) -> Self {
-        Self {
-            fault: Fault::NotTheType { record },
-        }
-    }
-
-    /// The body ended cleanly before the record that its reader requires to end it:
-    /// `mismatch: status 200, the body ended before its last record, in events.watch`.
-    ///
-    /// ```no_run
-    /// # use concord_core as concord;
-    /// let fault: concord::read::RecordFault<()> = concord::read::RecordFault::unfinished();
-    /// ```
-    pub fn unfinished() -> Self {
-        Self {
-            fault: Fault::Unfinished,
-        }
+    // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
+    #[allow(clippy::unimplemented)]
+    pub fn fail(self, fault: RecordFault) -> Error<P> {
+        let _ = (
+            fault.kind,
+            fault.at,
+            fault.reason,
+            self.record,
+            &self.stream.info,
+        );
+        unimplemented!()
     }
 }
 
-impl<P> std::fmt::Debug for RecordFault<P> {
+impl<P> std::fmt::Debug for RecordBody<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (name, record) = match &self.fault {
-            Fault::Problem { record, .. } => ("Problem", Some(record)),
-            Fault::TooLarge { record } => ("TooLarge", Some(record)),
-            Fault::NotUtf8 { record } => ("NotUtf8", Some(record)),
-            Fault::NotTheType { record } => ("NotTheType", Some(record)),
-            Fault::Unfinished => ("Unfinished", None),
-        };
-        match record {
-            Some(record) => f.debug_struct(name).field("record", record).finish(),
-            None => f.write_str(name),
+        f.debug_struct("RecordBody")
+            .field("status", &self.stream.status())
+            .field("headers", self.stream.headers())
+            .field("record", &self.record)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What is wrong with a record, or with a body as a sequence of records, for
+/// [`RecordBody::fail`]. It holds no position of the record: the body counts its records.
+///
+/// `Debug` prints the kind of fault.
+///
+/// ```no_run
+/// # use concord_core as concord;
+/// let fault = concord::read::RecordFault::not_the_type().at(1, 34);
+/// ```
+pub struct RecordFault {
+    kind: FaultKind,
+    at: Option<(usize, usize)>,
+    reason: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FaultKind {
+    TooLarge,
+    NotUtf8,
+    NotTheType,
+    DoesNotFit,
+    Unfinished,
+}
+
+impl RecordFault {
+    fn of(kind: FaultKind) -> Self {
+        Self {
+            kind,
+            at: None,
+            reason: None,
         }
+    }
+
+    /// The record is larger than the reader's bound:
+    /// `record 7 exceeds the reader's size limit`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault = concord::read::RecordFault::too_large();
+    /// ```
+    pub fn too_large() -> Self {
+        Self::of(FaultKind::TooLarge)
+    }
+
+    /// The record is not valid UTF-8: `record 7 is not UTF-8`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault = concord::read::RecordFault::not_utf8();
+    /// ```
+    pub fn not_utf8() -> Self {
+        Self::of(FaultKind::NotUtf8)
+    }
+
+    /// The record does not decode as the type that the client expects:
+    /// `record 7 could not be decoded`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault = concord::read::RecordFault::not_the_type();
+    /// ```
+    pub fn not_the_type() -> Self {
+        Self::of(FaultKind::NotTheType)
+    }
+
+    /// The place inside the record where the decoder stopped, a line and a column of the
+    /// record's own text, as a decoder reports them. They appear in `details()` only, never
+    /// in the text or the cause of the error. Only a fault that does not decode keeps them.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault = concord::read::RecordFault::not_the_type().at(1, 34);
+    /// ```
+    #[must_use]
+    pub fn at(mut self, line: usize, column: usize) -> Self {
+        if matches!(self.kind, FaultKind::NotTheType) {
+            self.at = Some((line, column));
+        }
+        self
+    }
+
+    /// The record, or the sequence of records so far, does not fit what the client expects:
+    /// `record 7 does not fit the stream`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault = concord::read::RecordFault::does_not_fit();
+    /// ```
+    pub fn does_not_fit() -> Self {
+        Self::of(FaultKind::DoesNotFit)
+    }
+
+    /// The same, with a fixed reason of the program, which `reason()` returns: it is never
+    /// printed in the text or the cause of the error.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault = concord::read::RecordFault::rejected("message_stop before message_start");
+    /// ```
+    pub fn rejected(reason: &'static str) -> Self {
+        Self {
+            reason: Some(reason),
+            ..Self::of(FaultKind::DoesNotFit)
+        }
+    }
+
+    /// The body ended cleanly before the record that ends the stream:
+    /// `the body ended before its last record`.
+    ///
+    /// ```no_run
+    /// # use concord_core as concord;
+    /// let fault = concord::read::RecordFault::unfinished();
+    /// ```
+    pub fn unfinished() -> Self {
+        Self::of(FaultKind::Unfinished)
+    }
+}
+
+impl std::fmt::Debug for RecordFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.kind, f)
     }
 }
 

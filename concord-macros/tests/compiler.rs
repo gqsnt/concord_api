@@ -105,6 +105,100 @@ fn c1_12_generated_deprecated_uses_are_quiet_and_author_expressions_are_not() {
 fn c1_12_relative_visibility_rejects_outside_access() {
     trybuild::TestCases::new().compile_fail("tests/compiler-errors/bindings/visibility.rs");
 }
+/// C1.16: a reader that does not fit names the author's token and the note of the trait.
+///
+/// Only the error's code and message, its span and its note are compared, not the rest of the
+/// compiler's output: rustc lists the types that implement `Reader`, and that list grows with
+/// every reader that the library adds.
+#[test]
+fn c1_16_a_reader_that_does_not_fit_points_at_the_author_and_says_what_fits() {
+    const NOTE: &str = "the value of `read` must be a reader of the endpoint's type";
+    let cases = [
+        (
+            "01_reader.rs",
+            "3 | read Bad;",
+            "  |      ^^^",
+            "--> src/main.rs:3:6",
+            ": one of `concord::read`, or a type that implements `concord::Reader<u32>`",
+        ),
+        (
+            "02_problem_reader.rs",
+            "3 | problem u32 read Bad;",
+            "  |                  ^^^",
+            "--> src/main.rs:3:18",
+            ": one of `concord::read`, or a type that implements `concord::Reader<u32>`",
+        ),
+    ];
+    for (file, line, caret, place, note) in cases {
+        let stderr = reader_note::check(file);
+        let header = "error[E0277]: `Bad` cannot read a `u32`";
+        let expected = [
+            header.to_owned(),
+            place.to_owned(),
+            line.to_owned(),
+            caret.to_owned(),
+            format!("= note: {NOTE}{note}"),
+        ];
+        for text in expected {
+            assert!(
+                stderr.contains(&text),
+                "{file}: missing {text:?} in:\n{stderr}"
+            );
+        }
+        // The same error, before and after the client's problem type is inferred; no other.
+        let errors = stderr.matches("error[E").count();
+        assert!(
+            errors >= 1 && errors == stderr.matches(header).count(),
+            "{file}: only this error in:\n{stderr}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod reader_note {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    /// Checks one fixture of `tests/compiler-errors/reader-note` as the `main.rs` of a crate of
+    /// its own, beside trybuild's projects, and returns the compiler's output.
+    pub fn check(file: &str) -> String {
+        let macros = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = macros.parent().unwrap_or(macros);
+        let target = workspace.join("target/tests/trybuild");
+        let name = file.trim_end_matches(".rs").replace('_', "-");
+        let project: PathBuf = workspace
+            .join("target/tests/reader-note")
+            .join(format!("note-{name}"));
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::copy(
+            macros.join("tests/compiler-errors/reader-note").join(file),
+            project.join("src/main.rs"),
+        )
+        .unwrap();
+        std::fs::copy(workspace.join("Cargo.lock"), project.join("Cargo.lock")).unwrap();
+        let api = workspace.join("concord-api");
+        std::fs::write(
+            project.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"note-{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n\
+                 [workspace]\n\n[dependencies]\nconcord = {{ package = \"concord-api\", path = {:?} }}\n",
+                api.display().to_string()
+            ),
+        )
+        .unwrap();
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let output = Command::new(cargo)
+            .args(["check", "--offline", "--quiet", "--color", "never"])
+            .current_dir(&project)
+            .env("CARGO_TARGET_DIR", target)
+            .env_remove("RUSTFLAGS")
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{file} compiled");
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    }
+}
+
 #[test]
 fn c1_16_rust_bounds_point_at_author_tokens() {
     trybuild::TestCases::new().compile_fail("tests/compiler-errors/spans/*.rs");

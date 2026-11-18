@@ -4,35 +4,29 @@
 #[cfg(feature = "json")]
 use super::JsonLines;
 use super::{RecordError, RecordStream, Sse, SseEvent};
-use concord_core::read::{Incoming, ReadError, Reader};
+use concord_core::read::{Incoming, ReadError, Reader, ReaderFor, RecordBody, RecordFault};
 use std::fmt;
-use std::marker::PhantomData;
 
-/// What a mapping does with one record: yield a value, skip the record, end the stream, or
-/// end it with the API's own error.
+/// What a mapping does with a record that fits: yield a value, skip the record, or end the
+/// stream. Why a stream fails is the other half of the mapping's result, a [`RecordFail`].
 ///
 /// A mapping is a function of your own that receives each record (an [`SseEvent`] for
-/// [`Sse::map`], a value that `serde` decoded from the line for [`JsonLines::map`]) and returns
-/// `Result<Step<T, P>, RecordError>`: `T` is the item of the stream, `P` the problem type of
-/// the client. Its `Err` is a record that does not decode: `?` on
-/// [`SseEvent::json`] returns it. The stream that the mapping makes is a
-/// `RecordStream<T, concord::Error<P>>`, and each outcome reaches the caller of `try_next` as
-/// follows:
+/// [`Sse::try_map`], a `JsonLine` for `JsonLines::try_map`) and returns
+/// `Result<Step<T>, RecordFail<P>>`, where `T` is the item of the stream and `P` the problem type
+/// of the client. Each outcome reaches the caller of `try_next` as follows:
 ///
 /// | The mapping returns | `try_next` returns | And then |
 /// |---|---|---|
-/// | `Next(value)` | `Ok(Some(value))` | The next record is read. |
-/// | `Skip` | nothing for this record | The next record is read, in the same call. |
-/// | `Last(value)` | `Ok(Some(value))` | `Ok(None)`. The body is released at once: nothing after this record is read. |
-/// | `End` | `Ok(None)` | `Ok(None)`. The body is released at once: nothing after this record is read. |
-/// | `Problem(problem)` | `Err(error)`: Refused, with `problem()`, the status and the headers of the response | `Ok(None)`. The body is released. |
-/// | `Err(record_error)` | `Err(error)`: a Mismatch, `record 3 could not be decoded` | `Ok(None)`. The body is released. |
+/// | `Ok(Next(value))` | `Ok(Some(value))` | The next record is read. |
+/// | `Ok(Skip)` | nothing for this record | The next record is read, in the same call, within its work budget. |
+/// | `Ok(Last(value))` | `Ok(Some(value))` | `Ok(None)`. The body is released at once: nothing after this record is read. |
+/// | `Ok(End)` | `Ok(None)` | `Ok(None)`. The body is released at once: nothing after this record is read. |
+/// | `Err(fail)` | `Err(error)`, as [`RecordFail`] says | `Ok(None)`. The body is released. |
 ///
-/// The first error ends the stream, as for every stream of records. `Debug` prints the name of
-/// the variant, never its value.
+/// `Debug` prints the name of the variant, never its value.
 ///
 /// ```no_run
-/// use concord::read::{RecordError, RecordStream, Sse, SseEvent, Step};
+/// use concord::read::{RecordFail, RecordStream, Sse, SseEvent, Step};
 /// use serde::Deserialize;
 ///
 /// /// `{"type": "error", "error": {"type": "overloaded_error", "message": "…"}}`.
@@ -50,6 +44,7 @@ use std::marker::PhantomData;
 /// #[derive(Debug, Deserialize)]
 /// #[serde(tag = "type", rename_all = "snake_case")]
 /// pub enum StreamEvent {
+///     MessageStart,
 ///     ContentBlockDelta { index: usize },
 ///     MessageStop,
 ///     #[serde(other)]
@@ -57,12 +52,14 @@ use std::marker::PhantomData;
 /// }
 ///
 /// /// The event's name chooses what the event is.
-/// pub fn event(event: SseEvent) -> Result<Step<StreamEvent, ApiProblem>, RecordError> {
+/// pub fn event(event: SseEvent) -> Result<Step<StreamEvent>, RecordFail<ApiProblem>> {
 ///     Ok(match event.event.as_str() {
 ///         "ping" => Step::Skip,
-///         "error" => Step::Problem(event.json()?),
-///         "message_stop" => Step::Last(event.json()?),
-///         _ => Step::Next(event.json()?),
+///         "error" => return Err(RecordFail::problem(event.json()?)),
+///         _ => match event.json()? {
+///             StreamEvent::MessageStop => Step::Last(StreamEvent::MessageStop),
+///             typed => Step::Next(typed),
+///         },
 ///     })
 /// }
 ///
@@ -71,300 +68,544 @@ use std::marker::PhantomData;
 ///         base "https://chat.example.test/v1";
 ///         problem ApiProblem read concord::Json;
 ///
-///         POST stream() -> RecordStream<StreamEvent, concord::Error<ApiProblem>> {
+///         POST stream() -> RecordStream<StreamEvent, chat::Error> {
 ///             path "messages";
-///             read Sse::new(64 * concord::KIB).map(event).require_end();
+///             read Sse::new(64 * concord::KIB).try_map(event).until_last_record();
 ///         }
 ///     }
 /// }
 ///
 /// async fn deltas(chat: &Chat) -> chat::Result<usize> {
-///     let mut events = chat.stream().await?;        // the call's error
+///     let mut events = chat.stream().await?;                  // the call's error
 ///     let mut deltas = 0;
-///     while let Some(event) = events.try_next().await? {    // the same error type
+///     while let Some(event) = events.try_next().await? {      // the same error type
 ///         if let StreamEvent::ContentBlockDelta { .. } = event {
 ///             deltas += 1;
 ///         }
 ///     }
-///     Ok(deltas)                                    // `message_stop` was the last event
+///     Ok(deltas)                                              // `message_stop` was the last event
 /// }
 /// ```
 #[non_exhaustive]
-pub enum Step<T, P> {
+pub enum Step<T> {
     /// Yields this value; the stream goes on.
     Next(T),
+    /// Yields nothing for this record; the stream goes on.
+    Skip,
     /// Yields this value, the last one: the stream ends after it, and nothing after this
     /// record is read.
     Last(T),
-    /// Yields nothing for this record; the stream goes on.
-    Skip,
     /// Ends the stream at this record, which yields nothing (a `[DONE]` that is not data).
     End,
-    /// This record is the API's own error: the stream ends with a Refused error whose
-    /// `problem()` is this value.
-    Problem(P),
 }
 
-impl<T, P> fmt::Debug for Step<T, P> {
+impl<T> fmt::Debug for Step<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Next(_) => "Next(..)",
-            Self::Last(_) => "Last(..)",
             Self::Skip => "Skip",
+            Self::Last(_) => "Last(..)",
             Self::End => "End",
-            Self::Problem(_) => "Problem(..)",
         })
     }
 }
 
-/// A reader of records whose records go through a mapping of your own:
-/// `read Sse::new(n).map(event);`, `read JsonLines::new(n).map(watch_event);`.
+/// Why a mapping fails the stream: the API's own problem, a record that does not fit, or a
+/// record that does not decode. The stream ends with the client's own error, `Error<P>`.
 ///
-/// It reads as the reader that it maps does, with the same bound, and gives a
-/// `RecordStream<T, concord::Error<P>>`: the items that the mapping yields, and the client's
-/// own error, so that the call and the stream fail with one type. Each record is held to the
-/// bound of the reader, and the mapping receives it whole; nothing is held beyond one record
-/// and the value that the mapping returns. The mapping runs inside `try_next`, to its end:
-/// dropping a `try_next` never leaves a record half mapped. A skipped record costs the same
-/// work budget as a record that is yielded, so a stream of skipped records still yields to
-/// the runtime. A panic of the mapping is not caught: it reaches the caller of `try_next`,
-/// as a panic of an arm reaches the caller of the call.
+/// | Made by | The caller's error |
+/// |---|---|
+/// | [`RecordFail::problem`] | Refused, with `problem()`: `refused: status 200, in chat.stream` |
+/// | [`RecordFail::mismatch`] | Mismatch, `reason()` is the fixed reason: `mismatch: status 200, record 7 does not fit the stream, in chat.stream` |
+/// | `?` on `SseEvent::json` or `JsonLine::json` | Mismatch: `mismatch: status 200, record 7 could not be decoded, in chat.stream`, with the line and the column in `details()` |
+/// | `?` on any other [`RecordError`] | Mismatch, with no reason: `record 7 does not fit the stream` |
 ///
-/// The mapping is cloned for each response, so a mapping that keeps state (a closure that
-/// counts, a builder) starts each stream afresh. It must own what it holds (`'static`): a
-/// closure written in `read` can use none of the inputs of the call.
+/// **Only the stream at hand supplies the error.** As for an arm that decodes a body itself
+/// ([`Fail::from_read`](concord_core::Fail::from_read)), a `RecordFail` keeps only what a
+/// decoder's failure is: the line and the column where the decoder stopped, inside the record.
+/// Concord does not verify that the decoder was given this record, so they are said of the
+/// decoder's input, in `details()` only. Any other `RecordError` (a fault of framing, the
+/// failure of a body, including one taken from another stream) keeps nothing: the stream ends
+/// with the generic Mismatch above. The status, the headers, the endpoint, the attempts and the
+/// record's position are always those of the stream that the mapping runs on, the position
+/// counted by the stream's own framer.
 ///
-/// A body that ends cleanly ends the stream with `Ok(None)`, unless
-/// [`require_end`](Mapped::require_end) says that a record must end it.
+/// `?` converts a `RecordError` into a `RecordFail`, so that a mapping decodes with
+/// `event.json()?`. It cannot also convert the problem: `Err(RecordFail::problem(p))`.
 ///
-/// The errors that the stream returns, each once, before `Ok(None)`:
-///
-/// | When | Kind | Text |
-/// |---|---|---|
-/// | The mapping returns [`Step::Problem`] | Refused, with `problem()` | `refused: status 200, in chat.stream` |
-/// | The mapping returns `Err`, or a line does not decode (`JsonLines`) | Mismatch | `mismatch: status 200, record 3 could not be decoded, in chat.stream` |
-/// | A record exceeds the bound | Mismatch | `mismatch: status 200, record 3 exceeds the reader's size limit, in chat.stream` |
-/// | A record is not UTF-8 | Mismatch | `mismatch: status 200, record 3 is not UTF-8, in chat.stream` |
-/// | The body ends before a record ended the stream, under `require_end` | Mismatch | `mismatch: status 200, the body ended before its last record, in chat.stream` |
-/// | The body breaks, or a timeout expires | Transport | the text of the core, as for a stream of bytes |
-///
-/// No text holds a value of the response. A Mismatch keeps no byte of the record and no
-/// message of the decoder.
+/// `Debug` prints the kind of failure, never the problem.
 ///
 /// ```no_run
-/// use concord::read::{JsonLines, Mapped, RecordError, RecordStream, Step};
+/// use concord::read::{JsonLine, RecordFail, Step};
 /// use serde::Deserialize;
 ///
 /// #[derive(Debug, Deserialize)]
-/// pub struct Status {
-///     pub code: Option<u16>,
-/// }
-/// #[derive(Debug, Deserialize)]
-/// pub struct Pod {
-///     pub name: String,
-/// }
-/// /// `{"type": "ADDED", "object": {…}}`; an `ERROR` line holds a `Status`.
-/// #[derive(Debug, Deserialize)]
+/// struct Status { code: Option<u16> }
+/// #[derive(Deserialize)]
 /// #[serde(tag = "type", content = "object", rename_all = "UPPERCASE")]
-/// pub enum WatchEvent<T> {
-///     Added(T),
-///     Deleted(T),
-///     Error(Status),
-/// }
+/// enum Line { Added(String), Bookmark { version: String }, Error(Status) }
 ///
-/// /// An `ERROR` line is the API's own error; the server ends the watch after it.
-/// pub fn watch_event<T>(event: WatchEvent<T>) -> Result<Step<WatchEvent<T>, Status>, RecordError> {
-///     Ok(match event {
-///         WatchEvent::Error(status) => Step::Problem(status),
-///         event => Step::Next(event),
-///     })
-/// }
-///
-/// concord::api! {
-///     pub client Cluster {
-///         base "https://cluster.example.test/api/v1";
-///         read concord::Json;
-///         problem Status;
-///
-///         GET watch() -> RecordStream<WatchEvent<Pod>, concord::Error<Status>> {
-///             path "pods";
-///             query { "watch" = true; }
-///             read JsonLines::new(64 * concord::KIB).map(watch_event);
-///         }
-///     }
-/// }
-///
-/// async fn names(cluster: &Cluster) -> cluster::Result<Vec<String>> {
-///     let mut events = cluster.watch().await?;
-///     let mut names = Vec::new();
-///     loop {
-///         match events.try_next().await {
-///             Ok(Some(WatchEvent::Added(pod))) => names.push(pod.name),
-///             Ok(Some(_)) => {}
-///             Ok(None) => return Ok(names),           // the server ended the watch
-///             Err(error) if error.problem().and_then(|s| s.code) == Some(410) => return Ok(names),
-///             Err(error) => return Err(error),
-///         }
+/// fn line(line: JsonLine) -> Result<Step<String>, RecordFail<Status>> {
+///     match line.json()? {
+///         Line::Added(name) => Ok(Step::Next(name)),
+///         Line::Bookmark { version } if version.is_empty() => Err(RecordFail::mismatch("a bookmark without a version")),
+///         Line::Bookmark { .. } => Ok(Step::Skip),
+///         Line::Error(status) => Err(RecordFail::problem(status)),
 ///     }
 /// }
 /// ```
-pub struct Mapped<R, F, X> {
-    reader: R,
-    map: F,
-    end_required: bool,
-    record: PhantomData<fn(X)>,
+pub struct RecordFail<P> {
+    cause: Cause<P>,
 }
 
-impl<R, F, X> Mapped<R, F, X> {
-    fn new(reader: R, map: F) -> Self {
-        Self {
-            reader,
-            map,
-            end_required: false,
-            record: PhantomData,
-        }
-    }
+enum Cause<P> {
+    Problem(P),
+    Rejected(&'static str),
+    Decode { line: usize, column: usize },
+    Other,
+}
 
-    /// Requires that a record end the stream, with [`Step::Last`] or [`Step::End`]: a body
-    /// that ends cleanly before one did is the Mismatch
-    /// `the body ended before its last record`, not the end of the stream.
-    ///
-    /// An API whose stream ends with a record of its own (`message_stop`, `[DONE]`) uses it,
-    /// so that a reply cut short at a record boundary is never taken for a whole one. Without
-    /// it, the end of the body ends the stream, as for a reader that is not mapped.
+impl<P> RecordFail<P> {
+    /// The record is the API's own error: the stream ends with a Refused error whose `problem()`
+    /// is `problem`, with the status and the headers of the response.
     ///
     /// ```no_run
-    /// use concord::read::{RecordError, Sse, SseEvent, Step};
-    ///
-    /// fn text(event: SseEvent) -> Result<Step<String, ()>, RecordError> {
-    ///     Ok(if event.data == "[DONE]" { Step::End } else { Step::Next(event.data) })
-    /// }
-    /// let reader = Sse::new(16 * concord::KIB).map(text).require_end();
+    /// use concord::read::RecordFail;
+    /// struct Status { code: u16 }
+    /// let fail = RecordFail::problem(Status { code: 410 });
     /// ```
-    #[must_use]
-    pub fn require_end(mut self) -> Self {
-        self.end_required = true;
-        self
-    }
-}
-
-impl<R: Clone, F: Clone, X> Clone for Mapped<R, F, X> {
-    fn clone(&self) -> Self {
+    pub fn problem(problem: P) -> Self {
         Self {
-            reader: self.reader.clone(),
-            map: self.map.clone(),
-            end_required: self.end_required,
-            record: PhantomData,
+            cause: Cause::Problem(problem),
+        }
+    }
+
+    /// The record, or the sequence of records so far, does not fit what the client expects:
+    /// the stream ends with the Mismatch `record 7 does not fit the stream`, whose `reason()` is
+    /// `reason`. The reason is a fixed text of the program; it is never printed in the error's
+    /// text or cause.
+    ///
+    /// ```no_run
+    /// use concord::read::RecordFail;
+    /// let fail: RecordFail<()> = RecordFail::mismatch("message_stop before message_start");
+    /// ```
+    pub fn mismatch(reason: &'static str) -> Self {
+        Self {
+            cause: Cause::Rejected(reason),
         }
     }
 }
 
-impl<R: fmt::Debug, F, X> fmt::Debug for Mapped<R, F, X> {
+impl<P> RecordFail<P> {
+    // The only way a failure reaches the caller: through the body of the stream at hand, which
+    // supplies the status, the headers, the endpoint, the attempts and the record's position.
+    fn into_error(self, body: RecordBody<P>) -> concord_core::Error<P> {
+        match self.cause {
+            Cause::Problem(problem) => body.refuse(problem),
+            Cause::Rejected(reason) => body.fail(RecordFault::rejected(reason)),
+            Cause::Decode { line, column } => {
+                body.fail(RecordFault::not_the_type().at(line, column))
+            }
+            Cause::Other => body.fail(RecordFault::does_not_fit()),
+        }
+    }
+}
+
+impl<P> From<RecordError> for RecordFail<P> {
+    fn from(error: RecordError) -> Self {
+        Self {
+            cause: match error {
+                RecordError::Decode { line, column, .. } => Cause::Decode { line, column },
+                _ => Cause::Other,
+            },
+        }
+    }
+}
+
+impl<P> fmt::Debug for RecordFail<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Mapped")
+        f.write_str(match self.cause {
+            Cause::Problem(_) => "RecordFail(problem)",
+            Cause::Rejected(_) => "RecordFail(mismatch)",
+            Cause::Decode { .. } => "RecordFail(decode)",
+            Cause::Other => "RecordFail(other)",
+        })
+    }
+}
+
+/// One line of JSON Lines, checked as UTF-8, for a mapping of [`JsonLines::try_map`]
+/// (feature `json`).
+///
+/// `Debug` prints no text.
+///
+/// ```no_run
+/// use concord::read::JsonLine;
+/// fn id(line: &JsonLine) -> Result<u64, concord::read::RecordError> {
+///     line.json()
+/// }
+/// ```
+#[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
+pub struct JsonLine {
+    text: String,
+}
+
+#[cfg(feature = "json")]
+impl JsonLine {
+    /// Decodes the line as JSON, discarding the decoder's message: the sibling of
+    /// [`SseEvent::json`]. An empty line does not decode.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordError::Decode`] when the line does not decode as `T`, with the line and
+    /// the column of the decoder; `?` in a mapping turns it into a [`RecordFail`].
+    ///
+    /// ```no_run
+    /// use concord::read::{JsonLine, RecordFail, Step};
+    /// fn id(line: JsonLine) -> Result<Step<u64>, RecordFail<()>> {
+    ///     Ok(Step::Next(line.json()?))
+    /// }
+    /// ```
+    pub fn json<T: serde::de::DeserializeOwned>(&self) -> Result<T, RecordError> {
+        super::decode(self.text.as_bytes(), None)
+    }
+
+    /// Returns the text of the line, without its line end.
+    ///
+    /// ```no_run
+    /// fn text(line: &concord::read::JsonLine) -> &str {
+    ///     line.text()
+    /// }
+    /// ```
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+#[cfg(feature = "json")]
+impl fmt::Debug for JsonLine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("JsonLine { .. }")
+    }
+}
+
+/// A reader of records whose mapping is given, and whose end is not chosen yet: finish it with
+/// [`until_last_record`](TryMap::until_last_record) or
+/// [`until_end_of_body`](TryMap::until_end_of_body). Without one of the two, it reads nothing,
+/// and the description does not compile.
+///
+/// The finished reader reads as the reader that it maps does, with the same bound, and gives a
+/// `RecordStream<T, concord::Error<P>>`, read only by a client whose problem type is `P`. Each
+/// record is held to the bound of the reader, and the mapping receives it whole; nothing is held
+/// beyond one record and the value that the mapping returns. The mapping runs inside
+/// `try_next`, to its end: dropping a `try_next` never leaves a record half mapped. All the
+/// records skipped in one pull share one work budget (16 KiB and 64 chunks); when it is spent,
+/// the pull yields to the runtime and goes on at the next poll, so a server that sends only
+/// skipped records holds the caller, not a thread, until the call's timeout ends it. A panic of
+/// the mapping reaches the caller of `try_next`; the body and its place in any cap on concurrency
+/// are released as it unwinds, and a later pull returns `Ok(None)`.
+///
+/// The mapping is cloned for each response, so a mapping that keeps state starts each stream
+/// afresh. It must own what it holds (`'static`): a closure written in `read` that needs an input
+/// of the call takes an owned copy first,
+/// `read { let prefix = prefix.clone(); Sse::new(n).try_map(move |event| …).until_end_of_body() };`
+/// because the description gives `read` each input by reference.
+///
+/// The errors of the stream, each once, before `Ok(None)`:
+///
+/// | When | Kind | Text |
+/// |---|---|---|
+/// | The mapping returns [`RecordFail::problem`] | Refused, with `problem()` | `refused: status 200, in chat.stream` |
+/// | The mapping returns [`RecordFail::mismatch`], or `?` on a `RecordError` that is not a decoder's | Mismatch | `mismatch: status 200, record 3 does not fit the stream, in chat.stream` |
+/// | The mapping's decoder fails (`?` on `json()`) | Mismatch | `mismatch: status 200, record 3 could not be decoded, in chat.stream` |
+/// | A record exceeds the bound | Mismatch | `mismatch: status 200, record 3 exceeds the reader's size limit, in chat.stream` |
+/// | A record is not UTF-8 | Mismatch | `mismatch: status 200, record 3 is not UTF-8, in chat.stream` |
+/// | The body ends before a record ended the stream, under `until_last_record` | Mismatch | `mismatch: status 200, the body ended before its last record, in chat.stream` |
+/// | The body breaks, or a timeout expires | Transport | the text of the core, as for a stream of bytes |
+///
+/// No text holds a value of the response, and no error keeps a byte of a record or a message
+/// of a decoder.
+#[must_use = "finish the reader with `.until_last_record()` or `.until_end_of_body()`"]
+pub struct TryMap<R, F> {
+    reader: R,
+    map: F,
+}
+
+/// The two words that finish [`try_map`](Sse::try_map). No type implements this trait: it is
+/// the bound that the compiler names when a mapped reader is used before its end is chosen.
+#[diagnostic::on_unimplemented(
+    message = "the reader made by `try_map` does not say how its stream ends",
+    label = "finish this reader with `.until_last_record()` or `.until_end_of_body()`",
+    note = "`.until_last_record()`: a record ends the stream (`Step::Last` or `Step::End`), and a body that ends before it is an error",
+    note = "`.until_end_of_body()`: the end of the body ends the stream"
+)]
+pub trait EndOfRecords {}
+
+// A `TryMap` is not a reader: it only names the missing word in the compiler's message.
+impl<R, F, T, P> Reader<RecordStream<T, concord_core::Error<P>>> for TryMap<R, F>
+where
+    Self: EndOfRecords + Send + Sync,
+{
+    async fn read(
+        &self,
+        body: Incoming,
+    ) -> Result<RecordStream<T, concord_core::Error<P>>, ReadError> {
+        let _ = (body, &self.reader, &self.map);
+        Err(ReadError::wrong_content_type())
+    }
+}
+
+impl<R: fmt::Debug, F> fmt::Debug for TryMap<R, F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TryMap")
             .field("reader", &self.reader)
             .finish_non_exhaustive()
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum End {
+    LastRecord,
+    EndOfBody,
+}
+
+// The finished reader. Its type is never written by an author: the two words return it as an
+// `impl ReaderFor`.
+#[derive(Clone)]
+struct Mapped<R, F> {
+    reader: R,
+    map: F,
+    end: End,
+}
+
+impl<R: fmt::Debug, F> fmt::Debug for Mapped<R, F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Mapped")
+            .field("reader", &self.reader)
+            .field("end", &self.end)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Sse {
-    /// Gives each event to `map`, which says what the event is: a value of the stream, an
-    /// event to skip, the last one, or the API's own error ([`Step`]).
-    ///
-    /// The stream is a `RecordStream<T, concord::Error<P>>`. The bound, the framing and the
-    /// timeouts are the ones of this reader; [`Mapped`] says what the stream holds and returns.
+    /// Gives each event to `map`, which says what the event is ([`Step`]) or why the stream
+    /// fails ([`RecordFail`]). Finish the reader with one of the two words of [`TryMap`].
     ///
     /// ```no_run
-    /// use concord::read::{RecordError, RecordStream, Sse, SseEvent, Step};
+    /// use concord::read::{RecordFail, RecordStream, Sse, Step};
     ///
     /// concord::api! {
     ///     client Feed {
     ///         base "https://feed.example.test";
-    ///         GET lines() -> RecordStream<String, concord::Error> {
+    ///         GET lines() -> RecordStream<String, feed::Error> {
     ///             path "lines";
-    ///             read Sse::new(16 * concord::KIB).map(|event: SseEvent| {
-    ///                 Ok::<_, RecordError>(match event.event.as_str() {
+    ///             read Sse::new(16 * concord::KIB)
+    ///                 .try_map(|event| Ok(match event.event.as_str() {
     ///                     "keepalive" => Step::Skip,
     ///                     _ => Step::Next(event.data),
-    ///                 })
-    ///             });
+    ///                 }))
+    ///                 .until_end_of_body();
     ///         }
     ///     }
     /// }
     /// ```
-    pub fn map<T, P, F>(self, map: F) -> Mapped<Sse, F, SseEvent>
+    pub fn try_map<T, P, F>(self, map: F) -> TryMap<Sse, F>
     where
-        F: FnMut(SseEvent) -> Result<Step<T, P>, RecordError> + Clone + Send + Sync + 'static,
+        F: FnMut(SseEvent) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
     {
-        Mapped::new(self, map)
+        TryMap { reader: self, map }
     }
 }
 
 #[cfg(feature = "json")]
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 impl JsonLines {
-    /// Decodes each line as `X` with `serde`, and gives the value to `map`, which says what
-    /// the record is: a value of the stream, a record to skip, the last one, or the API's own
-    /// error ([`Step`]).
-    ///
-    /// The stream is a `RecordStream<T, concord::Error<P>>`. A line that does not decode as
-    /// `X` is the Mismatch `record 3 could not be decoded`, as one that `map` rejects; an empty
-    /// line is one too. The bound and the framing are the ones of this reader; [`Mapped`] says
-    /// what the stream holds and returns.
+    /// Gives each line to `map`, which decodes it with [`JsonLine::json`] and says what the
+    /// record is ([`Step`]) or why the stream fails ([`RecordFail`]). Finish the reader with one
+    /// of the two words of [`TryMap`].
     ///
     /// ```no_run
-    /// use concord::read::{JsonLines, RecordError, Step};
+    /// use concord::read::{JsonLine, JsonLines, RecordFail, Step};
     /// use serde::Deserialize;
     ///
     /// #[derive(Deserialize)]
     /// struct Line { id: u64, done: bool }
     ///
-    /// fn line(line: Line) -> Result<Step<u64, ()>, RecordError> {
+    /// fn line(line: JsonLine) -> Result<Step<u64>, RecordFail<()>> {
+    ///     let line: Line = line.json()?;
     ///     Ok(if line.done { Step::Last(line.id) } else { Step::Next(line.id) })
     /// }
-    /// let reader = JsonLines::new(4 * concord::KIB).map(line).require_end();
+    /// let reader = JsonLines::new(4 * concord::KIB).try_map(line).until_last_record();
     /// ```
-    pub fn map<X, T, P, F>(self, map: F) -> Mapped<JsonLines, F, X>
+    pub fn try_map<T, P, F>(self, map: F) -> TryMap<JsonLines, F>
     where
-        X: serde::de::DeserializeOwned,
-        F: FnMut(X) -> Result<Step<T, P>, RecordError> + Clone + Send + Sync + 'static,
+        F: FnMut(JsonLine) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
     {
-        Mapped::new(self, map)
+        TryMap { reader: self, map }
     }
 }
 
-impl<T, P, F> Reader<RecordStream<T, concord_core::Error<P>>> for Mapped<Sse, F, SseEvent>
+impl<F> TryMap<Sse, F> {
+    /// Finishes the reader: a record ends the stream ([`Step::Last`] or [`Step::End`]), and a
+    /// body that ends cleanly before one did is the Mismatch
+    /// `the body ended before its last record`. For an API whose stream ends with a record of
+    /// its own (`message_stop`, `[DONE]`), so that a reply cut short at a record boundary is
+    /// never taken for a whole one.
+    ///
+    /// ```no_run
+    /// use concord::read::{RecordFail, Sse, SseEvent, Step};
+    ///
+    /// fn text(event: SseEvent) -> Result<Step<String>, RecordFail<()>> {
+    ///     Ok(if event.data == "[DONE]" { Step::End } else { Step::Next(event.data) })
+    /// }
+    /// let reader = Sse::new(16 * concord::KIB).try_map(text).until_last_record();
+    /// ```
+    pub fn until_last_record<T, P>(
+        self,
+    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    where
+        F: FnMut(SseEvent) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
+        T: Send + 'static,
+        P: Send + 'static,
+    {
+        self.finish(End::LastRecord)
+    }
+
+    /// Finishes the reader: the end of the body ends the stream with `Ok(None)`. A record can
+    /// still end it earlier ([`Step::Last`], [`Step::End`]). For a stream that the server ends
+    /// when it is done, such as a watch.
+    ///
+    /// ```no_run
+    /// use concord::read::{RecordFail, Sse, SseEvent, Step};
+    ///
+    /// fn text(event: SseEvent) -> Result<Step<String>, RecordFail<()>> {
+    ///     Ok(Step::Next(event.data))
+    /// }
+    /// let reader = Sse::new(16 * concord::KIB).try_map(text).until_end_of_body();
+    /// ```
+    pub fn until_end_of_body<T, P>(
+        self,
+    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    where
+        F: FnMut(SseEvent) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
+        T: Send + 'static,
+        P: Send + 'static,
+    {
+        self.finish(End::EndOfBody)
+    }
+
+    fn finish(self, end: End) -> Mapped<Sse, F> {
+        Mapped {
+            reader: self.reader,
+            map: self.map,
+            end,
+        }
+    }
+}
+
+#[cfg(feature = "json")]
+impl<F> TryMap<JsonLines, F> {
+    /// Finishes the reader: a record ends the stream ([`Step::Last`] or [`Step::End`]), and a
+    /// body that ends cleanly before one did is the Mismatch
+    /// `the body ended before its last record`.
+    ///
+    /// ```no_run
+    /// use concord::read::{JsonLine, JsonLines, RecordFail, Step};
+    /// fn id(line: JsonLine) -> Result<Step<u64>, RecordFail<()>> {
+    ///     Ok(Step::Last(line.json()?))
+    /// }
+    /// let reader = JsonLines::new(4 * concord::KIB).try_map(id).until_last_record();
+    /// ```
+    pub fn until_last_record<T, P>(
+        self,
+    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    where
+        F: FnMut(JsonLine) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
+        T: Send + 'static,
+        P: Send + 'static,
+    {
+        self.finish(End::LastRecord)
+    }
+
+    /// Finishes the reader: the end of the body ends the stream with `Ok(None)`, as a watch
+    /// ends; a record can still end it earlier.
+    ///
+    /// ```no_run
+    /// use concord::read::{JsonLine, JsonLines, RecordFail, Step};
+    /// fn id(line: JsonLine) -> Result<Step<u64>, RecordFail<()>> {
+    ///     Ok(Step::Next(line.json()?))
+    /// }
+    /// let reader = JsonLines::new(4 * concord::KIB).try_map(id).until_end_of_body();
+    /// ```
+    pub fn until_end_of_body<T, P>(
+        self,
+    ) -> impl ReaderFor<RecordStream<T, concord_core::Error<P>>, P> + Clone + fmt::Debug
+    where
+        F: FnMut(JsonLine) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
+        T: Send + 'static,
+        P: Send + 'static,
+    {
+        self.finish(End::EndOfBody)
+    }
+
+    fn finish(self, end: End) -> Mapped<JsonLines, F> {
+        Mapped {
+            reader: self.reader,
+            map: self.map,
+            end,
+        }
+    }
+}
+
+impl<T, P, F> ReaderFor<RecordStream<T, concord_core::Error<P>>, P> for Mapped<Sse, F>
 where
     T: Send + 'static,
     P: Send + 'static,
-    F: FnMut(SseEvent) -> Result<Step<T, P>, RecordError> + Clone + Send + Sync + 'static,
+    F: FnMut(SseEvent) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
 {
     // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
     #[allow(clippy::unimplemented)]
-    async fn read(
+    async fn read_for(
         &self,
         body: Incoming,
     ) -> Result<RecordStream<T, concord_core::Error<P>>, ReadError> {
-        let _ = (body, &self.reader, &self.map, self.end_required);
+        let _ = (
+            body.stream().into_records::<P>(),
+            &self.reader,
+            &self.map,
+            self.end,
+        );
+        let _ = RecordFail::<P>::into_error;
         unimplemented!()
     }
 }
 
 #[cfg(feature = "json")]
-impl<X, T, P, F> Reader<RecordStream<T, concord_core::Error<P>>> for Mapped<JsonLines, F, X>
+impl<T, P, F> ReaderFor<RecordStream<T, concord_core::Error<P>>, P> for Mapped<JsonLines, F>
 where
-    X: serde::de::DeserializeOwned + 'static,
     T: Send + 'static,
     P: Send + 'static,
-    F: FnMut(X) -> Result<Step<T, P>, RecordError> + Clone + Send + Sync + 'static,
+    F: FnMut(JsonLine) -> Result<Step<T>, RecordFail<P>> + Clone + Send + Sync + 'static,
 {
     // PANIC-SAFETY: The surface is proposed; its body is written once the surface is accepted.
     #[allow(clippy::unimplemented)]
-    async fn read(
+    async fn read_for(
         &self,
         body: Incoming,
     ) -> Result<RecordStream<T, concord_core::Error<P>>, ReadError> {
-        let _ = (body, &self.reader, &self.map, self.end_required);
+        let _ = (
+            body.stream().into_records::<P>(),
+            &self.reader,
+            &self.map,
+            self.end,
+        );
+        let _ = (
+            RecordFail::<P>::into_error,
+            JsonLine {
+                text: String::new(),
+            }
+            .text,
+        );
         unimplemented!()
     }
 }

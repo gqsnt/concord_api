@@ -8,8 +8,13 @@
 mod records;
 #[cfg(feature = "json")]
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
+pub use records::JsonLine;
+#[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub use records::JsonLines;
-pub use records::{Mapped, RecordError, RecordStream, Sse, SseEvent, Step};
+pub use records::{
+    EndOfRecords, RecordError, RecordFail, RecordStream, Sse, SseEvent, Step, TryMap,
+};
 
 use concord_core::read::{Incoming, ReadError, Reader};
 use concord_core::{ByteStream, MIB};
