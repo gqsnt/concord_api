@@ -20,8 +20,9 @@ pub(super) type Rejects = dyn Fn(&Seen<'_>) -> bool + Send + Sync;
 /// What a `rejected_when` function receives: the status, the headers and the whole body
 /// of one response.
 ///
-/// It is shown a response whose body was read to its end, holds at most 64 KiB and has
-/// the length that the response announced. Only the methods return the values: `Debug`
+/// It is shown a response whose body was read to its end, holds at most 64 KiB and is
+/// complete, by the rule that [`Renewed::rejected_when`](super::Renewed::rejected_when)
+/// states. Only the methods return the values: `Debug`
 /// prints none of them. Match the errors that reject the token, not every error:
 ///
 /// ```no_run
@@ -92,28 +93,21 @@ pub(super) fn watch(
     rejects: Arc<Rejects>,
     reject: impl FnOnce() + Send + Sync + 'static,
 ) -> Response {
-    let status = response.status();
-    // A response to a `HEAD`, a `1xx`, a `204` and a `304` carry no body: a
-    // `Content-Length` there describes the representation, and the whole body is empty.
-    let announced = if *method == http::Method::HEAD
-        || status.is_informational()
-        || status == StatusCode::NO_CONTENT
-        || status == StatusCode::NOT_MODIFIED
-    {
-        Some(0)
-    } else {
-        // The length that the reader checks the body against: the header, as the reader
-        // parses it, or else the exact size hint of the body.
-        response
-            .headers()
-            .get(http::header::CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
-            .and_then(|text| text.parse::<u64>().ok())
-            .or_else(|| response.content_length())
-    };
-    // A body announced as longer than the limit is never shown: leave it untouched.
-    if announced.is_some_and(|length| usize::try_from(length).map_or(true, |length| length > LIMIT))
+    // The length that the reader checks the body against: the header, as the reader
+    // parses it, or else the exact size hint of the body.
+    let announced = response
+        .headers()
+        .get(http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|text| text.parse::<u64>().ok())
+        .or_else(|| response.content_length());
+    // A body whose exact size is known to pass the limit is never shown: leave it
+    // untouched. The header alone does not decide it: a `HEAD`, a `304` or a tunnel
+    // announce a length and give no byte.
+    if response
+        .content_length()
+        .is_some_and(|length| usize::try_from(length).map_or(true, |length| length > LIMIT))
     {
         return response;
     }
@@ -129,6 +123,7 @@ pub(super) fn watch(
     let pending = Pending {
         status: raw.status(),
         headers: raw.headers().clone(),
+        head: *method == http::Method::HEAD,
         announced,
         body: Vec::new(),
         rejects,
@@ -152,6 +147,8 @@ struct Watched {
 struct Pending {
     status: StatusCode,
     headers: HeaderMap,
+    // The method as this layer sent it; a lower layer may have changed it.
+    head: bool,
     announced: Option<u64>,
     // One buffer, never larger than the limit.
     body: Vec<u8>,
@@ -191,14 +188,13 @@ impl Pending {
         let Pending {
             status,
             headers,
+            head,
             announced,
             body,
             rejects,
             reject,
         } = self;
-        // An incomplete or over-long body, by the reader's own count, is not shown.
-        let length = u64::try_from(body.len()).ok();
-        if announced.is_some_and(|announced| length != Some(announced)) {
+        if !complete(status, head, announced, body.len()) {
             return;
         }
         let seen = Seen {
@@ -211,6 +207,34 @@ impl Pending {
             reject();
         }
     }
+}
+
+/// Whether a body that ended cleanly after `length` bytes is the whole body of its
+/// response, so that the function may see it. A body that ended with an error never
+/// reaches this question.
+fn complete(status: StatusCode, head: bool, announced: Option<u64>, length: usize) -> bool {
+    // An empty body is complete whatever the `Content-Length`, the method or the status:
+    // that length describes the representation for a `HEAD` and a `304`, it frames
+    // nothing for a tunnel, and a lower layer may have sent a `HEAD` in place of the
+    // method this layer saw.
+    if length == 0 {
+        return true;
+    }
+    // These statuses never carry a body: a byte means a malformed response.
+    if status.is_informational()
+        || status == StatusCode::NO_CONTENT
+        || status == StatusCode::RESET_CONTENT
+        || status == StatusCode::NOT_MODIFIED
+    {
+        return false;
+    }
+    // A response to a `HEAD`, as this layer sent it, carries no body either.
+    if head {
+        return false;
+    }
+    // Otherwise the reader's rule: the length announced, by the header or the exact size
+    // hint, or, with neither, a clean end.
+    announced.is_none_or(|announced| u64::try_from(length).is_ok_and(|length| length == announced))
 }
 
 impl Body for Watched {

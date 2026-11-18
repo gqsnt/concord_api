@@ -2239,4 +2239,204 @@ mod watched {
         assert_header(&api, 1, "authorization", "Bearer replacement");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
+
+    // Changes the method of the request below the credential, from one attempt on.
+    struct Rewrite {
+        method: http::Method,
+        from: u32,
+    }
+    impl concord::Middleware for Rewrite {
+        async fn handle(
+            &self,
+            mut request: reqwest::Request,
+            info: concord::transport::TryInfo,
+            next: concord::Next<'_>,
+        ) -> Result<reqwest::Response, concord::transport::TransportError> {
+            if info.number() >= self.from {
+                *request.method_mut() = self.method.clone();
+            }
+            next.send(request, info).await
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_an_empty_body_is_complete_when_a_lower_layer_sends_a_head_on_a_retry() {
+        let sent = Arc::new(AtomicUsize::new(0));
+        let transport = concord::fake({
+            let sent = sent.clone();
+            move |request| {
+                Ok(match sent.fetch_add(1, Ordering::SeqCst) {
+                    0 => concord::reply(503, "try again"),
+                    1 => {
+                        assert_eq!(request.method(), http::Method::HEAD);
+                        http::Response::builder()
+                            .header("content-length", "8")
+                            .header("x-token-state", "revoked")
+                            .body("")
+                            .unwrap()
+                            .into()
+                    }
+                    _ => {
+                        assert_eq!(request.headers()["authorization"], "Bearer replacement");
+                        concord::reply(200, "ok")
+                    }
+                })
+            }
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = DataApi::new()
+            .with_transport(transport)
+            .with_middleware(seeded().rejected_when({
+                let calls = calls.clone();
+                move |seen| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    seen.headers().contains_key("x-token-state")
+                }
+            }))
+            .with_middleware(Rewrite {
+                method: http::Method::HEAD,
+                from: 2,
+            })
+            .with_retry(Retry::standard().tries(2));
+        drop(client.get().await);
+        assert_eq!(sent.load(Ordering::SeqCst), 2);
+        // Shown twice: the body of the `503`, read for the retry rule, and the empty one.
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(client.get().await.unwrap(), "ok");
+    }
+
+    concord::api! {
+        client Tunnels {
+            base "https://data.test";
+            METHOD "CONNECT" tunnel() { path "data"; }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_successful_connect_with_a_length_and_a_one_byte_205_are_judged_by_their_bytes()
+    {
+        // A tunnel's `Content-Length` frames nothing; a `205` never carries a body.
+        for (connect, status, length, body, shown) in [
+            (true, 201, "8", "", 1),
+            (false, 205, "1", "x", 0),
+            (false, 205, "8", "", 1),
+            (true, 403, "1", "x", 1),
+        ] {
+            let transport = concord::fake(move |request| {
+                assert_eq!(request.method() == http::Method::CONNECT, connect);
+                Ok(http::Response::builder()
+                    .status(status)
+                    .header("content-length", length)
+                    .body(body)
+                    .unwrap()
+                    .into())
+            });
+            let calls = Arc::new(AtomicUsize::new(0));
+            let auth = seeded().rejected_when(counted(&calls, false));
+            let raw = if connect {
+                Tunnels::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .tunnel()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            } else {
+                DataApi::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .get()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            };
+            assert_eq!(raw.bytes().await.unwrap(), body.as_bytes());
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                shown,
+                "{status} {length} {body:?}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_head_that_gives_a_byte_is_not_shown() {
+        let transport = concord::fake(|_| {
+            Ok(http::Response::builder()
+                .header("content-length", "1")
+                .body("x")
+                .unwrap()
+                .into())
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = Heads::new()
+            .with_transport(transport)
+            .with_middleware(seeded().rejected_when(counted(&calls, true)))
+            .with_middleware(Rewrite {
+                method: http::Method::GET,
+                from: 1,
+            });
+        let raw = client.check().send_raw().await.unwrap();
+        assert_eq!(raw.bytes().await.unwrap(), "x");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_record_stream_body_can_signal_its_end_only_on_a_later_poll() {
+        for read_the_end in [false, true] {
+            let transport = concord::fake(|_| {
+                let frames = futures_util::stream::iter([Ok::<_, std::io::Error>(
+                    Bytes::from_static(b"1\n2\n"),
+                )]);
+                Ok(http::Response::builder()
+                    .header("content-type", "application/x-ndjson")
+                    .body(reqwest::Body::wrap_stream(frames))
+                    .unwrap()
+                    .into())
+            });
+            let calls = Arc::new(AtomicUsize::new(0));
+            let client = Lines::new()
+                .with_transport(transport)
+                .with_middleware(seeded().rejected_when(counted(&calls, true)));
+            let mut records = client.lines().await.unwrap();
+            assert_eq!(records.try_next().await.unwrap(), Some(1));
+            assert_eq!(records.try_next().await.unwrap(), Some(2));
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            if read_the_end {
+                assert_eq!(records.try_next().await.unwrap(), None);
+            }
+            drop(records);
+            assert_eq!(calls.load(Ordering::SeqCst), usize::from(read_the_end));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_two_rejections_renew_once_when_the_next_call_needs_the_token() {
+        let renewals = Arc::new(AtomicUsize::new(0));
+        let auth = Renewed::new(&base(), {
+            let renewals = renewals.clone();
+            move || {
+                renewals.fetch_add(1, Ordering::SeqCst);
+                async { AccessToken::expires_in("new", seconds(100)) }
+            }
+        })
+        .with_token(initial("old", 100))
+        .unwrap()
+        .rejected_when(|seen| seen.body() == b"expired");
+        let api = Script::new();
+        api.answer(200).body("expired");
+        api.answer(200).body("expired");
+        api.answer(200).body("ok");
+        let client = DataApi::new()
+            .with_transport(api.clone())
+            .with_middleware(auth);
+        let first = client.get().send_raw().await.unwrap();
+        let second = client.get().send_raw().await.unwrap();
+        first.bytes().await.unwrap();
+        second.bytes().await.unwrap();
+        assert_eq!(renewals.load(Ordering::SeqCst), 0);
+        assert_eq!(client.get().await.unwrap(), "ok");
+        assert_eq!(renewals.load(Ordering::SeqCst), 1);
+        assert_header(&api, 2, "authorization", "Bearer new");
+    }
 }
