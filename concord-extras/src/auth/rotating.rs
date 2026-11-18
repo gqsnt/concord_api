@@ -286,8 +286,11 @@ pub enum RotationError {
     InvalidRefreshToken,
     /// No known refresh token is safe to use and no replacement is known: for example the
     /// store holds a `Refreshing` marker or an empty refresh token, or an exchange failed
-    /// or returned an invalid one. The application must recover the account with the
-    /// provider.
+    /// or returned an invalid one. An exchange that failed with `RenewalError::NotSent`
+    /// leads here only if saving the previous pair again failed, or if a panic destroyed
+    /// the exchange's future, which the caller then sees as `RenewalError::Panicked`. The
+    /// application must
+    /// recover the account with the provider.
     NeedsReauthorization,
     /// The driver was not polled while this call waited.
     NotPolled,
@@ -383,7 +386,8 @@ impl StdError for RotationError {
 /// It is `Send` and `Unpin`, but neither `Sync` nor `Clone`. As long as it is polled,
 /// dropping every call to the API, or their timing out, does not cancel a renewal that
 /// has begun. A failed exchange yields no replacement; its error goes to the waiting
-/// calls. A valid replacement is saved, or kept pending after a failed save until the
+/// calls. After `RenewalError::NotSent`, the save of the previous pair is part of the
+/// renewal, and is not dropped either. A valid replacement is saved, or kept pending after a failed save until the
 /// next call that needs a token, or the drop of the last owner, retries the save; a
 /// pair that cannot be saved at the end is handed back in [`RotationError::Unsaved`].
 /// A renewal begins when saving its `Refreshing` marker begins; dropping the last
@@ -548,12 +552,26 @@ impl fmt::Debug for RotationDriver {
 /// `NeedsReauthorization`. After an unusable access token was saved (`Expired`, or a
 /// header that cannot be built), the next call renews with the saved refresh token and
 /// never sends that access token. When the outcome of an exchange is uncertain, the
-/// account must be authorized again. No store can commit the server's issuance and the
-/// local save atomically: a crash between the two can lose a token.
+/// account must be authorized again. An exchange that fails with
+/// [`RenewalError::NotSent`] states that its request never left: the pair from before the
+/// exchange is saved again over the marker, without a usable expiry (its `expires_at()`
+/// is `None`), because its access token was being replaced. Once that save succeeds, the
+/// pair is current again; the waiting calls fail with that error without being sent, and
+/// the next call, in this instance or in any owner that loads the store later, exchanges
+/// the same refresh token before it sends an access token. If that save fails, this
+/// instance stays blocked, as after any failed exchange, and its next call receives
+/// `NeedsReauthorization`; the store holds either the marker or the restored pair,
+/// and an owner that loads it later requires a new authorization, or exchanges. If a
+/// panic destroys the exchange's future, nothing is saved again, the waiting calls
+/// receive `RenewalError::Panicked`, and the marker stays. No
+/// store can commit the server's issuance and the local save atomically: a crash between
+/// the two can lose a token.
 ///
 /// A `401` is returned unchanged and rejects only the access token that the request
-/// carried. Add `after_401` to the engine's retry policy; this middleware never resends
-/// a request. A call that resumes waiting checks the expiry, the settings and the state
+/// carried, when its final URL is at the origin of the base; a response from another
+/// origin rejects nothing. Add `after_401` to the engine's retry policy; this middleware never resends
+/// a request. An API that rejects a token inside another status, such as a `200`, is
+/// described once with [`rejected_when`](Rotating::rejected_when). A call that resumes waiting checks the expiry, the settings and the state
 /// of the driver again. Relative lifetimes include the time spent saving; retrying a
 /// pending save never restarts them.
 ///
@@ -679,6 +697,57 @@ impl Rotating {
         drop(retired);
         self
     }
+
+    /// Sets a function that recognises a response that rejects the access token although
+    /// its status is not `401`: an API that reports a revoked or expired token inside a
+    /// `200`.
+    ///
+    /// It works as [`Renewed::rejected_when`](super::Renewed::rejected_when): the same
+    /// [`Seen`](super::Seen), shown at the same moments, for a response from the origin of
+    /// the credential's base whose whole body, of at most 64 KiB and complete by the same
+    /// rule, has been read. When it returns `true`, the access token that the request
+    /// carried is rejected as after a `401`: only if it is still the current token, so an
+    /// answer that arrives after a renewal never discards the newer pair. Nothing is
+    /// exchanged at once: each later attempt that needs the token, of any call, joins the
+    /// exchange in flight or starts one, and the retry setting of each call bounds its
+    /// attempts. The response is returned unchanged. `rejected_when` itself
+    /// schedules no retry, and `after_401` retries a `401` only; a retry rule of the call
+    /// that applies to the response can send the call again, and that attempt then waits
+    /// for the exchange and carries the new token. A `401` always rejects the token, and
+    /// the function is not called for it.
+    ///
+    /// Watching costs something, also when the function never matches: every response
+    /// through the credential from its origin is observed, and up to 64 KiB of its body is
+    /// copied into one buffer, dropped once the function has seen it, or as soon as the body
+    /// is longer. Frames, trailers, the size hint and the end of the body pass through
+    /// unchanged; without this function, a response is not touched. The function must
+    /// return promptly; a panic in it rejects nothing, but Rust's panic hook still prints
+    /// the panic message: never put text of the body in a panic message. Nothing bounds the
+    /// exchanges across calls when a server rejects every token; each call waits for one
+    /// at most `renewal_timeout`. Configuring a clone changes every clone.
+    ///
+    /// ```no_run
+    /// #[derive(serde::Deserialize)]
+    /// struct Envelope { ok: bool, error: Option<String> }
+    /// fn configure(auth: concord::auth::Rotating) -> concord::auth::Rotating {
+    ///     auth.rejected_when(|seen| {
+    ///         seen.status() == 200
+    ///             && serde_json::from_slice::<Envelope>(seen.body()).is_ok_and(|reply| {
+    ///                 !reply.ok && matches!(reply.error.as_deref(), Some("token_expired" | "invalid_auth"))
+    ///             })
+    ///     })
+    /// }
+    /// ```
+    #[must_use = "attach the configured credential as middleware"]
+    pub fn rejected_when(
+        self,
+        rejects: impl Fn(&super::Seen<'_>) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        let rejects: Arc<super::rejection::Rejects> = Arc::new(rejects);
+        let retired = self.inner.lock().policy.rejects.replace(rejects);
+        drop(retired);
+        self
+    }
 }
 impl Drop for Rotating {
     fn drop(&mut self) {
@@ -724,16 +793,31 @@ impl Middleware for Rotating {
             drop(request.headers_mut().remove(&access.name));
             drop(access);
         };
+        let method = request.method().clone();
         let response = next.send(request, info).await?;
-        if response.status() == 401 {
-            let mut state = self.inner.lock();
-            if let Some(current) = &mut state.current {
-                if Arc::ptr_eq(&current.generation, &access.generation) {
-                    current.rejected = true;
-                }
-            }
+        // A response from another origin, as a transport that followed a redirect
+        // reports it, rejects nothing.
+        if !super::rejection::same_origin(self.inner.origin.as_ref(), &response) {
+            return Ok(response);
         }
-        Ok(response)
+        if response.status() == 401 {
+            self.inner.reject(&access.generation);
+            return Ok(response);
+        }
+        let rejects = self.inner.lock().policy.rejects.clone();
+        Ok(match rejects {
+            Some(rejects) => {
+                let inner = Arc::downgrade(&self.inner);
+                let generation = Arc::downgrade(&access.generation);
+                super::rejection::watch(response, &method, rejects, move || {
+                    if let (Some(inner), Some(generation)) = (inner.upgrade(), generation.upgrade())
+                    {
+                        inner.reject(&generation);
+                    }
+                })
+            }
+            None => response,
+        })
     }
 }
 

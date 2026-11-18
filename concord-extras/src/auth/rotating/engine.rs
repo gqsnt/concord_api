@@ -28,6 +28,7 @@ pub(super) struct Policy {
     pub(super) timeout: Duration,
     pub(super) name: HeaderName,
     pub(super) format: Arc<Format>,
+    pub(super) rejects: Option<Arc<crate::auth::rejection::Rejects>>,
 }
 #[derive(Clone)]
 pub(super) struct Version {
@@ -114,6 +115,7 @@ impl Inner {
                     timeout: Duration::from_secs(30),
                     name: AUTHORIZATION,
                     format: Arc::new(default_format),
+                    rejects: None,
                 },
                 current: None,
                 pending: None,
@@ -149,6 +151,15 @@ impl Inner {
         }
         drop(retired);
         self.demand.notify_one();
+    }
+    // Reject the access token only if it is still the one that the request carried.
+    pub(super) fn reject(&self, generation: &Arc<()>) {
+        let mut state = self.lock();
+        if let Some(current) = &mut state.current {
+            if Arc::ptr_eq(&current.generation, generation) {
+                current.rejected = true;
+            }
+        }
     }
     fn storage_panicked(&self) {
         let retired = {
@@ -549,9 +560,48 @@ impl Inner {
             Err(error) => Err(RotationError::Renewal(error)),
         };
         let cleanup = catch_unwind(AssertUnwindSafe(|| drop(work)));
+        if let Err(RotationError::Renewal(error @ RenewalError::NotSent(_))) = &next {
+            // A panic while destroying the exchange leaves its claim unverified:
+            // report the panic and keep the marker and the block.
+            if cleanup.is_err() {
+                return Err(RotationError::Renewal(RenewalError::Panicked));
+            }
+            return self.restore(&current.pair, error.clone()).await;
+        }
         let next = next?;
         self.commit(next).await?;
         cleanup.map_err(|_| RotationError::Renewal(RenewalError::Panicked))
+    }
+
+    // The exchange stated that its request never left, so the refresh token is
+    // still unused. The access token was being replaced, so the pair is saved
+    // again without a usable expiry: every owner that loads it, this one
+    // included, exchanges before it sends an access token. Save first; only an
+    // acknowledged save lifts the block in memory. A refused save keeps the block,
+    // as after any failed exchange.
+    async fn restore(
+        &self,
+        previous: &TokenPair,
+        error: RenewalError,
+    ) -> Result<(), RotationError> {
+        let restored = TokenPair {
+            access: previous.access.clone(),
+            refresh: previous.refresh.clone(),
+            expiry: Expiry::Absolute(None),
+        };
+        match self.save(Stored::Ready(restored.clone()), None).await {
+            Ok(_) => {
+                let retired = {
+                    let mut state = self.lock();
+                    state.blocked = false;
+                    state.current.replace(Version::new(restored))
+                };
+                drop(retired);
+            }
+            Err(RotationError::Stopped) => return Err(RotationError::Stopped),
+            Err(_) => {}
+        }
+        Err(RotationError::Renewal(error))
     }
 
     pub(super) fn hand_back(&self, cause: RenewalError) -> Option<RotationError> {
@@ -860,6 +910,72 @@ mod tests {
             observed.iter().all(|free| *free),
             "author code ran under the account lock: {observed:?}"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c12_6_a_restore_publishes_nothing_before_its_save_is_acknowledged() {
+        struct Watching {
+            holder: Arc<OnceLock<Weak<Inner>>>,
+            record: Mutex<Stored>,
+            seen: Arc<Mutex<Vec<(bool, bool, bool)>>>,
+        }
+        impl CredentialStore for Watching {
+            async fn load(&self) -> Result<Stored, RenewalError> {
+                Ok(self.record.lock().unwrap().clone())
+            }
+            async fn save(&self, record: Stored) -> Result<(), RenewalError> {
+                if matches!(record, Stored::Ready(_)) {
+                    let inner = self.holder.get().and_then(Weak::upgrade).unwrap();
+                    let state = inner.lock();
+                    self.seen.lock().unwrap().push((
+                        state.current.is_none(),
+                        state.blocked,
+                        state.flight.is_some(),
+                    ));
+                }
+                *self.record.lock().unwrap() = record;
+                Ok(())
+            }
+        }
+        let holder = Arc::new(OnceLock::new());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let store = Watching {
+            holder: holder.clone(),
+            record: Mutex::new(Stored::Ready(TokenPair::expires_in(
+                "old",
+                "r0",
+                Duration::ZERO,
+            ))),
+            seen: seen.clone(),
+        };
+        let (auth, driver) =
+            Rotating::new(&"https://data.test".parse().unwrap(), store, |_| async {
+                Err(RenewalError::not_sent(std::io::Error::other("offline")))
+            });
+        holder.set(Arc::downgrade(&auth.inner)).unwrap();
+        let task = tokio::spawn(driver);
+        let script = Script::new();
+        let request = Request::new(
+            concord_core::http::Method::GET,
+            "https://data.test/".parse().unwrap(),
+        );
+        assert!(auth
+            .handle(request, TryInfo::new("data.get", 1), Next::to(&script))
+            .await
+            .is_err());
+        // While the pair is saved again, the waiting call still holds the renewal,
+        // nothing is current and the block holds.
+        assert_eq!(*seen.lock().unwrap(), [(true, true, true)]);
+        {
+            let state = auth.inner.lock();
+            assert!(!state.blocked);
+            let current = state.current.as_ref().unwrap();
+            assert!(current.deadline.is_none());
+            assert!(current.pair.expires_at().is_none());
+        }
+        assert!(script.requests().is_empty());
+        drop(auth);
+        assert!(task.await.unwrap().is_err());
     }
 
     #[tokio::test(start_paused = true)]

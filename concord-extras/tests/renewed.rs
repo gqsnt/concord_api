@@ -1749,3 +1749,762 @@ fn c11_3_renewal_error_find_finds_a_renewal_error_within_a_source_cycle() {
         renewal.as_ref()
     ));
 }
+
+#[tokio::test(start_paused = true)]
+async fn c11_3_renewed_treats_a_renewal_not_sent_as_a_failure_and_tries_again() {
+    let tokens = Script::new();
+    tokens.fail(concord::transport::TransportError::blocked());
+    mint(&tokens, 0);
+    let token_client = TokenApi::new().with_transport(tokens.clone());
+    let auth = Renewed::new(&base(), move || {
+        let token_client = token_client.clone();
+        async move {
+            let reply = token_client
+                .issue()
+                .await
+                .map_err(RenewalError::from_call)?;
+            AccessToken::expires_in(reply.access_token, seconds(reply.expires_in))
+        }
+    });
+    let api = Script::new();
+    api.answer(200).body("ok");
+    let client = client(&api, auth);
+    let error = client.get().await.unwrap_err();
+    assert_eq!(error.class(), Some(Class::Blocked));
+    assert!(matches!(renewal(&error), RenewalError::NotSent(_)));
+    assert_attempts(&api, &[]);
+    assert_eq!(client.get().await.unwrap(), "ok");
+    assert_attempts(&tokens, &[1, 1]);
+    assert_header(&api, 0, "authorization", "Bearer new-secret");
+}
+
+fn rejected(seen: &concord_extras::auth::Seen<'_>) -> bool {
+    seen.status() == 200 && seen.body() == b"rejected"
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_2_renewed_rejection_inside_a_200_renews_the_next_call_without_resending() {
+    let tokens = Script::new();
+    mint(&tokens, 0);
+    let api = Script::new();
+    api.answer(200).body("rejected");
+    api.answer(200).body("ok");
+    let auth = renewed(&tokens)
+        .with_token(initial("seed-secret", 100))
+        .unwrap()
+        .rejected_when(rejected);
+    let client = client(&api, auth).with_retry(Retry::standard().when(after_401));
+    assert_eq!(client.get().await.unwrap(), "rejected");
+    assert_attempts(&api, &[1]);
+    assert_attempts(&tokens, &[]);
+    assert_eq!(client.get().await.unwrap(), "ok");
+    assert_attempts(&api, &[1, 1]);
+    assert_attempts(&tokens, &[1]);
+    assert_header(&api, 0, "authorization", "Bearer seed-secret");
+    assert_header(&api, 1, "authorization", "Bearer new-secret");
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_2_renewed_late_rejection_inside_a_200_keeps_the_newer_token() {
+    let tokens = Script::new();
+    mint(&tokens, 0);
+    let api = Script::new();
+    api.answer(200).after(seconds(5)).body("rejected");
+    api.answer(200).body("rejected");
+    api.answer(200).body("c");
+    api.answer(200).body("d");
+    let auth = renewed(&tokens)
+        .with_token(initial("seed-secret", 100))
+        .unwrap()
+        .rejected_when(rejected);
+    let client = client(&api, auth);
+    let late = tokio::spawn({
+        let client = client.clone();
+        async move { client.get().await }
+    });
+    tokio::task::yield_now().await;
+    assert_attempts(&api, &[1]);
+    assert_eq!(client.get().await.unwrap(), "rejected");
+    assert_eq!(client.get().await.unwrap(), "c");
+    assert_eq!(late.await.unwrap().unwrap(), "rejected");
+    assert_eq!(client.get().await.unwrap(), "d");
+    assert_attempts(&tokens, &[1]);
+    assert_header(&api, 0, "authorization", "Bearer seed-secret");
+    assert_header(&api, 1, "authorization", "Bearer seed-secret");
+    assert_header(&api, 2, "authorization", "Bearer new-secret");
+    assert_header(&api, 3, "authorization", "Bearer new-secret");
+}
+
+// What watching a response for a rejection may and may not change.
+
+mod watched {
+    use super::*;
+    use concord::bytes::Bytes;
+    use concord::http;
+    use concord::reqwest::{self, ResponseBuilderExt};
+    use http_body::{Body as _, Frame, SizeHint};
+    use std::collections::VecDeque;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    // A body of given frames, with an exact size hint when one is given.
+    struct Framed {
+        frames: VecDeque<Frame<Bytes>>,
+        hint: Option<u64>,
+        polls: Arc<AtomicUsize>,
+    }
+    impl http_body::Body for Framed {
+        type Data = Bytes;
+        type Error = std::io::Error;
+        fn poll_frame(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
+            self.polls.fetch_add(1, Ordering::SeqCst);
+            let frame = self.frames.pop_front();
+            let length = frame
+                .as_ref()
+                .and_then(Frame::data_ref)
+                .map_or(0, |data| u64::try_from(data.len()).unwrap());
+            if let Some(hint) = &mut self.hint {
+                *hint = hint.saturating_sub(length);
+            }
+            Poll::Ready(frame.map(Ok))
+        }
+        fn is_end_stream(&self) -> bool {
+            self.frames.is_empty()
+        }
+        fn size_hint(&self) -> SizeHint {
+            self.hint.map(SizeHint::with_exact).unwrap_or_default()
+        }
+    }
+    fn framed(
+        frames: Vec<Frame<Bytes>>,
+        hint: Option<u64>,
+        polls: &Arc<AtomicUsize>,
+    ) -> reqwest::Body {
+        reqwest::Body::wrap(Framed {
+            frames: frames.into(),
+            hint,
+            polls: polls.clone(),
+        })
+    }
+    fn response(length: Option<&str>, body: reqwest::Body) -> reqwest::Response {
+        let mut builder = http::Response::builder()
+            .status(200)
+            .url("https://data.test/data".parse().unwrap());
+        if let Some(length) = length {
+            builder = builder.header("content-length", length);
+        }
+        builder.body(body).unwrap().into()
+    }
+    fn seeded() -> Renewed {
+        Renewed::new(&base(), || async {
+            AccessToken::expires_in("replacement", seconds(200))
+        })
+        .with_token(initial("old", 200))
+        .unwrap()
+    }
+    fn counted(
+        calls: &Arc<AtomicUsize>,
+        verdict: bool,
+    ) -> impl Fn(&concord_extras::auth::Seen<'_>) -> bool {
+        let calls = calls.clone();
+        move |_| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            verdict
+        }
+    }
+    async fn frame(body: &mut reqwest::Body) -> Option<Frame<Bytes>> {
+        std::future::poll_fn(|cx| Pin::new(&mut *body).poll_frame(cx))
+            .await
+            .map(Result::unwrap)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_watching_keeps_the_frames_size_and_url_of_a_raw_response() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let transport = concord::fake({
+            let polls = polls.clone();
+            move |_| {
+                let mut trailers = http::HeaderMap::new();
+                trailers.insert("x-check", http::HeaderValue::from_static("ok"));
+                let frames = vec![
+                    Frame::data(Bytes::from_static(b"x")),
+                    Frame::trailers(trailers),
+                ];
+                Ok(response(Some("1"), framed(frames, Some(1), &polls)))
+            }
+        });
+        let client = DataApi::new()
+            .with_transport(transport)
+            .with_middleware(seeded().rejected_when(counted(&calls, false)));
+        let raw = client.get().send_raw().await.unwrap();
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+        assert_eq!(raw.url().path(), "/data");
+        assert_eq!(raw.content_length(), Some(1));
+        let mut body = reqwest::Body::from(raw);
+        assert_eq!(frame(&mut body).await.unwrap().into_data().unwrap(), "x");
+        let trailers = frame(&mut body).await.unwrap().into_trailers().unwrap();
+        assert_eq!(trailers["x-check"], "ok");
+        assert!(frame(&mut body).await.is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_an_empty_watched_response_holds_no_limit_permit() {
+        let api = Script::new();
+        api.answer(200);
+        api.answer(200).body("next");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = DataApi::new()
+            .with_transport(api.clone())
+            .with_middleware(concord::limit::Limit::new().max_in_flight(1))
+            .with_middleware(seeded().rejected_when(counted(&calls, false)));
+        let empty = client.get().send_raw().await.unwrap();
+        let mut next = Box::pin(client.get().send());
+        assert_eq!(next.as_mut().now_or_never().unwrap().unwrap(), "next");
+        drop(empty);
+    }
+
+    concord::api! {
+        client Bounded {
+            base "https://data.test";
+            GET limited() -> String { path "data"; read concord::Text.limit(1); }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_bounded_reader_refuses_a_watched_body_before_polling_it() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let transport = concord::fake({
+            let polls = polls.clone();
+            move |_| {
+                let frames = vec![Frame::data(Bytes::from_static(b"xx"))];
+                Ok(response(None, framed(frames, Some(2), &polls)))
+            }
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = Bounded::new()
+            .with_transport(transport)
+            .with_middleware(seeded().rejected_when(counted(&calls, true)));
+        let error = client.limited().await.unwrap_err();
+        assert_eq!(error.kind(), concord::error::Kind::Mismatch);
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_body_shorter_or_longer_than_announced_rejects_nothing() {
+        // A declared length of eight, or only an exact hint of eight, then one byte and a
+        // clean end; then a declared length of one and two bytes.
+        for (length, hint, bytes) in [
+            (Some("8"), Some(8), &b"x"[..]),
+            (Some("8"), None, b"x"),
+            (None, Some(8), b"x"),
+            (Some("1"), None, b"xx"),
+        ] {
+            let polls = Arc::new(AtomicUsize::new(0));
+            let transport = concord::fake({
+                let polls = polls.clone();
+                move |_| {
+                    let frames = vec![Frame::data(Bytes::from_static(bytes))];
+                    Ok(response(length, framed(frames, hint, &polls)))
+                }
+            });
+            let calls = Arc::new(AtomicUsize::new(0));
+            let client = DataApi::new()
+                .with_transport(transport)
+                .with_middleware(seeded().rejected_when(counted(&calls, true)));
+            let result = client.get().await;
+            if bytes.len() == 1 {
+                assert_eq!(result.unwrap_err().class(), Some(Class::Body));
+            } else {
+                assert_eq!(result.unwrap(), "xx");
+            }
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "{length:?} {hint:?}");
+        }
+    }
+
+    struct Owner {
+        bytes: Vec<u8>,
+        live: Arc<AtomicUsize>,
+    }
+    impl AsRef<[u8]> for Owner {
+        fn as_ref(&self) -> &[u8] {
+            &self.bytes
+        }
+    }
+    impl Drop for Owner {
+        fn drop(&mut self) {
+            self.live.fetch_sub(self.bytes.len(), Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_watching_holds_no_more_than_64_kib_of_the_body() {
+        let live = Arc::new(AtomicUsize::new(0));
+        let transport = concord::fake({
+            let live = live.clone();
+            move |_| {
+                let live = live.clone();
+                // Eight one-byte slices, each of a 128 KiB allocation, between empty frames.
+                let pieces = (0..16).map(move |n| {
+                    if n % 2 == 0 {
+                        return Ok::<_, std::io::Error>(Bytes::new());
+                    }
+                    live.fetch_add(128 * 1024, Ordering::SeqCst);
+                    let owner = Owner {
+                        live: live.clone(),
+                        bytes: vec![b'x'; 128 * 1024],
+                    };
+                    Ok(Bytes::from_owner(owner).slice(..1))
+                });
+                Ok(response(
+                    None,
+                    reqwest::Body::wrap_stream(futures_util::stream::iter(pieces)),
+                ))
+            }
+        });
+        let shown = Arc::new(Mutex::new(Vec::new()));
+        let client =
+            DataApi::new()
+                .with_transport(transport)
+                .with_middleware(seeded().rejected_when({
+                    let shown = shown.clone();
+                    move |seen| {
+                        shown.lock().unwrap().push(seen.body().to_vec());
+                        false
+                    }
+                }));
+        let mut raw = client.get().send_raw().await.unwrap();
+        let mut bytes = 0;
+        while bytes < 8 {
+            bytes += raw.chunk().await.unwrap().unwrap().len();
+        }
+        // Before the end of the body: the slices were copied, and none of their
+        // allocations is still held.
+        assert_eq!(live.load(Ordering::SeqCst), 0);
+        while raw.chunk().await.unwrap().is_some() {}
+        assert_eq!(*shown.lock().unwrap(), [b"xxxxxxxx".to_vec()]);
+        drop(raw);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_response_from_another_origin_rejects_nothing() {
+        let renewals = Arc::new(AtomicUsize::new(0));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let auth = Renewed::new(&base(), {
+            let renewals = renewals.clone();
+            move || {
+                renewals.fetch_add(1, Ordering::SeqCst);
+                async { AccessToken::expires_in("token", seconds(300)) }
+            }
+        })
+        .rejected_when({
+            let calls = calls.clone();
+            move |seen| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                seen.body() == b"rejected"
+            }
+        });
+        let transport = concord::fake(|_| {
+            Ok(http::Response::builder()
+                .url("https://other.test/final".parse().unwrap())
+                .body("rejected")
+                .unwrap()
+                .into())
+        });
+        let client = DataApi::new()
+            .with_transport(transport)
+            .with_middleware(auth);
+        for _ in 0..3 {
+            assert_eq!(client.get().await.unwrap(), "rejected");
+        }
+        assert_eq!(renewals.load(Ordering::SeqCst), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    concord::api! {
+        client Heads {
+            base "https://data.test";
+            HEAD check() { path "data"; }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_complete_response_without_a_body_is_shown_with_its_headers() {
+        // A `HEAD` and a `304` announce the length of the representation and carry no
+        // body; a `204` carries none either.
+        for (head, status, length) in [
+            (true, 200, Some("8")),
+            (false, 304, Some("8")),
+            (false, 204, None),
+        ] {
+            let polls = Arc::new(AtomicUsize::new(0));
+            let transport = concord::fake({
+                let polls = polls.clone();
+                move |request| {
+                    assert_eq!(request.method() == http::Method::HEAD, head);
+                    let mut builder = http::Response::builder()
+                        .status(status)
+                        .header("x-token-state", "revoked")
+                        .url("https://data.test/data".parse().unwrap());
+                    if let Some(length) = length {
+                        builder = builder.header("content-length", length);
+                    }
+                    Ok(builder
+                        .body(framed(Vec::new(), Some(0), &polls))
+                        .unwrap()
+                        .into())
+                }
+            });
+            let calls = Arc::new(AtomicUsize::new(0));
+            let auth = seeded().rejected_when({
+                let calls = calls.clone();
+                move |seen| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    seen.body().is_empty() && seen.headers()["x-token-state"] == "revoked"
+                }
+            });
+            let raw = if head {
+                Heads::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .check()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            } else {
+                DataApi::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .get()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            };
+            let mut body = reqwest::Body::from(raw);
+            assert!(frame(&mut body).await.is_none());
+            assert_eq!(calls.load(Ordering::SeqCst), 1, "{status} {head}");
+        }
+    }
+
+    concord::api! {
+        client Lines {
+            base "https://data.test";
+            GET lines() -> concord::read::RecordStream<u32> {
+                path "data";
+                read concord::read::JsonLines::new(100);
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_record_stream_whose_body_has_ended_has_been_shown() {
+        let api = Script::new();
+        api.answer(200)
+            .header("content-type", "application/x-ndjson")
+            .body("1\n2\n");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = Lines::new()
+            .with_transport(api)
+            .with_middleware(seeded().rejected_when(counted(&calls, true)));
+        let mut records = client.lines().await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        // Both records arrived in one frame: the body ended before the first record
+        // was decoded, so dropping the stream now no longer skips the function.
+        assert_eq!(records.try_next().await.unwrap(), Some(1));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        drop(records);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_retry_rule_sends_a_rejected_call_again_with_the_renewed_token() {
+        let api = Script::new();
+        api.answer(503).body("rejected");
+        api.answer(200).body("ok");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = DataApi::new()
+            .with_transport(api.clone())
+            .with_middleware(seeded().rejected_when({
+                let calls = calls.clone();
+                move |seen| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    seen.body() == b"rejected"
+                }
+            }))
+            .with_retry(Retry::standard().tries(2));
+        assert_eq!(client.get().await.unwrap(), "ok");
+        assert_attempts(&api, &[1, 2]);
+        assert_header(&api, 0, "authorization", "Bearer old");
+        assert_header(&api, 1, "authorization", "Bearer replacement");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    // Changes the method of the request below the credential, from one attempt on.
+    struct Rewrite {
+        method: http::Method,
+        from: u32,
+    }
+    impl concord::Middleware for Rewrite {
+        async fn handle(
+            &self,
+            mut request: reqwest::Request,
+            info: concord::transport::TryInfo,
+            next: concord::Next<'_>,
+        ) -> Result<reqwest::Response, concord::transport::TransportError> {
+            if info.number() >= self.from {
+                *request.method_mut() = self.method.clone();
+            }
+            next.send(request, info).await
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_head_sent_by_a_lower_layer_is_judged_as_the_request_this_layer_sent() {
+        let sent = Arc::new(AtomicUsize::new(0));
+        let transport = concord::fake({
+            let sent = sent.clone();
+            move |request| {
+                Ok(match sent.fetch_add(1, Ordering::SeqCst) {
+                    0 => concord::reply(503, "try again"),
+                    1 => {
+                        assert_eq!(request.method(), http::Method::HEAD);
+                        http::Response::builder()
+                            .header("content-length", "8")
+                            .header("x-token-state", "revoked")
+                            .body("")
+                            .unwrap()
+                            .into()
+                    }
+                    _ => {
+                        // A known limit: the empty body answered the `GET` this layer
+                        // sent, against a length of eight, so it was not shown.
+                        assert_eq!(request.headers()["authorization"], "Bearer old");
+                        concord::reply(200, "ok")
+                    }
+                })
+            }
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = DataApi::new()
+            .with_transport(transport)
+            .with_middleware(seeded().rejected_when({
+                let calls = calls.clone();
+                move |seen| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    seen.headers().contains_key("x-token-state")
+                }
+            }))
+            .with_middleware(Rewrite {
+                method: http::Method::HEAD,
+                from: 2,
+            })
+            .with_retry(Retry::standard().tries(2));
+        drop(client.get().await);
+        assert_eq!(sent.load(Ordering::SeqCst), 2);
+        // Shown once: the body of the `503`, read for the retry rule.
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(client.get().await.unwrap(), "ok");
+    }
+
+    concord::api! {
+        client Tunnels {
+            base "https://data.test";
+            METHOD "CONNECT" tunnel() { path "data"; }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_successful_connect_with_a_length_and_a_one_byte_205_are_judged_by_their_bytes()
+    {
+        // A tunnel's `Content-Length` frames nothing; a `205` never carries a body.
+        for (connect, status, length, body, shown) in [
+            (true, 201, "8", "", 1),
+            (false, 205, "1", "x", 0),
+            (false, 205, "8", "", 1),
+            (true, 403, "1", "x", 1),
+        ] {
+            let transport = concord::fake(move |request| {
+                assert_eq!(request.method() == http::Method::CONNECT, connect);
+                Ok(http::Response::builder()
+                    .status(status)
+                    .header("content-length", length)
+                    .body(body)
+                    .unwrap()
+                    .into())
+            });
+            let calls = Arc::new(AtomicUsize::new(0));
+            let auth = seeded().rejected_when(counted(&calls, false));
+            let raw = if connect {
+                Tunnels::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .tunnel()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            } else {
+                DataApi::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .get()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            };
+            assert_eq!(raw.bytes().await.unwrap(), body.as_bytes());
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                shown,
+                "{status} {length} {body:?}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_head_that_gives_a_byte_is_not_shown() {
+        let transport = concord::fake(|_| {
+            Ok(http::Response::builder()
+                .header("content-length", "1")
+                .body("x")
+                .unwrap()
+                .into())
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = Heads::new()
+            .with_transport(transport)
+            .with_middleware(seeded().rejected_when(counted(&calls, true)))
+            .with_middleware(Rewrite {
+                method: http::Method::GET,
+                from: 1,
+            });
+        let raw = client.check().send_raw().await.unwrap();
+        assert_eq!(raw.bytes().await.unwrap(), "x");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_record_stream_body_can_signal_its_end_only_on_a_later_poll() {
+        for read_the_end in [false, true] {
+            let transport = concord::fake(|_| {
+                let frames = futures_util::stream::iter([Ok::<_, std::io::Error>(
+                    Bytes::from_static(b"1\n2\n"),
+                )]);
+                Ok(http::Response::builder()
+                    .header("content-type", "application/x-ndjson")
+                    .body(reqwest::Body::wrap_stream(frames))
+                    .unwrap()
+                    .into())
+            });
+            let calls = Arc::new(AtomicUsize::new(0));
+            let client = Lines::new()
+                .with_transport(transport)
+                .with_middleware(seeded().rejected_when(counted(&calls, true)));
+            let mut records = client.lines().await.unwrap();
+            assert_eq!(records.try_next().await.unwrap(), Some(1));
+            assert_eq!(records.try_next().await.unwrap(), Some(2));
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            if read_the_end {
+                assert_eq!(records.try_next().await.unwrap(), None);
+            }
+            drop(records);
+            assert_eq!(calls.load(Ordering::SeqCst), usize::from(read_the_end));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_two_rejections_renew_once_when_the_next_call_needs_the_token() {
+        let renewals = Arc::new(AtomicUsize::new(0));
+        let auth = Renewed::new(&base(), {
+            let renewals = renewals.clone();
+            move || {
+                renewals.fetch_add(1, Ordering::SeqCst);
+                async { AccessToken::expires_in("new", seconds(100)) }
+            }
+        })
+        .with_token(initial("old", 100))
+        .unwrap()
+        .rejected_when(|seen| seen.body() == b"expired");
+        let api = Script::new();
+        api.answer(200).body("expired");
+        api.answer(200).body("expired");
+        api.answer(200).body("ok");
+        let client = DataApi::new()
+            .with_transport(api.clone())
+            .with_middleware(auth);
+        let first = client.get().send_raw().await.unwrap();
+        let second = client.get().send_raw().await.unwrap();
+        first.bytes().await.unwrap();
+        second.bytes().await.unwrap();
+        assert_eq!(renewals.load(Ordering::SeqCst), 0);
+        assert_eq!(client.get().await.unwrap(), "ok");
+        assert_eq!(renewals.load(Ordering::SeqCst), 1);
+        assert_header(&api, 2, "authorization", "Bearer new");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_head_or_304_whose_hint_is_the_representation_length_is_shown() {
+        // Over HTTP/2, the exact size hint of these responses is the length of the
+        // representation, larger than 64 KiB, while no byte comes.
+        for (head, status) in [(true, 200), (false, 304)] {
+            let polls = Arc::new(AtomicUsize::new(0));
+            let transport = concord::fake({
+                let polls = polls.clone();
+                move |_| {
+                    Ok(http::Response::builder()
+                        .status(status)
+                        .header("content-length", "80000")
+                        .header("x-token-state", "revoked")
+                        .body(framed(Vec::new(), Some(80_000), &polls))
+                        .unwrap()
+                        .into())
+                }
+            });
+            let calls = Arc::new(AtomicUsize::new(0));
+            let auth = seeded().rejected_when(counted(&calls, true));
+            let raw = if head {
+                Heads::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .check()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            } else {
+                DataApi::new()
+                    .with_transport(transport)
+                    .with_middleware(auth)
+                    .get()
+                    .send_raw()
+                    .await
+                    .unwrap()
+            };
+            assert_eq!(raw.content_length(), Some(80_000));
+            let mut body = reqwest::Body::from(raw);
+            assert!(frame(&mut body).await.is_none());
+            assert_eq!(calls.load(Ordering::SeqCst), 1, "{status} {head}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_2_a_body_that_ends_cleanly_before_its_announced_length_is_not_shown() {
+        // As an HTTP/2 stream reset with no error before any data: a clean end, no byte,
+        // and a length of eight announced.
+        let polls = Arc::new(AtomicUsize::new(0));
+        let transport = concord::fake({
+            let polls = polls.clone();
+            move |_| Ok(response(Some("8"), framed(Vec::new(), Some(8), &polls)))
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let client = DataApi::new()
+            .with_transport(transport)
+            .with_middleware(seeded().rejected_when(counted(&calls, true)));
+        let raw = client.get().send_raw().await.unwrap();
+        let mut body = reqwest::Body::from(raw);
+        assert!(frame(&mut body).await.is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+}

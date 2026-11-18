@@ -2787,3 +2787,823 @@ async fn c12_7_cancelled_initial_load_cleanup_panic_stops_the_credential() {
     rig.events(&["load"]);
     assert_eq!(rig.store.counts(), (1, 0));
 }
+
+// An exchange that states that its request never left.
+
+fn auth_mapped(rig: &Rig, map: fn(concord::Error) -> RenewalError) -> (Rotating, RotationDriver) {
+    let tokens = Tokens::new()
+        .with_transport(rig.tokens.clone())
+        .with_idle_timeout(sec(3600));
+    let events = rig.events.clone();
+    Rotating::new(&base(), rig.store.clone(), move |exchange: Exchange| {
+        let tokens = tokens.clone();
+        let events = events.clone();
+        async move {
+            events
+                .lock()
+                .unwrap()
+                .push(format!("exchange {}", &*exchange.refresh().expose()));
+            let reply = tokens.exchange(exchange.refresh()).await.map_err(map)?;
+            Ok(TokenPair::expires_in(
+                reply.access,
+                reply.refresh,
+                sec(reply.life),
+            ))
+        }
+    })
+}
+fn refuse(rig: &Rig, delay: u64) {
+    rig.tokens
+        .fail(concord::transport::TransportError::blocked())
+        .after(sec(delay));
+}
+fn not_sent(error: &concord::Error) -> bool {
+    match cause(error) {
+        RotationError::Renewal(RenewalError::NotSent(cause)) => cause
+            .downcast_ref::<concord::Error>()
+            .is_some_and(|endpoint| endpoint.class() == Some(concord::error::Class::Blocked)),
+        _ => false,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_an_exchange_not_sent_saves_the_pair_again_and_the_next_call_exchanges_it() {
+    let rig = Rig::new(Stored::Ready(TokenPair::new("a0", "r0", None)));
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    rig.store.ready("a0", "r0");
+    rig.sent(1, 0);
+    assert_eq!(api.get().await.unwrap(), "ok");
+    rig.store.ready("a1", "r1");
+    rig.sent(2, 1);
+    header(&rig.resource, 0, "Bearer a1");
+    // The states of the store, in order: the marker, the same pair again, the
+    // marker of the second exchange, its replacement.
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    assert_eq!(rig.store.counts(), (1, 4));
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_a_refused_save_of_the_previous_pair_keeps_the_marker() {
+    for ambiguous in [false, true] {
+        let rig = Rig::new(expired());
+        {
+            let mut s = rig.store.0.lock().unwrap();
+            s.fail_save = Some(2);
+            s.ambiguous = ambiguous;
+        }
+        refuse(&rig, 0);
+        rig.issue("a1", "r1", 0);
+        let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+        let api = rig.client(auth);
+        let task = tokio::spawn(driver);
+        assert!(not_sent(&api.get().await.unwrap_err()));
+        assert!(matches!(
+            cause(&api.get().await.unwrap_err()),
+            RotationError::NeedsReauthorization
+        ));
+        if ambiguous {
+            // The failed save took effect; the pair it wrote is still unused.
+            rig.store.ready("old", "r0");
+        } else {
+            rig.store.marker();
+        }
+        rig.sent(1, 0);
+        assert_eq!(rig.store.counts(), (1, 2));
+        rig.events(&["load", "mark", "exchange r0", "save r0"]);
+        drop(api);
+        assert!(task.await.unwrap().is_err());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_calls_waiting_on_an_exchange_not_sent_fail_without_being_sent() {
+    let rig = Rig::new(expired());
+    refuse(&rig, 3);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    for result in join_all((0..8).map(|_| api.get().send())).await {
+        assert!(not_sent(&result.unwrap_err()));
+    }
+    rig.sent(1, 0);
+    rig.store.ready("old", "r0");
+    api.get().await.unwrap();
+    rig.sent(2, 1);
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_two_exchanges_not_sent_in_a_row_keep_the_same_refresh_token() {
+    let rig = Rig::new(expired());
+    refuse(&rig, 0);
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    rig.store.ready("old", "r0");
+    api.get().await.unwrap();
+    rig.sent(3, 1);
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    assert_eq!(rig.store.counts(), (1, 6));
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_7_a_dropped_call_does_not_cancel_the_save_of_the_previous_pair() {
+    let rig = Rig::new(expired());
+    let gate = Arc::new(tokio::sync::Notify::new());
+    rig.store.0.lock().unwrap().gate_save = Some((2, gate.clone()));
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    let mut call = Box::pin(api.get().send());
+    assert!(call.as_mut().now_or_never().is_none());
+    ticks().await;
+    rig.events(&["load", "mark", "exchange r0", "save r0"]);
+    rig.store.marker();
+    drop(call);
+    ticks().await;
+    rig.store.marker();
+    gate.notify_one();
+    ticks().await;
+    rig.store.ready("old", "r0");
+    api.get().await.unwrap();
+    rig.sent(2, 1);
+    rig.store.ready("a1", "r1");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_7_a_driver_dropped_during_the_save_of_the_previous_pair_leaves_the_marker() {
+    let rig = Rig::new(expired());
+    let gate = Arc::new(tokio::sync::Notify::new());
+    rig.store.0.lock().unwrap().gate_save = Some((2, gate));
+    refuse(&rig, 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let mut driver = Box::pin(driver);
+    let mut call = Box::pin(api.get().send());
+    assert!(call.as_mut().now_or_never().is_none());
+    for _ in 0..16 {
+        assert!(driver.as_mut().now_or_never().is_none());
+    }
+    rig.events(&["load", "mark", "exchange r0", "save r0"]);
+    drop(driver);
+    assert!(matches!(
+        cause(&call.await.unwrap_err()),
+        RotationError::Stopped
+    ));
+    rig.store.marker();
+    // A later owner of the account finds the marker: the safe side.
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(matches!(
+        cause(&api.get().await.unwrap_err()),
+        RotationError::NeedsReauthorization
+    ));
+    rig.sent(1, 0);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_only_a_refusal_before_the_first_attempt_is_not_sent() {
+    use concord::transport::TransportError;
+    for (failure, sent) in [
+        (TransportError::blocked(), true),
+        (TransportError::connect(), false),
+        (TransportError::timeout(), false),
+    ] {
+        let rig = Rig::new(expired());
+        rig.tokens.fail(failure);
+        rig.issue("a1", "r1", 0);
+        rig.resource.answer(200).body("ok");
+        let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+        let api = rig.client(auth);
+        let task = tokio::spawn(driver);
+        let error = api.get().await.unwrap_err();
+        assert_eq!(not_sent(&error), sent);
+        let next = api.get().await;
+        if sent {
+            assert_eq!(next.unwrap(), "ok");
+            rig.store.ready("a1", "r1");
+            rig.sent(2, 1);
+            drop(api);
+            task.await.unwrap().unwrap();
+            continue;
+        } else {
+            assert_renewal(&error, |e| matches!(e, RenewalError::Failed(_)));
+            rig.store.marker();
+            assert!(matches!(
+                cause(&next.unwrap_err()),
+                RotationError::NeedsReauthorization
+            ));
+            rig.sent(1, 0);
+        }
+        drop(api);
+        assert!(task.await.unwrap().is_err());
+    }
+
+    // A refusal on a second attempt comes after a first one that may have been sent.
+    let tokens = Script::new();
+    tokens.answer(503);
+    tokens.fail(TransportError::blocked());
+    let client = Tokens::new().with_transport(tokens.clone()).with_retry(
+        Retry::none()
+            .tries(2)
+            .not_applied_on(503)
+            .when(|_: &concord::retry::Tried<'_, ()>| Some(Duration::ZERO)),
+    );
+    let Err(error) = client.exchange(Secret::new("r0")).await else {
+        panic!("the second attempt is refused");
+    };
+    assert_eq!(error.tries(), 2);
+    assert!(matches!(
+        RenewalError::from_call(error),
+        RenewalError::Failed(_)
+    ));
+
+    let error = RenewalError::not_sent(std::io::Error::other("private cause"));
+    assert_eq!(format!("{error:?}"), "RenewalError::NotSent");
+    assert_eq!(
+        error.to_string(),
+        "the credential could not be renewed, and its request was not sent"
+    );
+    assert!(error
+        .source()
+        .is_some_and(|s| s.to_string() == "private cause"));
+}
+
+// A credential that the API rejects inside a `200`.
+
+#[derive(Debug, Deserialize)]
+struct SlackProblem {
+    error: String,
+}
+fn slack_envelope(body: serde_json::Value) -> Result<String, concord::Fail<SlackProblem>> {
+    if body.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+        return Ok(body["user"].as_str().unwrap_or_default().to_owned());
+    }
+    let problem: SlackProblem =
+        serde_json::from_value(body).map_err(|_| concord::mismatch("ok: false with no error"))?;
+    Err(problem)?
+}
+concord::api! {
+    client Slack {
+        base "https://slack.test/api";
+        read concord::Json;
+        problem SlackProblem;
+        status { 2xx { body } => slack_envelope(body)? }
+        POST auth_test() -> String { path "auth.test"; }
+    }
+}
+// What the client's author states once: the errors of the envelope that reject the token.
+fn slack_rejects(seen: &concord::auth::Seen<'_>) -> bool {
+    #[derive(Deserialize)]
+    struct Envelope {
+        ok: bool,
+        error: Option<String>,
+    }
+    seen.status() == 200
+        && serde_json::from_slice::<Envelope>(seen.body()).is_ok_and(|reply| {
+            !reply.ok
+                && matches!(
+                    reply.error.as_deref(),
+                    Some("token_expired" | "token_revoked" | "invalid_auth")
+                )
+        })
+}
+fn rejected(seen: &concord::auth::Seen<'_>) -> bool {
+    seen.body() == b"rejected"
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_token_expired_inside_a_200_makes_the_next_call_exchange() {
+    let future = SystemTime::now() + sec(3600);
+    let rig = Rig::new(Stored::Ready(TokenPair::new(
+        "xoxe.xoxb-a",
+        "xoxe-1-r",
+        Some(future),
+    )));
+    rig.issue("xoxe.xoxb-b", "xoxe-1-s", 0);
+    rig.resource
+        .answer(200)
+        .header("content-type", "application/json")
+        .body(r#"{"ok": false, "error": "token_expired"}"#);
+    rig.resource
+        .answer(200)
+        .header("content-type", "application/json")
+        .body(r#"{"ok": true, "user": "U1"}"#);
+    let tokens = Tokens::new().with_transport(rig.tokens.clone());
+    let events = rig.events.clone();
+    let (auth, driver) = Rotating::new(
+        &"https://slack.test".parse().unwrap(),
+        rig.store.clone(),
+        move |exchange: Exchange| {
+            let tokens = tokens.clone();
+            let events = events.clone();
+            async move {
+                events
+                    .lock()
+                    .unwrap()
+                    .push(format!("exchange {}", &*exchange.refresh().expose()));
+                let reply = tokens.exchange(exchange.refresh()).await?;
+                Ok(TokenPair::expires_in(
+                    reply.access,
+                    reply.refresh,
+                    sec(reply.life),
+                ))
+            }
+        },
+    );
+    let task = tokio::spawn(driver);
+    let slack = Slack::new()
+        .with_transport(rig.resource.clone())
+        .with_middleware(auth.rejected_when(slack_rejects))
+        .with_retry(Retry::standard().not_applied_on(429).when(after_401));
+
+    let first = slack.auth_test().await.unwrap_err();
+    assert_eq!(first.problem().unwrap().error, "token_expired");
+    assert_eq!(first.tries(), 1);
+    rig.sent(0, 1);
+    assert_eq!(slack.auth_test().await.unwrap(), "U1");
+    rig.sent(1, 2);
+    header(&rig.resource, 0, "Bearer xoxe.xoxb-a");
+    header(&rig.resource, 1, "Bearer xoxe.xoxb-b");
+    assert_eq!(
+        rig.tokens.requests()[0].upload().bytes(),
+        b"refresh_token=xoxe-1-r"
+    );
+    rig.events(&["load", "mark", "exchange xoxe-1-r", "save xoxe-1-s"]);
+    rig.store.ready("xoxe.xoxb-b", "xoxe-1-s");
+    drop(slack);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_late_rejection_inside_a_200_keeps_the_newer_pair() {
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.issue("a1", "r1", 0);
+    rig.resource.answer(200).after(sec(5)).body("rejected");
+    rig.resource.answer(200).body("rejected");
+    rig.resource.answer(200).body("c");
+    rig.resource.answer(200).body("d");
+    let (auth, driver) = rig.auth();
+    let api = rig
+        .client(auth.rejected_when(rejected))
+        .with_retry(Retry::none().tries(2).when(after_401));
+    let task = tokio::spawn(driver);
+    let late = tokio::spawn({
+        let api = api.clone();
+        async move { api.get().await }
+    });
+    ticks().await;
+    rig.sent(0, 1);
+    assert_eq!(api.get().await.unwrap(), "rejected");
+    assert_eq!(api.get().await.unwrap(), "c");
+    assert_eq!(late.await.unwrap().unwrap(), "rejected");
+    assert_eq!(api.get().await.unwrap(), "d");
+    rig.sent(1, 4);
+    header(&rig.resource, 0, "Bearer a0");
+    header(&rig.resource, 1, "Bearer a0");
+    header(&rig.resource, 2, "Bearer a1");
+    header(&rig.resource, 3, "Bearer a1");
+    rig.events(&["load", "mark", "exchange r0", "save r1"]);
+    assert!(rig
+        .resource
+        .requests()
+        .iter()
+        .all(|request| request.info().number() == 1));
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_rejection_inside_a_200_is_shown_only_a_whole_body_of_at_most_64_kib() {
+    let large = "x".repeat(64 * 1024 + 1);
+    let half = "z".repeat(40 * 1024);
+    let full = "y".repeat(64 * 1024);
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.issue("a1", "r1", 0);
+    rig.resource
+        .answer(200)
+        .body(half.clone())
+        .body(half.clone());
+    rig.resource.answer(200).body(large.clone());
+    rig.resource
+        .answer(200)
+        .declare_length(u64::try_from(large.len()).unwrap())
+        .body(large.clone());
+    rig.resource.answer(200).body("panic");
+    rig.resource.answer(200).body(full.clone());
+    rig.resource.answer(200).body("after");
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let (auth, driver) = rig.auth();
+    let auth = auth.rejected_when({
+        let shown = shown.clone();
+        move |seen| {
+            assert_eq!(format!("{seen:?}"), "Seen(..)");
+            shown.lock().unwrap().push(seen.body().len());
+            assert!(seen.body() != b"panic", "private panic");
+            seen.body().len() == 64 * 1024
+        }
+    });
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap(), half.repeat(2));
+    assert_eq!(api.get().await.unwrap(), large);
+    assert_eq!(api.get().await.unwrap(), large);
+    assert_eq!(api.get().await.unwrap(), "panic");
+    assert_eq!(api.get().await.unwrap(), full);
+    assert_eq!(api.get().await.unwrap(), "after");
+    // No long body is shown, whether its length is known or not; a panic rejects
+    // nothing; a body of exactly 64 KiB is shown and rejects the token.
+    assert_eq!(*shown.lock().unwrap(), [5, 64 * 1024, 5]);
+    rig.sent(1, 6);
+    header(&rig.resource, 4, "Bearer a0");
+    header(&rig.resource, 5, "Bearer a1");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_body_that_is_not_read_to_its_end_rejects_nothing() {
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.resource.answer(200).body("rejected").stall();
+    rig.resource.answer(200).body("ok");
+    let (auth, driver) = rig.auth();
+    let api = rig.client(auth.rejected_when(rejected));
+    let task = tokio::spawn(driver);
+    assert!(api
+        .get()
+        .with_timeout(sec(1))
+        .await
+        .unwrap_err()
+        .is_timeout());
+    assert_eq!(api.get().await.unwrap(), "ok");
+    rig.sent(0, 2);
+    header(&rig.resource, 1, "Bearer a0");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_body_of_unknown_length_is_shown_only_up_to_64_kib() {
+    let rig = Rig::new(Stored::Ready(pair("a0", "r0", 100)));
+    rig.issue("a1", "r1", 0);
+    let sizes = Arc::new(Mutex::new(vec![40 * 1024, 40 * 1024, 30 * 1024, 30 * 1024]));
+    let carried = Arc::new(Mutex::new(Vec::new()));
+    let transport = concord::fake({
+        let carried = carried.clone();
+        move |request| {
+            carried.lock().unwrap().push(
+                request.headers()["authorization"]
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            );
+            let mut sizes = sizes.lock().unwrap();
+            let count = sizes.len().min(2);
+            let pieces: Vec<_> = sizes
+                .drain(..count)
+                .map(|size| Ok::<_, std::io::Error>(concord::bytes::Bytes::from(vec![b'z'; size])))
+                .collect();
+            Ok(concord::reply(
+                200,
+                concord::reqwest::Body::wrap_stream(futures_util::stream::iter(pieces)),
+            ))
+        }
+    });
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let (auth, driver) = rig.auth();
+    let auth = auth.rejected_when({
+        let shown = shown.clone();
+        move |seen| {
+            shown.lock().unwrap().push(seen.body().len());
+            true
+        }
+    });
+    let api = Data::new().with_transport(transport).with_middleware(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap().len(), 80 * 1024);
+    assert_eq!(api.get().await.unwrap().len(), 60 * 1024);
+    assert_eq!(api.get().await.unwrap().len(), 0);
+    assert_eq!(*shown.lock().unwrap(), [60 * 1024, 0]);
+    assert_eq!(
+        *carried.lock().unwrap(),
+        ["Bearer a0", "Bearer a0", "Bearer a1"]
+    );
+    rig.sent(1, 0);
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+// A restored pair is never sent again as an access token.
+
+fn stored_expiry(store: &MemoryStore) -> Option<SystemTime> {
+    match &store.0.lock().unwrap().record {
+        Stored::Ready(pair) => pair.expires_at(),
+        Stored::Refreshing => panic!("expected a saved pair"),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_after_a_restore_the_next_call_exchanges_even_after_a_late_401() {
+    let rig = Rig::new(Stored::Ready(pair("old", "r0", 100)));
+    rig.resource.answer(401).after(sec(5));
+    rig.resource.answer(200).body("after restore");
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth.clone());
+    let task = tokio::spawn(driver);
+    let delayed = tokio::spawn({
+        let api = api.clone();
+        async move { api.get().await }
+    });
+    ticks().await;
+    rig.sent(0, 1);
+    // Renew early, so that the next call exchanges while the first one waits.
+    drop(auth.clone().early_by(sec(101)));
+    let gate = Arc::new(tokio::sync::Notify::new());
+    rig.store.0.lock().unwrap().gate_save = Some((2, gate.clone()));
+    let waiting = tokio::spawn({
+        let api = api.clone();
+        async move { api.get().await }
+    });
+    ticks().await;
+    rig.store.marker();
+    // The 401 arrives while the previous pair is being saved again.
+    assert!(delayed.await.unwrap().unwrap_err().is_status(401));
+    drop(auth.early_by(sec(0)));
+    gate.notify_one();
+    assert!(not_sent(&waiting.await.unwrap().unwrap_err()));
+    rig.store.ready("old", "r0");
+    assert_eq!(stored_expiry(&rig.store), None);
+    assert_eq!(api.get().await.unwrap(), "after restore");
+    header(&rig.resource, 1, "Bearer a1");
+    rig.sent(2, 2);
+    rig.events(&[
+        "load",
+        "mark",
+        "exchange r0",
+        "save r0",
+        "mark",
+        "exchange r0",
+        "save r1",
+    ]);
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_an_owner_that_loads_a_restored_pair_exchanges_it() {
+    let rig = Rig::new(Stored::Ready(pair("old", "r0", 3600)));
+    rig.resource.answer(401);
+    rig.resource.answer(200).body("restart");
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(api.get().await.unwrap_err().is_status(401));
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    rig.store.ready("old", "r0");
+    assert_eq!(stored_expiry(&rig.store), None);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+
+    let (auth, driver) = rig.auth();
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap(), "restart");
+    header(&rig.resource, 1, "Bearer a1");
+    rig.sent(2, 2);
+    rig.store.ready("a1", "r1");
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_a_panic_dropping_an_exchange_not_sent_reports_the_panic_and_keeps_the_block() {
+    let rig = Rig::new(expired());
+    let (auth, driver) = Rotating::new(&base(), rig.store.clone(), |_| CompletedExchangeDrop {
+        complete: false,
+        work: Box::pin(async { Err(RenewalError::not_sent(std::io::Error::other("offline"))) }),
+    });
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_renewal(&api.get().await.unwrap_err(), |e| {
+        matches!(e, RenewalError::Panicked)
+    });
+    assert!(matches!(
+        cause(&api.get().await.unwrap_err()),
+        RotationError::NeedsReauthorization
+    ));
+    rig.store.marker();
+    rig.events(&["load", "mark"]);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_a_restore_that_wrote_before_failing_leaves_a_pair_the_next_owner_exchanges() {
+    let rig = Rig::new(Stored::Ready(pair("old", "r0", 3600)));
+    {
+        let mut s = rig.store.0.lock().unwrap();
+        s.fail_save = Some(2);
+        s.ambiguous = true;
+    }
+    rig.resource.answer(401);
+    rig.resource.answer(200).body("ok");
+    refuse(&rig, 0);
+    rig.issue("a1", "r1", 0);
+    let (auth, driver) = auth_mapped(&rig, RenewalError::from_call);
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert!(api.get().await.unwrap_err().is_status(401));
+    assert!(not_sent(&api.get().await.unwrap_err()));
+    // This instance stays blocked; the store holds the pair, without a usable expiry.
+    assert!(matches!(
+        cause(&api.get().await.unwrap_err()),
+        RotationError::NeedsReauthorization
+    ));
+    rig.store.ready("old", "r0");
+    assert_eq!(stored_expiry(&rig.store), None);
+    drop(api);
+    assert!(task.await.unwrap().is_err());
+
+    let (auth, driver) = rig.auth();
+    let api = rig.client(auth);
+    let task = tokio::spawn(driver);
+    assert_eq!(api.get().await.unwrap(), "ok");
+    header(&rig.resource, 1, "Bearer a1");
+    rig.sent(2, 2);
+    drop(api);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_late_rejection_keeps_the_newer_token_while_an_older_request_is_alive() {
+    for rotating in [false, true] {
+        let rig = Rig::new(Stored::Ready(pair("old", "r0", 100)));
+        rig.issue("replacement", "r1", 0);
+        let mut task = None;
+        let renewals = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let api = if rotating {
+            let (auth, driver) = rig.auth();
+            task = Some(tokio::spawn(driver));
+            rig.client(auth.rejected_when(rejected))
+        } else {
+            let auth = concord::auth::Renewed::new(&base(), {
+                let renewals = renewals.clone();
+                move || {
+                    renewals.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async { concord::auth::AccessToken::expires_in("replacement", sec(200)) }
+                }
+            })
+            .with_token(concord::auth::AccessToken::expires_in("old", sec(200)).unwrap())
+            .unwrap();
+            Data::new()
+                .with_transport(rig.resource.clone())
+                .with_middleware(auth.rejected_when(rejected))
+        };
+        rig.resource.answer(200).after(sec(20)).body("holder");
+        rig.resource.answer(200).after(sec(2)).body("rejected");
+        rig.resource.answer(200).body("rejected");
+        rig.resource.answer(200).body("ok");
+        rig.resource.answer(200).body("still ok");
+        // The holder keeps the old generation alive across the whole sequence.
+        let holder = tokio::spawn({
+            let api = api.clone();
+            async move { api.get().await }
+        });
+        ticks().await;
+        let late = tokio::spawn({
+            let api = api.clone();
+            async move { api.get().await }
+        });
+        ticks().await;
+        assert_eq!(api.get().await.unwrap(), "rejected");
+        assert_eq!(api.get().await.unwrap(), "ok");
+        assert_eq!(late.await.unwrap().unwrap(), "rejected");
+        assert_eq!(api.get().await.unwrap(), "still ok");
+        header(&rig.resource, 3, "Bearer replacement");
+        header(&rig.resource, 4, "Bearer replacement");
+        assert!(!holder.is_finished());
+        holder.abort();
+        let _ = holder.await;
+        drop(api);
+        if let Some(task) = task {
+            task.await.unwrap().unwrap();
+            rig.sent(1, 5);
+        } else {
+            assert_eq!(renewals.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_401_from_another_origin_rejects_nothing() {
+    use concord::reqwest::ResponseBuilderExt;
+    for rotating in [true, false] {
+        let rig = Rig::new(Stored::Ready(pair("old", "r0", 200)));
+        rig.issue("new", "r1", 0);
+        let carried = Arc::new(Mutex::new(Vec::new()));
+        let transport = concord::fake({
+            let carried = carried.clone();
+            move |request| {
+                let mut carried = carried.lock().unwrap();
+                carried.push(
+                    request.headers()["authorization"]
+                        .to_str()
+                        .unwrap()
+                        .to_owned(),
+                );
+                // A transport that followed a redirect to another host reports it.
+                Ok(if carried.len() == 1 {
+                    concord::http::Response::builder()
+                        .status(401)
+                        .url("https://foreign.test/redirected".parse().unwrap())
+                        .body("")
+                        .unwrap()
+                        .into()
+                } else {
+                    concord::reply(200, "ok")
+                })
+            }
+        });
+        let mut task = None;
+        let api = if rotating {
+            let (auth, driver) = rig.auth();
+            task = Some(tokio::spawn(driver));
+            Data::new().with_transport(transport).with_middleware(auth)
+        } else {
+            let auth = concord::auth::Renewed::new(&base(), || async {
+                concord::auth::AccessToken::expires_in("replacement", sec(200))
+            })
+            .with_token(concord::auth::AccessToken::expires_in("old", sec(200)).unwrap())
+            .unwrap();
+            Data::new().with_transport(transport).with_middleware(auth)
+        };
+        assert!(api.get().await.unwrap_err().is_status(401));
+        assert_eq!(api.get().await.unwrap(), "ok");
+        assert_eq!(*carried.lock().unwrap(), ["Bearer old", "Bearer old"]);
+        drop(api);
+        if let Some(task) = task {
+            task.await.unwrap().unwrap();
+            rig.sent(0, 0);
+            rig.store.ready("old", "r0");
+        }
+    }
+}

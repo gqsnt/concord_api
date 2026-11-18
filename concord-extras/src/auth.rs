@@ -2,9 +2,12 @@
 //! (feature `auth`).
 //!
 //! `Renewed` adds the token to each request and renews it when it expires. It never
-//! resends a request. After a `401`, it returns the response unchanged and discards the
-//! cached token only if it is still the one that the request carried; a newer token stays.
-//! No other status discards a token. [`after_401`] adds a retry after that `401` to the
+//! resends a request. After a `401` from the origin of its base, it returns the response
+//! unchanged and discards the cached token only if it is still the one that the request
+//! carried; a newer token stays.
+//! No other status discards a token, except a response that a function set with
+//! [`Renewed::rejected_when`] recognises as a rejection: an API that reports an expired
+//! token inside a `200`. [`after_401`] adds a retry after that `401` to the
 //! engine's retry policy, without replacing the policy. Use `not_applied_on(401)` only if
 //! the API guarantees that a request rejected with `401` had no effect. Without it, a
 //! POST not marked as safe to repeat is not retried. A stream body that can be sent only
@@ -80,9 +83,11 @@ use std::task::{Poll, Waker};
 use std::time::Duration;
 use tokio::time::Instant;
 
+mod rejection;
 #[cfg(feature = "rotating")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 mod rotating;
+pub use rejection::Seen;
 #[cfg(feature = "rotating")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rotating")))]
 #[doc(inline)]
@@ -165,7 +170,7 @@ impl fmt::Debug for AccessToken {
 
 /// Why a token could not be renewed or added to a request; `source()` keeps the cause.
 ///
-/// `Failed` shares the author's error with every waiting call. `InvalidHeader` and
+/// `Failed` and `NotSent` share the author's error with every waiting call. `InvalidHeader` and
 /// `TimedOut` keep their causes too; the errors of the settings and of expiry have no
 /// lower-level cause. A panic while calling or polling the renewal, formatting the
 /// header or running `on_renewed` becomes `Panicked` for every waiting call. The panic
@@ -207,6 +212,10 @@ pub enum RenewalError {
     InvalidPolicy,
     /// A deadline cannot be represented.
     TimeOverflow,
+    /// The renewal failed before its request left: the token it would have sent is still
+    /// unused. Only the author's code says so, with [`not_sent`](Self::not_sent) or
+    /// [`from_call`](Self::from_call); the shared cause is kept.
+    NotSent(Arc<dyn StdError + Send + Sync>),
 }
 
 impl RenewalError {
@@ -265,6 +274,91 @@ impl RenewalError {
     pub fn failed(cause: impl StdError + Send + Sync + 'static) -> Self {
         Self::Failed(Arc::new(cause))
     }
+
+    /// Wraps an error of the author's as `NotSent`: the renewal failed, and no byte of
+    /// the request that carries the refresh token left the process. The cause is shared
+    /// and never printed.
+    ///
+    /// `Rotating` then saves the pair it had before the exchange again, without a usable
+    /// expiry, and the next call exchanges the same refresh token; no owner sends that
+    /// access token again. Use it only when nothing was written to the
+    /// connection: a check of your own that fails before the call to the token endpoint,
+    /// or a refusal that you know happened before the request was handed to the network.
+    ///
+    /// These failures are **not** `NotSent`, and must stay [`failed`](Self::failed): a
+    /// timeout, whatever its kind; a connection that failed or broke, even one refused
+    /// or reset, because the request may already have been written; a failure while the
+    /// body of the request or of the response was sent or read; and any response, of any
+    /// status. The server may have consumed the refresh token in each of these cases,
+    /// and a provider that sees a consumed refresh token used again usually revokes every
+    /// token of the account. When in doubt, use `failed`: the account then requires a
+    /// new authorization, which is the safe side. `Renewed` treats `NotSent` as `Failed`.
+    ///
+    /// One exception to the connection rule: with native `reqwest` 0.13 called directly,
+    /// `e.is_connect() && !e.is_timeout()` is enough to say `not_sent` for one buffered
+    /// request through `reqwest`'s own connector, with no connection layer of your own,
+    /// no redirect followed, no retry (`reqwest::retry::never()`) and no TLS early data:
+    /// a connection that could not be made fails before the request is written. A form
+    /// body needs the `form` feature of `reqwest`. A Concord call's `Connect` class proves
+    /// nothing of the kind; use [`from_call`](Self::from_call) there.
+    ///
+    /// ```no_run
+    /// use concord::auth::{Exchange, RenewalError, TokenPair};
+    /// async fn exchange(exchange: Exchange, offline: bool) -> Result<TokenPair, RenewalError> {
+    ///     if offline {
+    ///         // Checked before the call: the refresh token was never sent.
+    ///         return Err(RenewalError::not_sent(std::io::Error::other("offline")));
+    ///     }
+    ///     # let _ = exchange;
+    ///     Err(RenewalError::failed(std::io::Error::other("token endpoint required")))
+    /// }
+    /// ```
+    pub fn not_sent(cause: impl StdError + Send + Sync + 'static) -> Self {
+        Self::NotSent(Arc::new(cause))
+    }
+
+    /// Wraps the error of the one call to the token endpoint, the call that carries the
+    /// refresh token: `NotSent` when Concord states that nothing of it was sent, and
+    /// `Failed` otherwise.
+    ///
+    /// Concord states it for one failure only: a request blocked, before it was sent, on
+    /// its first and only attempt (`error.class()` is `Some(Class::Blocked)` and
+    /// `error.tries()` is 1), as by a `concord::limit::Limit` that refuses to wait, or a
+    /// middleware layer or transport that refuses the request. A middleware layer or
+    /// a transport returns `blocked()` only when no request left during its call. Every
+    /// other error is `Failed`, a connection failure included: a failed connection does
+    /// not prove that nothing was written. A Build error is `Failed` too, because a
+    /// request that was sent once can fail to be built again for a retry.
+    ///
+    /// Use it in place of `?` on that call, not on a call made after it:
+    ///
+    /// ```no_run
+    /// # use concord::auth::{Exchange, RenewalError, TokenPair};
+    /// # use concord::Secret;
+    /// # #[derive(serde::Deserialize)] struct Reply { access_token: String, refresh_token: String, expires_in: u64 }
+    /// concord::api! {
+    ///     client Tokens {
+    ///         base "https://identity.example.test";
+    ///         POST refresh(refresh_token: Secret) -> Reply {
+    ///             path "token";
+    ///             body concord::form { "grant_type" = "refresh_token"; refresh_token; }
+    ///             read concord::Json;
+    ///         }
+    ///     }
+    /// }
+    /// async fn exchange(tokens: Tokens, exchange: Exchange) -> Result<TokenPair, RenewalError> {
+    ///     let reply = tokens.refresh(exchange.refresh()).await.map_err(RenewalError::from_call)?;
+    ///     Ok(TokenPair::expires_in(reply.access_token, reply.refresh_token,
+    ///         std::time::Duration::from_secs(reply.expires_in)))
+    /// }
+    /// ```
+    pub fn from_call<P: Send + Sync + 'static>(error: Error<P>) -> Self {
+        if error.class() == Some(concord_core::error::Class::Blocked) && error.tries() == 1 {
+            Self::not_sent(error)
+        } else {
+            Self::failed(error)
+        }
+    }
 }
 
 impl<P: Send + Sync + 'static> From<Error<P>> for RenewalError {
@@ -284,6 +378,7 @@ impl fmt::Debug for RenewalError {
             Self::WrongOrigin => "RenewalError::WrongOrigin",
             Self::InvalidPolicy => "RenewalError::InvalidPolicy",
             Self::TimeOverflow => "RenewalError::TimeOverflow",
+            Self::NotSent(_) => "RenewalError::NotSent",
         })
     }
 }
@@ -299,6 +394,7 @@ impl fmt::Display for RenewalError {
             Self::WrongOrigin => "the request leaves the credential's origin",
             Self::InvalidPolicy => "the credential renewal policy is invalid",
             Self::TimeOverflow => "the credential deadline cannot be represented",
+            Self::NotSent(_) => "the credential could not be renewed, and its request was not sent",
         })
     }
 }
@@ -306,7 +402,9 @@ impl fmt::Display for RenewalError {
 impl StdError for RenewalError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
-            Self::Failed(cause) | Self::TimedOut(cause) => Some(cause.as_ref()),
+            Self::Failed(cause) | Self::TimedOut(cause) | Self::NotSent(cause) => {
+                Some(cause.as_ref())
+            }
             Self::InvalidHeader(cause) => Some(cause.as_ref()),
             _ => None,
         }
@@ -377,6 +475,7 @@ impl Renewed {
                             HeaderValue::from_str(&format!("Bearer {}", &*value.expose()))
                         }),
                         notify: None,
+                        rejects: None,
                     },
                     renew: Arc::new(move || renew().boxed()),
                     current: None,
@@ -495,6 +594,80 @@ impl Renewed {
         drop(retired);
         self
     }
+
+    /// Sets a function that recognises a response that rejects the token although its
+    /// status is not `401`: an API that reports a revoked or expired token inside a `200`.
+    ///
+    /// The function receives the status, the headers and the whole body of a response, as
+    /// a [`Seen`], once the body has been read to its end, and only when the response's
+    /// final URL, as the transport reports it, is at the origin of the credential's base,
+    /// and the body is complete and holds at most 64 KiB. A body that ends with an error is
+    /// never complete. One that ends cleanly is complete by this rule. A response that
+    /// never carries a body (a `1xx`, `204`, `205` or `304`, a response to a `HEAD` this
+    /// layer sent, a successful response to a `CONNECT` this layer sent) is complete when
+    /// it gave no byte, whatever length it announces, and the function then sees its
+    /// headers; it is never shown if it gave a byte. Any other response is complete when
+    /// it gave exactly the length that the reader expects (the `Content-Length`, or else
+    /// the exact size hint), or, with neither, all it had: no byte against a positive
+    /// length announced is a cut body. When it returns `true`,
+    /// the token that the request carried is rejected as after a `401`: only if it is
+    /// still the current token, so an answer that arrives after a renewal never discards
+    /// the newer token. Nothing is renewed at once: each later attempt that needs the
+    /// token, of any call, joins the renewal in flight or starts one, and the retry
+    /// setting of each call bounds its attempts. The response is returned
+    /// unchanged. `rejected_when` itself schedules no retry, and `after_401` retries a `401`
+    /// only; a retry rule of the call that applies to the response can send the call again,
+    /// and that attempt then carries the renewed token. A `401` always rejects the token,
+    /// and the function is not called for it. A response from another origin, `401`
+    /// included, rejects nothing.
+    ///
+    /// When the function runs depends on how the body is read. For a value or a problem
+    /// that the reader decodes, as the body ends, before it is decoded, so before the call
+    /// returns. For a stream of records (`JsonLines`, `Sse`), when the body signals its
+    /// end, which can come before the reader has yielded its last records, or only on a
+    /// later poll after the last bytes: dropping the stream before the body has signalled
+    /// its end skips the function. For `send_raw()`, when the caller
+    /// has read the body to its end; never if it does not. A call given to `transfer::at`
+    /// is read like any call. A body that is not read to its end is never shown: a dropped
+    /// call, a reader that stops early, an endpoint that does not read its body.
+    ///
+    /// The response is attributed to the token that this credential placed. A layer that
+    /// runs after it and removes or replaces the `Authorization` header owns that change.
+    ///
+    /// Watching costs something, also when the function never matches: every response
+    /// through the credential from its origin is observed, and up to 64 KiB of its body is
+    /// copied into one buffer, dropped once the function has seen it, or as soon as the body
+    /// is longer. Frames, trailers, the size hint and the end of the body pass through
+    /// unchanged. Without this function, a response is not touched.
+    ///
+    /// The function must return promptly. A panic in it rejects nothing, and its payload is
+    /// dropped, but Rust's panic hook still prints the panic message: never put text of the
+    /// body in a panic message. Nothing bounds the renewals across calls when a server
+    /// rejects every token; each renewal is bounded by `renewal_timeout`. Configuring a
+    /// clone changes every clone.
+    ///
+    /// ```no_run
+    /// #[derive(serde::Deserialize)]
+    /// struct Envelope { ok: bool, error: Option<String> }
+    /// fn configure(auth: concord::auth::Renewed) -> concord::auth::Renewed {
+    ///     auth.rejected_when(|seen| {
+    ///         seen.status() == 200
+    ///             && serde_json::from_slice::<Envelope>(seen.body()).is_ok_and(|reply| {
+    ///                 !reply.ok && matches!(reply.error.as_deref(), Some("token_expired" | "invalid_auth"))
+    ///             })
+    ///     })
+    /// }
+    /// ```
+    #[must_use = "attach the credential with with_middleware"]
+    pub fn rejected_when(
+        self,
+        rejects: impl Fn(&Seen<'_>) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        let rejects: Arc<rejection::Rejects> = Arc::new(rejects);
+        let retired = self.inner.lock().policy.rejects.replace(rejects);
+        drop(retired);
+        self
+    }
 }
 
 impl fmt::Debug for Renewed {
@@ -528,23 +701,31 @@ impl Middleware for Renewed {
             .headers_mut()
             .try_insert(header_name, header)
             .map_err(|cause| blocked(RenewalError::failed(cause)))?;
+        let method = request.method().clone();
         let response = next.send(request, info).await?;
-        if response.status() == 401 {
-            let retired = {
-                let mut state = self.inner.lock();
-                if state
-                    .current
-                    .as_ref()
-                    .is_some_and(|current| Arc::ptr_eq(current.generation(), &generation))
-                {
-                    state.current.take()
-                } else {
-                    None
-                }
-            };
-            drop(retired);
+        // A response from another origin, as a transport that followed a redirect
+        // reports it, rejects nothing.
+        if !rejection::same_origin(self.inner.origin.as_ref(), &response) {
+            return Ok(response);
         }
-        Ok(response)
+        if response.status() == 401 {
+            self.inner.discard(&generation);
+            return Ok(response);
+        }
+        let rejects = self.inner.lock().policy.rejects.clone();
+        Ok(match rejects {
+            Some(rejects) => {
+                let inner = Arc::downgrade(&self.inner);
+                let generation = Arc::downgrade(&generation);
+                rejection::watch(response, &method, rejects, move || {
+                    if let (Some(inner), Some(generation)) = (inner.upgrade(), generation.upgrade())
+                    {
+                        inner.discard(&generation);
+                    }
+                })
+            }
+            None => response,
+        })
     }
 }
 
@@ -580,6 +761,7 @@ struct Policy {
     header_name: HeaderName,
     format: Arc<Format>,
     notify: Option<Arc<Notify>>,
+    rejects: Option<Arc<rejection::Rejects>>,
 }
 
 #[derive(Clone)]
@@ -635,6 +817,23 @@ impl Inner {
         self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    // Discard the cached token only if it is still the one that the request carried.
+    fn discard(&self, generation: &Arc<()>) {
+        let retired = {
+            let mut state = self.lock();
+            if state
+                .current
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current.generation(), generation))
+            {
+                state.current.take()
+            } else {
+                None
+            }
+        };
+        drop(retired);
     }
 }
 
