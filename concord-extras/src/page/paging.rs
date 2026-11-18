@@ -38,13 +38,16 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 ///    (`the page's statements disagree on whether more items follow`). If all say "no more", this
 ///    page is the last.
 /// 3. **The move.** The next call is computed: by the pager of [`or_when_set`](Paging::or_when_set)
-///    whose input the call set, or else by the pager this value was made from. If a statement
-///    said "more" and there is no next call, the pages end with a Mismatch
+///    whose input the call set, or else by the pager this value was made from. Its failure (an
+///    unreadable `Link`, a pager of your own that fails, two inputs set that each choose the
+///    move) is the result, also on a short page. If a statement said "more" and there is no next
+///    call, the pages end with a Mismatch
 ///    (`the page says that more items follow, and gives no next page`).
-/// 4. **With no statement at all,** the short-page rule of
-///    [`stop_on_short_page`](Paging::stop_on_short_page), if one is set, ends the list on a short
-///    page before the move; otherwise the move decides, and no next call is the end. A statement
-///    always has authority over the short-page rule.
+/// 4. **With no statement at all,** a short-page rule
+///    ([`stop_on_short_page`](Paging::stop_on_short_page), and the `count` of
+///    [`by_offset_limit`](super::by_offset_limit)) ends the list on a short page, after the move;
+///    otherwise the move decides, and no next call is the end. A statement always has authority
+///    over the short-page rule.
 /// 5. **The edits** of [`map_next`](Paging::map_next) are applied to the next call, in the order
 ///    they were written: the one place where the order of the methods is meaning.
 ///
@@ -442,6 +445,17 @@ impl<C: Call> Paging<C> {
     }
 }
 
+impl<C: Call> Paging<C> {
+    /// Adds a short-page rule: `true` when the page is short.
+    pub(super) fn short_page_rule<F>(mut self, short: F) -> Paging<C>
+    where
+        F: Fn(&C, &C::Value) -> bool + Send + 'static,
+    {
+        self.stop_on_short_page.push(Box::new(short));
+        self
+    }
+}
+
 impl<C: Call> Pager<C> for Paging<C> {
     fn next_call(
         &mut self,
@@ -464,22 +478,24 @@ impl<C: Call> Pager<C> for Paging<C> {
         if stated == Some(false) {
             return Ok(None);
         }
-        // 4. With no statement, the short-page rules end the list before the move.
-        if stated.is_none()
+        // 4 is read here and applied after the move: a short-page rule reads the call and the
+        // page and changes nothing, and the move takes the call.
+        let short = stated.is_none()
             && self
                 .stop_on_short_page
                 .iter()
-                .any(|short| short(&call, page.value()))
-        {
-            return Ok(None);
-        }
-        // 3. The move.
+                .any(|short| short(&call, page.value()));
+        // 3. The move: its failure is the result, also on a short page.
         let mut chosen = self.or_when_set.iter_mut().filter(|(set, _)| set(&call));
         let next = match (chosen.next(), chosen.next()) {
             (Some(_), Some(_)) => return Err(mismatch(TWO_MOVES)),
             (Some((_, other)), None) => other.next_call(call, page)?,
             (None, _) => self.moves.next_call(call, page)?,
         };
+        // 4. With no statement, a short page ends the list.
+        if short {
+            return Ok(None);
+        }
         let Some(mut next) = next else {
             return match stated {
                 Some(true) => Err(mismatch(MORE_WITHOUT_NEXT)),

@@ -70,22 +70,28 @@ where
     K::Value: Copy + TryInto<usize>,
     C::Value: IntoItems,
 {
+    // The short page is a rule of the short-page stage, so that a statement of the page has
+    // authority over it. The move still ends quietly when the offset could not grow past a short
+    // page, which needs no next call.
+    let short = move |call: &C, got: usize| {
+        limit
+            .get(call)
+            .copied()
+            .and_then(|asked| asked.try_into().ok())
+            .is_some_and(|asked: usize| got < asked)
+    };
     Paging::<C>::from_fn(move |call, answer| {
         let got = answer.value().count();
         if got == 0 {
             return Ok(None);
         }
-        if let Some(asked) = limit
-            .get(&call)
-            .copied()
-            .and_then(|asked| asked.try_into().ok())
-        {
-            if got < asked {
-                return Ok(None);
-            }
+        let ended = short(&call, got);
+        match advance(start, call, got) {
+            Err(_) if ended => Ok(None),
+            next => next,
         }
-        advance(start, call, got)
     })
+    .short_page_rule(move |call, value| short(call, value.count()))
 }
 
 /// `paginate by_page(page, 1);`: the next call requests the following page number.
@@ -829,6 +835,64 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(format!("{error:?}"), "Fail(mismatch)");
+    }
+
+    /// A short page ends a list only after the move: the move's failure is the result.
+    fn short(count: u32) -> List {
+        List {
+            count: Some(count),
+            ..list()
+        }
+    }
+
+    #[test]
+    fn c8_6_an_unreadable_link_is_a_mismatch_also_on_a_short_page() {
+        let mut pager = by_link().stop_on_short_page(Count, 10);
+        let page = answer(&[1], None, Some(r#"</a>; rel="next"#));
+        assert_eq!(
+            format!("{:?}", pager.next_call(short(5), &page).unwrap_err()),
+            "Fail(mismatch)"
+        );
+    }
+
+    #[test]
+    fn c8_6_a_failing_pager_of_your_own_fails_also_on_a_short_page() {
+        let mut pager = Paging::from_fn(|_: List, _: &Answer<Page>| {
+            Err::<Option<List>, _>(mismatch("the pager of the author failed"))
+        })
+        .stop_on_short_page(Count, 10);
+        assert!(pager
+            .next_call(short(5), &answer(&[1], None, None))
+            .is_err());
+    }
+
+    #[test]
+    fn c8_6_two_inputs_that_choose_the_move_fail_also_on_a_short_page() {
+        let mut pager = by_cursor(After, Page::next)
+            .or_when_set(Start, by_offset(Start))
+            .or_when_set(Count, by_page(Count, 1))
+            .stop_on_short_page(Count, 10);
+        let call = List {
+            start: Some(0),
+            ..short(5)
+        };
+        assert!(pager.next_call(call, &answer(&[1], None, None)).is_err());
+    }
+
+    #[test]
+    fn c8_6_a_statement_has_authority_over_the_count_of_by_offset_limit() {
+        let mut pager = by_offset_limit(Start, Count).has_more(|_| true);
+        let next = pager
+            .next_call(short(5), &answer(&[1, 2], None, None))
+            .unwrap()
+            .unwrap();
+        assert_eq!((next.start, next.count), (Some(2), Some(5)));
+        // without a statement, the short page ends the list, as before
+        let mut bare = by_offset_limit(Start, Count);
+        assert!(bare
+            .next_call(short(5), &answer(&[1, 2], None, None))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
