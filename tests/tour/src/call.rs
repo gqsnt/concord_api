@@ -163,6 +163,21 @@ impl<E: __spec::Awaitable> IntoFuture for Call<E> {
     }
 }
 
+// A call is moved, never polled in place: no code takes a pin to a call or to one of
+// its fields. So it is `Unpin` whatever its inputs hold, and an added input that is not
+// `Unpin` never takes `Unpin` from a call.
+impl<E: Endpoint> Unpin for Call<E> {}
+
+// Every call of this client is `Unpin`, for any endpoint and so for any inputs: this
+// compiles only because the implementation above holds for every `E`. Never called.
+#[allow(dead_code)]
+const _: () = {
+    fn unpin<T: Unpin>() {}
+    fn every_call<E: Endpoint>() {
+        unpin::<Call<E>>();
+    }
+};
+
 impl<E: Endpoint> Clone for Call<E> {
     fn clone(&self) -> Self {
         Self {

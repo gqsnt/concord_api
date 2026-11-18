@@ -23,6 +23,8 @@ include!("call_spec.rs");
 pub struct Tasks {
     __core: ::concord::__private::Core<()>,
 }
+// Never pinned in place, so `Unpin` whatever its inputs hold.
+impl Unpin for Tasks {}
 
 /// Calls and results for [`Tasks`].
 pub mod tasks {
@@ -216,6 +218,8 @@ pub struct Riot {
     __core: ::concord::__private::Core<<() as riot::__Types>::__Problem>,
     key: <() as riot::__Types>::__Input0,
 }
+// Never pinned in place, so `Unpin` whatever its inputs hold.
+impl Unpin for Riot {}
 
 /// Calls and results for [`Riot`].
 pub mod riot {
@@ -306,6 +310,8 @@ pub mod riot {
         pub(super) __client: super::Riot,
         pub(super) route: <() as __Types>::__Input1,
     }
+    // Never pinned in place, so `Unpin` whatever its inputs hold.
+    impl Unpin for Account {}
 
     /// Matches (regional routing).
     ///
@@ -315,6 +321,8 @@ pub mod riot {
         pub(super) __client: super::Riot,
         pub(super) route: <() as __Types>::__Input5,
     }
+    // Never pinned in place, so `Unpin` whatever its inputs hold.
+    impl Unpin for Matches {}
 
     /// The error of every call of [`Riot`](crate::Riot): a [`concord::Error`] whose API problem is [`RiotProblem`](crate::RiotProblem).
     ///
@@ -465,6 +473,8 @@ pub struct Files {
     __core: ::concord::__private::Core<()>,
     key: <() as files::__Types>::__Input0,
 }
+// Never pinned in place, so `Unpin` whatever its inputs hold.
+impl Unpin for Files {}
 
 /// Calls and results for [`Files`].
 pub mod files {
@@ -726,6 +736,8 @@ pub mod files {
 pub struct Feed {
     __core: ::concord::__private::Core<()>,
 }
+// Never pinned in place, so `Unpin` whatever its inputs hold.
+impl Unpin for Feed {}
 
 /// Calls and results for [`Feed`].
 pub mod feed {
@@ -886,6 +898,8 @@ pub mod feed {
 pub struct Shapes {
     __core: ::concord::__private::Core<<() as shapes::__Types>::__Problem>,
 }
+// Never pinned in place, so `Unpin` whatever its inputs hold.
+impl Unpin for Shapes {}
 
 /// Calls and results for [`Shapes`].
 pub mod shapes {
@@ -1260,6 +1274,8 @@ pub mod shapes {
     pub struct Wrapped {
         pub(super) __client: super::Shapes,
     }
+    // Never pinned in place, so `Unpin` whatever its inputs hold.
+    impl Unpin for Wrapped {}
 
     /// Files whose answers carry a seal.
     ///
@@ -1268,6 +1284,8 @@ pub mod shapes {
     pub struct Sealed {
         pub(super) __client: super::Shapes,
     }
+    // Never pinned in place, so `Unpin` whatever its inputs hold.
+    impl Unpin for Sealed {}
 
     /// The error of every call of [`Shapes`](crate::Shapes): a [`concord::Error`] whose API problem is [`ShapesProblem`](crate::ShapesProblem).
     ///

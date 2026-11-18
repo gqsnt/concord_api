@@ -9,3 +9,8 @@ fn c1_12_authored_types_resolve_at_the_invocation() {
 fn c1_11_c8_6_c8_8_calls_keep_their_endpoint_and_eligibility() {
     trybuild::TestCases::new().compile_fail("tests/compiler-errors/calls/*.rs");
 }
+
+#[test]
+fn c10_2_clients_handles_calls_and_their_results_are_unpin_whatever_their_inputs() {
+    trybuild::TestCases::new().pass("tests/accepted/unpin_inputs.rs");
+}

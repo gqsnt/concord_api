@@ -204,6 +204,9 @@ impl Writer<'_> {
         let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
         emit! {
             #methods
+            // Like a call, a client or a handle is never pinned in place: it is `Unpin`
+            // whatever its inputs hold, so adding an input never takes `Unpin` from it.
+            #(#cfg)* #allow impl ::core::marker::Unpin for #ty {}
             #(#cfg)* #allow impl ::core::clone::Clone for #ty {
                 fn clone(&self) -> Self { Self { #clone_state #(#clone_fields)* } }
             }

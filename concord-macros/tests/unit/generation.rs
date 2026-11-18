@@ -260,10 +260,28 @@ fn c1_16_no_empty_impl_is_written() {
         .any(|bound| compact(bound) == "__sealed::Sealed"));
 
     let mut endpoint_types = BTreeSet::from(["Get".to_owned(), "nested::Post".to_owned()]);
+    // `Unpin` is a marker: its implementations are empty by nature, one for the call
+    // and one for the client and each handle (C10.2).
+    let mut unpinned = BTreeSet::from([
+        "Call<E>".to_owned(),
+        "Minimal".to_owned(),
+        "minimal::Empty".to_owned(),
+        "minimal::Nested".to_owned(),
+    ]);
     for (module, block) in impls(&file)
         .into_iter()
         .filter(|(_, block)| block.items.is_empty())
     {
+        if let Some((_, path, _)) = &block.trait_ {
+            if compact(path) == "::core::marker::Unpin" {
+                assert!(
+                    unpinned.remove(&compact(&block.self_ty)),
+                    "{}",
+                    quote!(#block)
+                );
+                continue;
+            }
+        }
         assert_eq!(module, "minimal", "{}", quote!(#block));
         let (_, path, _) = block.trait_.as_ref().expect("empty inherent impl");
         assert_eq!(compact(path), "__sealed::Sealed");
@@ -277,6 +295,7 @@ fn c1_16_no_empty_impl_is_written() {
         endpoint_types.is_empty(),
         "missing seal for {endpoint_types:?}"
     );
+    assert!(unpinned.is_empty(), "missing Unpin for {unpinned:?}");
 }
 
 #[test]

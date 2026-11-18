@@ -474,6 +474,10 @@ impl Writer<'_> {
             }
         );
         emit! {
+            // A call is a value that is moved, never polled in place: no code takes a pin
+            // to a call or to one of its fields. So it is `Unpin` whatever its inputs hold,
+            // and adding an input that is not `Unpin` never takes `Unpin` from a call.
+            impl<E: Endpoint> ::core::marker::Unpin for Call<E> {}
             impl<E: Endpoint> ::core::clone::Clone for Call<E> {
                 fn clone(&self) -> Self {
                     Self { __data: ::core::clone::Clone::clone(&self.__data), __options: ::core::clone::Clone::clone(&self.__options) }

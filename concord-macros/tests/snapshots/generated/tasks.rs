@@ -134,6 +134,7 @@ pub mod tasks {
         __data: E::Data<()>,
         __options: ::concord::__private::Options<__Problem>,
     }
+    impl<E: Endpoint> ::core::marker::Unpin for Call<E> {}
     impl<E: Endpoint> ::core::clone::Clone for Call<E> {
         fn clone(&self) -> Self {
             Self {
@@ -713,6 +714,7 @@ const _: () = {
             )
         }
     }
+    impl ::core::marker::Unpin for Tasks {}
     impl ::core::clone::Clone for Tasks {
         fn clone(&self) -> Self {
             Self {
