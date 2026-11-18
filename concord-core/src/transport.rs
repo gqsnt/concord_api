@@ -45,7 +45,10 @@ pub trait Transport: Send + Sync + 'static {
 
 /// Your own `reqwest::Client` sends the request, keeping its own settings for redirects,
 /// decompression and internal retries. Concord's middleware runs before it.
-/// Concord does not retry an unmarked, non-idempotent call after a failed connection.
+/// Concord does not retry an unmarked, non-idempotent call after a failed connection, but
+/// `reqwest`'s default resends a buffered or empty request after an HTTP/2
+/// `REFUSED_STREAM` or `GOAWAY`, whatever its method, below Concord's count of attempts;
+/// [`Http`] does not.
 impl Transport for reqwest::Client {
     async fn send(
         &self,
@@ -450,7 +453,14 @@ pub fn reply_with(
 /// enables decoding or sends `Accept-Encoding` by itself. The `socks` feature
 /// permits SOCKS proxies configured through [`Http::with`]. These features are
 /// not defaults. See [`Http::with`] for a compression example.
-/// Internal retries use `reqwest`'s settings and are below Concord's count of attempts.
+///
+/// It puts a request on the wire once per attempt: `reqwest`'s own resends are off,
+/// including its default resend of an HTTP/2 request that the server refused with
+/// `REFUSED_STREAM` or `GOAWAY`. A request is repeated only by Concord's engine, when the
+/// retry policy and the request allow it, and each repeat is an attempt. One resend
+/// remains below the count of attempts: when a reused connection turns out to be
+/// closed and hands the request back before writing any of it, the connection pool
+/// sends it on another connection.
 #[derive(Clone)]
 pub struct Http {
     client: reqwest::Client,
@@ -484,8 +494,10 @@ impl Http {
     /// Before `f` runs, the defaults are set, and `f` may change them: 30 seconds to connect,
     /// no `Referer`, no decompression (a body is passed on as it arrived). The closure may
     /// enable decompression; readers then receive, and their limits count, the bytes that
-    /// the transport returns. After `f`, one setting is applied that `f` cannot change:
-    /// no redirect is followed. A `3xx` is a response.
+    /// the transport returns. After `f`, two settings are applied that `f` cannot change:
+    /// no redirect is followed (a `3xx` is a response), and `reqwest` resends nothing on its
+    /// own, so a retry policy set with `builder.retry(…)` is replaced. To keep `reqwest`'s
+    /// own redirects or retries, pass your own `reqwest::Client` as the transport instead.
     ///
     /// To make gzip available, add it to your dependency's features:
     ///
@@ -522,7 +534,10 @@ impl Http {
             .no_brotli()
             .no_zstd()
             .no_deflate();
-        // Then the one thing that a promise needs, which the closure cannot change.
+        // Then what the promises need, which the closure cannot change: no resend of
+        // reqwest's own (`retry::never()` replaces the whole policy, for every protocol),
+        // and no redirect.
+        let f = move |builder: reqwest::ClientBuilder| f(builder).retry(reqwest::retry::never());
         let client = f(builder)
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
