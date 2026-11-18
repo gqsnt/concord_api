@@ -89,8 +89,10 @@ impl Json {
     /// client reads the bytes (`read Binary;`) and its arm decodes them twice: once for
     /// `ok`, once for the value or the problem. When the first pass succeeds with `ok: true`,
     /// the second pass meets a fault exactly where `read Json;` would. The first pass can fail
-    /// where `read Json;` would not: on a body whose JSON is broken, where its syntax breaks
-    /// (which can be after a value that does not fit), and on a body with `ok` twice.
+    /// where `read Json;` would not: it can catch broken JSON, where its syntax breaks (which
+    /// can be after a value that does not fit), though not every fault of a part that it skips
+    /// (bytes that are not UTF-8 inside a string pass it); and it fails on a body with `ok`
+    /// twice.
     ///
     /// ```
     /// use concord::{bytes::Bytes, error::Kind, fake, reply, Binary, Fail, Json};

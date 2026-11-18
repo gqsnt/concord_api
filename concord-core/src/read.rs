@@ -759,9 +759,14 @@ impl Evidence {
             return error.mark_decoder_input();
         }
         let failure = match failure {
-            EvidenceKind::Decode(source) => decode_failure(source, &body, kept, &headers),
-            EvidenceKind::ContentType => MismatchFailure::ContentType,
-            EvidenceKind::Limit => MismatchFailure::BodyLimit,
+            EvidenceKind::Decode(_) if body.is_empty() && kept == Some(Kept::Complete) => {
+                MismatchFailure::InputEmpty
+            }
+            EvidenceKind::Decode(source) => MismatchFailure::InputDecode {
+                place: source.place,
+            },
+            EvidenceKind::ContentType => MismatchFailure::InputContentType,
+            EvidenceKind::Limit => MismatchFailure::InputLimit,
         };
         mismatch_of_a_body(failure, &body, kept, details, status, headers, info)
             .mark_decoder_input()

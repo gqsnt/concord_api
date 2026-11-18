@@ -2,7 +2,7 @@
 
 *[Concord](../../README.md) · [docs](../README.md) · examples · previous: [Slack](slack.md) · next: [Elasticsearch](elasticsearch.md)*
 
-This page is for a Rust developer who writes a bot with the Telegram Bot API. It gives a client with 13 methods that you can copy, and shows a token in the path, an envelope around every response, a long poll, and a `multipart` upload.
+This page is for a Rust developer who writes a bot with the Telegram Bot API. It gives a client with 13 methods that you can copy, and shows a token in the path, an envelope around every reply of a Bot API method (the file endpoint streams raw bytes), a long poll, and a `multipart` upload.
 
 Here is Telegram as Concord sees it. There is one host, and the bot's token is part of the path: `base "https://api.telegram.org/bot{token}";`. The token is a `Secret` inside a template, so it is never printed. The bot's files are on the same host under another prefix, `/file/bot{token}/`, so one endpoint has its own `base`. Every reply of a Bot API method is an envelope, `{"ok": true, "result": …}` or `{"ok": false, "error_code": …, "description": …}`, often with a `200` status, and one arm on the client unwraps it. The bytes of a file are not in an envelope: their endpoint removes the arm and streams them. Updates arrive by a long poll (`getUpdates` waits up to `timeout` seconds when there is nothing new) or by a webhook. Flood control responds with a `429` and `retry_after` in its body. Telegram's own reference is [core.telegram.org/bots/api](https://core.telegram.org/bots/api). `(unsure)` marks a detail about Telegram that has not been checked.
 

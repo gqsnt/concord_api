@@ -63,6 +63,14 @@ pub(crate) enum MismatchFailure {
     NoArm,
     NextPage,
     Arm,
+    // What an arm or a pager decoded itself (`Fail::from_read`): said of the decoder's input,
+    // never of the body, which Concord does not verify the input to be.
+    InputContentType,
+    InputLimit,
+    InputDecode {
+        place: Place,
+    },
+    InputEmpty,
 }
 
 #[derive(Clone, Copy)]
@@ -239,6 +247,20 @@ impl Note {
                 MismatchFailure::NoArm => f.write_str("no arm matches this status"),
                 MismatchFailure::NextPage => f.write_str("the next page cannot be requested"),
                 MismatchFailure::Arm => f.write_str("the status arm rejected the response"),
+                MismatchFailure::InputContentType => {
+                    f.write_str("the decoder rejected the content type of its input")
+                }
+                MismatchFailure::InputLimit => {
+                    f.write_str("the decoder's input exceeds the decoder's size limit")
+                }
+                MismatchFailure::InputDecode { place } => {
+                    if place.to_string().is_empty() {
+                        f.write_str("the decoder's input could not be decoded")
+                    } else {
+                        write!(f, "{place} could not be decoded")
+                    }
+                }
+                MismatchFailure::InputEmpty => f.write_str("the decoder's input is empty"),
             },
         }
     }
@@ -539,7 +561,11 @@ impl<E> Error<E> {
             MismatchFailure::ContentType
             | MismatchFailure::BodyLimit
             | MismatchFailure::Empty { .. }
-            | MismatchFailure::Decode { .. } => {
+            | MismatchFailure::Decode { .. }
+            | MismatchFailure::InputContentType
+            | MismatchFailure::InputLimit
+            | MismatchFailure::InputDecode { .. }
+            | MismatchFailure::InputEmpty => {
                 Some(Box::new(ReaderCause(Note::Mismatch(failure.clone()))) as Source)
             }
             _ => None,
@@ -633,6 +659,10 @@ impl<E> Error<E> {
     }
 
     /// Returns the state of [`body`](Error::body), if one was kept.
+    ///
+    /// After an arm or a pager that returned [`Fail::from_read`], it is the state of the
+    /// decoder's input instead: `Cut` there means that a reader's limit cut that input, at the
+    /// length that `body()` returns.
     pub fn kept(&self) -> Option<Kept> {
         self.inner.kept
     }
@@ -844,6 +874,10 @@ impl<E: fmt::Debug> fmt::Display for Details<'_, E> {
             })?;
             match error.kept() {
                 Some(Kept::Complete) => write!(f, "complete, {} bytes", body.len())?,
+                // The input of a decoder can be cut shorter, by a reader's limit.
+                Some(Kept::Cut) if error.inner.decoder_input => {
+                    write!(f, "cut, {} bytes", body.len())?
+                }
                 Some(Kept::Cut) => f.write_str("cut at 64 KiB")?,
                 Some(Kept::Interrupted) => write!(f, "interrupted, {} bytes", body.len())?,
                 None => write!(f, "{} bytes", body.len())?,
@@ -931,19 +965,25 @@ impl<P> Fail<P> {
     /// `with_details`, as `Json::decode` returns it), the call ends with the error that a
     /// reader would have given for this response: on a 2xx, a Mismatch whose message and
     /// `source()` name the location of the fault, with the decoder's message in `details()`; on
-    /// another status, a Refused error with no problem. `wrong_content_type()` and a body over
-    /// a reader's limit give their own texts in the same way. `reason()` is `None`, as for a
-    /// body that a reader could not decode. Nothing of the response reaches the message or the
+    /// another status, a Refused error with no problem. `reason()` is `None`, as for a body
+    /// that a reader could not decode. Nothing of the response reaches the message or the
     /// cause: the location is made of the program's names and of indexes.
     ///
-    /// **What `body()` and `kept()` mean here.** They return the decoder's input, as the
-    /// `ReadError` kept it (at most 64 KiB), and its state; not the body of the response.
-    /// By the time the arm returns, it holds the body, and Concord cannot verify that the
-    /// decoder was given that body rather than a part of it (a cursor that a pager decodes) or
-    /// bytes kept from another call. So `details()` names them `decoder input (complete,
-    /// 31 bytes)`, never `body (…)`. For the same reason, the error never says that a content
-    /// type was unexpected: that is a fact about the response that a reader read, and
-    /// `Json::decode` does not look at one.
+    /// **Concord does not verify where the bytes came from.** By the time the arm returns, it
+    /// holds the body, and the decoder may have been given that body, a part of it (a cursor
+    /// that a pager decodes) or bytes kept from another call. So everything this error says
+    /// is said of the decoder's input, never of the body:
+    ///
+    /// - a fault at a location prints as under a reader (`items[3].kind could not be
+    ///   decoded`); at the root, `the decoder's input could not be decoded`; an empty input,
+    ///   `the decoder's input is empty`; `wrong_content_type()`, `the decoder rejected the
+    ///   content type of its input`; a reader's limit, `the decoder's input exceeds the
+    ///   decoder's size limit`. `source()` holds the same words;
+    /// - `body()` and `kept()` return the decoder's input, as the `ReadError` kept it (at most
+    ///   64 KiB), and its state, and `details()` names it `decoder input (complete, 31 bytes)`,
+    ///   or `decoder input (cut, 3 bytes)` with the length that was kept, never `body (…)`;
+    /// - the error never says that a content type was unexpected: that is a fact about the
+    ///   response that a reader read, and `Json::decode` does not look at one.
     ///
     /// Any other `ReadError` is a failure of a body that broke while it was read, or of a stream
     /// whose error a reader forwarded with `?`. It belongs to the response that it came from,

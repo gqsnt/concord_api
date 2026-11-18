@@ -205,10 +205,13 @@ async fn c5_8_an_envelope_without_ok_is_a_mismatch_with_the_decoder_message() {
     assert_eq!(error.kind(), Kind::Mismatch);
     assert_eq!(
         error.to_string(),
-        "mismatch: status 200, the body could not be decoded, in wrapped.post"
+        "mismatch: status 200, the decoder's input could not be decoded, in wrapped.post"
     );
     assert_eq!(error.reason(), None);
-    assert_eq!(sources(&error), ["the body could not be decoded"]);
+    assert_eq!(
+        sources(&error),
+        ["the decoder's input could not be decoded"]
+    );
     assert_eq!(error.body(), Some(br#"{"channel": "C1"}"#.as_slice()));
     assert!(error
         .details()
@@ -276,6 +279,10 @@ async fn c5_6_an_arm_that_decodes_keeps_at_most_64_kib_of_the_bytes() {
     );
     assert_eq!(error.kept(), Some(Kept::Cut));
     assert_eq!(error.body().map(<[u8]>::len), Some(64 * 1024));
+    assert!(error
+        .details()
+        .to_string()
+        .contains("\ndecoder input (cut, 65536 bytes): "));
 }
 
 #[tokio::test]
@@ -491,4 +498,80 @@ async fn c5_8_a_saved_content_type_remark_is_not_shown_beside_another_response()
         .details()
         .to_string()
         .contains("unexpected content type"));
+}
+
+#[tokio::test]
+async fn c5_8_a_cursor_that_is_empty_or_malformed_is_said_of_the_decoder_input() {
+    for (cursor, text) in [
+        ("", "the decoder's input is empty"),
+        ("x", "the decoder's input could not be decoded"),
+    ] {
+        let page = format!(r#"{{"ok": true, "items": [1], "next": "{cursor}"}}"#);
+        let wrapped = Wrapped::new().with_transport(fake(move |_| Ok(reply(200, page.clone()))));
+        let mut pages = wrapped.list().pages();
+        assert_eq!(pages.try_next().await.unwrap().unwrap().items, [1]);
+        let error = pages.try_next().await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("mismatch: status 200, {text}, in wrapped.list")
+        );
+        assert_eq!(sources(&error), [text]);
+        assert_eq!(error.body(), Some(cursor.as_bytes()));
+        assert!(pages.try_next().await.unwrap().is_none());
+    }
+}
+
+#[tokio::test]
+async fn c5_8_a_saved_strict_or_limit_failure_is_said_of_the_decoder_input() {
+    use concord::read::{Incoming, Reader};
+    let html = concord::reply_with(200, &[("content-type", "text/html")], "{}");
+    let strict = <Json as Reader<Count>>::read(&Json.strict(), Incoming::new(html))
+        .await
+        .unwrap_err();
+    // A body of unknown length, cut by a limit of 3 bytes after its first chunk.
+    let chunks = futures_util::stream::iter([
+        Ok::<_, std::io::Error>(Bytes::from_static(b"ab")),
+        Ok(Bytes::from_static(b"cdefgh")),
+    ]);
+    let streamed = reply(200, concord::reqwest::Body::wrap_stream(chunks));
+    let limit = Incoming::new(streamed).bytes(3).await.unwrap_err();
+    let json = concord::Headers::from(
+        concord::reply_with(202, &[("content-type", "application/json")], "")
+            .headers()
+            .clone(),
+    );
+    let returned = |failure| {
+        concord::__private::arm::<u32, Refusal>(
+            Err(Fail::from_read(failure)),
+            concord::http::StatusCode::ACCEPTED,
+            &json,
+            &concord::transport::TryInfo::new("saved.later", 1),
+        )
+        .unwrap_err()
+    };
+    let strict = returned(strict);
+    assert_eq!(
+        strict.to_string(),
+        "mismatch: status 202, the decoder rejected the content type of its input, in saved.later"
+    );
+    assert_eq!(
+        sources(&strict),
+        ["the decoder rejected the content type of its input"]
+    );
+    let limit = returned(limit);
+    assert_eq!(
+        limit.to_string(),
+        "mismatch: status 202, the decoder's input exceeds the decoder's size limit, in saved.later"
+    );
+    assert_eq!(
+        sources(&limit),
+        ["the decoder's input exceeds the decoder's size limit"]
+    );
+    assert_eq!(limit.kept(), Some(Kept::Cut));
+    let kept = limit.body().map_or(0, <[u8]>::len);
+    assert!(kept > 0 && kept < 64 * 1024);
+    assert!(limit
+        .details()
+        .to_string()
+        .contains(&format!("\ndecoder input (cut, {kept} bytes): ")));
 }
