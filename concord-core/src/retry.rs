@@ -44,6 +44,7 @@ pub struct Retry<P = ()> {
     not_applied: Vec<u16>,
     when: Vec<When<P>>,
     unless: Vec<Unless<P>>,
+    max_retry_after: Duration,
 }
 
 impl<P> std::fmt::Debug for Retry<P> {
@@ -62,6 +63,7 @@ impl<P> Clone for Retry<P> {
             not_applied: self.not_applied.clone(),
             when: self.when.clone(),
             unless: self.unless.clone(),
+            max_retry_after: self.max_retry_after,
         }
     }
 }
@@ -77,6 +79,7 @@ impl<P> Retry<P> {
             not_applied: Vec::new(),
             when: Vec::new(),
             unless: Vec::new(),
+            max_retry_after: Duration::from_secs(60),
         }
     }
 
@@ -133,6 +136,37 @@ impl<P> Retry<P> {
     #[must_use]
     pub fn tries(mut self, tries: u32) -> Retry<P> {
         self.tries = tries.max(1);
+        self
+    }
+
+    /// Sets the longest wait that a response or a rule may ask for: 60 seconds by default.
+    ///
+    /// A `Retry-After`, or a wait that a [`when`](Retry::when) rule returned, longer than
+    /// this means no further attempt: the call returns the last outcome at once, and its
+    /// [`retry_after`](crate::Error::retry_after) still says how long the server asked to
+    /// wait. A shorter one is waited for, as before. The random part of each wait keeps its
+    /// own schedule, at most 60 seconds, whatever this setting is; a wait that would end after
+    /// the call's `timeout` still means no further attempt. Zero lets another attempt
+    /// happen only when nothing asked for a wait.
+    ///
+    /// For an API that asks for long waits, set it with the `max_hold` of the
+    /// `concord::limit::Limit` that the same calls go through, so that both wait as long:
+    ///
+    /// ```
+    /// # use concord_core as concord;
+    /// use std::time::Duration;
+    /// let retry = concord::Retry::<()>::standard().max_retry_after(Duration::from_secs(600));
+    /// ```
+    ///
+    /// ```compile_fail
+    /// #![deny(unused_must_use)]
+    /// # use concord_core as concord;
+    /// let retry = concord::Retry::<()>::none();
+    /// retry.max_retry_after(std::time::Duration::from_secs(600));
+    /// ```
+    #[must_use]
+    pub fn max_retry_after(mut self, longest: Duration) -> Retry<P> {
+        self.max_retry_after = longest;
         self
     }
 
