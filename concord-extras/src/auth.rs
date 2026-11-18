@@ -2,8 +2,9 @@
 //! (feature `auth`).
 //!
 //! `Renewed` adds the token to each request and renews it when it expires. It never
-//! resends a request. After a `401`, it returns the response unchanged and discards the
-//! cached token only if it is still the one that the request carried; a newer token stays.
+//! resends a request. After a `401` from the origin of its base, it returns the response
+//! unchanged and discards the cached token only if it is still the one that the request
+//! carried; a newer token stays.
 //! No other status discards a token, except a response that a function set with
 //! [`Renewed::rejected_when`] recognises as a rejection: an API that reports an expired
 //! token inside a `200`. [`after_401`] adds a retry after that `401` to the
@@ -286,7 +287,11 @@ impl RenewalError {
     ///
     /// These failures are **not** `NotSent`, and must stay [`failed`](Self::failed): a
     /// timeout, whatever its kind; a connection that failed or broke, even one refused
-    /// or reset, because the request may already have been written; a failure while the
+    /// or reset, because the request may already have been written, unless the exchange
+    /// is written so that a failed connection proves it, as with `reqwest` under the
+    /// conditions of [an exchange that was not
+    /// sent](https://github.com/gqsnt/concord_api/blob/main/docs/guide/credentials.md#an-exchange-that-was-not-sent),
+    /// which also needs the `form` feature of `reqwest` 0.13; a failure while the
     /// body of the request or of the response was sent or read; and any response, of any
     /// status. The server may have consumed the refresh token in each of these cases,
     /// and a provider that sees a consumed refresh token used again usually revokes every
@@ -593,17 +598,24 @@ impl Renewed {
     /// a [`Seen`], once the body has been read to its end, and only when the response's
     /// final URL, as the transport reports it, is at the origin of the credential's base,
     /// and the body holds at most 64 KiB and exactly the length that the response
-    /// announced: an incomplete or over-long body is never shown. When it returns `true`,
+    /// announced: an incomplete or over-long body is never shown. For a `HEAD` request and
+    /// for a `1xx`, `204` or `304` status, a complete body is empty, whatever the
+    /// `Content-Length`, and the function is shown the headers. When it returns `true`,
     /// the token that the request carried is rejected as after a `401`: only if it is
     /// still the current token, so an answer that arrives after a renewal never discards
     /// the newer token, and the next call gets a new one. The response is returned
-    /// unchanged, and the call that received it is not sent again: `after_401` retries a
-    /// `401` only. A `401` always rejects the token, and the function is not called for it.
+    /// unchanged. `rejected_when` itself schedules no retry, and `after_401` retries a `401`
+    /// only; a retry rule of the call that applies to the response can send the call again,
+    /// and that attempt then carries the renewed token. A `401` always rejects the token,
+    /// and the function is not called for it. A response from another origin, `401`
+    /// included, rejects nothing.
     ///
     /// When the function runs depends on how the body is read. For a value or a problem
     /// that the reader decodes, as the body ends, before it is decoded, so before the call
-    /// returns. For a stream of records (`JsonLines`, `Sse`), when the stream ends after its
-    /// last record; never for a stream dropped half-way. For `send_raw()`, when the caller
+    /// returns. For a stream of records (`JsonLines`, `Sse`), when the last frame of the
+    /// body has been read, which can be before the reader has yielded its last records:
+    /// dropping the stream skips the function only while the body is still incomplete.
+    /// For `send_raw()`, when the caller
     /// has read the body to its end; never if it does not. A call given to `transfer::at`
     /// is read like any call. A body that is not read to its end is never shown: a dropped
     /// call, a reader that stops early, an endpoint that does not read its body.
@@ -620,7 +632,8 @@ impl Renewed {
     /// The function must return promptly. A panic in it rejects nothing, and its payload is
     /// dropped, but Rust's panic hook still prints the panic message: never put text of the
     /// body in a panic message. Nothing bounds a server that rejects every response: each
-    /// call then renews once, bounded by `renewal_timeout`. Configuring a clone changes
+    /// rejected response leads to one renewal, which the calls that wait at the same time
+    /// share, and each renewal is bounded by `renewal_timeout`. Configuring a clone changes
     /// every clone.
     ///
     /// ```no_run
@@ -678,7 +691,13 @@ impl Middleware for Renewed {
             .headers_mut()
             .try_insert(header_name, header)
             .map_err(|cause| blocked(RenewalError::failed(cause)))?;
+        let method = request.method().clone();
         let response = next.send(request, info).await?;
+        // A response from another origin, as a transport that followed a redirect
+        // reports it, rejects nothing.
+        if !rejection::same_origin(self.inner.origin.as_ref(), &response) {
+            return Ok(response);
+        }
         if response.status() == 401 {
             self.inner.discard(&generation);
             return Ok(response);
@@ -688,7 +707,7 @@ impl Middleware for Renewed {
             Some(rejects) => {
                 let inner = Arc::downgrade(&self.inner);
                 let generation = Arc::downgrade(&generation);
-                rejection::watch(response, self.inner.origin.as_ref(), rejects, move || {
+                rejection::watch(response, &method, rejects, move || {
                     if let (Some(inner), Some(generation)) = (inner.upgrade(), generation.upgrade())
                     {
                         inner.discard(&generation);

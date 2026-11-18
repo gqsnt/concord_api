@@ -3552,3 +3552,58 @@ async fn c12_8_a_late_rejection_keeps_the_newer_token_while_an_older_request_is_
         }
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn c12_8_a_401_from_another_origin_rejects_nothing() {
+    use concord::reqwest::ResponseBuilderExt;
+    for rotating in [true, false] {
+        let rig = Rig::new(Stored::Ready(pair("old", "r0", 200)));
+        rig.issue("new", "r1", 0);
+        let carried = Arc::new(Mutex::new(Vec::new()));
+        let transport = concord::fake({
+            let carried = carried.clone();
+            move |request| {
+                let mut carried = carried.lock().unwrap();
+                carried.push(
+                    request.headers()["authorization"]
+                        .to_str()
+                        .unwrap()
+                        .to_owned(),
+                );
+                // A transport that followed a redirect to another host reports it.
+                Ok(if carried.len() == 1 {
+                    concord::http::Response::builder()
+                        .status(401)
+                        .url("https://foreign.test/redirected".parse().unwrap())
+                        .body("")
+                        .unwrap()
+                        .into()
+                } else {
+                    concord::reply(200, "ok")
+                })
+            }
+        });
+        let mut task = None;
+        let api = if rotating {
+            let (auth, driver) = rig.auth();
+            task = Some(tokio::spawn(driver));
+            Data::new().with_transport(transport).with_middleware(auth)
+        } else {
+            let auth = concord::auth::Renewed::new(&base(), || async {
+                concord::auth::AccessToken::expires_in("replacement", sec(200))
+            })
+            .with_token(concord::auth::AccessToken::expires_in("old", sec(200)).unwrap())
+            .unwrap();
+            Data::new().with_transport(transport).with_middleware(auth)
+        };
+        assert!(api.get().await.unwrap_err().is_status(401));
+        assert_eq!(api.get().await.unwrap(), "ok");
+        assert_eq!(*carried.lock().unwrap(), ["Bearer old", "Bearer old"]);
+        drop(api);
+        if let Some(task) = task {
+            task.await.unwrap().unwrap();
+            rig.sent(0, 0);
+            rig.store.ready("old", "r0");
+        }
+    }
+}

@@ -77,28 +77,41 @@ impl fmt::Debug for Seen<'_> {
     }
 }
 
+/// Whether the response's final URL, as the transport reports it, is at the origin of
+/// the credential's base. Neither rejection path applies to a response from elsewhere.
+pub(super) fn same_origin(origin: Option<&reqwest::Url>, response: &Response) -> bool {
+    origin.is_some_and(|origin| origin.origin() == response.url().origin())
+}
+
 /// Hands the response back with a body that forwards every frame, its size hint and its
 /// end unchanged, and shows the whole body to `rejects` once it has been read to its end.
 /// `reject` runs once, outside every lock of the credential, when `rejects` returns `true`.
-/// A response whose final URL is not at `origin` is returned untouched.
 pub(super) fn watch(
     response: Response,
-    origin: Option<&reqwest::Url>,
+    method: &http::Method,
     rejects: Arc<Rejects>,
     reject: impl FnOnce() + Send + Sync + 'static,
 ) -> Response {
-    if !origin.is_some_and(|origin| origin.origin() == response.url().origin()) {
-        return response;
-    }
-    // The length that the reader checks the body against: the header, as the reader
-    // parses it, or else the exact size hint of the body.
-    let announced = response
-        .headers()
-        .get(http::header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-        .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
-        .and_then(|text| text.parse::<u64>().ok())
-        .or_else(|| response.content_length());
+    let status = response.status();
+    // A response to a `HEAD`, a `1xx`, a `204` and a `304` carry no body: a
+    // `Content-Length` there describes the representation, and the whole body is empty.
+    let announced = if *method == http::Method::HEAD
+        || status.is_informational()
+        || status == StatusCode::NO_CONTENT
+        || status == StatusCode::NOT_MODIFIED
+    {
+        Some(0)
+    } else {
+        // The length that the reader checks the body against: the header, as the reader
+        // parses it, or else the exact size hint of the body.
+        response
+            .headers()
+            .get(http::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|text| text.parse::<u64>().ok())
+            .or_else(|| response.content_length())
+    };
     // A body announced as longer than the limit is never shown: leave it untouched.
     if announced.is_some_and(|length| usize::try_from(length).map_or(true, |length| length > LIMIT))
     {

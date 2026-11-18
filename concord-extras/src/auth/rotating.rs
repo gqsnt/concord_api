@@ -568,7 +568,8 @@ impl fmt::Debug for RotationDriver {
 /// the two can lose a token.
 ///
 /// A `401` is returned unchanged and rejects only the access token that the request
-/// carried. Add `after_401` to the engine's retry policy; this middleware never resends
+/// carried, when its final URL is at the origin of the base; a response from another
+/// origin rejects nothing. Add `after_401` to the engine's retry policy; this middleware never resends
 /// a request. An API that rejects a token inside another status, such as a `200`, is
 /// described once with [`rejected_when`](Rotating::rejected_when). A call that resumes waiting checks the expiry, the settings and the state
 /// of the driver again. Relative lifetimes include the time spent saving; retrying a
@@ -704,12 +705,15 @@ impl Rotating {
     /// It works as [`Renewed::rejected_when`](super::Renewed::rejected_when): the same
     /// [`Seen`](super::Seen), shown at the same moments, for a response from the origin of
     /// the credential's base whose whole body, of at most 64 KiB and of the announced
-    /// length, has been read. When it returns `true`, the access token that the request
+    /// length (none for a `HEAD`, a `1xx`, a `204` or a `304`), has been read. When it
+    /// returns `true`, the access token that the request
     /// carried is rejected as after a `401`: only if it is still the current token, so an
     /// answer that arrives after a renewal never discards the newer pair, and the next call
-    /// runs an exchange. The response is returned unchanged, and the call that received it
-    /// is not sent again: `after_401` retries a `401` only. A `401` always rejects the
-    /// token, and the function is not called for it.
+    /// runs an exchange. The response is returned unchanged. `rejected_when` itself
+    /// schedules no retry, and `after_401` retries a `401` only; a retry rule of the call
+    /// that applies to the response can send the call again, and that attempt then waits
+    /// for the exchange and carries the new token. A `401` always rejects the token, and
+    /// the function is not called for it.
     ///
     /// Watching costs something, also when the function never matches: every response
     /// through the credential from its origin is observed, and up to 64 KiB of its body is
@@ -718,8 +722,9 @@ impl Rotating {
     /// unchanged; without this function, a response is not touched. The function must
     /// return promptly; a panic in it rejects nothing, but Rust's panic hook still prints
     /// the panic message: never put text of the body in a panic message. Nothing bounds a
-    /// server that rejects every response: each call then runs one exchange, and waits for
-    /// it at most `renewal_timeout`. Configuring a clone changes every clone.
+    /// server that rejects every response: each rejected response leads to one exchange,
+    /// which the calls that wait at the same time share, and each call waits for it at
+    /// most `renewal_timeout`. Configuring a clone changes every clone.
     ///
     /// ```no_run
     /// #[derive(serde::Deserialize)]
@@ -788,7 +793,13 @@ impl Middleware for Rotating {
             drop(request.headers_mut().remove(&access.name));
             drop(access);
         };
+        let method = request.method().clone();
         let response = next.send(request, info).await?;
+        // A response from another origin, as a transport that followed a redirect
+        // reports it, rejects nothing.
+        if !super::rejection::same_origin(self.inner.origin.as_ref(), &response) {
+            return Ok(response);
+        }
         if response.status() == 401 {
             self.inner.reject(&access.generation);
             return Ok(response);
@@ -798,7 +809,7 @@ impl Middleware for Rotating {
             Some(rejects) => {
                 let inner = Arc::downgrade(&self.inner);
                 let generation = Arc::downgrade(&access.generation);
-                super::rejection::watch(response, self.inner.origin.as_ref(), rejects, move || {
+                super::rejection::watch(response, &method, rejects, move || {
                     if let (Some(inner), Some(generation)) = (inner.upgrade(), generation.upgrade())
                     {
                         inner.reject(&generation);
