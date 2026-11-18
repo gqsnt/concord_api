@@ -202,7 +202,7 @@ mod guide_tour_003 {
     }
 }
 /// The concrete client types emitted by every documented description.
-pub fn compiled_descriptions() -> [&'static str; 36] {
+pub fn compiled_descriptions() -> [&'static str; 37] {
     [
         readme_001::compiled(),
         readme_002::compiled(),

@@ -329,7 +329,7 @@ let mut archive = download(&archives, 7, |origin| {
 assert_eq!(archive.try_next().await?.as_deref(), Some(&b"the archive"[..]));
 
 let sent = script.requests();
-assert_eq!(sent[1].url(), "https://eu.downloads.example.com/archives/7?sig=a%2Fb");
+assert_eq!(sent[1].url().as_str(), "https://eu.downloads.example.com/archives/7?sig=a%2Fb");
 assert!(!sent[1].headers().contains_key("authorization"));   // the API's token stayed with the API
 ```
 

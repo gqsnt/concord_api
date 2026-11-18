@@ -124,7 +124,7 @@ mod tests {
         let urls: Vec<String> = script
             .requests()
             .iter()
-            .map(|r| r.url().to_owned())
+            .map(|r| r.url().as_str().to_owned())
             .collect();
         assert_eq!(
             urls,
@@ -196,7 +196,7 @@ mod tests {
             "the resource version expired three times in a row"
         );
         assert_eq!(lists, 2);
-        assert_eq!(script.requests()[5].url(), watch("20"));
+        assert_eq!(script.requests()[5].url().as_str(), watch("20"));
         assert_eq!(script.unused(), 0);
     }
 

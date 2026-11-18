@@ -80,13 +80,13 @@ mod redirect {
 
         let sent = script.requests();
         assert_eq!(sent.len(), 2);
-        assert_eq!(sent[0].url(), "https://api.example.com/archives/7");
+        assert_eq!(sent[0].url().as_str(), "https://api.example.com/archives/7");
         assert_eq!(
             sent[0].header("authorization"),
             Some("Bearer PRIVATE_API_KEY")
         );
         assert_eq!(
-            sent[1].url(),
+            sent[1].url().as_str(),
             "https://eu.downloads.example.com/archives/7?sig=a%2Fb"
         );
         assert!(!sent[1].headers().contains_key("authorization"));
