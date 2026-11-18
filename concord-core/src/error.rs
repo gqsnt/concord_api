@@ -804,6 +804,11 @@ impl<E> Error<E> {
     /// outside the chain, with a transport of its own and without the attempt's `TryInfo`,
     /// is not seen: that is its author's responsibility.
     ///
+    /// A caller may rely on it to reuse what the request carried: `RenewalError::from_call`
+    /// does, so that `Rotating` sends the same refresh token again. A false `true` makes that
+    /// token be used twice, and a server that sees it may revoke every session of the
+    /// account.
+    ///
     /// The retry policy does not read it: the class decides whether an attempt is repeated.
     pub fn request_not_sent(&self) -> bool {
         self.inner.kind == Kind::Transport && self.inner.not_sent

@@ -834,3 +834,90 @@ fn c9_6_a_direct_send_to_a_fake_with_the_attempts_metadata_is_recorded() {
     });
     assert!(!error.request_not_sent(), "{error}");
 }
+
+/// How `Early` uses a send beside the chain before it forwards the request.
+#[derive(Clone, Copy, Debug)]
+enum Early {
+    /// A direct send to `Http`, created with the attempt's metadata and dropped unpolled.
+    DropHttp,
+    /// The same with a `reqwest::Client`.
+    DropClient,
+    /// The same with a `fake`.
+    DropFake,
+    /// A direct send to a `fake` whose callback panics, the panic caught.
+    PanicFake,
+    /// A send through the chain whose next layer panics when it is called, the panic caught.
+    PanicLayer,
+}
+
+struct Before(Early);
+
+impl Middleware for Before {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: Next<'_>,
+    ) -> Result<reqwest::Response, TransportError> {
+        let copy = request.try_clone().unwrap();
+        let panics: Answering = |_| panic!("the callback panics");
+        let answers: Answering = |_| Ok(concord_core::reply(200, ""));
+        match self.0 {
+            Early::DropHttp => drop(http().send(copy, info.clone())),
+            Early::DropClient => drop(reqwest::Client::new().send(copy, info.clone())),
+            Early::DropFake => drop(concord_core::fake(answers).send(copy, info.clone())),
+            Early::PanicFake => {
+                let fake = concord_core::fake(panics);
+                let mut sending = Box::pin(fake.send(copy, info.clone()));
+                let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = sending.as_mut().now_or_never();
+                }));
+                assert!(caught.is_err());
+            }
+            Early::PanicLayer => {
+                let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    drop(next.send(copy, info.clone()));
+                }));
+                assert!(caught.is_err());
+            }
+        }
+        next.send(request, info).await
+    }
+}
+
+/// A layer whose `handle` runs code of its own as soon as it is called, and panics the
+/// first time.
+struct Eager(std::sync::atomic::AtomicBool);
+
+impl Middleware for Eager {
+    fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: Next<'_>,
+    ) -> impl std::future::Future<Output = Result<reqwest::Response, TransportError>> + Send {
+        assert!(self.0.swap(true, Ordering::SeqCst), "the first call panics");
+        next.send(request, info)
+    }
+}
+
+#[test]
+fn c9_6_a_send_is_recorded_before_any_code_of_the_authors_runs() {
+    for early in [
+        Early::DropHttp,
+        Early::DropClient,
+        Early::DropFake,
+        Early::PanicFake,
+        Early::PanicLayer,
+    ] {
+        let error = run(async {
+            let mut core = Core::<()>::default().with_middleware(Before(early));
+            if let Early::PanicLayer = early {
+                core = core.with_middleware(Eager(std::sync::atomic::AtomicBool::new(false)));
+            }
+            let core = core.with_transport(Fails(|| TransportError::connect().not_sent()));
+            post(&core, "http://identity.test/token").await
+        });
+        assert!(!error.request_not_sent(), "{early:?}");
+    }
+}

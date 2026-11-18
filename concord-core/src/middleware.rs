@@ -99,7 +99,11 @@ use std::sync::Arc;
 /// Before a middleware layer returns [`TransportError::blocked`] or
 /// [`TransportError::not_sent`], or forwards such a failure from `next.send`, it accounts
 /// for every send that it made or still holds, through `next`, through `Next::to`, or with a
-/// transport of its own: Concord sees the first two, and the third is its author's to
+/// transport of its own. Concord sees every send through `next`; a send through `Next::to`
+/// only when it carries this attempt's `TryInfo`; and a direct call of a transport only
+/// when that transport counts itself, as `Http`, a `reqwest::Client` and `fake` do. A direct
+/// call of `concord_testkit::Script`, of the `tower` adapter or of a transport of your own
+/// is not seen, even with this attempt's `TryInfo`: those sends are their author's to
 /// account for. A false statement can make a credential send a refresh token twice (see
 /// [`TryInfo`]).
 #[diagnostic::on_unimplemented(
@@ -313,7 +317,8 @@ impl<'a> Next<'a> {
                 .as_ref()
                 .is_none_or(|bound| !Arc::ptr_eq(bound, carried))
         });
-        let sending = match self.middlewares.split_first() {
+        // Recorded before the next layer's `handle` is called, which may run code at once.
+        let sending = move || match self.middlewares.split_first() {
             Some((middleware, rest)) => middleware.handle(
                 request,
                 info,
@@ -324,6 +329,6 @@ impl<'a> Next<'a> {
             ),
             None => Box::pin(self.send_transport(request, info)),
         };
-        crate::transport::counted(bound, crate::transport::counted(carried, sending))
+        crate::transport::counted(bound, || crate::transport::counted(carried, sending))
     }
 }

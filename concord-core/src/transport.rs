@@ -51,14 +51,15 @@ pub trait Transport: Send + Sync + 'static {
 /// `REFUSED_STREAM` or `GOAWAY`, whatever its method, below Concord's count of attempts;
 /// [`Http`] does not.
 impl Transport for reqwest::Client {
-    async fn send(
+    // Not `async`: the send is recorded when it is created, before its first poll.
+    fn send(
         &self,
         request: reqwest::Request,
         info: TryInfo,
-    ) -> Result<reqwest::Response, TransportError> {
-        let sends = info.sends();
-        let sending = async move { self.execute(request).await.map_err(TransportError::from) };
-        counted(sends, sending).await
+    ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send {
+        counted(info.sends(), move || async move {
+            self.execute(request).await.map_err(TransportError::from)
+        })
     }
 }
 
@@ -388,11 +389,12 @@ impl Sends {
     }
 }
 
-/// Counts one send in this record, if there is one: as started now, when the send is
-/// created, and as unsent when it ends with a failure stating that nothing was written.
+/// Counts one send in this record, if there is one: as started now, before `send` runs any
+/// code of the author's, and as unsent when it ends with a failure stating that nothing was
+/// written. A panic in `send` or in its future leaves it started.
 pub(crate) fn counted<F>(
     sends: Option<Arc<Sends>>,
-    send: F,
+    send: impl FnOnce() -> F,
 ) -> impl Future<Output = Result<reqwest::Response, TransportError>>
 where
     F: Future<Output = Result<reqwest::Response, TransportError>>,
@@ -400,6 +402,7 @@ where
     if let Some(sends) = &sends {
         Sends::add(&sends.started);
     }
+    let send = send();
     async move {
         let result = send.await;
         if let Some(sends) = &sends {
@@ -528,12 +531,13 @@ impl<F> Transport for Fake<F>
 where
     F: Fn(&reqwest::Request) -> Result<reqwest::Response, TransportError> + Send + Sync + 'static,
 {
-    async fn send(
+    // Not `async`: the send is recorded when it is created, before the callback runs.
+    fn send(
         &self,
         request: reqwest::Request,
         info: TryInfo,
-    ) -> Result<reqwest::Response, TransportError> {
-        counted(info.sends(), std::future::ready((self.0)(&request))).await
+    ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send {
+        counted(info.sends(), move || async move { (self.0)(&request) })
     }
 }
 
@@ -706,19 +710,18 @@ impl Http {
 }
 
 impl Transport for Http {
-    async fn send(
+    // Not `async`: the send is recorded when it is created, before its first poll.
+    fn send(
         &self,
         request: reqwest::Request,
         info: TryInfo,
-    ) -> Result<reqwest::Response, TransportError> {
-        let sending = async move {
+    ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send {
+        counted(info.sends(), move || async move {
             self.client
                 .execute(request)
                 .await
                 .map_err(|error| self.classify_error(error))
-        };
-        let sends = info.sends();
-        counted(sends, sending).await
+        })
     }
 }
 
