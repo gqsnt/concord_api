@@ -15,10 +15,6 @@ pub struct ListMeta {
     pub continue_token: Option<String>,
     pub resource_version: Option<String>,
 }
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct Head {
-    pub metadata: ObjectMeta,
-}
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Pod {
     pub metadata: ObjectMeta,

@@ -90,8 +90,20 @@ pub enum WatchEvent<T> {
     Added(T),
     Modified(T),
     Deleted(T),
-    Bookmark(Head),
+    Bookmark(Bookmark),
     Error(Status),
+}
+
+/// A `BOOKMARK` line: an object whose `metadata` promises only `resourceVersion`.
+#[derive(Debug, Deserialize)]
+pub struct Bookmark {
+    pub metadata: BookmarkMeta,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookmarkMeta {
+    pub resource_version: String,
 }
 
 /// A client for one cluster: its server, and the authority that signed its certificate (PEM, from

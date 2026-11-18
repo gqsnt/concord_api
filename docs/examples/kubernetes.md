@@ -184,7 +184,7 @@ concord::api! {
 
 ## Beside the description
 
-The data types are plain `serde` types, named here but not shown: `Pod`, `Deployment`, `Scale`, `DynamicObject` (`apiVersion`, `kind`, `metadata`, and the rest as a JSON map), `ObjectMeta`, `ListMeta` (`continue`, `resourceVersion`), `Head` (`metadata` only), `Preconditions` (`uid`, `resourceVersion`), three enums (`Propagation`, `VersionMatch`, `FieldValidation`), and `Status`: `code`, `reason` (`"NotFound"`, `"Conflict"`, `"Expired"`, …), `message`, `details` (with `retryAfterSeconds`).
+The data types are plain `serde` types, named here but not shown: `Pod`, `Deployment`, `Scale`, `DynamicObject` (`apiVersion`, `kind`, `metadata`, and the rest as a JSON map), `ObjectMeta`, `ListMeta` (`continue`, `resourceVersion`), `Preconditions` (`uid`, `resourceVersion`), three enums (`Propagation`, `VersionMatch`, `FieldValidation`), and `Status`: `code`, `reason` (`"NotFound"`, `"Conflict"`, `"Expired"`, …), `message`, `details` (with `retryAfterSeconds`).
 
 The list and its pages, the patch, the response to a delete, the events of a watch, how a client is built, and the API's retry policy:
 
@@ -281,8 +281,20 @@ pub enum WatchEvent<T> {
     Added(T),
     Modified(T),
     Deleted(T),
-    Bookmark(Head),
+    Bookmark(Bookmark),
     Error(Status),
+}
+
+/// A `BOOKMARK` line: an object whose `metadata` promises only `resourceVersion`.
+#[derive(Debug, Deserialize)]
+pub struct Bookmark {
+    pub metadata: BookmarkMeta,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookmarkMeta {
+    pub resource_version: String,
 }
 
 /// A client for one cluster: its server, and the authority that signed its certificate (PEM, from
@@ -364,24 +376,77 @@ pub async fn scale_to_five(kube: &Kubernetes) -> kubernetes::Result<()> {
     }
 }
 
-/// Every change to the pods of a namespace, for as long as the program runs.
-pub async fn follow(kube: &Kubernetes, mut handle: impl FnMut(Pod)) -> Result<(), BoxError> {
+/// The pods of a namespace, then the changes to them, for as long as the program runs and the
+/// server keeps their history. `listed` receives the whole list: first, and again after a
+/// `410 Gone`, until the limit below. Such a list is a new snapshot: it replaces what the caller
+/// knows, and the changes between the old version and the new one are not delivered. `changed`
+/// receives each `Added`, `Modified` and `Deleted` event after a list.
+pub async fn follow(
+    kube: &Kubernetes,
+    mut listed: impl FnMut(Vec<Pod>),
+    mut changed: impl FnMut(WatchEvent<Pod>),
+) -> Result<(), BoxError> {
+    // A choice of this example: list again at once after a `410`, and give up after three in a
+    // row with no progress between them (an event or a bookmark). A caller that needs a longer
+    // recovery waits on its own side, and calls `follow` again.
+    const EXPIRED_IN_A_ROW: u32 = 3;
     let pods = kube.core_v1().pods("shop");
-    let mut version = pods.list().limit(1).send().await?.metadata.resource_version;
-    loop {
-        let mut events = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true).await?;
-        while let Some(event) = events.try_next().await? {
-            match event {
-                WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
-                    version = pod.metadata.resource_version.clone();
-                    handle(pod);
+    let mut expired = 0;
+    'list: loop {
+        if expired == EXPIRED_IN_A_ROW {
+            return Err("the resource version expired three times in a row".into());
+        }
+        // Every page of the list, asking for up to 500 objects a page: a size that you may tune.
+        let (mut all, mut version) = (Vec::new(), None);
+        let mut pages = pods.list().limit(500).pages();
+        loop {
+            match pages.try_next().await {
+                Ok(Some(page)) => {
+                    version = page.metadata.resource_version;
+                    all.extend(page.items);
                 }
-                WatchEvent::Bookmark(head) => version = head.metadata.resource_version,
-                WatchEvent::Error(status) if status.code == Some(410) => version = None, // too old
-                WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                Ok(None) => break,
+                Err(e) if e.is_status(410) => {                    // the token expired
+                    expired += 1;
+                    continue 'list;
+                }
+                Err(e) => return Err(e.into()),
             }
         }
-        // The server ended the watch: watch again from `version`.
+        // The watch starts at the version of the list, never without one, nor at an empty one.
+        let mut version = version.filter(|v| !v.is_empty()).ok_or("the list has no resourceVersion")?;
+        listed(all);
+        loop {
+            let watch = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true);
+            let mut events = match watch.await {
+                Ok(events) => events,
+                Err(e) if e.is_status(410) => {                    // the version is too old
+                    expired += 1;
+                    continue 'list;
+                }
+                Err(e) => return Err(e.into()),
+            };
+            while let Some(event) = events.try_next().await? {
+                match &event {
+                    WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
+                        version = pod.metadata.resource_version.clone().filter(|v| !v.is_empty())
+                            .ok_or("an event has no resourceVersion")?;
+                        changed(event);
+                    }
+                    WatchEvent::Bookmark(mark) if mark.metadata.resource_version.is_empty() => {
+                        return Err("a bookmark has no resourceVersion".into());
+                    }
+                    WatchEvent::Bookmark(mark) => version = mark.metadata.resource_version.clone(),
+                    WatchEvent::Error(status) if status.code == Some(410) => {
+                        expired += 1;
+                        continue 'list;                            // the rest of this stream is dropped
+                    }
+                    WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                }
+                expired = 0;                                       // an event or a bookmark: progress
+            }
+            // The server ended the watch: watch again from the last version seen.
+        }
     }
 }
 
@@ -403,7 +468,7 @@ pub async fn drain(kube: &Kubernetes) -> kubernetes::Result<()> {
 
 | Kubernetes wants | What to write |
 |---|---|
-| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others. A line that is too long or is not an event, or a stream that breaks, ends the watch with a `concord::read::RecordError`. The caller of a watch handles three cases: the call's error, `RecordError`, and the `Error` event. |
+| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others. A line that is too long or is not an event, or a stream that breaks, ends the watch with a `concord::read::RecordError`. The caller of a watch handles three cases: the call's error, `RecordError`, and the `Error` event. A `410 Gone`, as the status of the watch (or of a page of the list) or as an `Error` event, means that the version is too old: `follow` reads the whole list again, then watches from the version of that list, and drops the rest of the stream that said `410`. The new list is a new snapshot: the changes between the expired version and it are lost, so the caller replaces its state with it. After three `410`s in a row with no progress between them (an event or a bookmark resets the count), `follow` gives up with an error: a choice of the example. A caller that needs a longer recovery waits on its own side, around `follow`. |
 | The cluster's certificate, as much an input as the server. `new` cannot take it: a certificate is set on the transport. | `connect(server, ca_pem)`, with `concord::Http::with(…)`. The doc comment of the client points to it. |
 | Keys in camelCase, and inputs in snake_case: 17 of the 23 entries use the long form, `"labelSelector" = label_selector;`. | The long form, once for each key, in a part. |
 | A custom resource, typed. A scope has no type parameter. | `DynamicObject`, decoded by the caller with `serde_json::from_value`; or one scope for each type. |

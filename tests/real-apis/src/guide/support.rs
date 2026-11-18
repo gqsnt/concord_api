@@ -130,3 +130,15 @@ pub fn envelope<T: serde::de::DeserializeOwned>(
         Err(problem)?
     }
 }
+#[derive(Clone, Serialize)]
+pub struct DeleteOptions {
+    pub grace_seconds: u32,
+}
+pub fn optional_json<T: Serialize>(
+    value: &Option<T>,
+) -> Result<concord::Body, concord::body::WriteError> {
+    match value {
+        Some(value) => concord::json(value),
+        None => Ok(concord::Body::from(Vec::new())),
+    }
+}
