@@ -41,7 +41,10 @@ impl concord::Middleware for Reported {
         info: concord::transport::TryInfo,
         _next: concord::Next<'_>,
     ) -> Result<concord::reqwest::Response, concord::transport::TransportError> {
-        self.0.lock().unwrap().push(info.endpoint());
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(info.endpoint());
         Ok(concord::reply(200, "[]"))
     }
 }
