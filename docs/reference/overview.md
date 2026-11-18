@@ -181,7 +181,7 @@ The promises cover the requests that the description builds.
 | G5 | A body read whole stops at 10 MiB, and what an error keeps is bounded. | A body read whole. A stream has no limit. |
 | G6 | The request is built once. Buffered multipart boundaries are deterministic; streaming form-data chooses one random boundary per body and reuses it for every attempt. | Your own code doing the same: a middleware can compute anything. |
 | G7 | No call waits forever on a silent server: 30 seconds of silence at most. | Silence of the transport, or of a body being read. A middleware's or a reader's own wait is bounded only by the call timeout, `timeout`. |
-| G8 | A request is retried only when you asked for it, and only when repeating it has no further effect. | What Concord itself passes down. What a middleware or `reqwest` sends again happens below it. |
+| G8 | Concord's engine retries a request only when you set a retry policy, and only when the request as it was built may be sent again: by its method, by its `idempotent` mark, or because the policy lists the status of its refusal. | What Concord itself passes down. What a middleware or `reqwest` sends again happens below it. |
 | G9 | With no arrow, the status alone is the result. | No arm that applies reads a body; otherwise it does not compile. |
 | G10 | A list never looks complete when it is not: a next page that cannot be fetched is an error. | Five checks, one of them against the request just sent. A longer cycle, or a list that never ends, is not detected. |
 
