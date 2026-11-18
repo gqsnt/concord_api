@@ -104,3 +104,29 @@ pub use concord::multipart;
 
 pub use crate::credential_signing::Proof;
 pub use concord::Base;
+
+// `responses-and-errors.md`, the value beside the flag: the types and the arm, as the page prints them.
+#[derive(Debug, Deserialize)]
+pub struct ChatProblem {
+    pub error: String,
+}
+#[derive(Debug, Deserialize)]
+pub struct Channel {
+    pub id: String,
+    pub name: String,
+}
+pub fn envelope<T: serde::de::DeserializeOwned>(
+    body: Bytes,
+) -> Result<T, concord::Fail<ChatProblem>> {
+    #[derive(Deserialize)]
+    struct Head {
+        ok: bool,
+    }
+    let head: Head = Json::decode(&body).map_err(concord::Fail::from_read)?;
+    if head.ok {
+        Json::decode(&body).map_err(concord::Fail::from_read)
+    } else {
+        let problem: ChatProblem = Json::decode(&body).map_err(concord::Fail::from_read)?;
+        Err(problem)?
+    }
+}

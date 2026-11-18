@@ -146,6 +146,14 @@ mod guide_recipes_006 {
     }
 }
 #[doc(hidden)]
+mod guide_responses_and_errors_001 {
+    use super::support::*;
+    include!("guide_responses-and-errors_001.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Chat>()
+    }
+}
+#[doc(hidden)]
 mod guide_retries_001 {
     use super::support::*;
     include!("guide_retries_001.rs");
@@ -186,7 +194,7 @@ mod guide_tour_003 {
     }
 }
 /// The concrete client types emitted by every documented description.
-pub fn compiled_descriptions() -> [&'static str; 35] {
+pub fn compiled_descriptions() -> [&'static str; 36] {
     [
         readme_001::compiled(),
         readme_002::compiled(),
@@ -206,6 +214,7 @@ pub fn compiled_descriptions() -> [&'static str; 35] {
         guide_recipes_004::compiled(),
         guide_recipes_005::compiled(),
         guide_recipes_006::compiled(),
+        guide_responses_and_errors_001::compiled(),
         guide_retries_001::compiled(),
         guide_testing_001::compiled(),
         guide_tour_001::compiled(),

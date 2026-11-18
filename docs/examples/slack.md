@@ -9,7 +9,7 @@ Here is Slack as Concord sees it. There is one host and prefix, `https://slack.c
 ## The description
 
 ```rust
-use concord::{by_cursor, form, json, Json, Secret};
+use concord::{by_cursor, form, json, Binary, Json, Secret};
 use std::time::Duration;
 
 concord::api! {
@@ -17,8 +17,8 @@ concord::api! {
     pub client Slack(token: Secret) {
         base "https://slack.com/api";
         headers { "authorization" = "Bearer {token}"; }
-        read Json;
-        problem SlackProblem;
+        read Binary;
+        problem SlackProblem read Json;
         status { 2xx { body } => slack_response(body)? }
 
         part page(limit?: u16, cursor?: String) {
@@ -118,7 +118,8 @@ The data types are plain `serde` types, named here but not shown; ids and timest
 Slack's errors, its pages and its retry policy:
 
 ```rust
-use concord::Fail;
+use concord::bytes::Bytes;
+use concord::{Fail, Json};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -167,16 +168,19 @@ impl<T: Send> concord::page::IntoItems for SlackPage<T> {
 pub struct Acknowledged {}
 
 /// The arm of every `200`: `ok` says whether it is the success or the client's problem.
-pub fn slack_response<T: DeserializeOwned>(body: Value) -> Result<T, Fail<SlackProblem>> {
-    match body.get("ok").and_then(Value::as_bool) {
-        Some(true) => serde_json::from_value(body)
-            .map_err(|_| concord::mismatch("not the promised answer")),
-        Some(false) => {
-            let problem: SlackProblem = serde_json::from_value(body)
-                .map_err(|_| concord::mismatch("a refusal with no error code"))?;
-            Err(problem)?
-        }
-        None => Err(concord::mismatch("no `ok` in the answer")),
+/// The bytes are decoded twice, once for `ok` and once for the value or the problem, so a
+/// success that does not fit names its field, as under `read Json;`.
+pub fn slack_response<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<SlackProblem>> {
+    #[derive(Deserialize)]
+    struct Head {
+        ok: bool,
+    }
+    let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    if head.ok {
+        Json::decode(&body).map_err(Fail::from_read)
+    } else {
+        let problem: SlackProblem = Json::decode(&body).map_err(Fail::from_read)?;
+        Err(problem)?
     }
 }
 
@@ -262,7 +266,7 @@ pub async fn upload(slack: &Slack, name: &str, bytes: Bytes) -> Result<(), BoxEr
 
 | Slack wants | What to write |
 |---|---|
-| An error inside a `200`. `problem` alone reads only the bodies of statuses that are not 2xx. | One arm on the client, `2xx { body } => slack_response(body)?`: it reads `ok`, then returns the success or the client's problem. |
+| An error inside a `200`. `problem` alone reads only the bodies of statuses that are not 2xx. | One arm on the client, `2xx { body } => slack_response(body)?`, under `read Binary;`: it decodes `ok`, then the success or the client's problem, with `Json::decode`, so a success that does not fit still names its field. `problem SlackProblem read Json;` reads the error of any other status. |
 | A family prefix with no `/` after it: `conversations.` before `list`. `path` adds whole segments. | The whole method name in each endpoint; the scope only groups them. |
 | A complete URL that Slack returns for the bytes of an upload, on another host, with its query. | A second description, `SlackUploads`, with that host as its base and no token, and `concord::transfer::at(call, url)` to send its call to that URL. Its error is a `slack_uploads::Error`, not a `slack::Error`. |
 | A list in one value, joined by commas: `types=public_channel,private_channel`. | `"types" = types.as_ref().map(\|v\| v.join(","));`. |

@@ -10,15 +10,15 @@ Here is Telegram as Concord sees it. There is one host, and the bot's token is p
 
 ```rust
 use concord::read::Stream;
-use concord::{json, ByteStream, Json, Secret};
+use concord::{json, Binary, ByteStream, Json, Secret};
 use std::time::Duration;
 
 concord::api! {
     /// The Telegram Bot API: messages, files, and updates by long poll or by webhook.
     pub client Telegram(token: Secret) {
         base "https://api.telegram.org/bot{token}";
-        read Json;
-        problem TgProblem;
+        read Binary;
+        problem TgProblem read Json;
         status { 2xx { body } => telegram_result(body)? }
 
         part formatted(parse_mode?: ParseMode, entities?: Vec<MessageEntity>) {
@@ -126,10 +126,9 @@ Telegram's errors, the envelope, the body of an upload, and Telegram's retry pol
 
 ```rust
 use concord::bytes::Bytes;
-use concord::{multipart, Body, Fail, MultipartError};
+use concord::{multipart, Body, Fail, Json, MultipartError};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_json::Value;
 use std::time::Duration;
 
 /// Telegram's error response: `{"ok": false, "error_code": 429, "description": "…", "parameters": {…}}`.
@@ -155,20 +154,25 @@ pub struct InputFile {
 }
 
 /// The arm of every 2xx: `{"ok": true, "result": …}` returns the result, and `{"ok": false, …}`
-/// returns the client's problem, even though the status is `200`.
-pub fn telegram_result<T: DeserializeOwned>(mut body: Value) -> Result<T, Fail<TgProblem>> {
-    match body.get("ok").and_then(Value::as_bool) {
-        Some(true) => {
-            let result = body.get_mut("result").map(Value::take)
-                .ok_or_else(|| concord::mismatch("no result"))?;
-            serde_json::from_value(result).map_err(|_| concord::mismatch("not the promised result"))
-        }
-        Some(false) => {
-            let problem: TgProblem = serde_json::from_value(body)
-                .map_err(|_| concord::mismatch("not a Telegram refusal"))?;
-            Err(problem)?
-        }
-        None => Err(concord::mismatch("no `ok` in the answer")),
+/// returns the client's problem, even though the status is `200`. The bytes are decoded once
+/// for `ok`, then as the result or the problem: a result that does not fit names its field
+/// (`result.chat.id`), as under `read Json;`.
+pub fn telegram_result<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<TgProblem>> {
+    #[derive(Deserialize)]
+    struct Head {
+        ok: bool,
+    }
+    #[derive(Deserialize)]
+    struct Reply<T> {
+        result: T,
+    }
+    let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    if head.ok {
+        let reply: Reply<T> = Json::decode(&body).map_err(Fail::from_read)?;
+        Ok(reply.result)
+    } else {
+        let problem: TgProblem = Json::decode(&body).map_err(Fail::from_read)?;
+        Err(problem)?
     }
 }
 
@@ -251,6 +255,7 @@ pub async fn use_webhook(bot: &Telegram, url: &str, secret: Secret) -> telegram:
 
 | Telegram wants | What to write |
 |---|---|
+| An envelope around every response, often with the status `200`: `{"ok": false, …}` is an error. | One arm on the client, `2xx { body } => telegram_result(body)?`, under `read Binary;`: it decodes `ok`, then `result` or the client's problem, with `Json::decode`, so a result that does not fit still names its field. `problem TgProblem read Json;` reads the error of any other status. |
 | A long poll that sends the same request again after an empty response, but pagination stops when the same request would be sent twice in a row. | Your own loop (`poll` above). `get_updates` declares `idempotent false;`, because a negative offset makes Telegram forget updates. |
 | A file by its id or URL in JSON, or by its bytes in `multipart/form-data`: one method, two bodies. | Two endpoints on one path: `send_photo` with a body of entries, `send_document` with `multipart()`. |
 | Exactly one of two groups of inputs (`chat_id` and `message_id`, or `inline_message_id`). | Each input optional, with a doc comment: Telegram rejects a call that has neither. |
