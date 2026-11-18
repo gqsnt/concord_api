@@ -1,0 +1,13 @@
+error: name conflicts with an input owner
+       label: this name is already used by the client or a scope
+       help: rename this input to a name that no owner, input, child or generated method of the nodes that receive it has; for each short entry `outer;`, if any, write `"outer" = ` and the new name, which keeps the key `outer` on the wire, and update its other references
+ --> tests/diagnostics/rules/07_input_no_name.rs:2:88
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope outer { GET get(outer: String, outer_value: String, outer_inpu...
+  |                                                                                        ^^^^^
+
+error: this owner is declared here
+ --> tests/diagnostics/rules/07_input_no_name.rs:2:72
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope outer { GET get(outer: String, outer_value: String, outer_inpu...
+  |                                                                        ^^^^^

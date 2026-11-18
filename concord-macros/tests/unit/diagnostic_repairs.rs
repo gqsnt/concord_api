@@ -733,34 +733,6 @@ fn c1_18_reserved_input_help_lists_three_placements_or_none() {
     }
 }
 
-/// The keys that an endpoint sends: query, headers and a body of entries, in order.
-fn wire_keys(source: &str) -> Vec<String> {
-    let mut parsed = parse_source(source);
-    let client = parsed.client.as_ref().unwrap();
-    name::check(client, &mut parsed.diagnostics);
-    let flat = resolve::resolve(client, &mut parsed.diagnostics);
-    check::check(client, &flat, &mut parsed.diagnostics);
-    assert!(
-        parsed.diagnostics.is_empty(),
-        "{source}\n{:?}",
-        parsed.diagnostics.messages()
-    );
-    let mut keys = Vec::new();
-    for endpoint in &flat.endpoints {
-        let entries = endpoint.query.iter().map(|e| ("query", e));
-        let headers = endpoint.headers.iter().map(|e| ("headers", e));
-        let body = match &endpoint.body {
-            Some(flat::BodyLine::Entries { entries, .. }) => entries.iter().collect(),
-            _ => Vec::new(),
-        };
-        let body = body.into_iter().map(|e| ("body", e));
-        for (kind, entry) in entries.chain(headers).chain(body) {
-            keys.push(format!("{} {kind} {}", endpoint.node.name, entry.key));
-        }
-    }
-    keys
-}
-
 /// A replacement for the tokens at the start of `rest`, and how many it takes.
 type Edit<'a> = dyn FnMut(
         Option<&proc_macro2::TokenTree>,
@@ -794,7 +766,7 @@ fn rewrite(tokens: proc_macro2::TokenStream, edit: &mut Edit<'_>) -> proc_macro2
 }
 
 /// Follow message 7's help to the letter, as an author would.
-fn follow_owner_help(source: &str, old: &str) -> String {
+fn follow_owner_help(source: &str, old: &str) -> (String, String) {
     use proc_macro2::{Literal, TokenTree};
     let d = diagnostics(source);
     let helps: Vec<_> = d
@@ -807,18 +779,29 @@ fn follow_owner_help(source: &str, old: &str) -> String {
     assert!(!helps.is_empty(), "{source}: no message 7");
     let help = &helps[0];
     assert!(helps.iter().all(|other| other == help), "{helps:?}");
-    // The renamed declaration is the first code in the help that declares a type.
-    let declaration = help
+    // The renamed declaration is the first code in the help that declares a type. When the
+    // help proposes no name, the author picks one that is free.
+    let new = help
         .split('`')
         .skip(1)
         .step_by(2)
         .find(|code| code.contains(": "))
-        .unwrap();
-    let new = declaration.split([':', '?']).next().unwrap().to_owned();
-    // "write each short entry `x;` as `"x" = x_value;`": the entry that the help shows.
+        .map_or("renamed", |declaration| {
+            declaration.split([':', '?']).next().unwrap()
+        })
+        .to_owned();
+    // "for each short entry `x;`, if any, write `"x" = x_value;`", or, with no name
+    // proposed, "write `"x" = ` and the new name".
     let entry = help
-        .split_once(&format!("short entry `{old};` as `"))
-        .map(|(_, rest)| rest.split('`').next().unwrap().to_owned());
+        .split_once(&format!("for each short entry `{old};`, if any, write `"))
+        .map(|(_, rest)| {
+            let entry = rest.split('`').next().unwrap();
+            if entry.ends_with("= ") {
+                format!("{entry}{new};")
+            } else {
+                entry.to_owned()
+            }
+        });
     let mut edit = |previous: Option<&TokenTree>, rest: &[TokenTree]| {
         let first = rest.first()?;
         let starts_entry =
@@ -852,7 +835,8 @@ fn follow_owner_help(source: &str, old: &str) -> String {
             _ => None,
         }
     };
-    rewrite(source.parse().unwrap(), &mut edit).to_string()
+    let repaired = rewrite(source.parse().unwrap(), &mut edit).to_string();
+    (repaired, new)
 }
 
 /// The same description with the scope renamed instead, so the input keeps its name.
@@ -874,29 +858,99 @@ fn rename_scope(source: &str, old: &str) -> String {
     rewrite(source.parse().unwrap(), &mut edit).to_string()
 }
 
-/// C1.18, message 7: following the help never changes a key on the wire, wherever the
-/// input is used: a short entry in a query, in headers or in a body of entries, several of
-/// them, an entry at a node that spreads the part declaring the input, a path, an expression.
+/// C1.18, message 7: following the help leads to a description that compiles and sends the
+/// same requests, wherever the input is used: a short entry in a query, in headers or in a
+/// body of entries, several of them, an entry at a node that spreads the part declaring
+/// the input, a path, an expression, a qualified reference; a proposed name that would
+/// collide with a child of a receiving scope; and no name proposed at all. The reference is
+/// the same description with the scope renamed instead, where the input keeps its name.
+/// Both are compiled, and their requests compared as built: method, URL, headers, body.
 #[test]
-fn c1_18_following_message_seven_keeps_every_key_on_the_wire() {
-    let base = r#"base "https://a.test"; read Reader;"#;
-    for body in [
-        "part x(outer?: String) {} scope outer { GET get(..x) { query { outer; } } }",
-        "scope outer { GET get(outer: String) { query { outer; } } }",
-        "scope outer { GET get(outer?: String) { headers { outer; } } }",
-        "scope outer { POST post(outer: String) { body json { outer; } } }",
-        r#"scope outer { POST post(outer?: String) { query { outer; "other" = outer; } headers { outer; } body json { outer; } } }"#,
-        "part x(outer?: String) { query { outer; } } scope outer { GET get(..x); GET more(..x) { headers { outer; } } }",
-        r#"scope outer { GET get(outer: String) { path "items/{outer}"; } }"#,
-        r#"scope outer { GET get(outer: String) { query { "k" = String::len(outer); } } }"#,
-        r#"scope outer(outer: String) { GET get() { query { "k" = outer.outer; } } }"#,
-    ] {
-        let source = format!("client Workshop {{ {base} {body} }}");
-        let repaired = follow_owner_help(&source, "outer");
-        assert_eq!(
-            wire_keys(&repaired),
-            wire_keys(&rename_scope(&source, "outer")),
-            "{source}\nrepaired: {repaired}"
+fn c1_18_following_message_seven_sends_the_same_requests() {
+    // A description, and the calls to compare, with `SCOPE` for the scope's method and
+    // `INPUT` for the input's setter.
+    let cases: [(&str, &[&str]); 11] = [
+        (
+            "part p(outer?: String) { query { outer; } } scope outer { scope g(..p) { GET outer_value(); } }",
+            &[r#"SCOPE().g().INPUT("v").outer_value()"#],
+        ),
+        (
+            "scope outer { GET get(outer: String) { query { outer; } } }",
+            &[r#"SCOPE().get("v")"#],
+        ),
+        (
+            "scope outer { GET get(outer?: String) { headers { outer; } } }",
+            &[r#"SCOPE().get().INPUT("v")"#],
+        ),
+        (
+            "scope outer { POST post(outer: String) { body concord::json { outer; } } }",
+            &[r#"SCOPE().post("v")"#],
+        ),
+        (
+            r#"scope outer { POST post(outer?: String) { query { outer; "other" = outer; } headers { outer; } body concord::json { outer; } } }"#,
+            &[r#"SCOPE().post().INPUT("v")"#],
+        ),
+        (
+            "part x(outer?: String) {} scope outer { GET get(..x) { query { outer; } } }",
+            &[r#"SCOPE().get().INPUT("v")"#],
+        ),
+        (
+            "part x(outer?: String) { query { outer; } } scope outer { GET get(..x); GET more(..x) { headers { outer; } } }",
+            &[r#"SCOPE().get().INPUT("v")"#, r#"SCOPE().more().INPUT("v")"#],
+        ),
+        (
+            r#"scope outer { GET get(outer: String) { path "items/{outer}"; } }"#,
+            &[r#"SCOPE().get("v")"#],
+        ),
+        (
+            r#"scope outer { GET get(outer: String) { query { "k" = String::len(outer); } } }"#,
+            &[r#"SCOPE().get("v")"#],
+        ),
+        (
+            r#"scope outer(outer: String) { GET get() { query { "k" = outer.outer; } } }"#,
+            &[r#"SCOPE("v").get()"#],
+        ),
+        (
+            "scope outer { GET get(outer: String, outer_value: String, outer_input: String, outer_param: String) { query { outer; outer_value; outer_input; outer_param; } } }",
+            &[r#"SCOPE().get("v", "a", "b", "c")"#],
+        ),
+    ];
+    let mut program = String::from(
+        "#![allow(dead_code, unused)]\n\
+         fn sent(request: concord::reqwest::Request) -> String {\n\
+         let mut headers: Vec<String> = request.headers().iter().map(|(k, v)| format!(\"{k}={v:?}\")).collect();\n\
+         headers.sort();\n\
+         let body = request.body().and_then(|b| b.as_bytes()).map(|b| String::from_utf8_lossy(b).into_owned());\n\
+         format!(\"{} {} {headers:?} {body:?}\", request.method(), request.url())\n\
+         }\n",
+    );
+    let mut calls = String::new();
+    for (index, (body, case_calls)) in cases.iter().enumerate() {
+        let source = format!(r#"pub client Workshop {{ base "https://a.test"; {body} }}"#);
+        let (repaired, new) = follow_owner_help(&source, "outer");
+        let reference = rename_scope(&source, "outer");
+        assert!(
+            diagnostics(&repaired).is_empty(),
+            "{source}\nrepaired: {repaired}\n{:?}",
+            diagnostics(&repaired).messages()
         );
+        program.push_str(&format!(
+            "mod repaired_{index} {{ concord::api! {{ {repaired} }} }}\nmod reference_{index} {{ concord::api! {{ {reference} }} }}\n"
+        ));
+        for call in case_calls.iter() {
+            let ours = call.replace("SCOPE", "outer").replace("INPUT", &new);
+            let theirs = call
+                .replace("SCOPE", "outer_scope")
+                .replace("INPUT", "outer");
+            calls.push_str(&format!(
+                "assert_eq!(sent(repaired_{index}::Workshop::new().{ours}.request().unwrap()), sent(reference_{index}::Workshop::new().{theirs}.request().unwrap()), \"{{}}\", {source:?});\n"
+            ));
+        }
     }
+    program.push_str(&format!("fn main() {{\n{calls}}}\n"));
+    let directory = path().join("../target/message-seven");
+    fs::create_dir_all(&directory).unwrap();
+    let file = directory.join("following.rs");
+    fs::write(&file, program).unwrap();
+    trybuild::TestCases::new().pass(&file);
 }

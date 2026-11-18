@@ -1,0 +1,13 @@
+error: name conflicts with an input owner
+       label: this name is already used by the client or a scope
+       help: rename this input, for example `outer_input?: String`; for each short entry `outer;`, if any, write `"outer" = outer_input;`, which keeps the key `outer` on the wire, and update its other references
+ --> tests/diagnostics/rules/07_input_spread_child.rs:2:73
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part p(outer?: String) { query { outer; } } scope outer { scope g(.....
+  |                                                                         ^^^^^
+
+error: this owner is declared here
+ --> tests/diagnostics/rules/07_input_spread_child.rs:2:116
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part p(outer?: String) { query { outer; } } scope outer { scope g(.....
+  |                                                                                                                    ^^^^^

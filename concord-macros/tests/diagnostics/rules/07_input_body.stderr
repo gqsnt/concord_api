@@ -1,6 +1,6 @@
 error: name conflicts with an input owner
        label: this name is already used by the client or a scope
-       help: rename this input, for example `accounts_value?: String`; write each short entry `accounts;` as `"accounts" = accounts_value;`, which keeps the key `accounts` on the wire, and update its other references
+       help: rename this input, for example `accounts_value?: String`; for each short entry `accounts;`, if any, write `"accounts" = accounts_value;`, which keeps the key `accounts` on the wire, and update its other references
  --> tests/diagnostics/rules/07_input_body.rs:2:95
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; scope accounts { POST update(accounts?: String) { body json { accoun...

@@ -224,7 +224,7 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                             diagnostics.raise(
                                 input.span,
                                 diag::owner_input(&name, &replacement, *first)
-                                    .help(owner_input_help(node, input, &replacement, &forbidden)),
+                                    .help(owner_input_help(Some(&client.node), node, input)),
                             );
                         }
                         if input.optional.is_some()
@@ -469,7 +469,14 @@ pub(crate) fn expanded(
                 diagnostics.raise(
                     input.input.span,
                     diag::owner_input(&name, &replacement, owner.node.name.span()).help(
-                        owner_input_help(input.written, input.input, &replacement, &forbidden),
+                        owner_input_help(
+                            owners
+                                .iter()
+                                .map(|o| o.node)
+                                .find(|n| matches!(n.kind, NodeKind::Client)),
+                            input.written,
+                            input.input,
+                        ),
                     ),
                 );
             }
@@ -540,21 +547,108 @@ fn rename_input_help(node: &Node, name: &str, replacement: &str, forbidden: &[St
     format!("rename this input to `{replacement}` and update its references in the existing {location}; keep the wire keys and fixed text that spell `{name}`")
 }
 
+/// The nodes that receive the inputs written at `written`: the node itself, or for a part,
+/// each node that spreads it, directly or through another part. With each, the names that
+/// an input there may not take: its owners, and the inputs it receives from its parts.
+fn receivers<'a>(client: &'a Node, written: &Node) -> Vec<(&'a Node, Vec<String>)> {
+    let part = |name: &str| client.parts.iter().find(|p| p.name == name);
+    let spreads = |node: &Node| -> Vec<String> {
+        node.signature
+            .iter()
+            .flat_map(|s| &s.entries)
+            .filter_map(|p| match p {
+                Parameter::Spread(spread) => Some(spread.name.to_string()),
+                Parameter::Input(_) => None,
+            })
+            .collect()
+    };
+    // The parts whose spread brings in `written`'s inputs.
+    let mut reaching = Vec::new();
+    if matches!(written.kind, NodeKind::Part) {
+        reaching.push(written.name.to_string());
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for other in &client.parts {
+                let name = other.name.to_string();
+                if !reaching.contains(&name) && spreads(other).iter().any(|s| reaching.contains(s))
+                {
+                    reaching.push(name);
+                    grew = true;
+                }
+            }
+        }
+    }
+    // The inputs that a node receives from its parts, through every level of spread.
+    let spread_inputs = |node: &Node| {
+        let mut names = Vec::new();
+        let mut pending = spreads(node);
+        let mut seen = Vec::new();
+        while let Some(name) = pending.pop() {
+            if seen.contains(&name) {
+                continue;
+            }
+            if let Some(found) = part(&name) {
+                for parameter in found.signature.iter().flat_map(|s| &s.entries) {
+                    if let Parameter::Input(input) = parameter {
+                        names.push(input.name.to_string());
+                    }
+                }
+                pending.extend(spreads(found));
+            }
+            seen.push(name);
+        }
+        names
+    };
+    let mut found = Vec::new();
+    let mut pending = vec![(client, vec!["client".to_owned()])];
+    while let Some((node, mut owners)) = pending.pop() {
+        if matches!(node.kind, NodeKind::Scope) {
+            owners.push(node.name.to_string());
+        }
+        if std::ptr::eq(node, written) || spreads(node).iter().any(|s| reaching.contains(s)) {
+            let mut forbidden = owners.clone();
+            forbidden.extend(spread_inputs(node));
+            found.push((node, forbidden));
+        }
+        for child in node.children.iter().rev() {
+            pending.push((child, owners.clone()));
+        }
+    }
+    found
+}
+
 /// Message 7's help. The input may reach short entries that the macro does not see from
 /// here (at each node that spreads a part), so the help states the rule for every one of
-/// them instead of listing some.
-fn owner_input_help(node: &Node, input: &Input, replacement: &str, forbidden: &[String]) -> String {
-    if !input_candidate(node, replacement, true, forbidden) {
-        return "choose a distinct valid input name that conflicts with no owner, input or generated method, and update its existing references without changing wire names".into();
-    }
+/// them instead of listing some. The proposed name is free at every node that receives
+/// the input; when none of the few tried is, the help proposes none.
+fn owner_input_help(client: Option<&Node>, written: &Node, input: &Input) -> String {
     let name = input.name.to_string();
+    let receivers = client.map_or_else(Vec::new, |client| receivers(client, written));
+    let free = |candidate: &str| {
+        !receivers.is_empty()
+            && (!matches!(written.kind, NodeKind::Part)
+                || input_candidate(written, candidate, true, &[]))
+            && receivers
+                .iter()
+                .all(|(node, forbidden)| input_candidate(node, candidate, true, forbidden))
+    };
+    let replacement = ["value", "input", "param"]
+        .into_iter()
+        .map(|suffix| method_replacement(&name, suffix))
+        .find(|candidate| free(candidate));
+    let Some(replacement) = replacement else {
+        return format!(
+            "rename this input to a name that no owner, input, child or generated method of the nodes that receive it has; for each short entry `{name};`, if any, write `\"{name}\" = ` and the new name, which keeps the key `{name}` on the wire, and update its other references"
+        );
+    };
     let declaration = format!(
         "{replacement}{}: {}",
         if input.optional.is_some() { "?" } else { "" },
         Written::new(input.ty.to_token_stream()).text()
     );
     format!(
-        "rename this input, for example `{declaration}`; write each short entry `{name};` as `\"{name}\" = {replacement};`, which keeps the key `{name}` on the wire, and update its other references"
+        "rename this input, for example `{declaration}`; for each short entry `{name};`, if any, write `\"{name}\" = {replacement};`, which keeps the key `{name}` on the wire, and update its other references"
     )
 }
 

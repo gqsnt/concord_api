@@ -1,6 +1,6 @@
 error: name conflicts with an input owner
        label: this name is already used by the client or a scope
-       help: rename this input, for example `client_value: String`; write each short entry `client;` as `"client" = client_value;`, which keeps the key `client` on the wire, and update its other references
+       help: rename this input, for example `client_value: String`; for each short entry `client;`, if any, write `"client" = client_value;`, which keeps the key `client` on the wire, and update its other references
  --> tests/diagnostics/rules/07_input_client.rs:2:76
   |
 2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(client: String) { query { client; } } }

@@ -667,6 +667,8 @@ fn c1_4_c1_6_the_name_check_spells_no_name_outside_its_tables() {
         "Api",
         "_value",
         "input_",
+        "input",
+        "param",
         "item",
         "value",
         "endpoint_item",
