@@ -398,6 +398,26 @@ def hover_signature(result, method, include_impl=False):
     return "".join(display.split())
 
 
+UNRESOLVED_CONCORD = re.compile(r"\[<code>((?:::)?concord::[^<]*)</code>\]")
+ARG_LINK = '<a href="../concord/arg/index.html" title="mod concord::arg"><code>concord::arg::Arg</code></a>'
+
+
+def check_links():
+    """Document tour-gen with its dependencies, as an author's crate is, and find links left as text."""
+    cargo("doc", "-j", "4", "-p", "tour-gen", cwd=ROOT)
+    pages = sorted((DOC / "tour_gen").rglob("*.html"))
+    unresolved = sorted({
+        f"{page.relative_to(DOC)}: {display(link)}"
+        for page in pages
+        for link in UNRESOLVED_CONCORD.findall(page.read_text())
+    })
+    if unresolved:
+        raise SystemExit("Generated links to concord that rustdoc left as text:\n" + "\n".join(unresolved))
+    if not any(ARG_LINK in page.read_text() for page in pages):
+        raise SystemExit("No setter of tour-gen links its text and list conversions to concord::arg")
+    print("Every generated link to concord resolves; the setters link concord::arg.")
+
+
 def check_search():
     cargo("doc", "-j", "4", "-p", "call_docs_api", "--no-deps")
     subprocess.run(
@@ -420,6 +440,7 @@ def check_search():
                 f"Rustdoc must name __call first: {signature}"
             )
     print("Rustdoc search finds Top::count and its signature shows the authored type.")
+    check_links()
     cargo("doc", "-j", "4", "-p", "tour-gen", "--no-deps", cwd=ROOT)
     violations = []
     for client, problem in [("tasks", None), ("feed", None), ("files", None),

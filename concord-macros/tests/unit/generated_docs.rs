@@ -360,7 +360,7 @@ fn c10_4_doc_rule_4_setters_preserve_spelling_and_state_accepted_values() {
         assert!(!page.iter().any(|line| line == "The first argument is the call."));
         if name == "text" {
             assert!(lines.iter().any(|line| line.contains(
-                "[`concord::arg::Arg`](https://docs.rs/concord-api/latest/concord_api/arg/trait.Arg.html)"
+                "[`concord::arg::Arg`](mod@concord::arg)"
             )));
         }
     }
