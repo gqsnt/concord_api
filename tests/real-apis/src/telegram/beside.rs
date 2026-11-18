@@ -1,5 +1,5 @@
 use concord::bytes::Bytes;
-use concord::{multipart, Body, Fail, Json, MultipartError};
+use concord::{multipart, Body, Fail, MultipartError};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::time::Duration;
@@ -39,12 +39,12 @@ pub fn telegram_result<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<TgPro
     struct Reply<T> {
         result: T,
     }
-    let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    let head: Head = concord::Json::decode(&body).map_err(Fail::from_read)?;
     if head.ok {
-        let reply: Reply<T> = Json::decode(&body).map_err(Fail::from_read)?;
+        let reply: Reply<T> = concord::Json::decode(&body).map_err(Fail::from_read)?;
         Ok(reply.result)
     } else {
-        let problem: TgProblem = Json::decode(&body).map_err(Fail::from_read)?;
+        let problem: TgProblem = concord::Json::decode(&body).map_err(Fail::from_read)?;
         Err(problem)?
     }
 }

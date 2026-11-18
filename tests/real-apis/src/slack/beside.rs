@@ -1,5 +1,5 @@
 use concord::bytes::Bytes;
-use concord::{Fail, Json};
+use concord::Fail;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -55,11 +55,11 @@ pub fn slack_response<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<SlackP
     struct Head {
         ok: bool,
     }
-    let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    let head: Head = concord::Json::decode(&body).map_err(Fail::from_read)?;
     if head.ok {
-        Json::decode(&body).map_err(Fail::from_read)
+        concord::Json::decode(&body).map_err(Fail::from_read)
     } else {
-        let problem: SlackProblem = Json::decode(&body).map_err(Fail::from_read)?;
+        let problem: SlackProblem = concord::Json::decode(&body).map_err(Fail::from_read)?;
         Err(problem)?
     }
 }

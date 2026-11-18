@@ -276,7 +276,7 @@ poll_page:
                 last = sent
                 next = pager(call.clone(), &answer)          // it cannot be interrupted
                     None        → state = Over
-                    Err(fail)   → state = Failed(the error of `fail`: Refused for the API's problem, Mismatch for `mismatch(…)` and for `Fail::from_read(…)` on a 2xx)
+                    Err(fail)   → state = Failed(the error of `fail`: Refused for the API's problem, Mismatch for `mismatch(…)`; for `Fail::from_read(…)`, the complete rule of C5.8)
                     Some(next)  → state = Ready { call: next }
                 give Ok(Some(answer.into_value()))
     Failed(error) → state = Over; give Err(error)            // given once, with the `try_next()` after the page

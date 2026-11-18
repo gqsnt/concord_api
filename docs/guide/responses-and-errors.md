@@ -356,11 +356,11 @@ pub fn envelope<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<ChatProblem>
 }
 ```
 
-For `{"ok": true, "id": "C1", "name": 5}`, the call fails with `mismatch: status 200, name could not be decoded, in chat.info`: the same text and `source()` as under `read Json;`, the decoder's message with its line and column in `details()`, the bytes in `body()`, and no `reason()`. The rustdoc of `Json::decode` has this client with a call for each of the two errors.
+For `{"ok": true, "id": "C1", "name": 5}`, the call fails with `mismatch: status 200, name could not be decoded, in chat.info`: the same text and `source()` as under `read Json;`, the decoder's message with its line and column in `details()`, and no `reason()`. `body()` returns what the decoder was given, and `details()` names it `decoder input (complete, 35 bytes)`, not `body (…)`: once the arm has the body, Concord cannot verify that the decoder was given that body, rather than a part of it or bytes from another call. The rustdoc of `Json::decode` has this client with a call for each of the two errors.
 
 | | |
 |---|---|
-| **When the location is the same** | The arm decodes the bytes twice: first `ok`, then the value. When the body is valid JSON with `"ok": true`, the second pass is the plain path, and a fault is found exactly where `read Json;` finds it. The first pass reads the whole body too, so a body whose JSON is broken fails there, where its syntax breaks, even after a value that does not fit: for `{"ok": true, "name": 5, "x": [1, }`, `read Json;` names `name`, and the arm names `[key]`, the field that the first pass was skipping. A missing `ok` fails there too: `the body could not be decoded`, with ``missing field `ok` `` in `details()`. |
+| **When the location is the same** | The arm decodes the bytes twice: first `ok`, then the value. When the first pass succeeds with `ok: true`, the second pass is the plain path, and a fault is found exactly where `read Json;` finds it. The first pass reads the whole body too, and it can fail where the plain path would not: a body with `ok` twice decodes under `read Json;` (the type ignores `ok`) and fails the first pass with ``duplicate field `ok` ``. A body whose JSON is broken fails there too, where its syntax breaks, even after a value that does not fit: for `{"ok": true, "name": 5, "x": [1, }`, `read Json;` names `name`, and the arm names `[key]`, the field that the first pass was skipping. A missing `ok` fails there too: `the body could not be decoded`, with ``missing field `ok` `` in `details()`. |
 | **What `Json::decode` does not do** | It has no byte limit of its own: the limit is the one of the reader that read the bytes, here `Binary` (10 MiB; `read Binary.limit(50 * concord::MIB);` sets another). `strict` does not apply. And it does not look at the content type, so its error never adds `(unexpected content type)`. |
 | **An endpoint without the arm** | Under `read Binary;`, an endpoint that removes the arm reads its body as bytes, unless it declares `read Json;` itself. |
 
@@ -368,7 +368,7 @@ Every endpoint below still returns its own type. An arm on the client that binds
 
 ## What an error keeps of a body
 
-Everything an error keeps from a response is bounded. It keeps at most 64 KiB of the body, in a buffer of its own, so a 200 MB error page does not stay in memory. It keeps at most 1 KiB of a reader's own message, available through `details()`. `e.retry_after()` returns the wait that was requested: the `Retry-After` of the response or the wait from a `when` rule, whichever is longer ([the standard policy](retries.md#the-standard-policy)). `kept()` says in what state the body was kept: whole, truncated at 64 KiB, or interrupted while it was read; it is `None` when no byte of a body was kept (for example, when the announced size was over the limit). `details()` describes the state in words: `body (complete, 18 bytes)`, `body (cut at 64 KiB)`, `body (interrupted, 120 bytes)`. `problem()` is decoded only from a whole body. An arm that ends with `?` produces an error with the typed problem and no bytes, because the body was already read into a value. An arm that decodes a body itself and returns `Fail::from_read(…)` keeps the bytes that it decoded, at most 64 KiB, as a reader does.
+Everything an error keeps from a response is bounded. It keeps at most 64 KiB of the body, in a buffer of its own, so a 200 MB error page does not stay in memory. It keeps at most 1 KiB of a reader's own message, available through `details()`. `e.retry_after()` returns the wait that was requested: the `Retry-After` of the response or the wait from a `when` rule, whichever is longer ([the standard policy](retries.md#the-standard-policy)). `kept()` says in what state the body was kept: whole, truncated at 64 KiB, or interrupted while it was read; it is `None` when no byte of a body was kept (for example, when the announced size was over the limit). `details()` describes the state in words: `body (complete, 18 bytes)`, `body (cut at 64 KiB)`, `body (interrupted, 120 bytes)`. `problem()` is decoded only from a whole body. An arm that ends with `?` produces an error with the typed problem and no bytes, because the body was already read into a value. An arm that decodes a body itself and returns `Fail::from_read(…)` keeps the decoder's input, at most 64 KiB, which `details()` names `decoder input (…)`.
 
 **A known failure stays known.** A `503` whose body then breaks while it is read is still a Refused error with status 503. Reading the details of a failure can never replace the original failure. See C5.6 to C5.8 of the [contracts](../reference/contracts.md) for the exact rules.
 
@@ -379,7 +379,7 @@ The types are yours, and Concord does not look inside them. One piece of advice 
 Both forms below are for an enum that is written as a string in JSON, as most enums of an API are. **A value that is only read** can put every unknown string value in one variant, with `#[serde(other)]`:
 
 ```rust
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Queue { RankedSolo, RankedFlex, Aram, #[serde(other)] Unknown }
 ```
@@ -389,12 +389,12 @@ Without the last variant, the day Riot adds a queue, every response that contain
 **A value that is sent back** must keep what it does not know, or the next write sends something else. A variant marked `#[serde(untagged)]` keeps the text, and writes it back as it arrived:
 
 ```rust
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaxType { Input, Output, Exempt, #[serde(untagged)] Other(String) }
 ```
 
-`"OUTPUT"` is read as `Output`, and `"TAX001"`, a string value that the enum does not list, as `Other("TAX001")`; written back, they are `"OUTPUT"` and `"TAX001"` again, also as the keys of a map. The untagged variant is tried last, after every named variant. Neither form accepts what is not a string: a number, or an object that carries a new variant with data (`{"Refund": {…}}`), still fails to decode, and an enum that the API writes that way needs a variant of its own for it.
+`"OUTPUT"` is read as `Output`, and `"TAX001"`, a string value that the enum does not list, as `Other("TAX001")`; written back, they are `"OUTPUT"` and `"TAX001"` again, also as the keys of a map. The untagged variant is tried last, after every named variant. Neither form accepts a number, or an unknown variant that carries data (`{"REFUND": {…}}`): those still fail to decode, and an enum that the API writes that way needs a variant of its own for them. (Both forms read an object whose only key has the value `null` as that key, as `serde` reads a variant without data: `{"NEW": null}` as `Unknown`, `{"OUTPUT": null}` as `Output`.)
 
 `serde` already ignores unknown fields. Treat an id as a string, even when it looks like a number.
 

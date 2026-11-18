@@ -115,11 +115,11 @@ A read is a `GET`, as Slack documents it; a write sends JSON or a form, whicheve
 
 The data types are plain `serde` types, named here but not shown; ids and timestamps stay `String`: `AuthIdentity` (`team_id`, `user_id`), `Conversation` (`id`), `ChannelInfo` (`channel`), `Message` (`ts`), `MessageReceipt` (`channel`, `ts`), `User` (`id`), `UserInfo` (`user`), `UploadTicket` (`upload_url`, `file_id`), `UploadedFile` (`id`, `title`), `CompletedFiles`, and the Block Kit types `Block`, `Attachment`, `Modal`, `OpenedView`.
 
-Slack's errors, its pages and its retry policy:
+Slack's errors, its pages and its retry policy. This block is a module of its own beside the description, which reaches the client with `use super::*;`, so it names `concord::Json` in full rather than importing it a second time:
 
 ```rust
 use concord::bytes::Bytes;
-use concord::{Fail, Json};
+use concord::Fail;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -175,11 +175,11 @@ pub fn slack_response<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<SlackP
     struct Head {
         ok: bool,
     }
-    let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    let head: Head = concord::Json::decode(&body).map_err(Fail::from_read)?;
     if head.ok {
-        Json::decode(&body).map_err(Fail::from_read)
+        concord::Json::decode(&body).map_err(Fail::from_read)
     } else {
-        let problem: SlackProblem = Json::decode(&body).map_err(Fail::from_read)?;
+        let problem: SlackProblem = concord::Json::decode(&body).map_err(Fail::from_read)?;
         Err(problem)?
     }
 }

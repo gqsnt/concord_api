@@ -4,7 +4,7 @@
 
 This page is for a Rust developer who writes a bot with the Telegram Bot API. It gives a client with 13 methods that you can copy, and shows a token in the path, an envelope around every response, a long poll, and a `multipart` upload.
 
-Here is Telegram as Concord sees it. There is one host, and the bot's token is part of the path: `base "https://api.telegram.org/bot{token}";`. The token is a `Secret` inside a template, so it is never printed. The bot's files are on the same host under another prefix, `/file/bot{token}/`, so one endpoint has its own `base`. Every response is an envelope, `{"ok": true, "result": …}` or `{"ok": false, "error_code": …, "description": …}`, often with a `200` status, and one arm on the client unwraps it. Updates arrive by a long poll (`getUpdates` waits up to `timeout` seconds when there is nothing new) or by a webhook. Flood control responds with a `429` and `retry_after` in its body. Telegram's own reference is [core.telegram.org/bots/api](https://core.telegram.org/bots/api). `(unsure)` marks a detail about Telegram that has not been checked.
+Here is Telegram as Concord sees it. There is one host, and the bot's token is part of the path: `base "https://api.telegram.org/bot{token}";`. The token is a `Secret` inside a template, so it is never printed. The bot's files are on the same host under another prefix, `/file/bot{token}/`, so one endpoint has its own `base`. Every reply of a Bot API method is an envelope, `{"ok": true, "result": …}` or `{"ok": false, "error_code": …, "description": …}`, often with a `200` status, and one arm on the client unwraps it. The bytes of a file are not in an envelope: their endpoint removes the arm and streams them. Updates arrive by a long poll (`getUpdates` waits up to `timeout` seconds when there is nothing new) or by a webhook. Flood control responds with a `429` and `retry_after` in its body. Telegram's own reference is [core.telegram.org/bots/api](https://core.telegram.org/bots/api). `(unsure)` marks a detail about Telegram that has not been checked.
 
 ## The description
 
@@ -122,11 +122,11 @@ A body of entries leaves out every input that was not set, including the `Secret
 
 The data types are plain `serde` types, named here but not shown: `User`, `Message` (`message_id`, `document`), `Document` (`file_id`), `Update` (`update_id`), `File` (`file_path`), `ChatFullInfo`, `MessageEntity`, `ReplyMarkup`, `InlineKeyboardMarkup`. `ChatId` is an id or a `@username`, serialized untagged; `ParseMode` is serialized as Telegram spells it (`HTML`, `MarkdownV2`). `EditedMessage` is a `Message`, or `true` for a message sent inline.
 
-Telegram's errors, the envelope, the body of an upload, and Telegram's retry policy:
+Telegram's errors, the envelope, the body of an upload, and Telegram's retry policy. This block is a module of its own beside the description, which reaches the client with `use super::*;`, so it names `concord::Json` in full rather than importing it a second time:
 
 ```rust
 use concord::bytes::Bytes;
-use concord::{multipart, Body, Fail, Json, MultipartError};
+use concord::{multipart, Body, Fail, MultipartError};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::time::Duration;
@@ -166,12 +166,12 @@ pub fn telegram_result<T: DeserializeOwned>(body: Bytes) -> Result<T, Fail<TgPro
     struct Reply<T> {
         result: T,
     }
-    let head: Head = Json::decode(&body).map_err(Fail::from_read)?;
+    let head: Head = concord::Json::decode(&body).map_err(Fail::from_read)?;
     if head.ok {
-        let reply: Reply<T> = Json::decode(&body).map_err(Fail::from_read)?;
+        let reply: Reply<T> = concord::Json::decode(&body).map_err(Fail::from_read)?;
         Ok(reply.result)
     } else {
-        let problem: TgProblem = Json::decode(&body).map_err(Fail::from_read)?;
+        let problem: TgProblem = concord::Json::decode(&body).map_err(Fail::from_read)?;
         Err(problem)?
     }
 }
@@ -255,7 +255,7 @@ pub async fn use_webhook(bot: &Telegram, url: &str, secret: Secret) -> telegram:
 
 | Telegram wants | What to write |
 |---|---|
-| An envelope around every response, often with the status `200`: `{"ok": false, …}` is an error. | One arm on the client, `2xx { body } => telegram_result(body)?`, under `read Binary;`: it decodes `ok`, then `result` or the client's problem, with `Json::decode`, so a result that does not fit still names its field. `problem TgProblem read Json;` reads the error of any other status. |
+| An envelope around every reply of a Bot API method, often with the status `200`: `{"ok": false, …}` is an error. | One arm on the client, `2xx { body } => telegram_result(body)?`, under `read Binary;`: it decodes `ok`, then `result` or the client's problem, with `Json::decode`, so a result that does not fit still names its field. `problem TgProblem read Json;` reads the error of any other status. |
 | A long poll that sends the same request again after an empty response, but pagination stops when the same request would be sent twice in a row. | Your own loop (`poll` above). `get_updates` declares `idempotent false;`, because a negative offset makes Telegram forget updates. |
 | A file by its id or URL in JSON, or by its bytes in `multipart/form-data`: one method, two bodies. | Two endpoints on one path: `send_photo` with a body of entries, `send_document` with `multipart()`. |
 | Exactly one of two groups of inputs (`chat_id` and `message_id`, or `inline_message_id`). | Each input optional, with a doc comment: Telegram rejects a call that has neither. |
