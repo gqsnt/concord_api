@@ -1,0 +1,9 @@
+{
+  "id": "M328",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A lower balance for the same reset keeps the earlier deadline, so the window refills early",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                        same_reset = Some((*old).max(*at));",
+  "replace": "                        same_reset = Some(*old);"
+}

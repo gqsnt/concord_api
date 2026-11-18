@@ -1072,6 +1072,31 @@ async fn c11_13_row_19_every_text_names_the_attempts_of_the_call() {
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn c11_13_row_19_a_refusal_names_the_attempts_of_the_call() {
+    for reader in BOTH {
+        let script = Script::new();
+        script.answer(503);
+        answer(
+            &script,
+            &[reader.records(&[r#"{"kind":"error","code":410}"#])],
+        );
+        let client = feed(&script).with_retry(Retry::<Problem>::standard());
+        let mut stream = reader.open(&client, false).await;
+        let error = failed(stream.try_next().await);
+        assert_eq!(error.kind(), Kind::Refused);
+        assert_eq!(error.problem(), Some(&Problem { code: 410 }));
+        assert_eq!(error.tries(), 2);
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "refused: status 200, in {}, after 2 attempts",
+                reader.endpoint(false)
+            )
+        );
+    }
+}
+
 // Rows 20 to 22 ----------------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
@@ -1171,4 +1196,72 @@ async fn c11_13_row_23_event_blocks_that_dispatch_nothing_count_in_the_position(
         "feed.lines_body",
         "record 4 does not fit the stream",
     );
+}
+
+// A reader of the author's own ---------------------------------------------------------------
+
+/// The body of a response, handed to the author's own framer as records.
+pub struct OwnRecords(concord::read::RecordBody<Problem>);
+
+impl concord::error::CarriesProblem for OwnRecords {
+    type Problem = Problem;
+}
+
+/// A reader of the author's own, which frames nothing: the test makes the errors itself.
+pub struct OwnReader;
+
+impl concord::Reader<OwnRecords> for OwnReader {
+    async fn read(
+        &self,
+        body: concord::read::Incoming,
+    ) -> Result<OwnRecords, concord::read::ReadError> {
+        Ok(OwnRecords(body.stream().into_records()))
+    }
+}
+
+concord::api! {
+    client Own {
+        base "https://own.example.test";
+        problem Problem read concord::Json;
+
+        GET records() -> OwnRecords { path "o"; read OwnReader; }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_13_a_reader_of_the_authors_own_keeps_a_place_only_for_a_record_that_does_not_decode() {
+    use concord::read::RecordFault;
+    let cases = [
+        (
+            RecordFault::too_large(),
+            "record 1 exceeds the reader's size limit",
+            false,
+        ),
+        (RecordFault::not_utf8(), "record 1 is not UTF-8", false),
+        (
+            RecordFault::does_not_fit(),
+            "record 1 does not fit the stream",
+            false,
+        ),
+        (
+            RecordFault::not_decoded(),
+            "record 1 could not be decoded",
+            true,
+        ),
+    ];
+    for (fault, words, placed) in cases {
+        let script = Script::new();
+        answer(&script, &[b"x\n".to_vec()]);
+        let own = Own::new().with_transport(script.clone());
+        let OwnRecords(mut body) = success(own.records().await);
+        body.start_record();
+        let error = body.fail(fault.at(3, 4));
+        record_mismatch(&error, "own.records", words);
+        let details = error.details().to_string();
+        assert_eq!(
+            details.contains("line 3, column 4"),
+            placed,
+            "{words}: {details}"
+        );
+    }
 }

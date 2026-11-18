@@ -1,0 +1,9 @@
+{
+  "id": "M301",
+  "area": "typed records",
+  "contract": "C11.9",
+  "description": "An event block that dispatches no event is not counted in a typed stream's positions",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "                Ok(None) => {\n                    if ended {\n                        lines.input.start_record();\n                    }\n                    continue;\n                }",
+  "replace": "                Ok(None) => continue,"
+}

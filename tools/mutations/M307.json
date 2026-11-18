@@ -1,0 +1,9 @@
+{
+  "id": "M307",
+  "area": "records",
+  "contract": "C11.10",
+  "description": "A pull that spends its budget yields without checking the call's deadline",
+  "file": "concord-extras/src/read/records.rs",
+  "find": "        match self.input.check_deadline() {\n            Ok(()) => Poll::Pending,\n            Err(error) => Poll::Ready(Err(error.into())),\n        }",
+  "replace": "        Poll::Pending"
+}

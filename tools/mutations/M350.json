@@ -1,0 +1,9 @@
+{
+  "id": "M350",
+  "area": "single send",
+  "contract": "C9.5",
+  "description": "A blocked failure no longer counts as stating that nothing was sent",
+  "file": "concord-core/src/transport.rs",
+  "find": "        self.not_sent || self.class == Class::Blocked",
+  "replace": "        self.not_sent"
+}

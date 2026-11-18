@@ -1,0 +1,9 @@
+{
+  "id": "M356",
+  "area": "renewal",
+  "contract": "C11.2",
+  "description": "A panic in a rejected_when function rejects the token",
+  "file": "concord-extras/src/auth/rejection.rs",
+  "find": "        if catch_unwind(AssertUnwindSafe(|| rejects(&seen))).unwrap_or(false) {",
+  "replace": "        if catch_unwind(AssertUnwindSafe(|| rejects(&seen))).unwrap_or(true) {"
+}

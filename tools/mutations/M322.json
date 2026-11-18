@@ -1,0 +1,9 @@
+{
+  "id": "M322",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A dated reset more than fifty years ahead is learned",
+  "file": "concord-extras/src/limit/headers.rs",
+  "find": "    (until <= FIFTY_YEARS).then_some(until)",
+  "replace": "    Some(until)"
+}

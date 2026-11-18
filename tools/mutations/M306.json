@@ -1,0 +1,9 @@
+{
+  "id": "M306",
+  "area": "typed records",
+  "contract": "C11.10",
+  "description": "Each skipped record gets a fresh work budget: a pull of skipped records never yields",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "        let mut work = Work {\n            bytes: 16_384,\n            chunks: 64,\n        };\n        loop {\n            let Some(lines) = this.lines.as_mut() else {",
+  "replace": "        loop {\n            let mut work = Work {\n                bytes: 16_384,\n                chunks: 64,\n            };\n            let Some(lines) = this.lines.as_mut() else {"
+}

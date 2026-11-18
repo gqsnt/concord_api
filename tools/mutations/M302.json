@@ -1,0 +1,9 @@
+{
+  "id": "M302",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "Step::Last keeps the body: the next pull reads the bytes after the last record",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "                Ok(Step::Last(value)) => {\n                    this.lines = None;\n",
+  "replace": "                Ok(Step::Last(value)) => {\n"
+}

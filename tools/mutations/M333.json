@@ -1,0 +1,9 @@
+{
+  "id": "M333",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "The RFC 3339 reader forgets the date it read, so a late head naming the same reset refills again",
+  "file": "concord-extras/src/limit/headers.rs",
+  "find": "            window.reset_at = Some(at);",
+  "replace": "            window.reset_at = None;"
+}

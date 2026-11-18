@@ -1,0 +1,9 @@
+{
+  "id": "M324",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "A key capped at n admits n + 1 calls at once",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "        wait.unknown |= cap.is_some_and(|cap| self.in_use >= cap);",
+  "replace": "        wait.unknown |= cap.is_some_and(|cap| self.in_use > cap);"
+}

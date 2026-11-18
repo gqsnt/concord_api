@@ -1,0 +1,9 @@
+{
+  "id": "M362",
+  "area": "decode by hand",
+  "contract": "C5.8",
+  "description": "Fail::from_read keeps a body that broke as if it were a decoder's input",
+  "file": "concord-core/src/read.rs",
+  "find": "            ReadKind::Transport(_) | ReadKind::Forward(_) => return Evidence::NotRead,",
+  "replace": "            ReadKind::Transport(_) | ReadKind::Forward(_) => EvidenceKind::Limit,"
+}

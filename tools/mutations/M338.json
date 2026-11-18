@@ -1,0 +1,9 @@
+{
+  "id": "M338",
+  "area": "retry ceiling",
+  "contract": "C4.3",
+  "description": "A requested wait equal to the ceiling ends the retries; an asked zero under a zero ceiling too",
+  "file": "concord-core/src/retry.rs",
+  "find": "    if asked > cap || after > cap {",
+  "replace": "    if asked >= cap || after >= cap {"
+}

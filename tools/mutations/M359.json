@@ -1,0 +1,9 @@
+{
+  "id": "M359",
+  "area": "renewal",
+  "contract": "C12.6",
+  "description": "The pair saved again after NotSent keeps its usable expiry, so its old access token is sent",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "            expiry: Expiry::Absolute(None),",
+  "replace": "            expiry: previous.expiry.clone(),"
+}

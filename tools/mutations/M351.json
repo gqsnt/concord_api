@@ -1,0 +1,9 @@
+{
+  "id": "M351",
+  "area": "renewal",
+  "contract": "C12.6",
+  "description": "RenewalError::from_call treats a failure that may have been sent as NotSent",
+  "file": "concord-extras/src/auth.rs",
+  "find": "        if error.tries() == 1 && error.request_not_sent() {",
+  "replace": "        if error.tries() == 1 {"
+}

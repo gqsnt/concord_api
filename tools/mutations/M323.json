@@ -1,0 +1,9 @@
+{
+  "id": "M323",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A header read by the shipped learners may exceed 4,096 bytes",
+  "file": "concord-extras/src/limit/headers.rs",
+  "find": "    seen.header(name)\n        .filter(|text| text.len() <= MAX_HEADER_BYTES)",
+  "replace": "    seen.header(name)"
+}

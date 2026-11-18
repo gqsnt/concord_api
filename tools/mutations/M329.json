@@ -1,0 +1,9 @@
+{
+  "id": "M329",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A lower balance reported for the same or a later reset is not honoured at once",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "                self.remaining = previous.min(target).min(new.capacity);",
+  "replace": "                self.remaining = if same_reset.is_some() {\n                    previous.min(new.capacity)\n                } else {\n                    previous.min(target).min(new.capacity)\n                };"
+}

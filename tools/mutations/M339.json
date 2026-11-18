@@ -1,0 +1,9 @@
+{
+  "id": "M339",
+  "area": "retry ceiling",
+  "contract": "C4.3",
+  "description": "The random part of a wait is cut to the ceiling",
+  "file": "concord-core/src/retry.rs",
+  "find": "    let ceiling = (2u64.saturating_pow(n.saturating_sub(1))).min(60);",
+  "replace": "    let ceiling = (2u64.saturating_pow(n.saturating_sub(1))).min(60).min(cap.as_secs());"
+}

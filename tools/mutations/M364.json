@@ -1,0 +1,9 @@
+{
+  "id": "M364",
+  "area": "decode by hand",
+  "contract": "C5.8",
+  "description": "A decode by hand on a 2xx calls the decoder's input the body of the response",
+  "file": "concord-core/src/read.rs",
+  "find": "        mismatch_of_a_body(failure, &body, kept, details, status, headers, info)\n            .mark_decoder_input()",
+  "replace": "        mismatch_of_a_body(failure, &body, kept, details, status, headers, info)"
+}

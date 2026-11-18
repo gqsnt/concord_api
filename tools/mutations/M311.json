@@ -1,0 +1,9 @@
+{
+  "id": "M311",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "`?` on a decoder's error gives 'does not fit' instead of 'could not be decoded'",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "                RecordError::Decode { line, column, .. } => Cause::Decode { line, column },",
+  "replace": "                RecordError::Decode { .. } => Cause::Other,"
+}

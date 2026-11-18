@@ -1,0 +1,9 @@
+{
+  "id": "M314",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "A refusal from a typed stream names the first attempt, whatever attempt read it",
+  "file": "concord-core/src/read.rs",
+  "find": "            info.number(),\n            self.stream.status,\n            self.stream.headers.clone(),\n            Some(problem),",
+  "replace": "            1,\n            self.stream.status,\n            self.stream.headers.clone(),\n            Some(problem),"
+}

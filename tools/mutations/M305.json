@@ -1,0 +1,9 @@
+{
+  "id": "M305",
+  "area": "typed records",
+  "contract": "C11.13",
+  "description": "JsonLines until_end_of_body fails a watch that ends cleanly",
+  "file": "concord-extras/src/read/records/mapped.rs",
+  "find": "        self.finish(End::EndOfBody)\n    }\n\n    fn finish(self, end: End) -> Mapped<JsonLines, F> {",
+  "replace": "        self.finish(End::LastRecord)\n    }\n\n    fn finish(self, end: End) -> Mapped<JsonLines, F> {"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M332",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A dated window declared on the bucket is created without its date, and pays its reset twice",
+  "file": "concord-extras/src/limit/engine.rs",
+  "find": "            *date = window.reset_at;",
+  "replace": "            let _ = (date, window);"
+}

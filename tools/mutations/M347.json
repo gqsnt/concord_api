@@ -1,0 +1,9 @@
+{
+  "id": "M347",
+  "area": "single send",
+  "contract": "C9.5",
+  "description": "One send stating that nothing was sent is enough, though another send of the attempt may have written",
+  "file": "concord-core/src/transport.rs",
+  "find": "        started != u32::MAX && started == sends.unsent.into_inner()",
+  "replace": "        started != u32::MAX && sends.unsent.into_inner() != 0"
+}

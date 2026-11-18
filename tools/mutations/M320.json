@@ -1,0 +1,9 @@
+{
+  "id": "M320",
+  "area": "limit",
+  "contract": "C11.5",
+  "description": "A dated reset is counted from the local clock even when the response has a valid Date",
+  "file": "concord-extras/src/limit.rs",
+  "find": "        self.header(\"date\")\n            .and_then(|date| headers::http_date(date, self.now))\n            .unwrap_or(self.now)",
+  "replace": "        self.now"
+}

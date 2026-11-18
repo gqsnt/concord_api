@@ -1,0 +1,9 @@
+{
+  "id": "M348",
+  "area": "single send",
+  "contract": "C9.5",
+  "description": "A copy of the attempt's TryInfo still held does not stop the call from stating that nothing was sent",
+  "file": "concord-core/src/transport.rs",
+  "find": "        let Some(sends) = Arc::into_inner(record) else {\n            return false;\n        };\n        let started = sends.started.into_inner();\n        started != u32::MAX && started == sends.unsent.into_inner()",
+  "replace": "        let started = record.started.load(Ordering::SeqCst);\n        started != u32::MAX && started == record.unsent.load(Ordering::SeqCst)"
+}

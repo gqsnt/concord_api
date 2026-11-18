@@ -1,0 +1,9 @@
+{
+  "id": "M337",
+  "area": "retry ceiling",
+  "contract": "C4.3",
+  "description": "A Retry-After above the ceiling is waited for and retried",
+  "file": "concord-core/src/retry.rs",
+  "find": "    if asked > cap || after > cap {",
+  "replace": "    if asked > cap {"
+}

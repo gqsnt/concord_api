@@ -1,0 +1,9 @@
+{
+  "id": "M308",
+  "area": "typed records",
+  "contract": "C11.10",
+  "description": "A body read as records never reports that the call's deadline has passed",
+  "file": "concord-core/src/read.rs",
+  "find": "    pub fn check_deadline(&mut self) -> Result<(), StreamError> {\n        self.stream.check_deadline()\n    }",
+  "replace": "    pub fn check_deadline(&mut self) -> Result<(), StreamError> {\n        Ok(())\n    }"
+}

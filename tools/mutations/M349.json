@@ -1,0 +1,9 @@
+{
+  "id": "M349",
+  "area": "single send",
+  "contract": "C9.5",
+  "description": "A call states that nothing was sent although an earlier attempt may have written",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "                if unsent && none_written {",
+  "replace": "                if none_written {"
+}

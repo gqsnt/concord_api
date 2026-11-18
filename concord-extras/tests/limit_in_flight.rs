@@ -331,3 +331,22 @@ async fn c11_4_a_retried_attempt_takes_a_new_place_and_nothing_is_sent_twice() {
         .collect();
     assert_eq!(numbers, [1, 1, 2]);
 }
+
+#[tokio::test(start_paused = true)]
+async fn c11_7_a_call_in_two_capped_buckets_gives_back_both_places() {
+    let script = Script::new();
+    script.answer(200).body("first").stall();
+    script.answer(200).body("next");
+    let application = Bucket::new(|_| Some("application".into())).max_in_flight(1);
+    let limit = Limit::new()
+        .bucket(tenant().max_in_flight(1))
+        .bucket(application)
+        .max_hold(sec(5));
+    let start = Instant::now();
+    let held = call(&limit, &script, "red").await.unwrap();
+    tokio::time::sleep(sec(1)).await;
+    // The body is dropped: the place of each key that the call took is free again.
+    drop(held);
+    call(&limit, &script, "red").await.unwrap();
+    times(&script, start, &[0, 1]);
+}

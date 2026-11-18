@@ -1,0 +1,9 @@
+{
+  "id": "M353",
+  "area": "renewal",
+  "contract": "C11.2",
+  "description": "Renewed rejects its token on a 401 from another origin than its base",
+  "file": "concord-extras/src/auth.rs",
+  "find": "        if !rejection::same_origin(self.inner.origin.as_ref(), &response) {\n            return Ok(response);\n        }\n",
+  "replace": ""
+}

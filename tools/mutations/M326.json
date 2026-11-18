@@ -1,0 +1,9 @@
+{
+  "id": "M326",
+  "area": "limit",
+  "contract": "C11.7",
+  "description": "A body that fails keeps its place in the cap until it is dropped",
+  "file": "concord-extras/src/limit/body.rs",
+  "find": "        if matches!(frame, Poll::Ready(None | Some(Err(_)))) || self.body.is_end_stream() {",
+  "replace": "        if matches!(frame, Poll::Ready(None)) || self.body.is_end_stream() {"
+}
