@@ -203,6 +203,7 @@ impl Account {
                 {
                     continue;
                 }
+                // PANIC-SAFETY: This assigns through a reference to the slot; it is not a multiplication.
                 *old = History::new(new, now, false);
             }
             old.observe(new, cost, others, now);
