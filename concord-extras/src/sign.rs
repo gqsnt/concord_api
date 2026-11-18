@@ -467,8 +467,10 @@ impl SigV4 {
     /// # Errors
     ///
     /// Returns `SignError::WrongOrigin` when the scheme, host or effective port of the request
-    /// is not that of the base; otherwise, the error that the middleware would return for this
-    /// request.
+    /// is not that of the base. Otherwise, it returns the error that the middleware would
+    /// return for this request if it had been given `region`: `region` is checked as the
+    /// middleware checks its own, so a region that holds another byte than an ASCII letter, a
+    /// digit, `-` or `_` is `InvalidCredentials`, and one longer than 256 bytes is `TooLarge`.
     ///
     /// ```no_run
     /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request)
@@ -477,14 +479,7 @@ impl SigV4 {
     /// # Ok(()) }
     /// ```
     pub fn sign(&self, request: &mut Request, region: &str) -> Result<(), SignError> {
-        // The same check as the middleware's, before the credentials or the clock are read.
-        if !self
-            .origin
-            .as_ref()
-            .is_some_and(|base| same_origin(request.url(), base))
-        {
-            return Err(SignError::WrongOrigin);
-        }
+        self.check_own_origin(request)?;
         self.sign_any_origin(request, region)
     }
 
@@ -492,12 +487,21 @@ impl SigV4 {
     ///
     /// It is the right method only for an adapter that signs for several origins on
     /// purpose: a host for each bucket, or a global host beside regional ones, with one
-    /// set of credentials. The base given to [`SigV4::new`] then plays no part. The caller
-    /// owes the check that this method skips: before calling it, check the request against
-    /// the origins that the adapter was configured with, with [`check_origin`] for each one,
-    /// and never against an origin taken from the request itself. A request that reaches
-    /// this method unchecked is signed for whatever host it names, with the credentials of
-    /// this signer. For one origin, use [`SigV4::sign`] or the middleware.
+    /// set of credentials. The base given to [`SigV4::new`] then plays no part: a request
+    /// that reaches this method unchecked is signed for whatever host it names, with the
+    /// credentials of this signer. For one origin, use [`SigV4::sign`] or the middleware.
+    ///
+    /// The caller then owes three things:
+    ///
+    /// - Before calling it, check each request against the origins that it trusts with these
+    ///   credentials, with [`check_origin`] for each one, and never against an origin taken
+    ///   from the request, from a response or from any other value that the API returned.
+    /// - After signing, keep the signed fields unchanged: the method, the URL, the body and
+    ///   every header that was signed. A field changed after signing is sent under a
+    ///   signature that was not computed for it.
+    /// - Send the request through a transport that follows no redirect. Concord's own client,
+    ///   `concord::Http`, follows none; a transport that replaces it must not either, or the
+    ///   signed request, with its session token, can reach a host that was never checked.
     ///
     /// Like [`SigV4::sign`], it hashes the whole buffered body before it returns, and the
     /// headers change only on success.
@@ -519,6 +523,15 @@ impl SigV4 {
             None => "UNSIGNED-PAYLOAD".into(),
         };
         self.finish(request, region, &payload)
+    }
+
+    /// `WrongOrigin` unless the request goes to the origin of this signer's base. A base that
+    /// could not be parsed matches no request.
+    fn check_own_origin(&self, request: &Request) -> Result<(), SignError> {
+        match &self.origin {
+            Some(base) if same_origin(request.url(), base) => Ok(()),
+            _ => Err(SignError::WrongOrigin),
+        }
     }
 
     fn payload<'a>(&self, request: &'a Request) -> Result<Option<&'a [u8]>, SignError> {
@@ -699,13 +712,7 @@ impl Middleware for SigV4 {
         next: Next<'_>,
     ) -> Result<Response, TransportError> {
         let result = async {
-            if !self
-                .origin
-                .as_ref()
-                .is_some_and(|base| same_origin(request.url(), base))
-            {
-                return Err(SignError::WrongOrigin);
-            }
+            self.check_own_origin(&request)?;
             self.validate(&request, &self.region)?;
             let payload = match self.payload(&request)? {
                 None => "UNSIGNED-PAYLOAD".into(),

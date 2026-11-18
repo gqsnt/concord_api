@@ -1,0 +1,9 @@
+{
+  "id": "M281",
+  "area": "request signing",
+  "contract": "C12.10",
+  "description": "Direct signing checks the origin only after signing.",
+  "file": "concord-extras/src/sign.rs",
+  "find": "        self.check_own_origin(request)?;\n        self.sign_any_origin(request, region)\n",
+  "replace": "        self.sign_any_origin(request, region)?;\n        self.check_own_origin(request)\n"
+}

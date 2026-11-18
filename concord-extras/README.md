@@ -92,9 +92,10 @@ server issues it.
 
 `sign::SigV4::new(&base, credentials, region, service, path)` (feature `sign`) is a middleware that
 signs each attempt with AWS Signature Version 4, after it checks that the request goes to the
-origin of its base. `SigV4::sign(&mut request, region)` signs one request, for an adapter whose hosts
-are known only per call; that adapter checks the origin itself, with `check_origin` or its own list
-of hosts. `CanonicalPath::Preserve` is the convention of S3 for the path, `NormalizeAndEncode` that
+origin of its base. `SigV4::sign(&mut request, region)` signs one request, in a region chosen per
+call, after the same check of the origin. An adapter that signs for several origins on purpose
+checks each request against its own list of origins with `check_origin`, then calls
+`SigV4::sign_any_origin(&mut request, region)`, which skips the check. `CanonicalPath::Preserve` is the convention of S3 for the path, `NormalizeAndEncode` that
 of the other services. `Credentials::replace` replaces the whole set for every clone, and one
 signature uses one set. A body that is a stream is refused without being polled, unless
 `allow_unsigned_payload` is set for S3 over HTTPS; a `Body::repeatable` is then signed again, as an
