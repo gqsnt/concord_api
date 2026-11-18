@@ -200,11 +200,12 @@ mod reader_note {
 }
 
 /// C11.13: a declared type whose error names another problem type than the client's does not
-/// compile, however it is spelled.
+/// compile, however it is spelled; the check meets none of the author's names.
 #[test]
 fn c11_13_a_stream_of_another_problem_type_is_refused_at_the_declared_type() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/compiler-errors/problem-type/*.rs");
+    t.pass("tests/accepted/problem_check_isolated.rs");
 }
 
 #[test]

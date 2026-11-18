@@ -785,6 +785,23 @@ const _: () = {
             tasks::List::done(self, done)
         }
     }
+    impl __check_problem_1::Declared for __check_problem_1::Witness {
+        type Value = Vec<Task>;
+        type Problem = __DeclaredProblem;
+    }
+    #[allow(dead_code, clippy::needless_borrow)]
+    mod __check_problem_1 {
+        pub(super) struct Witness;
+        pub(super) trait Declared {
+            type Value: ?::core::marker::Sized;
+            type Problem;
+        }
+        fn check() {
+            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
+            (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
+                .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
+        }
+    }
     impl tasks::Endpoint for tasks::List {
         type Data<__T: tasks::__Types> = tasks::__Data1<__T>;
         type Value = Vec<Task>;
@@ -821,11 +838,6 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
-            #[allow(unused_imports)]
-            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
-            #[allow(clippy::needless_borrow)]
-            (&::concord::__private::Output::<Self::Value>::new())
-                .must_name_the_clients_problem_type::<__DeclaredProblem>();
             ::concord::__private::answer_read(
                 __response,
                 __info,
@@ -841,6 +853,23 @@ const _: () = {
                 ::core::convert::identity,
                 ::concord::__private::PlainRefusal,
             )
+        }
+    }
+    impl __check_problem_2::Declared for __check_problem_2::Witness {
+        type Value = Task;
+        type Problem = __DeclaredProblem;
+    }
+    #[allow(dead_code, clippy::needless_borrow)]
+    mod __check_problem_2 {
+        pub(super) struct Witness;
+        pub(super) trait Declared {
+            type Value: ?::core::marker::Sized;
+            type Problem;
+        }
+        fn check() {
+            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
+            (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
+                .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
         }
     }
     impl tasks::Endpoint for tasks::Create {
@@ -882,11 +911,6 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
-            #[allow(unused_imports)]
-            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
-            #[allow(clippy::needless_borrow)]
-            (&::concord::__private::Output::<Self::Value>::new())
-                .must_name_the_clients_problem_type::<__DeclaredProblem>();
             ::concord::__private::answer_read(
                 __response,
                 __info,
@@ -902,6 +926,23 @@ const _: () = {
                 ::core::convert::identity,
                 ::concord::__private::PlainRefusal,
             )
+        }
+    }
+    impl __check_problem_3::Declared for __check_problem_3::Witness {
+        type Value = Task;
+        type Problem = __DeclaredProblem;
+    }
+    #[allow(dead_code, clippy::needless_borrow)]
+    mod __check_problem_3 {
+        pub(super) struct Witness;
+        pub(super) trait Declared {
+            type Value: ?::core::marker::Sized;
+            type Problem;
+        }
+        fn check() {
+            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
+            (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
+                .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
         }
     }
     impl tasks::Endpoint for tasks::Get {
@@ -938,11 +979,6 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
-            #[allow(unused_imports)]
-            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
-            #[allow(clippy::needless_borrow)]
-            (&::concord::__private::Output::<Self::Value>::new())
-                .must_name_the_clients_problem_type::<__DeclaredProblem>();
             ::concord::__private::answer_read(
                 __response,
                 __info,
@@ -958,6 +994,23 @@ const _: () = {
                 ::core::convert::identity,
                 ::concord::__private::PlainRefusal,
             )
+        }
+    }
+    impl __check_problem_4::Declared for __check_problem_4::Witness {
+        type Value = ();
+        type Problem = __DeclaredProblem;
+    }
+    #[allow(dead_code, clippy::needless_borrow)]
+    mod __check_problem_4 {
+        pub(super) struct Witness;
+        pub(super) trait Declared {
+            type Value: ?::core::marker::Sized;
+            type Problem;
+        }
+        fn check() {
+            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
+            (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
+                .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
         }
     }
     impl tasks::Endpoint for tasks::Delete {
@@ -994,11 +1047,6 @@ const _: () = {
         ) -> impl ::core::future::Future<
             Output = tasks::Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send {
-            #[allow(unused_imports)]
-            use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
-            #[allow(clippy::needless_borrow)]
-            (&::concord::__private::Output::<Self::Value>::new())
-                .must_name_the_clients_problem_type::<__DeclaredProblem>();
             ::concord::__private::answer_empty(
                 __response,
                 __info,
