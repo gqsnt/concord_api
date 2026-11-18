@@ -32,8 +32,8 @@ type Unless<P> = Arc<dyn Fn(&Tried<'_, P>) -> bool + Send + Sync>;
 /// to 2<sup>n-1</sup> seconds (1 s, 2 s, 4 s, … at most 60 s), drawn anew for each wait,
 /// after [`none`](Retry::none) as after [`standard`](Retry::standard). So a rule's wait is
 /// exact when it is at least 2<sup>n-1</sup> seconds and no longer `Retry-After` arrived. A
-/// wait over 60 seconds, or one that would end after the call's `timeout`, means no further
-/// attempt.
+/// `Retry-After` or a rule's wait over [`max_retry_after`](Retry::max_retry_after), 60 seconds
+/// by default, or a wait that would end after the call's `timeout`, means no further attempt.
 ///
 /// A clone is independent: it copies the number of attempts, the table and the
 /// `not_applied_on` statuses, and shares only the `when` and `unless` rules, which cannot
@@ -95,7 +95,8 @@ impl<P> Retry<P> {
     /// The wait is random up to 1 second, then 2, then 4, capped at 60 seconds,
     /// and never shorter than `Retry-After`. The repeatability and body checks still apply.
     ///
-    /// A `Retry-After` over 60 seconds is not waited for. Neither is a wait that would end after
+    /// A `Retry-After` over 60 seconds is not waited for, unless
+    /// [`max_retry_after`](Retry::max_retry_after) allows more. Neither is a wait that would end after
     /// the call's `timeout`: it is not started, and the call returns the last outcome at once (a
     /// `429` is then the error, with its [`retry_after`](crate::Error::retry_after)), rather than
     /// a timeout.
@@ -144,13 +145,17 @@ impl<P> Retry<P> {
     /// A `Retry-After`, or a wait that a [`when`](Retry::when) rule returned, longer than
     /// this means no further attempt: the call returns the last outcome at once, and its
     /// [`retry_after`](crate::Error::retry_after) still says how long the server asked to
-    /// wait. A shorter one is waited for, as before. The random part of each wait keeps its
-    /// own schedule, at most 60 seconds, whatever this setting is; a wait that would end after
-    /// the call's `timeout` still means no further attempt. Zero lets another attempt
-    /// happen only when nothing asked for a wait.
+    /// wait. One that is not longer is waited for. The random part of each wait keeps its
+    /// own schedule and its own cap, at most 60 seconds, whatever this setting is; a wait
+    /// that would end after the call's `timeout` still means no further attempt. Zero allows
+    /// no asked wait at all: another attempt happens only when nothing asked for one, or a
+    /// `Retry-After` of zero.
     ///
-    /// For an API that asks for long waits, set it with the `max_hold` of the
-    /// `concord::limit::Limit` that the same calls go through, so that both wait as long:
+    /// Raising it lets a call last much longer. With no `timeout` on the call, each retry can
+    /// sleep as long as this setting, so three tries can sleep twice that long; and a
+    /// middleware that waits, such as `concord::limit::Limit`, waits again on every try, up to
+    /// its own `max_hold` each time. For an API that asks for long waits, raise it together
+    /// with that `max_hold`, and set a `timeout` on the calls that must end sooner:
     ///
     /// ```
     /// # use concord_core as concord;
@@ -406,7 +411,7 @@ pub fn again<P>(
     // 7. Keep both requested waits, even when the verdict is to stop.
     let after = decision.header_wait.unwrap_or_default();
     let asked = decision.rule_wait.unwrap_or_default();
-    let cap = Duration::from_secs(60);
+    let cap = policy.max_retry_after;
     if asked > cap || after > cap {
         return decision;
     }
@@ -838,6 +843,134 @@ mod tests {
                 })
             );
         }
+    }
+
+    /// The decision for a `429` with this `Retry-After`, after try `n`.
+    fn ceiling(
+        policy: Retry<()>,
+        after: Option<&str>,
+        n: u32,
+        time_left: Option<Duration>,
+        random: f64,
+    ) -> Decision {
+        let mut headers = http::HeaderMap::new();
+        if let Some(after) = after {
+            headers.insert("retry-after", after.parse().unwrap());
+        }
+        let headers = Headers::from(headers);
+        let mut outcome = status(429);
+        outcome.headers = Some(&headers);
+        again(
+            &policy.tries(100),
+            outcome,
+            n,
+            &http::Method::GET,
+            Idempotent::ByMethod,
+            true,
+            time_left,
+            SystemTime::UNIX_EPOCH,
+            random,
+        )
+    }
+
+    #[test]
+    fn c4_3_by_default_a_server_that_asks_120_seconds_ends_the_retries() {
+        let decision = ceiling(Retry::standard(), Some("120"), 1, None, 0.5);
+        assert_eq!(decision.wait, None);
+        assert_eq!(decision.retry_after(), Some(Duration::from_secs(120)));
+        // Sixty is still waited for: the ceiling is inclusive.
+        let decision = ceiling(Retry::standard(), Some("60"), 1, None, 0.5);
+        assert_eq!(decision.wait, Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn c4_3_a_raised_ceiling_waits_for_the_asked_wait_and_retries() {
+        let policy = || Retry::standard().max_retry_after(Duration::from_secs(600));
+        let decision = ceiling(policy(), Some("120"), 1, None, 0.5);
+        assert_eq!(decision.wait, Some(Duration::from_secs(120)));
+        assert_eq!(
+            ceiling(policy(), Some("600"), 1, None, 0.5).wait,
+            Some(Duration::from_secs(600))
+        );
+        // A rule's wait is bounded the same way.
+        let ruled = policy().when(|_| Some(Duration::from_secs(300)));
+        assert_eq!(
+            ceiling(ruled, None, 1, None, 0.0).wait,
+            Some(Duration::from_secs(300))
+        );
+    }
+
+    #[test]
+    fn c4_3_a_wait_above_the_ceiling_ends_the_retries_and_keeps_what_was_asked() {
+        let policy = || Retry::standard().max_retry_after(Duration::from_secs(100));
+        let decision = ceiling(policy(), Some("101"), 1, None, 0.5);
+        assert_eq!(decision.wait, None);
+        assert_eq!(decision.header_wait, Some(Duration::from_secs(101)));
+        let ruled = policy().when(|_| Some(Duration::from_millis(100_001)));
+        let decision = ceiling(ruled, None, 1, None, 0.5);
+        assert_eq!(decision.wait, None);
+        assert_eq!(decision.rule_wait, Some(Duration::from_millis(100_001)));
+        assert_eq!(
+            ceiling(policy(), Some("100"), 1, None, 0.5).wait,
+            Some(Duration::from_secs(100))
+        );
+    }
+
+    #[test]
+    fn c4_3_a_zero_ceiling_allows_no_asked_wait() {
+        let policy = || Retry::standard().max_retry_after(Duration::ZERO);
+        assert_eq!(ceiling(policy(), Some("1"), 1, None, 0.5).wait, None);
+        let ruled = policy().when(|_| Some(Duration::from_millis(1)));
+        assert_eq!(ceiling(ruled, None, 1, None, 0.5).wait, None);
+        // Nothing asked, or a Retry-After of zero: the random part alone.
+        assert_eq!(
+            ceiling(policy(), None, 1, None, 0.5).wait,
+            Some(Duration::from_millis(500))
+        );
+        assert_eq!(
+            ceiling(policy(), Some("0"), 1, None, 0.5).wait,
+            Some(Duration::from_millis(500))
+        );
+    }
+
+    #[test]
+    fn c4_3_the_random_part_keeps_its_schedule_whatever_the_ceiling() {
+        for longest in [
+            Duration::ZERO,
+            Duration::from_secs(1),
+            Duration::from_secs(600),
+        ] {
+            for (n, seconds) in [(1, 1), (2, 2), (3, 4), (7, 60), (10, 60), (99, 60)] {
+                let policy = Retry::standard().max_retry_after(longest);
+                assert_eq!(
+                    ceiling(policy, None, n, None, 1.0).wait,
+                    Some(Duration::from_secs(seconds)),
+                    "{longest:?} {n}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn c4_3_a_raised_ceiling_still_yields_to_the_call_timeout() {
+        let policy = || Retry::standard().max_retry_after(Duration::from_secs(600));
+        let left = Some(Duration::from_secs(120));
+        let decision = ceiling(policy(), Some("120"), 1, left, 0.5);
+        assert_eq!(decision.wait, None);
+        assert_eq!(decision.retry_after(), Some(Duration::from_secs(120)));
+        assert_eq!(
+            ceiling(policy(), Some("119"), 1, left, 0.5).wait,
+            Some(Duration::from_secs(119))
+        );
+    }
+
+    #[test]
+    fn c4_3_a_clone_keeps_the_ceiling() {
+        let policy = Retry::<()>::standard().max_retry_after(Duration::from_secs(600));
+        assert_eq!(
+            ceiling(policy.clone(), Some("120"), 1, None, 0.5).wait,
+            Some(Duration::from_secs(120))
+        );
     }
 
     fn with_retry_after(value: &str, now: SystemTime) -> Option<Duration> {
