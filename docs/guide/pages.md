@@ -127,7 +127,7 @@ A function of your own becomes a `Paging` with `Paging::from_fn(…)`, and any p
 
 For each page, a `Paging` decides in this order, **whatever the order in which its methods were written**:
 
-0. **The call.** If it sets the inputs of two `or_when_set`, the pages end with a Mismatch after the first page, whatever the page says.
+0. **The call.** The call that fetched the page is checked at each decision, before the gate. If it sets the inputs of two `or_when_set`, the pages end with a Mismatch after that page, whatever the page says: after the first page when the caller set both inputs, after a later page when a move itself sets a second input.
 1. **The gate.** If one input given to `only_when_set` is not set on the call that fetched the page, this page is the last. Nothing else is read.
 2. **What the page states.** Every statement (`has_more`, and the total of `by_offset_total`) is read, once, in the order written, whatever the others say. If one cannot be read (a total that is not a number of items), its failure is the result. Otherwise, if one says "no more" and another "more", the pages end with a Mismatch. If all say "no more", this page is the last.
 3. **The move.** The next call is computed: by the pager of the `or_when_set` whose input the call set, or else by the pager that the `Paging` was made from. Its failure (a `Link` field that cannot be parsed, a pager of your own that fails) is the result, also on a short page. A cursor chosen by `or_when_set` goes on past an empty page below a total, when it finds a next call. If a statement said "more" and there is no next call, the pages end with a Mismatch.

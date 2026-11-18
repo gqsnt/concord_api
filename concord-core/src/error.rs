@@ -1058,6 +1058,16 @@ impl<P> Fail<P> {
     /// Creates a failure from a decoder's error, for an arm or a pager that decodes a body
     /// itself.
     ///
+    /// It is for bytes that a decoder was given, such as the body or a part of it, and not
+    /// for a header. A header that is present and does not parse is a
+    /// [`mismatch`] with a fixed reason,
+    /// `concord::mismatch("an x-amz-delete-marker header that is not true or false")`: the
+    /// error then prints `the status arm rejected the response` (in a pager, `the next page
+    /// cannot be requested`) and `reason()` returns that text. Given a `ReadError` made from
+    /// empty bytes, this function prints `the decoder's input is empty` instead, and
+    /// `reason()` is `None`; made from the header's value, it keeps that value as the
+    /// decoder's input.
+    ///
     /// It keeps only what a decoder's failure is: the location of the fault, the decoder's
     /// message (at most 1 KiB), and at most 64 KiB of the bytes, as
     /// [`ReadError::not_the_type`](crate::read::ReadError::not_the_type) kept them. The status,
