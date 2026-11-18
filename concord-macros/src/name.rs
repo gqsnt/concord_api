@@ -1,6 +1,6 @@
 //! Validate names, receivers, owner views, and generated type namespaces.
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
@@ -10,6 +10,9 @@ use crate::{
     diag::{self, Diagnostics, Written},
     flat,
 };
+
+#[cfg(test)]
+use growth::{inspect, Inspection};
 
 /// C1.4's closed, edition-independent keyword set.
 pub(crate) fn keyword(name: &str) -> bool {
@@ -203,8 +206,10 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
             if matches!(node.kind, NodeKind::Client | NodeKind::Scope) {
                 owners.push((flat::owner_name(node), node.name.span()));
             }
-            let forbidden = owners.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
-            let mut inputs = BTreeMap::new();
+            let forbidden = std::cell::LazyCell::new(|| {
+                owners.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>()
+            });
+            let mut inputs = HashMap::new();
             if let Some(signature) = &node.signature {
                 for parameter in &signature.entries {
                     if let Parameter::Input(input) = parameter {
@@ -255,7 +260,7 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                     }
                 }
             }
-            let mut parts = BTreeMap::new();
+            let mut parts = HashMap::new();
             for part in node.parts.iter().filter(|p| !p.parse_failed) {
                 let name = part.name.to_string();
                 if let Some(first) = remember(&mut parts, name.clone(), part.name.span()) {
@@ -265,8 +270,8 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                     );
                 }
             }
-            let mut children = BTreeMap::new();
-            let mut types = BTreeMap::<String, (&str, Span)>::new();
+            let mut children = HashMap::new();
+            let mut types = HashMap::<String, (&str, Span)>::new();
             let child_names: Vec<_> = node.children.iter().map(|c| c.name.to_string()).collect();
             for (child, name) in node
                 .children
@@ -298,7 +303,7 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                             } else {
                                 "conflicts with a generated type alias"
                             })
-                            .help(if child_candidate(node,child,&method_replacement(name,"item"),&owners.iter().map(|(n,_)|n.clone()).collect::<Vec<_>>()) {
+                            .help(if child_candidate(node,child,&method_replacement(name,"item"),&forbidden) {
                                 format!("rename this child to `{}`",method_replacement(name,"item"))
                             } else {"choose a distinct child name that conflicts with no sibling, optional input or generated type or method, and update its uses".into()}),
                     );
@@ -318,7 +323,7 @@ pub(crate) fn check(client: &Client, diagnostics: &mut Diagnostics) {
                                 &generated,
                                 &format!("{name}_other"),
                                 first,
-                            ).help(if child_candidate(node,child,&format!("{name}_other"), &owners.iter().map(|(n,_)|n.clone()).collect::<Vec<_>>()) {
+                            ).help(if child_candidate(node,child,&format!("{name}_other"), &forbidden) {
                                 format!("rename `{name}` to `{name}_other`")
                             } else {"choose a distinct child name whose generated type also differs from every sibling, and update its references".into()}),
                         );
@@ -350,11 +355,18 @@ fn input_candidate(node: &Node, name: &str, optional: bool, owners: &[String]) -
         && !owners.iter().any(|o| o == name)
         && !(optional && reserved(name, &node.kind))
         && !node.signature.as_ref().is_some_and(|s| {
-            s.entries
-                .iter()
-                .any(|p| matches!(p,Parameter::Input(i) if i.name==name))
+            s.entries.iter().any(|p| {
+                #[cfg(test)]
+                inspect(Inspection::InputRepair);
+                matches!(p,Parameter::Input(i) if i.name==name)
+            })
         })
-        && !(optional && node.children.iter().any(|c| c.name == name))
+        && !(optional
+            && node.children.iter().any(|c| {
+                #[cfg(test)]
+                inspect(Inspection::InputRepair);
+                c.name == name
+            }))
 }
 fn child_candidate(parent: &Node, current: &Node, name: &str, owners: &[String]) -> bool {
     snake(name)
@@ -364,13 +376,17 @@ fn child_candidate(parent: &Node, current: &Node, name: &str, owners: &[String])
         && !(matches!(parent.kind, NodeKind::Client)
             && matches!(type_name(name).as_str(), "Error" | "Result" | "Retry"))
         && !parent.children.iter().chain(&parent.parts).any(|c| {
+            #[cfg(test)]
+            inspect(Inspection::ChildRepair);
             !std::ptr::eq(c, current)
                 && (c.name == name || type_name(&c.name.to_string()) == type_name(name))
         })
         && !parent.signature.as_ref().is_some_and(|s| {
-            s.entries
-                .iter()
-                .any(|p| matches!(p,Parameter::Input(i) if i.optional.is_some() && i.name==name))
+            s.entries.iter().any(|p| {
+                #[cfg(test)]
+                inspect(Inspection::ChildRepair);
+                matches!(p,Parameter::Input(i) if i.optional.is_some() && i.name==name)
+            })
         })
 }
 
@@ -387,6 +403,14 @@ fn api_name(
     let kind = &node.kind;
     let spelling = name.to_string();
     let bare = spelling.trim_start_matches("r#");
+    let is_keyword = keyword(bare) || spelling.starts_with("r#");
+    // Valid spellings need no repair. Skipping their sibling scans keeps name
+    // checks linear in written names plus the inputs each scope or endpoint
+    // receives from its spreads, with expected constant-time lookups and
+    // owner searches bounded by the parser's depth limit.
+    if !is_keyword && snake(&spelling) {
+        return;
+    }
     let suggestion = replacement(&spelling);
     let owner_names = owners
         .iter()
@@ -398,7 +422,7 @@ fn api_name(
     } else {
         parent.is_some_and(|p| child_candidate(p, node, &suggestion, &owner_names))
     };
-    if keyword(bare) || spelling.starts_with("r#") {
+    if is_keyword {
         let line = Written::new(quote!(#name));
         let message = if let Some(ty) = ty {
             diag::keyword_input(&suggestion, &flat::tokens(ty), bare).help(format!("rename this input to `{suggestion}` and update its references in the existing placements and expressions, retaining their wire keys"))
@@ -424,12 +448,24 @@ pub(crate) fn expanded(
     owners: &[flat::Owner<'_>],
     diagnostics: &mut Diagnostics,
 ) {
-    let forbidden = owners
-        .iter()
-        .map(|o| flat::owner_name(o.node))
-        .chain(inputs.iter().map(|i| i.input.name.to_string()))
-        .collect::<Vec<_>>();
+    let forbidden = std::cell::LazyCell::new(|| {
+        owners
+            .iter()
+            .map(|o| flat::owner_name(o.node))
+            .chain(inputs.iter().map(|i| i.input.name.to_string()))
+            .collect::<Vec<_>>()
+    });
+    // Keep the first undamaged child, as a collision points at its declaration.
+    #[cfg(not(test))]
+    let mut children = HashMap::new();
+    #[cfg(test)]
+    let mut children = growth::counted_index(node.children.len(), Inspection::ChildHash);
+    for child in node.children.iter().filter(|child| !child.parse_failed) {
+        remember(&mut children, child.name.to_string(), child);
+    }
     for input in inputs {
+        #[cfg(test)]
+        inspect(Inspection::ExpandedInput);
         let name = input.input.name.to_string();
         if !std::ptr::eq(input.written, node) {
             if input.input.optional.is_some() && reserved(&name, &node.kind) {
@@ -455,11 +491,9 @@ pub(crate) fn expanded(
             }
         }
         if input.input.optional.is_some() {
-            if let Some(child) = node
-                .children
-                .iter()
-                .find(|child| !child.parse_failed && child.name == name)
-            {
+            #[cfg(test)]
+            inspect(Inspection::OptionalChild);
+            if let Some(child) = children.get(&name) {
                 diagnostics.raise(
                     child.name.span(),
                     diag::method_conflict(&name, &format!("fetch_{name}"), input.input.span).help(
@@ -473,10 +507,16 @@ pub(crate) fn expanded(
     }
 }
 
-fn remember<K: Ord, V: Copy>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Option<V> {
+fn remember<K: Eq + std::hash::Hash, V: Copy>(
+    map: &mut HashMap<K, V, impl std::hash::BuildHasher>,
+    key: K,
+    value: V,
+) -> Option<V> {
+    #[cfg(test)]
+    inspect(Inspection::Index);
     match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(first) => Some(*first.get()),
-        std::collections::btree_map::Entry::Vacant(slot) => {
+        std::collections::hash_map::Entry::Occupied(first) => Some(*first.get()),
+        std::collections::hash_map::Entry::Vacant(slot) => {
             slot.insert(value);
             None
         }
@@ -579,3 +619,7 @@ fn statement_uses(statement: &Statement, name: &str) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/name_growth.rs"]
+pub(crate) mod growth;

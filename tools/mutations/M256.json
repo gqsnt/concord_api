@@ -1,0 +1,10 @@
+{
+  "id": "M256",
+  "checks": ["macro-growth"],
+  "area": "optional input and child name validation growth",
+  "contract": "docs/internals/macro.md#size-and-compile-time",
+  "description": "Search all children for each optional input instead of probing the child name index.",
+  "file": "concord-macros/src/name.rs",
+  "find": "            #[cfg(test)]\n            inspect(Inspection::OptionalChild);\n            if let Some(child) = children.get(&name) {\n",
+  "replace": "            if let Some(child) = node.children.iter().find(|child| !child.parse_failed && child.name == name) {\n"
+}

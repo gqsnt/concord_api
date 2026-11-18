@@ -1,0 +1,10 @@
+{
+  "id": "M258",
+  "checks": ["macro-growth"],
+  "area": "optional input and child name validation growth",
+  "contract": "docs/internals/macro.md#size-and-compile-time",
+  "description": "Scan children for each optional input instead of probing the child name index, leaving the lookup attempt count in place.",
+  "file": "concord-macros/src/name.rs",
+  "find": "            if let Some(child) = children.get(&name) {\n",
+  "replace": "            if let Some(child) = node.children.iter().find(|child| !child.parse_failed && child.name == name) {\n"
+}

@@ -149,6 +149,12 @@ with (root / 'lock').open('a') as lock:
         self.assertIn("C2.16", by_id["M92"]["contract"])
         self.assertNotEqual(mutate.DEFAULT_PACKAGES, ("all",))
 
+    def test_macro_growth_mutations_opt_in_without_changing_default_packages(self):
+        self.assertNotIn("concord-macros", mutate.DEFAULT_PACKAGES)
+        by_id = {item["id"]: item for item in mutate.catalog()}
+        for ident in ("M255", "M256", "M257", "M258"):
+            self.assertIn("macro-growth", by_id[ident].get("checks", ()), ident)
+
     def test_listing_needs_no_baseline_build(self):
         with patch.object(sys, "argv", ["mutate.py", "--list"]), redirect_stdout(io.StringIO()), patch.object(mutate, "run") as run:
             self.assertEqual(mutate.main(), 0)

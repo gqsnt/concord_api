@@ -33,7 +33,8 @@ Add one JSON file with an unused `M` identifier and these fields:
 | `replace` | Replacement text; may be empty. |
 
 `requires_sockets` is an optional boolean. `checks` optionally adds public-surface,
-documentation, or allocation checks; use the values accepted by `mutate.py`.
+documentation, allocation, or macro growth checks. Use the values accepted by
+`mutate.py`. `macro-growth` runs the name growth unit tests of `concord-macros`.
 Never change a test's expected result to catch a mutation. A missing or ambiguous
 `find` is stale and fails the check rather than counting as caught.
 

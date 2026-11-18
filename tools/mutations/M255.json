@@ -1,0 +1,10 @@
+{
+  "id": "M255",
+  "checks": ["macro-growth"],
+  "area": "name validation growth",
+  "contract": "docs/internals/macro.md#size-and-compile-time",
+  "description": "Build repair suggestions and scan siblings even for valid names, making wide descriptions quadratic.",
+  "file": "concord-macros/src/name.rs",
+  "find": "    if !is_keyword && snake(&spelling) {\n        return;\n    }\n",
+  "replace": ""
+}

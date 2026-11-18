@@ -1,0 +1,10 @@
+{
+  "id": "M257",
+  "checks": ["macro-growth"],
+  "area": "spread input name validation growth",
+  "contract": "docs/internals/macro.md#size-and-compile-time",
+  "description": "Scan the collected inputs for each spread input instead of probing the input name index, leaving the lookup attempt count in place.",
+  "file": "concord-macros/src/resolve.rs",
+  "find": "                        let first = match input_names.entry(input_name) {\n                            Entry::Occupied(slot) => slot.into_mut(),\n                            Entry::Vacant(slot) => {\n                                slot.insert(input.clone());\n                                local_inputs.push(input);\n                                continue;\n                            }\n                        };\n",
+  "replace": "                        let Some(first) = local_inputs.iter().find(|first| first.input.name == input_name) else {\n                            local_inputs.push(input);\n                            continue;\n                        };\n"
+}

@@ -1,6 +1,6 @@
 //! Expand parts and resolve each branch into source-preserving flat facts.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet};
 
 use quote::quote;
 use syn::spanned::Spanned;
@@ -11,6 +11,9 @@ use crate::{
     flat::{self, BodyLine, EntryLine, InputLine, Level, Line, Origin, Owner, PathLine},
     name,
 };
+
+#[cfg(test)]
+use name::growth::{self, inspect, Inspection};
 
 #[derive(Clone, Default)]
 struct State<'a> {
@@ -74,18 +77,22 @@ fn nearest_part<'a>(name: &str, candidates: impl Iterator<Item = &'a String>) ->
 /// Resolve even a recovered tree, without deriving absence from damaged facts.
 pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> flat::Client<'a> {
     let mut result = flat::Client::default();
-    let mut used = BTreeSet::new();
+    let mut used = HashSet::new();
     let mut nodes = vec![&client.node];
     let mut damaged = false;
     while let Some(node) = nodes.pop() {
         damaged |= node.signatures_uncertain;
         nodes.extend(&node.children);
     }
-    let parts: BTreeMap<_, _> = client
+    let parts: HashMap<_, _> = client
         .node
         .parts
         .iter()
-        .map(|p| (p.name.to_string(), p))
+        .map(|p| {
+            #[cfg(test)]
+            inspect(Inspection::Index);
+            (p.name.to_string(), p)
+        })
         .collect();
     let mut pending = vec![(
         &client.node,
@@ -97,7 +104,18 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
         let mut sources = Vec::new();
         let mut local_taint = node.parse_failed;
         if !node.parse_failed {
-            let mut spreads = BTreeMap::new();
+            let mut spreads = HashMap::new();
+            #[cfg(not(test))]
+            let mut input_names = HashMap::new();
+            #[cfg(test)]
+            let mut input_names = growth::counted_index(local_inputs.len(), Inspection::InputHash);
+            for input in &local_inputs {
+                #[cfg(test)]
+                inspect(Inspection::Index);
+                input_names
+                    .entry(input.input.name.to_string())
+                    .or_insert_with(|| input.clone());
+            }
             if let Some(signature) = &node.signature {
                 for parameter in &signature.entries {
                     let Parameter::Spread(spread) = parameter else {
@@ -123,6 +141,8 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                         );
                         continue;
                     }
+                    #[cfg(test)]
+                    inspect(Inspection::Index);
                     if let Some(first) = spreads.insert(part_name.clone(), spread.name.span()) {
                         diagnostics.raise(
                             spread.name.span(),
@@ -130,6 +150,8 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                         );
                         continue;
                     }
+                    #[cfg(test)]
+                    inspect(Inspection::Index);
                     let Some(part) = parts.get(&part_name).copied() else {
                         let suggestion = nearest_part(&part_name, parts.keys()).filter(|candidate| {
                             !signature.entries.iter().any(|entry| matches!(entry, Parameter::Spread(other) if other.name == *candidate))
@@ -144,39 +166,49 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
                         local_taint = true;
                         continue;
                     };
+                    #[cfg(test)]
+                    inspect(Inspection::Index);
                     used.insert(part_name.clone());
                     if part.parse_failed {
                         local_taint = true;
                         continue;
                     }
-                    for input in own_inputs(part, node) {
-                        if let Some(first) = local_inputs
-                            .iter()
-                            .find(|i| i.input.name == input.input.name)
-                        {
-                            let message = if matches!(first.written.kind, NodeKind::Part) {
-                                diag::two_part_inputs(
-                                    &input.input.name.to_string(),
-                                    &first.written.name.to_string(),
-                                    &part_name,
-                                    first.input.span,
-                                )
-                            } else {
-                                diag::part_input(
-                                    &input.input.name.to_string(),
-                                    &part_name,
-                                    input.input.span,
-                                )
-                            };
-                            if matches!(first.written.kind, NodeKind::Part) {
-                                let dots = &spread.dots;
-                                let name = &spread.name;
-                                diagnostics.raise_spanned(quote!(#dots #name), message);
-                            } else {
-                                diagnostics.raise(first.input.span, message);
+                    let part_inputs = own_inputs(part, node);
+                    // Reserve before the loop so fixture counts are independent of map growth.
+                    #[cfg(test)]
+                    input_names.reserve(part_inputs.len());
+                    for input in part_inputs {
+                        let input_name = input.input.name.to_string();
+                        #[cfg(test)]
+                        inspect(Inspection::SpreadInput);
+                        let first = match input_names.entry(input_name) {
+                            Entry::Occupied(slot) => slot.into_mut(),
+                            Entry::Vacant(slot) => {
+                                slot.insert(input.clone());
+                                local_inputs.push(input);
+                                continue;
                             }
+                        };
+                        let message = if matches!(first.written.kind, NodeKind::Part) {
+                            diag::two_part_inputs(
+                                &input.input.name.to_string(),
+                                &first.written.name.to_string(),
+                                &part_name,
+                                first.input.span,
+                            )
                         } else {
-                            local_inputs.push(input);
+                            diag::part_input(
+                                &input.input.name.to_string(),
+                                &part_name,
+                                input.input.span,
+                            )
+                        };
+                        if matches!(first.written.kind, NodeKind::Part) {
+                            let dots = &spread.dots;
+                            let name = &spread.name;
+                            diagnostics.raise_spanned(quote!(#dots #name), message);
+                        } else {
+                            diagnostics.raise(first.input.span, message);
                         }
                     }
                     for statement in &part.statements {
@@ -230,6 +262,8 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
             });
         }
         if !node.parse_failed {
+            // Check receiver names after collecting the spreads. Duplicate
+            // input checks above and receiver checks here are each one pass.
             name::expanded(node, &local_inputs, &state.owners, diagnostics);
         }
         let has_base = sources
@@ -507,6 +541,8 @@ pub(crate) fn resolve<'a>(client: &'a Client, diagnostics: &mut Diagnostics) -> 
         if part.parse_failed {
             continue;
         }
+        #[cfg(test)]
+        inspect(Inspection::Index);
         if !used.contains(&part.name.to_string()) && !damaged {
             diagnostics.raise(part.name.span(), diag::unused_part(&part.name.to_string()));
         }

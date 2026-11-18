@@ -58,7 +58,7 @@ def catalog():
         if "requires_sockets" in item and not isinstance(item["requires_sockets"], bool):
             raise RunnerError(f"{path}: requires_sockets must be a boolean")
         if "checks" in item and (not isinstance(item["checks"], list) or
-                any(check not in ("surface", "docs-core", "docs-extras", "docs-pages", "allocations") for check in item["checks"])):
+                any(check not in ("surface", "docs-core", "docs-extras", "docs-pages", "allocations", "macro-growth") for check in item["checks"])):
             raise RunnerError(f"{path}: unknown extra check")
         ident = item["id"]
         if not re.fullmatch(r"M\d{2,}", ident) or path.stem != ident or ident in seen:
@@ -272,6 +272,9 @@ class Worker:
             elif check == "allocations":
                 env["CONCORD_GET_MAX_ALLOCATIONS"] = "23"
                 command = ["cargo", "bench", "--offline", "--locked", "--manifest-path", "tools/measure/Cargo.toml", "--bench", "macro_get", "--", "--test"]
+            elif check == "macro-growth":
+                command = ["cargo", "test", "--offline", "--locked", "-p", "concord-macros",
+                           "--lib", "name::growth::", "--", "--test-threads=1"]
             else:
                 package = {"docs-core": "concord-core", "docs-extras": "concord-extras"}[check]
                 command = ["cargo", "test", "--offline", "--locked", "-p", package, "--all-features", "--doc"]
