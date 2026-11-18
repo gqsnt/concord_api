@@ -37,7 +37,10 @@ concord::api! {
                 "created[gte]" = created_gte;
                 "created[lt]" = created_lt;
             }
-            paginate by_object_id(starting_after, ending_before);
+            // after the last object; with `ending_before`, back from the first one
+            paginate by_cursor(starting_after, |page| page.data.last().map(|object| object.id().to_owned()))
+                .or_when_set(ending_before, by_cursor(ending_before, |page| page.data.first().map(|object| object.id().to_owned())))
+                .has_more(|page| page.has_more);
         }
 
         /// Every search: Stripe's query language, paginated by a token.

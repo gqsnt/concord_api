@@ -146,9 +146,9 @@ completion events belong to the application. `SseEvent::json` needs the feature 
 Describe the other host on its own, with its own `base` and none of the API's credentials or
 middleware, then send its call with `transfer::at(uploads.send(bytes), &ticket.url)?.await?`.
 `at` refuses a URL that would not be sent as it is written: a relative URL, a scheme other than
-`http` and `https`, user information, a fragment, a query that `at_url` would drop (a lone `?`, or
-only `&`), a spelling that parsing would change. Its error never holds the URL. An accepted URL is
-sent with its path and query byte for byte, for a description with no `Secret` query entry; the engine refuses one at another origin than the base
+`http` and `https`, user information, a fragment, a spelling that parsing would change. Its error
+never holds the URL. An accepted URL is sent with its path and query byte for byte (a lone `?`, or
+a query of `&` only, included), for a description with no `Secret` query entry; the engine refuses one at another origin than the base
 of that call before anything is sent. Headers that the API returned at run time are added with
 `.edit_request(move |request| request.headers_mut().extend(returned.clone()))`, which replaces the
 names given and keeps the repeated values of a name. The module's example shows the three steps.

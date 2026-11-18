@@ -8,8 +8,9 @@ use concord::transport::TransportError;
 use concord::{by_offset, fake, reply, Json};
 
 // How the API pages is a fact of the API, so the description says it, once.
-// `by_offset(start)` is an ordinary function of Concord: after each page it asks the next
-// one with `start` moved by the number of items that came, and stops at an empty page.
+// `by_offset(start)` is an ordinary function of Concord, which returns a `Paging`: after each
+// page it asks the next one with `start` moved by the number of items that came, and stops at an
+// empty page. A page that states its total would use `by_offset_total(start, |page| page.total)`.
 concord::api! {
     client Names {
         base "https://names.example.com";

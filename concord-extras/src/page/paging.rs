@@ -2,7 +2,7 @@
 //! gate and edits, decided in one fixed order.
 
 use concord_core::error::{mismatch, Fail};
-use concord_core::page::{Call, IntoItems, IntoNext, Pager, Slot};
+use concord_core::page::{Call, InputId, IntoItems, IntoNext, Pager, Slot};
 use concord_core::Answer;
 
 /// The text of the Mismatch when a page says that more items follow and nothing moves.
@@ -12,11 +12,13 @@ const DISAGREE: &str = "the page's statements disagree on whether more items fol
 /// The text of the Mismatch when a total cannot be read as a number of items.
 const TOTAL: &str = "the total of the list could not be read";
 /// The text of the Mismatch when the call sets two inputs that each choose the move.
-const TWO_MOVES: &str = "the call sets more than one input that chooses how the list moves";
+const TWO_MOVES: &str = "the call chooses two moves: it sets two inputs that each choose one";
 /// The text of the Mismatch when an offset cannot be counted.
 const OFFSET: &str = "the offset cannot grow any further";
 
 type Gate<C> = Box<dyn Fn(&C) -> bool + Send>;
+/// The input that a slot names on this call, when that input is set: both read together.
+type Chooser<C> = Box<dyn Fn(&C) -> Option<InputId> + Send>;
 type Statement<C> =
     Box<dyn FnMut(&C, &<C as Call>::Value) -> Result<bool, Fail<<C as Call>::Problem>> + Send>;
 type Move<C> = Box<dyn Pager<C>>;
@@ -30,11 +32,18 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 /// For each page, a `Paging` decides **in this order, whatever the order in which its methods
 /// were written**:
 ///
+/// 0. **The call.** If it sets the inputs of two [`or_when_set`](Paging::or_when_set), the pages
+///    end with a Mismatch (`the call chooses two moves: it sets two inputs that each choose one`),
+///    whatever the page says: the same mistake does not pass on a list of one page. An input
+///    given to two `or_when_set` is one choice, and the first written moves. An input is known
+///    by [`Slot::input`], its position among the inputs of the endpoint, never by the type of
+///    the slot or where its value lives: a slot of yours that forwards to an input returns that
+///    input's `input()`, and two inputs that share storage or take no room are two.
 /// 1. **The gate.** If one input given to [`only_when_set`](Paging::only_when_set) is not set on
 ///    the call that fetched the page, this page is the last. Nothing else is read.
 /// 2. **What the page states.** Every statement ([`has_more`](Paging::has_more), and the total of
 ///    [`by_offset_total`]) is read, once, in the order written, whatever the others say. If one
-///    cannot be read, its failure is the result (the first written, when several fail). Otherwise,
+///    cannot be read (a total that is not a number of items), its failure is the result. Otherwise,
 ///    if one says "no more" and another "more", the pages end with a Mismatch
 ///    (`the page's statements disagree on whether more items follow`). If all say "no more", this
 ///    page is the last. The order of the methods does not matter for statements that read only
@@ -129,7 +138,7 @@ struct Parts<C: Call> {
     /// 2. The statements of the page: `true` for "more".
     statements: Vec<Statement<C>>,
     /// 3. The moves chosen by an input, then the move otherwise.
-    or_when_set: Vec<(Gate<C>, Move<C>)>,
+    or_when_set: Vec<(Chooser<C>, Move<C>)>,
     moves: Move<C>,
     /// 4. The short-page rules, read only when no statement spoke: each gives a size, and the
     ///    page is counted once, after the move.
@@ -494,7 +503,10 @@ impl<C: Call> Paging<C> {
     /// input for each (`starting_after` and `ending_before`): the caller chooses the direction by
     /// the input it sets. The statements, the short-page rules, the gates and the edits of this
     /// value apply to both moves. A call that sets the inputs of two `or_when_set` ends the pages
-    /// with a Mismatch.
+    /// with a Mismatch after the first page, whatever that page says; an input given to two
+    /// `or_when_set` (directly, or through a slot of yours that forwards to it) is one choice,
+    /// and the first written moves. An `other` that is a `Paging`
+    /// decides by the same order on its own, inside the move: the rules of this value come first.
     ///
     /// ```
     /// use concord::{by_cursor, Json};
@@ -524,8 +536,12 @@ impl<C: Call> Paging<C> {
     /// }
     /// ```
     pub fn or_when_set<S: Slot<C>, P: Pager<C>>(mut self, input: S, other: P) -> Paging<C> {
+        // The input is known by its identity in the endpoint (`Slot::input`), not by the type of
+        // `S` or where its value lives: a slot of yours that forwards to it is the same input,
+        // and one slot type that can name two inputs names two. The identity is read when the
+        // decision is made, with the value: a slot names one input at a time.
         self.parts().or_when_set.push((
-            Box::new(move |call| input.get(call).is_some()),
+            Box::new(move |call| input.get(call).map(|_| input.input())),
             Box::new(other),
         ));
         self
@@ -601,6 +617,18 @@ impl<C: Call> Pager<C> for Paging<C> {
         page: &Answer<C::Value>,
     ) -> Result<Option<C>, Fail<C::Problem>> {
         let parts = self.parts();
+        // 0. The call: two inputs set that each choose a move are a mistake, whatever the page
+        // says. One input given to two `or_when_set` is one choice: the first written.
+        let mut chosen: Option<(usize, InputId)> = None;
+        for (index, (chooses, _)) in parts.or_when_set.iter().enumerate() {
+            if let Some(input) = chooses(&call) {
+                match chosen {
+                    None => chosen = Some((index, input)),
+                    Some((_, first)) if first != input => return Err(mismatch(TWO_MOVES)),
+                    Some(_) => {}
+                }
+            }
+        }
         // 1. The gates.
         if !parts.only_when_set.iter().all(|set| set(&call)) {
             return Ok(None);
@@ -636,11 +664,10 @@ impl<C: Call> Pager<C> for Paging<C> {
             Some(_) => None,
         };
         // 3. The move: its failure is the result, also on a short page.
-        let mut chosen = parts.or_when_set.iter_mut().filter(|(set, _)| set(&call));
-        let next = match (chosen.next(), chosen.next()) {
-            (Some(_), Some(_)) => return Err(mismatch(TWO_MOVES)),
-            (Some((_, other)), None) => other.next_call(call, page)?,
-            (None, _) => parts.moves.next_call(call, page)?,
+        let alternative = chosen.and_then(|(index, _)| parts.or_when_set.get_mut(index));
+        let next = match alternative {
+            Some((_, other)) => other.next_call(call, page)?,
+            None => parts.moves.next_call(call, page)?,
         };
         // 4. With no statement, a short page ends the list: the page is counted after the move.
         if let (Some(size), Some(count)) = (size, parts.count) {
@@ -712,16 +739,16 @@ pub fn by_offset_total<C, S, F, T>(start: S, mut total: F) -> Paging<C>
 where
     C: Call,
     S: Slot<C>,
-    S::Value: Copy + Default + TryFrom<u64> + TryInto<u64>,
+    S::Value: Copy + TryFrom<u64> + TryInto<u64>,
     F: FnMut(&C::Value) -> T + Send + 'static,
     T: TryInto<u64>,
     C::Value: IntoItems,
 {
     let mut paging = super::by_offset(start);
     paging.parts().statements.push(Box::new(move |call, value| {
-        // An offset that is not set is zero, whatever the type's `Default` says.
+        // An offset that is not set is zero.
         let at: u64 = match start.get(call) {
-            Some(at) => (*at).try_into().map_err(|_| mismatch(OFFSET))?,
+            Some(at) => (*at).try_into().map_err(|_| mismatch(super::UNREADABLE))?,
             None => 0,
         };
         let count = u64::try_from(value.count()).map_err(|_| mismatch(OFFSET))?;
@@ -747,6 +774,36 @@ mod tests {
         type Problem = u8;
         fn at_url(self, _: &str) -> Probe {
             self
+        }
+    }
+
+    /// Two statements that both fail: the first written is the result, in either order, and both
+    /// are read once. No public construction has two that can fail, so this is a private test.
+    #[test]
+    fn c8_6_of_two_failing_statements_the_first_written_is_the_result() {
+        for reverse in [false, true] {
+            let mut pager = Paging::from_fn(|call: Probe, _: &Answer<Vec<u32>>| Some(call));
+            let seen = Arc::new(AtomicUsize::new(0));
+            for problem in [!reverse, reverse] {
+                let visits = seen.clone();
+                pager.parts().statements.push(Box::new(move |_, _| {
+                    visits.fetch_add(1, SeqCst);
+                    if problem {
+                        Err(Fail::from(7))
+                    } else {
+                        Err(mismatch("the second failure"))
+                    }
+                }));
+            }
+            let page = Answer::new(StatusCode::OK, Headers::from(HeaderMap::new()), vec![1]);
+            let failure = pager.next_call(Probe, &page).unwrap_err();
+            let first = if reverse {
+                "Fail(mismatch)"
+            } else {
+                "Fail(problem)"
+            };
+            assert_eq!(format!("{failure:?}"), first);
+            assert_eq!(seen.load(SeqCst), 2);
         }
     }
 

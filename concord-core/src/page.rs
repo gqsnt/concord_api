@@ -350,6 +350,29 @@ pub trait Slot<C>: Copy + Send + Sync + 'static {
 
     /// Returns the call with this input set.
     fn set(&self, call: C, value: Self::Value) -> C;
+
+    /// Which input of the endpoint this slot names. A slot of yours that forwards to another
+    /// returns the identity of the input it forwards to (`self.0.input()`), whatever it reads
+    /// or where its value lives. A slot names one input at a time: a pager reads `input()` and
+    /// `get` together, when it decides, never one when it is built and the other later.
+    fn input(&self) -> InputId;
+}
+
+/// Which input of an endpoint a [`Slot`] names: its position among the inputs of the endpoint,
+/// the number that the generated code gives it. Two slots of one call `C` name one input when
+/// their `InputId`s are equal; the call's type is the endpoint, so the number alone is compared.
+///
+/// `or_when_set` knows an input by it: where the value of an input lives, and its type, are not
+/// which input it is (two inputs may share storage, or take no room at all).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct InputId(usize);
+
+impl InputId {
+    /// The input at `position` among the inputs of the endpoint, in the order the generated code
+    /// numbers them. A slot of your own over a call type of your own numbers its inputs itself.
+    pub const fn new(position: usize) -> InputId {
+        InputId(position)
+    }
 }
 
 /// What a pager may return: `Some(next call)`, `None` at the end, or the same inside a
@@ -445,7 +468,8 @@ impl<C: Call> IntoNext<C> for Result<Option<C>, Fail<C::Problem>> {
 /// **A method of your own named `next_call`.** `Pager` is implemented for every closure, so with
 /// `use concord::page::*;` its `next_call` is in scope wherever a closure is. If a trait of yours
 /// also has a method named `next_call`, call yours by its trait, as Rust does for any two traits
-/// with one method name: `LocalMove::next_call(&mut f, call, page)`. Rust may report the
+/// with one method name: `LocalMove::next_call(&mut f, call, page)`, or `&mut *f` for a box
+/// `f: Box<dyn …>`. Rust may report the
 /// ambiguity (E0034, "multiple applicable items in scope"), or, on a box of a closure, quietly
 /// call Concord's method, which Rust finds first; so qualify the call in both cases.
 #[diagnostic::on_unimplemented(

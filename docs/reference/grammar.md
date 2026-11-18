@@ -91,7 +91,7 @@ The statements of a part count as the statements of the node that names it (sent
 | `idempotent` | A Rust expression, or nothing. | A `bool` or a `&bool`. Nothing means `true`. |
 | `middleware` | A Rust expression, in which the required inputs of the client (`key` or `client.key`) are the only variables. | A value that implements `concord::Middleware`. |
 | An arm | A Rust expression. | A value of the type after the arrow. |
-| `paginate` | A Rust expression, in which an input of the endpoint refers to its slot on the call. | A function from the call and its response to the next call. `by_offset`, `by_offset_limit`, `by_cursor`, `by_page`, `by_link` and `by_next_url` are six functions that return one. |
+| `paginate` | A Rust expression, in which an input of the endpoint refers to its slot on the call. | A pager (`concord::page::Pager`): a closure from the call and its response to the next call, or a value such as a `Paging`, which `by_offset`, `by_offset_limit`, `by_offset_total`, `by_cursor`, `by_page`, `by_link` and `by_next_url` return. A pager that is not a closure is written as a call or a path, alone or at each tail of a plain block, `if` or `match`; any other expression is read as a closure ([C8.6](contracts.md#c8-secrets-and-pages)). |
 
 **Wherever Rust is written, an input is a variable.** A bare name is an input of this node; `client.x` or `scope_name.x` is an input of a node above. The variable is a reference to the input (`&Option<u32>` for `count?: u32`). (`paginate` is the one place where it means something else: see sentence 8.) A bare name that is not an input is whatever Rust finds in your module, and an input shadows an item with the same name in the statements of its node ([rule 4](rules.md)).
 
@@ -142,7 +142,7 @@ For each send (each page is one), `idle_timeout` runs first, then `idempotent`, 
 |---|---|
 | Why `idempotent false;`, and not `remove idempotent;`? | `remove` always removes a key set above, and nothing above sets `idempotent`. The word accepts any `bool` expression (sentence 2). |
 | Why do entries use `=` and `;`, and arms `=>` and `,`? | An entry assigns a value to a key; an arm is a `match` on the status. |
-| Why is `paginate` an expression in which an input refers to a slot? | A pager is ordinary Rust, like every other right-hand side; in it, an input refers to its slot on the call (sentence 8). A pager may return `Some(call)` or `Ok(Some(call))`, as Rust accepts both kinds of return type from `main`. |
+| Why is `paginate` an expression in which an input refers to a slot? | A pager is ordinary Rust, like every other right-hand side; in it, an input refers to its slot on the call (sentence 8). A closure may return `Some(call)` or `Ok(Some(call))`, as Rust accepts both kinds of return type from `main`. |
 | Why does an entry value have no forms of its own, such as a `join`? | A value is a template or a Rust expression: `"labels" = labels.join(",");`. |
 | Why `problem S3Problem read Xml;`? | The line names a type: it defines the error type of the client. `read` is the word that the language has for a reader. The line is rarely needed: by default, the problem is read with the client's reader (sentence 9). |
 | Is `json!({ … })` a body? | No. A body is what a function returns: `body json(json!({ … }));`. |
@@ -161,6 +161,7 @@ For each send (each page is one), `idle_timeout` runs first, then `idempotent`, 
 | Why are `Option<T>` and `Result<T, E>` after the arrow read as `T`? | So that a `200` whose body is `null` does not quietly become a `None`, and a `Result` arrow needs no arm for its success (sentence 12). |
 | How are arms compared? | By the statuses they match, not by how they are written (sentence 5). |
 | Why are the shipped pagers named `by_…`? | So that an input does not shadow the function: `paginate by_offset(offset);` compiles. |
+| Why does a `paginate` expression with a macro or a `return` in it need `.into_fn()` for a `Paging`? | The macro must choose before Rust reads a type: whether to infer the parameters of a closure, as earlier releases did, or to take any pager as it is. It takes a pager as it is only where the expression cannot hold a closure that needs that inference, and a macro or a `return` can hide one. Everywhere else it keeps the old reading, so no description of closures changes ([C8.6](contracts.md#c8-secrets-and-pages)). |
 | Why a body made of entries? | Each input of a body is written once, not again as a JSON key; one that is not set is left out, not sent as `null`; and a part can place an input in a body (sentence 18). |
 | Why `idle_timeout` in the description? | A long poll, or a stream that is quiet for minutes, is a fact of an endpoint, and no caller should have to know it (sentence 19). |
 | Does an entry do the same in a body as in `query`? | Yes: a `None` writes nothing in every block of entries, `"k" = Some(x);` writes `null`, and a `Secret` is written as its text ([rule 9](rules.md)). |

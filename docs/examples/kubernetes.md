@@ -11,7 +11,7 @@ Here is Kubernetes as Concord sees it. The server is the cluster's own (`https:/
 ```rust
 use std::time::Duration;
 use concord::read::{JsonLines, RecordStream, Stream};
-use concord::{json, Base, Json, Secret, Text, MIB};
+use concord::{by_cursor, json, Base, Json, Secret, Text, MIB};
 
 concord::api! {
     /// The Kubernetes API of one cluster (a subset): pods, two subresources of a deployment, custom resources.
@@ -36,9 +36,9 @@ concord::api! {
                 limit; "continue" = continue_token;
                 "resourceVersion" = resource_version; "resourceVersionMatch" = resource_version_match;
             }
-            // not `by_cursor`: it keeps the version, and the server rejects one alongside a token (unsure)
-            paginate move |call, page| page.value().next_token()
-                .map(|token| call.continue_token(token).resource_version(None).resource_version_match(None));
+            // the server rejects a version alongside a token (unsure): the next call drops both
+            paginate by_cursor(continue_token, List::next_token)
+                .map_next(|next, _| next.resource_version(None).resource_version_match(None));
         }
         /// A watch: a response that does not end, one event on each line. The server ends it after
         /// `timeout_seconds`, or after 30 to 60 minutes when it is not set (unsure).
@@ -494,7 +494,7 @@ pub async fn drain(kube: &Kubernetes) -> kubernetes::Result<()> {
 | A custom resource, typed. A scope has no type parameter. | `DynamicObject`, decoded by the caller with `serde_json::from_value`; or one scope for each type. |
 | The same resources under two parents (the pods of a namespace, the pods of every namespace). | The scope declared under each parent; the parts keep each endpoint to one line. |
 | `continue`, a Rust keyword. | `continue_token?` and `"continue" = continue_token;`. |
-| A next page with the token and without `resourceVersion`. `by_cursor` keeps every other input. | A pager written inline, in the part: it sets the token and unsets the two versions. |
+| A next page with the token and without `resourceVersion`. `by_cursor` keeps every other input. | `by_cursor` for the token, and `map_next`, in the part, to unset the two versions on each next call. |
 | A delete that returns the object while it is shutting down, or a `Status` once it is gone, both with a `2xx`. | `Deleted<T>`, with a `Deserialize` that looks at `kind`. |
 | `follow=true`, which turns the log from text into a stream. The return type is fixed. | Two endpoints on one path: `log` and `follow_log`. |
 | A watch or a followed log, which stays silent as long as the cluster is quiet. | `idle_timeout` on the endpoint or the part: a day for a log; `timeoutSeconds` and a minute for a watch. |

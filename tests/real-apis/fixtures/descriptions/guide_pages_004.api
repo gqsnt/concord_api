@@ -1,0 +1,10 @@
+/// Version 1 of the API numbers its pages; version 2 hands out a cursor.
+    pub client Catalog(legacy: bool) {
+        base "https://catalog.example.test";
+        read Json;
+
+        GET items(page?: u32, after?: String) -> Batch<Item> {
+            query { page; after; }
+            paginate if *client.legacy { by_page(page, 1) } else { by_cursor(after, |batch| batch.last_id.clone()) };
+        }
+    }

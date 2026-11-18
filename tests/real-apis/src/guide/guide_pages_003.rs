@@ -1,0 +1,15 @@
+concord::api! {
+pub client Drive {
+        base "https://drive.example.test";
+        read Json;
+
+        /// The next token, until the page gives the token to start from next time.
+        GET changes(page_token: String) -> Changes {
+            query { "pageToken" = page_token; }
+            paginate Paging::from_fn(move |call, page: &Answer<Changes>| {
+                page.value().next_page_token.clone().map(|token| page_token.set(call, token))
+            })
+            .has_more(|page| page.new_start_page_token.is_none());
+        }
+    }
+}

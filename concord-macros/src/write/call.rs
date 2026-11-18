@@ -600,10 +600,12 @@ impl Writer<'_> {
                 let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
                 let get = if input.input.optional.is_some() { emit!(::core::option::Option::as_ref(&#get_field)) } else { emit!(::core::option::Option::Some(&#get_field)) };
                 let set = if input.input.optional.is_some() { emit!(::core::option::Option::Some(__value)) } else { emit!(__value) };
+                let position = self.input_position(index, input).unwrap_or_default();
                 emit!(#impl_attrs #allow #[doc(hidden)] impl ::concord::page::Slot<#ty> for #slot {
                     type Value = #input_type;
                     fn get<'__a>(&self, __call: &'__a #ty) -> ::core::option::Option<&'__a Self::Value> { #get }
                     fn set(&self, mut __call: #ty, __value: Self::Value) -> #ty { #set_field = #set; __call }
+                    fn input(&self) -> ::concord::page::InputId { ::concord::page::InputId::new(#position) }
                 })
             });
             emit!(#(#slots)*)

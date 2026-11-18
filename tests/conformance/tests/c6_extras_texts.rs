@@ -335,7 +335,6 @@ fn transfer_texts() -> Vec<String> {
         TransferError::UnsupportedScheme,
         TransferError::ForbiddenUrlPart,
         TransferError::ChangedUrl,
-        TransferError::EmptyQuery,
         TransferError::UrlTooLong,
     ]
     .iter()
@@ -354,7 +353,7 @@ async fn c6_2_every_text_of_the_extras_and_of_a_repeatable_body_is_on_the_messag
     printed.extend(record_texts().await);
     printed.extend(transfer_texts());
     let documented = documented();
-    assert_eq!(documented.len(), 55);
+    assert_eq!(documented.len(), 54);
     for (index, (page, code)) in documented.iter().zip(&printed).enumerate() {
         assert_eq!(page, code, "row {} of the tables", index + 1);
     }

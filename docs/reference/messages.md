@@ -6,11 +6,11 @@ This page is for you when Concord rejected your description, or a call failed: f
 
 To find a message, search this page for a few words of the text that you got. At compile time, a message starts with `error:`; here it has a number, **1** to **46**, and is listed under its theme ([at compile time](#1-at-compile-time)). At run time, a text starts with its kind (`build error:`, `transport error:`, `refused:` or `mismatch:`) and names the endpoint (`in tasks.get`); the tables are grouped by kind ([when a request is built or answered](#2-when-a-request-is-built-or-answered)).
 
-When Concord rejects a description, the message points at your own token, says what is wrong, and says what to write. There are 46 messages at compile time, and 52 texts at run time. The errors of `concord-extras`, and the causes of a failed repeatable body, add 55 texts of their own, which appear in the chain of `source()` or are returned directly ([the errors of `concord-extras`](#2-when-a-request-is-built-or-answered)).
+When Concord rejects a description, the message points at your own token, says what is wrong, and says what to write. There are 46 messages at compile time, and 52 texts at run time. The shipped pagers add 7 reasons of their own, which a Mismatch returns from `reason()` ([why a shipped pager ended the pages](#2-when-a-request-is-built-or-answered)). The errors of `concord-extras`, and the causes of a failed repeatable body, add 55 texts of their own, which appear in the chain of `source()` or are returned directly ([the errors of `concord-extras`](#2-when-a-request-is-built-or-answered)).
 
 Some mistakes get no message from this page. A mistake inside your own Rust (`read Jsno;`, a type that does not fit, a struct that holds a `Secret` in `json(x)`, a generic parameter of an enclosing function in a type (E0401: `api!` generates items), `?` in `paginate`, `idempotent`, `idle_timeout` or `middleware`) is reported by `rustc`, in words that the traits of the core provide where they can (the macro, [The messages that are `rustc`'s](../internals/macro.md#the-messages-that-are-rustcs)). A line that is outside the grammar and that no message below names (`body client.f { … }`: the word before the block is a path) gets the parser's own message, at the token where it stopped (`expected ;`).
 
-`rustc` reports three more kinds of mistake. The first uses Concord's words, and the other two use the compiler's own.
+`rustc` reports five more kinds of mistake. The first and the fourth use Concord's words, and the others use the compiler's own.
 
 - **A secret that would follow a change of `base`** ([rule 16](rules.md)): `a secret does not follow a change of base`. At an entry, the note is `` declare this entry again with `override`, or remove it, under the new `base` ``. At a placeholder in a `path` (a `path` cannot be written again or removed), the message is `a secret in a path does not follow a change of base`, and its note is `` declare this `path` under each `base` that needs it, not on an ancestor of those bases ``.
 - **A call that does not meet an endpoint's rule.**
@@ -46,6 +46,23 @@ Some mistakes get no message from this page. A mistake inside your own Rust (`re
   error[E0716]: temporary value dropped while borrowed
   note: requirement that the value outlives `'static` introduced here
   ```
+
+- **A value that `paginate` cannot take.** `paginate` takes a closure, or any pager written as a call or a path, alone or at each tail of a plain block, `if` or `match` ([C8.6](contracts.md#c8-secrets-and-pages)). Any other expression is read as a closure, and a value there that is not a closure gets this error, with the type of the value in it, under the expression: `a closure is needed here`. For a shipped pager, write the pager as a call or a path, or write `.into_fn()` after it (`loop { break by_cursor(…).into_fn(); }`, `my_pager!(after).into_fn()`); for a pager type of your own, `Paging::from_pager(…).into_fn()`:
+
+  ```text
+  error[E0277]: `paginate` reads this expression as a closure, and its value is `Paging<api::Call<List>>`, which is not a closure
+  note: if the value is a pager, write `.into_fn()` after a `Paging<…>` (`by_cursor(…).into_fn()`) or `Paging::from_pager(…).into_fn()` around a pager of yours; or write the pager as a call or a path, alone or at each tail of a plain block, `if` or `match`
+  note: if it is not, it is neither a closure nor a pager, and `paginate` cannot use it
+  ```
+
+  An expression that is taken as a pager (a call, a path) and whose value is not one gets this error. Write a closure `|call, page| …`, or a shipped pager:
+
+  ```text
+  error[E0277]: `u32` is not a pager for this endpoint
+  note: a pager is a closure `|call, page| …` that returns the next call, or a value such as `by_cursor(…)`
+  ```
+
+- **A shipped pager used as a function.** The shipped pagers return a `Paging`, which is a pager and not a function. Calling one gets `` error[E0618]: expected function, found `Paging<…>` ``: call `next_call` on it, with `concord::page::Pager` in scope. Returning one as `impl Fn(…)`, passing it where a function is expected, or boxing it as `Box<dyn Fn(…)>` gets `` error[E0277]: expected an `Fn(…)` closure, found `Paging<…>` `` (or `FnMut`): return `Paging<C>` or `impl Pager<C>`, take `impl Pager<C>`, or box it as `Box<dyn Pager<C>>` ([upgrading from the release before](../guide/pages.md#upgrading-from-the-release-before)).
 
 ## 1. At compile time
 
@@ -633,6 +650,19 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 
 **An arm or a pager that decodes a body itself** and returns `Fail::from_read(…)` produces, on a 2xx, texts said of the decoder's input, because Concord does not verify that the input was the body: a fault at a location prints as under a reader (`mismatch: status 200, name could not be decoded, in chat.info`), and the four other failures print the last four texts of the table, never the texts of a body. Their `source()` holds the same words, and none adds `(unexpected content type)`. A pager gives these texts too, not `the next page cannot be requested`. On another status it produces the text of a refusal (`refused: status 409, in tasks.create`). A `ReadError` of a body that broke while it was read keeps nothing of that body, and gives `mismatch: status 200, the status arm rejected the response, in chat.info` (in a pager, `the next page cannot be requested`).
 
+**Why a shipped pager ended the pages.** A Mismatch of a shipped pager prints `mismatch: status 200, the next page cannot be requested, in tasks.list`, like any pager's, and the page that arrived was returned before it. Its `reason()` says why:
+
+| Case | `reason()` |
+|---|---|
+| A page that says more items follow (`has_more` returns `true`, or the offset is below the total of `by_offset_total`) gives no next call: no cursor, no URL, an empty page | `the page says that more items follow, and gives no next page` |
+| Two statements of one page (`has_more`, a total) disagree: one says more, the other no more | `the page's statements disagree on whether more items follow` |
+| The total that `by_offset_total` reads cannot be read as an unsigned number of items | `the total of the list could not be read` |
+| The call sets the inputs of two `or_when_set` | `the call chooses two moves: it sets two inputs that each choose one` |
+| An offset of the call (`by_offset`, `by_offset_limit`, `by_offset_total`) that cannot be read as an unsigned number of items (a negative one), also on a short or an empty page | `the offset of the call is not a number of items` |
+| A valid offset whose next one overflows or cannot be held by the type of the input; `by_offset_limit` ends quietly instead when the page is shorter than its `count` | `the offset cannot grow any further` |
+| A page number (`by_page`) that cannot grow | `the page number cannot grow any further` |
+| A `Link` field that cannot be parsed (`by_link`) | `the Link field could not be read` |
+
 **When the content type was not the reader's.** When a reader reports that the content type of the response was not its own, the three texts of a body that could not be read end with ` (unexpected content type)`: `mismatch: status 200, items[3].kind could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body is empty (unexpected content type), in tasks.get`. An empty body gets it only when the response had a `Content-Type`.
 
 The cause that `source()` returns holds no value of the response: a reader, shipped or your own, passes Concord no cause of its own; Concord builds the cause from the location and the kind of failure, and the reader's own message (at most 1 KiB, its mark included) is behind `details()`. A location prints names of the program and indexes only: a key of a map prints as `[key]`, a variant that was read as `[variant]` (`data[key][0].kind`). An error response whose body is broken is still a Refused error. An ignored body cannot fail the call.
@@ -752,7 +782,6 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 | The scheme is neither `http` nor `https` | `transfer URL must use HTTP or HTTPS` |
 | The URL holds user information (`@` in the authority) or a fragment (`#`) | `transfer URL must omit user information and fragments` |
 | Parsing would change the spelling of the URL: an uppercase scheme or host, removed dot segments, a space or a control character that would be encoded, and the like. The URL is used only when it would be sent exactly as it is written | `transfer URL spelling would change` |
-| The query is present but every part of it is empty (`?`, `?&`), which `at_url` would drop | `transfer URL query would be discarded` |
 | The text is longer than 65,534 bytes | `transfer URL exceeds 65,534 bytes` |
 
 ## 3. Three rules for every message

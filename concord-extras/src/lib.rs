@@ -1,6 +1,6 @@
 //! What Concord ships next to its core.
 //!
-//! JSON, form and optional gzip and multipart writers, bounded readers (including records), six pagers,
+//! JSON, form and optional gzip and multipart writers, bounded readers (including records), seven pagers,
 //! HTTP Basic, credential renewal (`auth`), request signing (`sign`), shared limits (`limit`), returned-URL checks
 //! ([`transfer`]), and an adapter for `tower`. These extensions use the public traits of
 //! `concord-core`. Body writers use
@@ -23,7 +23,7 @@
 //! | `sign` (feature `sign`) | `SigV4`, `Credentials`, `body_bytes`, `check_origin` | `concord_core::Middleware`, `reqwest::Request` |
 //! | `limit` (feature `limit`) | `Limit`, `Bucket`, `Window`, header learners | `concord_core::Middleware` |
 //! | [`transfer`] | `at(call, url)`, a checked returned URL | `concord_core::page::Call` |
-//! | [`page`] | `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` | `concord_core::page::{Call, Slot}` |
+//! | [`page`] | `by_offset`, `by_offset_limit`, `by_offset_total`, `by_page`, `by_cursor`, `by_link`, `by_next_url`, and `Paging`, which they return | `concord_core::page::{Call, Slot, Pager}` |
 //! | the root | `basic(user, password)` | `concord_core::Secret` |
 //! | `tower` (feature `tower`) | `Tower` | `concord_core::Transport` |
 //!
