@@ -76,28 +76,3 @@ pub(super) fn remaining(limit: String, remaining: String, reset: String) -> Box<
         parse().unwrap_or_default()
     })
 }
-
-pub(super) fn remaining_until(
-    limit: String,
-    remaining: String,
-    reset: String,
-    rfc3339: bool,
-) -> Box<Learn> {
-    Box::new(move |seen| {
-        let parse = || {
-            let capacity = number(text(seen, &limit)?)?;
-            let remaining = number(text(seen, &remaining)?)?;
-            let reset = text(seen, &reset)?;
-            let reset = if rfc3339 {
-                seen.until_rfc3339(reset)?
-            } else {
-                seen.until_unix(number(reset)?)?
-            };
-            if capacity == 0 || remaining > capacity || reset.is_zero() {
-                return None;
-            }
-            Some(vec![Window::fixed(capacity, reset).remaining(remaining)])
-        };
-        parse().unwrap_or_default()
-    })
-}

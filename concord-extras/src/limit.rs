@@ -65,9 +65,8 @@
 //!
 //! When the server announces its budget, have the bucket learn it from each response
 //! instead. [`counts`] reads paired headers of capacities and counts; [`remaining`] reads
-//! a capacity, the units left and a reset date in Unix seconds, and [`remaining_until`]
-//! the same with a reset in another form ([`Reset`]). Each bucket can also set its own
-//! cost (one by default).
+//! a capacity, the units left and a reset date in Unix seconds. Each bucket can also set
+//! its own cost (one by default).
 //!
 //! ```no_run
 //! use concord::limit::{Bucket, Limit, counts};
@@ -178,7 +177,6 @@ type Key = dyn Fn(&RequestInfo<'_>) -> Option<String> + Send + Sync;
 type Cost = dyn Fn(&RequestInfo<'_>) -> u64 + Send + Sync;
 type Learn = dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync;
 type Hit = dyn Fn(&Seen<'_>) -> bool + Send + Sync;
-type WindowsBy = dyn Fn(&str) -> Vec<Window> + Send + Sync;
 
 /// What a key or cost function receives: the built request and its endpoint.
 ///
@@ -248,15 +246,9 @@ pub struct Bucket {
     learn: Option<Arc<Learn>>,
     hit: Option<Arc<Hit>>,
     windows: Vec<Window>,
-    // PANIC-SAFETY: The engine does not read the three settings below yet; no panic lint is relaxed.
-    #[allow(dead_code)]
-    windows_by: Option<Arc<WindowsBy>>,
     // PANIC-SAFETY: The engine does not read this setting yet; no panic lint is relaxed.
     #[allow(dead_code)]
     max_in_flight: Option<usize>,
-    // PANIC-SAFETY: The engine does not read this setting yet; no panic lint is relaxed.
-    #[allow(dead_code)]
-    discovery: usize,
 }
 
 impl Bucket {
@@ -281,9 +273,7 @@ impl Bucket {
             learn: None,
             hit: None,
             windows: Vec::new(),
-            windows_by: None,
             max_in_flight: None,
-            discovery: 1,
         }
     }
 
@@ -297,48 +287,6 @@ impl Bucket {
     pub fn window(mut self, window: Window) -> Self {
         self.windows.push(window);
         self
-    }
-
-    /// Sets the function that gives the windows known in advance for each key.
-    ///
-    /// Use it when the windows depend on the key: a tier for each method, a plan for each
-    /// account. The function receives the key that the key function returned. Its windows
-    /// follow those set with [`window`](Self::window): together at most eight, in that
-    /// order, each one valid, or the request fails with `InvalidPolicy` before it is sent.
-    /// The limit keeps the windows returned when it started keeping the key, so the
-    /// function must return the same windows for the same key; a key that is forgotten,
-    /// which holds nothing, starts again from a new result. These windows are set in
-    /// advance, as with `window`: they stay known, and [`learn`](Self::learn) reconciles
-    /// with them by position. An empty list adds nothing. A panic in the function unwinds
-    /// that call before the state of the limit changes; other calls go on.
-    ///
-    /// ```no_run
-    /// use concord::limit::{Bucket, Limit, Window};
-    /// use std::time::Duration;
-    /// concord::api! {
-    ///     client Chat {
-    ///         base "https://chat.example.test";
-    ///         GET history() -> String { path "history"; read concord::Text; }
-    ///         GET info() -> String { path "info"; read concord::Text; }
-    ///     }
-    /// }
-    /// // The API documents a budget for each method, which no header teaches.
-    /// fn per_minute(endpoint: &str) -> u64 {
-    ///     if endpoint.ends_with("history") { 50 } else { 20 }
-    /// }
-    /// async fn history() -> Result<String, concord::Error> {
-    ///     let minute = Duration::from_secs(60);
-    ///     let limit = Limit::new().bucket(Bucket::new(|call| Some(call.info().endpoint().into()))
-    ///         .windows_by(move |endpoint| vec![Window::rolling(per_minute(endpoint), minute)]));
-    ///     Chat::new().with_middleware(limit).history().await
-    /// }
-    /// ```
-    #[must_use = "attach the configured value to its bucket or client"]
-    pub fn windows_by(self, windows: impl Fn(&str) -> Vec<Window> + Send + Sync + 'static) -> Self {
-        Self {
-            windows_by: Some(Arc::new(windows)),
-            ..self
-        }
     }
 
     /// Allows at most `n` requests of each key of this bucket at once; a request keeps its
@@ -378,42 +326,6 @@ impl Bucket {
     pub fn max_in_flight(self, n: usize) -> Self {
         Self {
             max_in_flight: Some(n),
-            ..self
-        }
-    }
-
-    /// Sets how many requests of a key may leave before anything is learned about its
-    /// windows: one by default.
-    ///
-    /// While a key of this bucket has no known window, nothing says how large its budget
-    /// is, so at most `n` requests of that key may be awaiting their response head. A place
-    /// comes free when a response head has been learned from, or when its request fails or
-    /// is dropped before that; it does not wait for the body. What the other requests of
-    /// the key have spent is counted against the windows learned from that head. The same
-    /// bound applies when a learned window becomes unknown again (see [`Window`]). A key
-    /// whose windows are all known is not affected. Zero fails the first call with
-    /// `InvalidPolicy`, and `usize::MAX` lets every request through while nothing is known.
-    ///
-    /// ```no_run
-    /// use concord::limit::{remaining, Bucket, Limit};
-    /// concord::api! {
-    ///     client Models {
-    ///         base "https://models.example.test";
-    ///         POST generate() -> String { path "generate"; read concord::Text; }
-    ///     }
-    /// }
-    /// async fn generate() -> Result<String, concord::Error> {
-    ///     // A head arrives only once the whole answer is written: let four calls go meanwhile.
-    ///     let requests = Bucket::new(|_| Some("requests".into()))
-    ///         .learn(remaining("x-limit", "x-remaining", "x-reset"))
-    ///         .discovery(4);
-    ///     Models::new().with_middleware(Limit::new().bucket(requests)).generate().await
-    /// }
-    /// ```
-    #[must_use = "attach the configured value to its bucket or client"]
-    pub fn discovery(self, n: usize) -> Self {
-        Self {
-            discovery: n,
             ..self
         }
     }
@@ -1082,100 +994,4 @@ pub fn remaining(
     reset: impl Into<String>,
 ) -> Box<dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync> {
     headers::remaining(limit.into(), remaining.into(), reset.into())
-}
-
-/// The header that gives the reset of a window, and how its value is written.
-///
-/// [`remaining_until`] reads it. More forms may be added later. `Debug` prints no setting.
-/// A clone is independent.
-///
-/// ```no_run
-/// let reset = concord::limit::Reset::rfc3339("x-ratelimit-reset");
-/// ```
-#[derive(Clone)]
-#[must_use = "pass the reset to remaining_until"]
-pub struct Reset {
-    header: String,
-    form: Form,
-}
-
-#[derive(Clone, Copy)]
-enum Form {
-    Unix,
-    Rfc3339,
-}
-
-impl Reset {
-    /// A reset written as Unix seconds, as [`remaining`] reads it: `1794441630`.
-    ///
-    /// The value must be a nonnegative integer, with spaces around it ignored.
-    ///
-    /// ```no_run
-    /// let reset = concord::limit::Reset::unix("x-ratelimit-reset");
-    /// ```
-    pub fn unix(header: impl Into<String>) -> Self {
-        Self {
-            header: header.into(),
-            form: Form::Unix,
-        }
-    }
-
-    /// A reset written as an RFC 3339 date-time: `2026-11-17T12:00:30Z`.
-    ///
-    /// The value is read as [`Seen::until_rfc3339`] reads it.
-    ///
-    /// ```no_run
-    /// let reset = concord::limit::Reset::rfc3339("x-ratelimit-reset");
-    /// ```
-    pub fn rfc3339(header: impl Into<String>) -> Self {
-        Self {
-            header: header.into(),
-            form: Form::Rfc3339,
-        }
-    }
-}
-
-impl fmt::Debug for Reset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Reset { .. }")
-    }
-}
-
-/// Returns a `learn` function for headers of a capacity, the units left and a reset in the form that [`Reset`] names.
-///
-/// It reads as [`remaining`] does, with the reset in another form:
-/// `remaining_until(limit, left, Reset::unix(reset))` is `remaining(limit, left, reset)`.
-/// Each header may be at most 4096 bytes. The capacity and the units left must be readable
-/// nonnegative integers; the capacity must be positive, the units left must not exceed it,
-/// and the reset must be readable in its form and in the future. Otherwise nothing is
-/// learned. The result is one current fixed window that refills once, to its whole
-/// capacity, at that reset.
-///
-/// ```no_run
-/// use concord::limit::{remaining_until, Bucket, Limit, Reset};
-/// concord::api! {
-///     client Messages {
-///         base "https://messages.example.test";
-///         POST create() -> String { path "messages"; read concord::Text; }
-///     }
-/// }
-/// async fn create() -> Result<String, concord::Error> {
-///     let limit = Limit::new().bucket(Bucket::new(|_| Some("requests".into())).learn(remaining_until(
-///         "x-requests-limit",
-///         "x-requests-remaining",
-///         Reset::rfc3339("x-requests-reset"),
-///     )));
-///     Messages::new().with_middleware(limit).create().await
-/// }
-/// ```
-#[must_use = "attach the configured value to its bucket or client"]
-// PANIC-SAFETY: This lint exception keeps the public callback type explicit; it permits no panic.
-#[allow(clippy::type_complexity)]
-pub fn remaining_until(
-    limit: impl Into<String>,
-    remaining: impl Into<String>,
-    reset: Reset,
-) -> Box<dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync> {
-    let rfc3339 = matches!(reset.form, Form::Rfc3339);
-    headers::remaining_until(limit.into(), remaining.into(), reset.header, rfc3339)
 }
