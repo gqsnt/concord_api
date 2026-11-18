@@ -256,3 +256,46 @@ async fn c4_3_a_deadline_past_the_timer_s_range_ends_the_retries_instead_of_firi
     assert!(error.is_status(429));
     assert_eq!(error.tries(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn c4_3_a_wait_longer_than_the_runtime_s_longest_sleep_ends_the_retries() {
+    use futures_util::FutureExt;
+    // A runtime one second old; a wait that 64 bits of milliseconds hold, but far longer than
+    // the longest sleep the runtime documents (68,719,476,734 ms, about 2.2 years).
+    tokio::time::advance(sec(1)).await;
+    let wait = sec(u64::MAX / 1000);
+    let script = Script::new();
+    script
+        .answer(429)
+        .header("retry-after", &wait.as_secs().to_string());
+    script.answer(200).body("unused");
+    let api = Data::new()
+        .with_transport(script.clone())
+        .with_retry(Retry::standard().max_retry_after(wait));
+    let mut call = Box::pin(api.get().send());
+    let mut result = call.as_mut().now_or_never();
+    for _ in 0..10 {
+        if result.is_some() {
+            break;
+        }
+        tokio::task::yield_now().await;
+        result = call.as_mut().now_or_never();
+    }
+    let error = result.expect("the call ends at once").unwrap_err();
+    assert!(error.is_status(429));
+    assert_eq!(error.tries(), 1);
+    assert_eq!(script.unused(), 1);
+
+    // The longest sleep itself is waited for.
+    let longest = Duration::from_millis(68_719_476_734);
+    let script = Script::new();
+    script
+        .answer(429)
+        .header("retry-after", &(longest.as_secs()).to_string());
+    script.answer(200).body("ok");
+    let api = Data::new()
+        .with_transport(script.clone())
+        .with_retry(Retry::standard().max_retry_after(longest));
+    assert_eq!(api.get().await.unwrap(), "ok");
+    assert_eq!(script.requests().len(), 2);
+}

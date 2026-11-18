@@ -7,6 +7,9 @@ use std::task::Poll;
 use std::time::{Duration, SystemTime};
 use tokio::time::Instant;
 
+/// The longest sleep that Tokio's timer documents: 68,719,476,734 ms, about 2.2 years.
+const LONGEST_SLEEP: Duration = Duration::from_millis(68_719_476_734);
+
 use super::client::IdleSource;
 use super::{Core, Idempotent, Options};
 use crate::answer::{Answer, BodyClock, BodyTimeout, Headers, KnownKind, KnownOutcome};
@@ -498,11 +501,11 @@ where
             SystemTime::now(),
             random(&random_state, n),
         );
-        // Tokio's timer counts milliseconds in 64 bits from its start: a wait it cannot count
-        // ends the attempts, as one that an Instant cannot hold does.
+        // A wait longer than Tokio's longest sleep ends the attempts, as one that an Instant
+        // cannot hold does.
         let until = decision
             .wait
-            .filter(|wait| u64::try_from(wait.as_millis()).is_ok())
+            .filter(|wait| *wait <= LONGEST_SLEEP)
             .and_then(|wait| Instant::now().checked_add(wait));
         let Some(until) = until.filter(|until| run.total.is_none_or(|(end, _)| *until < end))
         else {

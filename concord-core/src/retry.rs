@@ -148,9 +148,9 @@ impl<P> Retry<P> {
     /// wait. One that is not longer is waited for. The random part of each wait keeps its
     /// own schedule and its own cap, at most 60 seconds, whatever this setting is; a wait
     /// that would end after the call's `timeout` still means no further attempt, and so does a
-    /// wait that the timer cannot keep, whatever this setting is: Tokio's timer counts
-    /// milliseconds in 64 bits from its start, so a wait of more milliseconds than that, or a
-    /// deadline past the last one it counts, returns the last outcome at once. Zero allows no positive
+    /// wait that the timer cannot keep, whatever this setting is: a wait longer than the
+    /// longest sleep of Tokio's timer, 68,719,476,734 milliseconds (about 2.2 years), or a
+    /// sleep that wakes before its deadline, returns the last outcome at once. Zero allows no positive
     /// asked wait: an asked wait of zero is no wait, and that attempt comes after the random
     /// part alone, as when nothing asked for a wait.
     ///
