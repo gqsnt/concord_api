@@ -1,0 +1,9 @@
+{
+  "id": "M405",
+  "area": "or_when_set",
+  "contract": "C8.6",
+  "description": "Number every generated input one past its position in the endpoint",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "::concord::page::InputId::new(#position)",
+  "replace": "::concord::page::InputId::new(#position + 1)"
+}

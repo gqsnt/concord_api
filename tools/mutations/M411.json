@@ -1,0 +1,9 @@
+{
+  "id": "M411",
+  "area": "decision order",
+  "contract": "C8.6",
+  "description": "Apply the short-page rule even when a statement spoke",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "            Some(_) => None,\n        };",
+  "replace": "            Some(_) => parts\n                .stop_on_short_page\n                .iter()\n                .filter_map(|size| size(&call))\n                .max(),\n        };"
+}

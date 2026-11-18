@@ -1,0 +1,9 @@
+{
+  "id": "M409",
+  "area": "decision order",
+  "contract": "C8.6",
+  "description": "Accept two statements that disagree on whether more items follow",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "            if stated.is_some_and(|before| before != more) {",
+  "replace": "            if false && stated.is_some_and(|before| before != more) {"
+}

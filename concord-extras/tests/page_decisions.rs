@@ -328,3 +328,53 @@ mod offsets {
         let _ = Offsets::new().stated();
     }
 }
+
+/// A macro anywhere in a `paginate` expression sends it on the inferred path: a macro of yours
+/// that writes `return |call, page| …;` inside a block gives the value, and that closure has its
+/// parameters inferred, and runs. The block's own tail is never reached.
+#[allow(unreachable_code)]
+mod a_macro_in_the_expression {
+    use concord::Json;
+    use concord_testkit::Script;
+
+    /// A page that says whether more follow.
+    #[derive(Debug, serde::Deserialize)]
+    pub struct Flagged {
+        /// The numbers.
+        pub items: Vec<u32>,
+        /// Whether more follow.
+        pub more: bool,
+    }
+
+    #[allow(clippy::empty_loop)]
+    fn never() -> ! {
+        loop {}
+    }
+
+    macro_rules! returns_a_pager {
+        () => {
+            return |call, page| if page.value().more { Some(call) } else { None };
+        };
+    }
+
+    concord::api! {
+        client Macros {
+            base "https://macros.test";
+            read Json;
+            GET list() -> Flagged {
+                paginate { returns_a_pager!(); never() };
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c8_6_a_closure_that_a_macro_returns_inside_a_block_is_inferred() {
+        let script = Script::new();
+        script.answer(200).body(r#"{"items":[1],"more":false}"#);
+        let mut pages = Macros::new().with_transport(script.clone()).list().pages();
+        let page = pages.try_next().await.unwrap().unwrap();
+        assert_eq!(page.items, [1]);
+        assert!(pages.try_next().await.unwrap().is_none());
+        assert_eq!(script.requests().len(), 1);
+    }
+}

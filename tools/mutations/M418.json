@@ -1,0 +1,9 @@
+{
+  "id": "M418",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Count an unset offset as one instead of zero",
+  "file": "concord-extras/src/page.rs",
+  "find": "        None => Ok(0),",
+  "replace": "        None => Ok(1),"
+}

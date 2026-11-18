@@ -1,0 +1,9 @@
+{
+  "id": "M400",
+  "area": "decision order",
+  "contract": "C8.6",
+  "description": "Never refuse a call that sets two inputs that each choose a move",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "Some((_, first)) if first != input => return Err(mismatch(TWO_MOVES)),",
+  "replace": "Some((_, first)) if first != input && false => return Err(mismatch(TWO_MOVES)),"
+}

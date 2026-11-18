@@ -1,0 +1,9 @@
+{
+  "id": "M429",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Make stop_on_short_page_of end a list only below one more than its size",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "self.short_page_rule(move |_| Some(size))",
+  "replace": "self.short_page_rule(move |_| Some(size + 1))"
+}

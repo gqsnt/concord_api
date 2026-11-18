@@ -1,0 +1,9 @@
+{
+  "id": "M424",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Take an unset page number as the one after first",
+  "file": "concord-extras/src/page.rs",
+  "find": "            None => first,",
+  "replace": "            None => first.and_then(|first: u64| first.checked_add(1)),"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M402",
+  "area": "or_when_set",
+  "contract": "C8.6",
+  "description": "Of two registrations of one input, let the last written move",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "Some(_) => {}",
+  "replace": "Some(_) => chosen = Some((index, input)),"
+}

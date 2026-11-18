@@ -1,0 +1,9 @@
+{
+  "id": "M430",
+  "area": "paginate classifier",
+  "contract": "C8.6",
+  "description": "Take an expression with a macro invocation for certain, so its closure is not inferred",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "    fn visit_macro(&mut self, _: &'ast syn::Macro) {\n        self.found = true;\n    }",
+  "replace": "    fn visit_macro(&mut self, _: &'ast syn::Macro) {}"
+}

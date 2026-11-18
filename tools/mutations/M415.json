@@ -1,0 +1,9 @@
+{
+  "id": "M415",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Ask for one more page when by_offset_total has reached its total",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        Ok(reached < total)",
+  "replace": "        Ok(reached <= total)"
+}

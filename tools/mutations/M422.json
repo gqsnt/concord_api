@@ -1,0 +1,9 @@
+{
+  "id": "M422",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "End a short page of by_offset_limit quietly whatever the failure of its offset",
+  "file": "concord-extras/src/page.rs",
+  "find": "            Err(Stuck::Overflow) if ended => Ok(None),",
+  "replace": "            Err(_) if ended => Ok(None),"
+}

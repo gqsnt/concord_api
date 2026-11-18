@@ -1,0 +1,9 @@
+{
+  "id": "M431",
+  "area": "paginate classifier",
+  "contract": "C8.6",
+  "description": "Read a method call as a closure, so a shipped pager with its methods is refused",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "syn::Expr::Path(_) | syn::Expr::Call(_) | syn::Expr::MethodCall(_) => true,",
+  "replace": "syn::Expr::Path(_) | syn::Expr::Call(_) => true,"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M401",
+  "area": "decision order",
+  "contract": "C8.6",
+  "description": "Check the two moves of the call after the gate, so a closed gate hides them",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        // 0. The call: two inputs set that each choose a move are a mistake, whatever the page\n        // says. One input given to two `or_when_set` is one choice: the first written.\n        let mut chosen: Option<(usize, InputId)> = None;\n        for (index, (chooses, _)) in parts.or_when_set.iter().enumerate() {\n            if let Some(input) = chooses(&call) {\n                match chosen {\n                    None => chosen = Some((index, input)),\n                    Some((_, first)) if first != input => return Err(mismatch(TWO_MOVES)),\n                    Some(_) => {}\n                }\n            }\n        }\n        // 1. The gates.\n        if !parts.only_when_set.iter().all(|set| set(&call)) {\n            return Ok(None);\n        }\n",
+  "replace": "        // 1. The gates.\n        if !parts.only_when_set.iter().all(|set| set(&call)) {\n            return Ok(None);\n        }\n        // 0. The call: two inputs set that each choose a move are a mistake, whatever the page\n        // says. One input given to two `or_when_set` is one choice: the first written.\n        let mut chosen: Option<(usize, InputId)> = None;\n        for (index, (chooses, _)) in parts.or_when_set.iter().enumerate() {\n            if let Some(input) = chooses(&call) {\n                match chosen {\n                    None => chosen = Some((index, input)),\n                    Some((_, first)) if first != input => return Err(mismatch(TWO_MOVES)),\n                    Some(_) => {}\n                }\n            }\n        }\n"
+}

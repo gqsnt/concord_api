@@ -1,0 +1,9 @@
+{
+  "id": "M420",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Report an offset whose successor cannot be held as one that cannot be read",
+  "file": "concord-extras/src/page.rs",
+  "find": ".ok_or(Stuck::Overflow)?;",
+  "replace": ".ok_or(Stuck::Unreadable)?;"
+}

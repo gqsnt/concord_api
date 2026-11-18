@@ -1,0 +1,9 @@
+{
+  "id": "M416",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Report a total that cannot be read as an offset that cannot grow",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": ".map_err(|_| mismatch(TOTAL))?",
+  "replace": ".map_err(|_| mismatch(OFFSET))?"
+}

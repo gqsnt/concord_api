@@ -1,0 +1,9 @@
+{
+  "id": "M417",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Report an offset of by_offset_total that cannot be read as one that cannot grow",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "Some(at) => (*at).try_into().map_err(|_| mismatch(super::UNREADABLE))?,",
+  "replace": "Some(at) => (*at).try_into().map_err(|_| mismatch(OFFSET))?,"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M413",
+  "area": "or_when_set",
+  "contract": "C8.6",
+  "description": "Ignore the move that an input chose and always take the default move",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "            Some((_, other)) => other.next_call(call, page)?,",
+  "replace": "            Some((_, _other)) => parts.moves.next_call(call, page)?,"
+}

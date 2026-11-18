@@ -1,0 +1,9 @@
+{
+  "id": "M408",
+  "area": "decision order",
+  "contract": "C8.6",
+  "description": "Of two statements that cannot be read, return the last written",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        for more in read {",
+  "replace": "        for more in read.into_iter().rev() {"
+}

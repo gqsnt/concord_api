@@ -1,0 +1,9 @@
+{
+  "id": "M425",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Read only the first Link field of a response",
+  "file": "concord-extras/src/page.rs",
+  "find": "answer.headers().as_map().get_all(\"link\").iter()",
+  "replace": "answer.headers().as_map().get_all(\"link\").iter().take(1)"
+}

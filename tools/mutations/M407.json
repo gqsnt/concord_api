@@ -1,0 +1,9 @@
+{
+  "id": "M407",
+  "area": "decision order",
+  "contract": "C8.6",
+  "description": "Ignore a statement that says no more items follow",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        if stated == Some(false) {",
+  "replace": "        if false && stated == Some(false) {"
+}

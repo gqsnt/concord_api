@@ -1,0 +1,9 @@
+{
+  "id": "M404",
+  "area": "or_when_set",
+  "contract": "C8.6",
+  "description": "Give every input the same identity, so two inputs that each choose look like one",
+  "file": "concord-core/src/page.rs",
+  "find": "        InputId(position)\n",
+  "replace": "        InputId(position - position)\n"
+}

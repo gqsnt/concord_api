@@ -1,0 +1,9 @@
+{
+  "id": "M426",
+  "area": "next-page URL",
+  "contract": "C8.6",
+  "description": "Drop the empty parts of a next URL's query",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "                    if !secret {\n                        kept.push(part.to_owned());",
+  "replace": "                    if !secret && !part.is_empty() {\n                        kept.push(part.to_owned());"
+}
