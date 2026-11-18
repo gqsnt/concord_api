@@ -779,17 +779,28 @@ fn follow_owner_help(source: &str, old: &str) -> (String, String) {
     assert!(!helps.is_empty(), "{source}: no message 7");
     let help = &helps[0];
     assert!(helps.iter().all(|other| other == help), "{helps:?}");
-    // The renamed declaration is the first code in the help that declares a type. When the
-    // help proposes no name, the author picks one that is free.
-    let new = help
+    // The renamed declaration is the first code in the help that declares a type. Only when
+    // the help is the rule that proposes no name does the author pick one that is free.
+    let no_name = "rename this input to a name that no owner, input, child or generated method of the nodes that receive it has; ";
+    let new = match help
         .split('`')
         .skip(1)
         .step_by(2)
         .find(|code| code.contains(": "))
-        .map_or("renamed", |declaration| {
-            declaration.split([':', '?']).next().unwrap()
-        })
-        .to_owned();
+    {
+        Some(declaration) => declaration.split([':', '?']).next().unwrap().to_owned(),
+        None => {
+            assert!(
+                help.starts_with(no_name),
+                "{source}: the help proposes no name: {help}"
+            );
+            "renamed".to_owned()
+        }
+    };
+    assert!(
+        help.contains(&format!("for each short entry `{old};`, if any, write `")),
+        "{source}: the help does not state the rule for the key: {help}"
+    );
     // "for each short entry `x;`, if any, write `"x" = x_value;`", or, with no name
     // proposed, "write `"x" = ` and the new name".
     let entry = help
