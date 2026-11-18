@@ -4,6 +4,6 @@
   "contract": "C11.5",
   "description": "A spent learned fixed refill keeps blocking admission instead of allowing discovery.",
   "file": "concord-extras/src/limit/engine.rs",
-  "find": "    fn inspect(&mut self, cost: u64, now: Instant, wait: &mut Wait) -> Result<(), LimitError> {\n        self.forget_spent(now, cost);",
-  "replace": "    fn inspect(&mut self, cost: u64, now: Instant, wait: &mut Wait) -> Result<(), LimitError> {"
+  "find": "        self.forget_spent(now, cost);\n        self.in_use",
+  "replace": "        self.in_use"
 }
