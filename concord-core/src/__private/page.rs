@@ -204,6 +204,10 @@ where
                             };
                             return Poll::Pending;
                         }
+                        // An earlier page was sent: this error cannot say that nothing was.
+                        Poll::Ready(Err(error)) if self.last.is_some() => {
+                            return Poll::Ready(Some(Err(error.sent_before())))
+                        }
                         Poll::Ready(Err(error)) => return Poll::Ready(Some(Err(error))),
                         Poll::Ready(Ok(answer)) => answer,
                     };

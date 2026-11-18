@@ -2,6 +2,7 @@
 
 use crate::error::Class;
 use std::future::Future;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 /// What actually sends a request and returns its response: [`Http`], a `reqwest::Client`,
@@ -45,14 +46,20 @@ pub trait Transport: Send + Sync + 'static {
 
 /// Your own `reqwest::Client` sends the request, keeping its own settings for redirects,
 /// decompression and internal retries. Concord's middleware runs before it.
-/// Concord does not retry an unmarked, non-idempotent call after a failed connection.
+/// Concord does not retry an unmarked, non-idempotent call after a failed connection, but
+/// `reqwest`'s default resends a buffered or empty request after an HTTP/2
+/// `REFUSED_STREAM` or `GOAWAY`, whatever its method, below Concord's count of attempts;
+/// [`Http`] does not.
 impl Transport for reqwest::Client {
-    async fn send(
+    // Not `async`: the send is recorded when it is created, before its first poll.
+    fn send(
         &self,
         request: reqwest::Request,
-        _info: TryInfo,
-    ) -> Result<reqwest::Response, TransportError> {
-        self.execute(request).await.map_err(TransportError::from)
+        info: TryInfo,
+    ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send {
+        counted(info.sends(), move || async move {
+            self.execute(request).await.map_err(TransportError::from)
+        })
     }
 }
 
@@ -98,6 +105,8 @@ pub struct TransportError {
     connection_kind: Option<std::io::ErrorKind>,
     // Some(None): the HTTP connect clock is known, but its configured length is not.
     connect_timeout: Option<Option<std::time::Duration>>,
+    // The transport stated that no byte of the request was written: see `not_sent`.
+    not_sent: bool,
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
@@ -121,11 +130,16 @@ impl TransportError {
             clock: None,
             connection_kind: None,
             connect_timeout: None,
+            not_sent: false,
             source: None,
         }
     }
 
     /// Creates the error for a failed connection.
+    ///
+    /// It says nothing about what was written: a connection can fail after the request, or
+    /// part of it, was sent. When your transport knows that nothing was, add
+    /// [`not_sent`](TransportError::not_sent).
     pub fn connect() -> TransportError {
         TransportError::new(Class::Connect)
     }
@@ -150,6 +164,37 @@ impl TransportError {
             source: Some(source.into()),
             ..Self::new(Class::Other)
         }
+    }
+
+    /// States that no byte of the request was written to the network during this send, and
+    /// that none can still be written after it returns: the connection could not be made,
+    /// or the transport stopped before handing the request over.
+    ///
+    /// The call's error then reports it with
+    /// [`Error::request_not_sent`](crate::Error::request_not_sent), unless something else
+    /// was sent during the call. A caller may rely on it to reuse what the request carried,
+    /// such as a single-use refresh token: state it only when it is certain. A connection
+    /// that broke after it was made, a timeout that may have expired after a write, a send
+    /// that another task may still be making, and an error of your HTTP library that you
+    /// did not classify yourself are not certain. [`Http`] states it for a connection that
+    /// it could not make; [`TransportError::from`] for a `reqwest::Error` never does. The
+    /// retry policy does not read it: the class decides, as before.
+    ///
+    /// ```
+    /// # use concord_core as concord;
+    /// use concord::transport::TransportError;
+    /// // Checked before any socket was opened.
+    /// let offline = TransportError::connect().not_sent();
+    /// ```
+    #[must_use]
+    pub fn not_sent(mut self) -> TransportError {
+        self.not_sent = true;
+        self
+    }
+
+    /// Whether this failure states that nothing was written: `not_sent`, or `blocked`.
+    pub(crate) fn states_not_sent(&self) -> bool {
+        self.not_sent || self.class == Class::Blocked
     }
 
     /// Sets the cause, for the `source()` of the error that the caller receives.
@@ -277,13 +322,96 @@ impl From<reqwest::Error> for TransportError {
 
 /// What a middleware layer or transport is told about the request: which endpoint, and which
 /// attempt.
+///
+/// A copy kept after the attempt has ended, by a record of your own or by a task, stops the
+/// call's error from stating that nothing was sent
+/// ([`Error::request_not_sent`](crate::Error::request_not_sent)), since a send made with it
+/// could still write. To keep what it says, keep [`endpoint`](TryInfo::endpoint) and
+/// [`number`](TryInfo::number), or `TryInfo::new(info.endpoint(), info.number())`.
+///
+/// Before a middleware layer or a transport states [`TransportError::not_sent`] or
+/// [`TransportError::blocked`], or forwards such a failure, it accounts for every send that
+/// it made or still holds, through the chain or beside it: a send that it makes with a
+/// transport of its own, without this `TryInfo`, is not seen by Concord. A false statement
+/// can make a credential send a refresh token twice, and a server that sees a token used
+/// twice may revoke every session of the account.
 #[derive(Clone)]
 pub struct TryInfo {
     endpoint: &'static str,
     number: u32,
     run: Option<crate::__private::Run>,
     conditional: Option<Arc<std::sync::atomic::AtomicBool>>,
+    sends: Option<Arc<Sends>>,
     pub(crate) repeatable_body: bool,
+}
+
+/// The sends that reached a transport during one attempt of a call, and how many of them
+/// ended with a failure stating that nothing was written.
+///
+/// The engine creates one for each attempt and owns it. The `Next` that it hands to the
+/// middleware borrows it, and every `Next::send` is counted there when it is called,
+/// whatever `TryInfo` a middleware passes with it; the layers below receive that `TryInfo`
+/// bound to the record again. The attempt's `TryInfo` holds a clone, through which a
+/// `Next::to` chain, [`Http`], `reqwest::Client` and [`fake`] count their sends too, so that
+/// a send beside the chain or a transport of the author's that wraps them is checked. A send
+/// that was dropped before it returned, or before its first poll, is counted as started and
+/// never as unsent.
+///
+/// The engine reads it only once it holds the record alone ([`Sends::none_written`]): after
+/// the attempt, when no borrow through `Next` remains and every clone held by a `TryInfo`
+/// (kept by a middleware, given to a task) has been dropped. Nothing can then change it.
+#[derive(Default)]
+pub(crate) struct Sends {
+    started: AtomicU32,
+    unsent: AtomicU32,
+}
+
+impl Sends {
+    fn add(count: &AtomicU32) {
+        // Saturating: a count that reached the maximum never compares equal below.
+        let mut now = count.load(Ordering::SeqCst);
+        while let Some(next) = now.checked_add(1) {
+            match count.compare_exchange_weak(now, next, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => break,
+                Err(current) => now = current,
+            }
+        }
+    }
+
+    /// No send of this attempt can have written a byte of the request, nor can one still:
+    /// `false` while anything else holds the record.
+    pub(crate) fn none_written(record: Arc<Sends>) -> bool {
+        let Some(sends) = Arc::into_inner(record) else {
+            return false;
+        };
+        let started = sends.started.into_inner();
+        started != u32::MAX && started == sends.unsent.into_inner()
+    }
+}
+
+/// Counts one send in this record, if there is one: as started now, before `send` runs any
+/// code of the author's, and as unsent when it ends with a failure stating that nothing was
+/// written. A panic in `send` or in its future leaves it started.
+pub(crate) fn counted<F>(
+    sends: Option<Arc<Sends>>,
+    send: impl FnOnce() -> F,
+) -> impl Future<Output = Result<reqwest::Response, TransportError>>
+where
+    F: Future<Output = Result<reqwest::Response, TransportError>>,
+{
+    if let Some(sends) = &sends {
+        Sends::add(&sends.started);
+    }
+    let send = send();
+    async move {
+        let result = send.await;
+        if let Some(sends) = &sends {
+            if result.as_ref().is_err_and(TransportError::states_not_sent) {
+                Sends::add(&sends.unsent);
+            }
+        }
+        result
+    }
 }
 
 impl std::fmt::Debug for TryInfo {
@@ -303,6 +431,7 @@ impl TryInfo {
             number,
             run: None,
             conditional: None,
+            sends: None,
             repeatable_body: false,
         }
     }
@@ -322,18 +451,30 @@ impl TryInfo {
         false
     }
 
-    pub(crate) fn for_run(run: crate::__private::Run, number: u32) -> Self {
+    pub(crate) fn for_run(run: crate::__private::Run, number: u32, sends: Arc<Sends>) -> Self {
         Self {
             endpoint: run.endpoint(),
             number,
             run: Some(run),
             conditional: None,
+            sends: Some(sends),
             repeatable_body: false,
         }
     }
 
     pub(crate) fn run(&self) -> Option<&crate::__private::Run> {
         self.run.as_ref()
+    }
+
+    /// The record of this attempt's sends; `None` outside an attempt of the engine.
+    pub(crate) fn sends(&self) -> Option<Arc<Sends>> {
+        self.sends.clone()
+    }
+
+    /// The same information, carrying this record of the engine's attempt.
+    pub(crate) fn bound_to(mut self, record: &Arc<Sends>) -> Self {
+        self.sends = Some(record.clone());
+        self
     }
 
     /// Returns the name of the endpoint: `riot.matches.get`.
@@ -390,12 +531,13 @@ impl<F> Transport for Fake<F>
 where
     F: Fn(&reqwest::Request) -> Result<reqwest::Response, TransportError> + Send + Sync + 'static,
 {
-    async fn send(
+    // Not `async`: the send is recorded when it is created, before the callback runs.
+    fn send(
         &self,
         request: reqwest::Request,
-        _info: TryInfo,
-    ) -> Result<reqwest::Response, TransportError> {
-        (self.0)(&request)
+        info: TryInfo,
+    ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send {
+        counted(info.sends(), move || async move { (self.0)(&request) })
     }
 }
 
@@ -450,7 +592,18 @@ pub fn reply_with(
 /// enables decoding or sends `Accept-Encoding` by itself. The `socks` feature
 /// permits SOCKS proxies configured through [`Http::with`]. These features are
 /// not defaults. See [`Http::with`] for a compression example.
-/// Internal retries use `reqwest`'s settings and are below Concord's count of attempts.
+///
+/// It puts a request on the wire once per attempt: `reqwest`'s own resends are off,
+/// including its default resend of an HTTP/2 request that the server refused with
+/// `REFUSED_STREAM` or `GOAWAY`. A request is repeated only by Concord's engine, when the
+/// retry policy and the request allow it, and each repeat is an attempt. One resend
+/// remains below the count of attempts: when a reused connection turns out to be
+/// closed and hands the request back before writing any of it, the connection pool
+/// sends it on another connection.
+///
+/// When it cannot make a connection (refused, a host name not resolved, a TLS handshake
+/// or a proxy that failed, its connect timeout), its error states that nothing was sent:
+/// see [`TransportError::not_sent`] and [`Error::request_not_sent`](crate::Error::request_not_sent).
 #[derive(Clone)]
 pub struct Http {
     client: reqwest::Client,
@@ -465,10 +618,12 @@ impl std::fmt::Debug for Http {
 
 impl Http {
     fn classify_error(&self, error: reqwest::Error) -> TransportError {
+        let not_sent = connector_failed(&error);
         let mut failure = TransportError::from(error);
         if failure.connect_timeout.is_some() {
             failure.connect_timeout = Some(self.connect_timeout);
         }
+        failure.not_sent = not_sent && failure.request_failure.is_none();
         failure
     }
 
@@ -484,8 +639,10 @@ impl Http {
     /// Before `f` runs, the defaults are set, and `f` may change them: 30 seconds to connect,
     /// no `Referer`, no decompression (a body is passed on as it arrived). The closure may
     /// enable decompression; readers then receive, and their limits count, the bytes that
-    /// the transport returns. After `f`, one setting is applied that `f` cannot change:
-    /// no redirect is followed. A `3xx` is a response.
+    /// the transport returns. After `f`, two settings are applied that `f` cannot change:
+    /// no redirect is followed (a `3xx` is a response), and `reqwest` resends nothing on its
+    /// own, so a retry policy set with `builder.retry(…)` is replaced. To keep `reqwest`'s
+    /// own redirects or retries, pass your own `reqwest::Client` as the transport instead.
     ///
     /// To make gzip available, add it to your dependency's features:
     ///
@@ -522,7 +679,24 @@ impl Http {
             .no_brotli()
             .no_zstd()
             .no_deflate();
-        // Then the one thing that a promise needs, which the closure cannot change.
+        // Then what the promises need, which the closure cannot change: no resend of
+        // reqwest's own (`retry::never()` replaces the whole policy, for every protocol),
+        // and no redirect.
+        //
+        // reqwest 0.13.5 offers no finer rule. Its default classifier, `ProtocolNacks`, is
+        // installed only by the private `retry::Builder::default()` (`retry.rs:195`); every
+        // public builder starts from `Never` (`77`, `88`, `105`), and `classify_fn` replaces
+        // the classifier. A classifier of ours sees `ReqRep`: the method, the URI, a status
+        // and the error (`407` to `423`). A refusal has no status, `is_request()` covers every
+        // failure without a response, and `is_connect()` names the connector, not a refusal;
+        // neither the error's text (h2 prints the same text for other errors, and a GOAWAY may
+        // append debug data: h2 `error.rs:162`) nor the depth of its `source()` chain
+        // identifies one. Telling one apart needs a downcast to `h2::Error`
+        // (`retry.rs:273` to `315`), a dependency this crate does not have. The one public
+        // workaround, `Body::wrap` on every body that must not be resent so that it cannot be
+        // cloned (`body.rs:138`), relies on reqwest's stock policy, which `f` may have
+        // replaced; and `ClientBuilder` is not `Clone`, so `f` cannot build a second client.
+        let f = move |builder: reqwest::ClientBuilder| f(builder).retry(reqwest::retry::never());
         let client = f(builder)
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
@@ -536,16 +710,87 @@ impl Http {
 }
 
 impl Transport for Http {
-    async fn send(
+    // Not `async`: the send is recorded when it is created, before its first poll.
+    fn send(
         &self,
         request: reqwest::Request,
-        _info: TryInfo,
-    ) -> Result<reqwest::Response, TransportError> {
-        self.client
-            .execute(request)
-            .await
-            .map_err(|error| self.classify_error(error))
+        info: TryInfo,
+    ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send {
+        counted(info.sends(), move || async move {
+            self.client
+                .execute(request)
+                .await
+                .map_err(|error| self.classify_error(error))
+        })
     }
+}
+
+/// Whether this error of `Http`'s own client is the failure of its connector, which proves
+/// that no byte of the request was written during this send (`TransportError::not_sent`).
+///
+/// A false "not sent" lets a caller reuse a single-use credential, which a server may answer
+/// by revoking the account's sessions, so this holds only on these premises, read in the
+/// versions that Concord locks: reqwest 0.13.5, hyper-util 0.1.21, hyper 1.12.0, h2 0.4.20.
+/// The tests named beside a premise check it on the bytes that a local server received.
+///
+/// 1. One dispatch per send. `Http::with` sets `reqwest::retry::never()` after the author's
+///    closure: reqwest never sends a copy of the request (`retry.rs:88`, `469`).
+///    Test: `c4_1_reqwest_resends_a_refused_post_and_http_does_not`.
+/// 2. The direct source of a request error is hyper-util's error: reqwest wraps it in
+///    `HyperService::call` (`async_impl/client.rs:156`); its total and read timeouts give
+///    `TimedOut` instead (`client.rs:3100`, `3108`), which has no source.
+/// 3. hyper-util's `Connect` kind comes only from the connector's future or a pool checkout
+///    (`client/legacy/client.rs:378`, `464`, `473`, `517`): before the request is handed to a
+///    connection in that round of its loop. The connector receives the URI, never the
+///    request (`client.rs:516`). Its connect timeout is inside it (reqwest `connect.rs:904`,
+///    `ConnectorService::call` at `928`), so a connect timeout is the connector's failure too.
+///    Tests: `c9_5_http_states_not_sent_for_a_refused_connection` and
+///    `c9_5_http_states_not_sent_after_the_connect_timeout`.
+/// 4. An earlier round of that loop on a reused connection resends only a request that
+///    hyper handed back unstarted (`client.rs:248`, `324`): hyper returns the request only
+///    when it failed before serializing it (`client/conn/http1.rs:258`,
+///    `client/conn/http2.rs:190`).
+/// 5. The other errors of hyper-util have no cause, a message, or a `hyper::Error`
+///    (`client.rs:330`, `336`, `532`, `1705`, `1709`), and a failure of the request body
+///    after dispatch reaches it through a `hyper::Error`. `reqwest::Error::is_connect`
+///    finds a `Connect` error anywhere in the chain; with no `hyper::Error` and no other
+///    `reqwest::Error` in it, by 2 and this premise the one it found is the first cause.
+///    A `Connect` error deeper than that belongs to something else, such as the body
+///    stream of an upload that failed with another request's error. Tests:
+///    `c9_5_http_does_not_state_not_sent_after_the_request_was_written` and
+///    `c9_5_http_does_not_state_not_sent_for_a_nested_connect_error`.
+///
+/// 6. No redirect: `Http::with` forces `redirect::Policy::none()` after the closure, so no
+///    second request follows a response within one send.
+///
+/// The check is narrower than "the first cause is hyper-util's `Connect` error": a genuine
+/// connector failure whose chain holds another `reqwest::Error`, or a chain longer than the
+/// bound below, is left unknown, which is the safe side.
+///
+/// No test covers: the race of 4 (a pooled connection that closes as a request is handed
+/// to it; a test needs a deterministic hook on that hand-off, which the test kit does not
+/// have), a transport of the author's built over another client, the connector layers that
+/// `Http::with` lets an author add (a layer receives the URI, not the request), HTTP/3
+/// (reqwest's `http3` needs `--cfg reqwest_unstable` and adds a wrapper of its own around
+/// the error; its errors carry no hyper-util error, so it is never stated), and a
+/// dependency resolution other than the one locked here: a consumer's own `Cargo.lock`
+/// decides the versions it builds with.
+fn connector_failed(error: &reqwest::Error) -> bool {
+    if !error.is_request() || !error.is_connect() {
+        return false;
+    }
+    let mut cause = std::error::Error::source(error);
+    // A bound on the walk: a chain this long is not one of the shapes above.
+    for _ in 0..64 {
+        let Some(current) = cause else {
+            return true;
+        };
+        if current.is::<hyper::Error>() || current.is::<reqwest::Error>() {
+            return false;
+        }
+        cause = current.source();
+    }
+    false
 }
 
 #[cfg(test)]

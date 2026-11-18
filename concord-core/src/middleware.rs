@@ -1,6 +1,6 @@
 //! Middleware: what every request passes through before the transport actually sends it.
 
-use crate::transport::{Transport, TransportError, TryInfo};
+use crate::transport::{Sends, Transport, TransportError, TryInfo};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -95,6 +95,17 @@ use std::sync::Arc;
 /// at the final middleware handoff, including validation of a repeatable body declared
 /// empty. Both deadlines are checked before the validated request reaches the transport.
 /// `request()` and `into_request()` return the request before any middleware runs.
+///
+/// Before a middleware layer returns [`TransportError::blocked`] or
+/// [`TransportError::not_sent`], or forwards such a failure from `next.send`, it accounts
+/// for every send that it made or still holds, through `next`, through `Next::to`, or with a
+/// transport of its own. Concord sees every send through `next`; a send through `Next::to`
+/// only when it carries this attempt's `TryInfo`; and a direct call of a transport only
+/// when that transport counts itself, as `Http`, a `reqwest::Client` and `fake` do. A direct
+/// call of `concord_testkit::Script`, of the `tower` adapter or of a transport of your own
+/// is not seen, even with this attempt's `TryInfo`: those sends are their author's to
+/// account for. A false statement can make a credential send a refresh token twice (see
+/// [`TryInfo`]).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a middleware",
     note = "implement `concord::Middleware` with `handle(request, info, next)`; `next.send(request, info)` passes the request on"
@@ -160,6 +171,8 @@ impl<M: Middleware> ErasedMiddleware for M {
 pub struct Next<'a> {
     pub(crate) middlewares: &'a [Arc<dyn ErasedMiddleware>],
     pub(crate) transport: &'a dyn ErasedTransport,
+    // The record of the engine's attempt; `None` for a chain made with `Next::to`.
+    pub(crate) sends: Option<&'a Arc<Sends>>,
 }
 
 impl std::fmt::Debug for Next<'_> {
@@ -175,6 +188,7 @@ impl<'a> Next<'a> {
         Next {
             middlewares: &[],
             transport,
+            sends: None,
         }
     }
 
@@ -280,12 +294,31 @@ impl<'a> Next<'a> {
     }
 
     /// Sends through the remaining middleware and then the transport.
+    ///
+    /// The send is recorded for its attempt from the moment this method is called, not from
+    /// its first poll: in the record that the engine bound to this chain, and in the one that
+    /// `info` carries, when they differ (a chain made with `Next::to` has none of its own).
+    /// The layers below receive `info` bound to the engine's record again, whatever `TryInfo`
+    /// was passed. See [`Error::request_not_sent`](crate::Error::request_not_sent).
     pub fn send(
         self,
         request: reqwest::Request,
         info: TryInfo,
     ) -> impl Future<Output = Result<reqwest::Response, TransportError>> + Send + 'a {
-        match self.middlewares.split_first() {
+        let carried = info.sends();
+        let (info, bound) = match self.sends {
+            Some(record) => (info.bound_to(record), Some(record.clone())),
+            None => (info, None),
+        };
+        // The record of the metadata, when it is not the bound one: `Next::to`, or a
+        // `TryInfo` of another attempt.
+        let carried = carried.filter(|carried| {
+            bound
+                .as_ref()
+                .is_none_or(|bound| !Arc::ptr_eq(bound, carried))
+        });
+        // Recorded before the next layer's `handle` is called, which may run code at once.
+        let sending = move || match self.middlewares.split_first() {
             Some((middleware, rest)) => middleware.handle(
                 request,
                 info,
@@ -295,6 +328,7 @@ impl<'a> Next<'a> {
                 },
             ),
             None => Box::pin(self.send_transport(request, info)),
-        }
+        };
+        crate::transport::counted(bound, || crate::transport::counted(carried, sending))
     }
 }

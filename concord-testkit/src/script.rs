@@ -168,7 +168,10 @@ impl Script {
                 .and_then(|body| body.as_bytes())
                 .map(Bytes::copy_from_slice),
             upload: Upload::default(),
-            info,
+            // The endpoint and the number only: a record that keeps the attempt's own
+            // `TryInfo` after the send would stop the call's error from stating that nothing
+            // was sent (`Error::request_not_sent`).
+            info: TryInfo::new(info.endpoint(), info.number()),
             at: Instant::now(),
         };
         let mut state = self.lock();
@@ -576,6 +579,11 @@ impl Request {
     }
 
     /// Returns the endpoint and the number of the attempt.
+    ///
+    /// It is a snapshot made with `TryInfo::new`: it carries neither the deadlines of the
+    /// call nor its record of sends, so a send made with a clone of it through `Next::to`
+    /// or a direct call is outside that call. Passed to the `Next` that a middleware layer
+    /// received, it is bound to that attempt's record again.
     pub fn info(&self) -> &TryInfo {
         &self.info
     }

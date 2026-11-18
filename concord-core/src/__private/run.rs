@@ -12,7 +12,7 @@ use super::{Core, Idempotent, Options};
 use crate::answer::{Answer, BodyClock, BodyTimeout, Headers, KnownKind, KnownOutcome};
 use crate::error::{Clock, Error, Kept, Kind, MismatchFailure};
 use crate::retry::{again, Decision, Outcome, Retry};
-use crate::transport::TryInfo;
+use crate::transport::{Sends, TryInfo};
 
 /// The clocks of one call, shared by its tries, readers and handed-over stream.
 #[derive(Clone)]
@@ -397,6 +397,8 @@ where
     let none = Retry::none();
     let policy = options.retry(core).unwrap_or(&none);
     let mut n = 0u32;
+    // No attempt so far can have written a byte of the request.
+    let mut unsent = true;
     loop {
         let this = if let Some(request) = request.take() {
             Some(request)
@@ -421,7 +423,14 @@ where
         let next = core.sending_next(run.endpoint)?;
         n = n.saturating_add(1);
         run.clear();
-        let info = TryInfo::for_run(run.clone(), n);
+        // The record of this attempt's sends: the engine owns it, `next` borrows it, and the
+        // attempt's `TryInfo` holds a clone.
+        let record = Arc::new(Sends::default());
+        let next = crate::Next {
+            sends: Some(&record),
+            ..next
+        };
+        let info = TryInfo::for_run(run.clone(), n, record.clone());
         let result = if let Some(observed) = &control {
             let mut info = info;
             info.repeatable_body = true;
@@ -477,6 +486,24 @@ where
             {
                 Ok(result) => result,
                 Err(()) => Attempt::Failed(run.timeout_error(n)),
+            }
+        };
+        // A failure states that nothing was sent only if no send of this attempt, and no
+        // earlier attempt, may have written anything. The attempt is over: the borrow of
+        // `next` has ended, and the record is read only if nothing else still holds it.
+        let none_written = Sends::none_written(record);
+        let result = match result {
+            Attempt::Failed(error) if error.request_not_sent() => {
+                if unsent && none_written {
+                    Attempt::Failed(error)
+                } else {
+                    unsent = false;
+                    Attempt::Failed(error.sent_before())
+                }
+            }
+            result => {
+                unsent = false;
+                result
             }
         };
         let Some(outcome) = result.outcome() else {
@@ -642,7 +669,7 @@ mod tests {
         let failure = core
             .sending_next(run.endpoint())
             .unwrap()
-            .send(request, TryInfo::for_run(run, 1))
+            .send(request, TryInfo::for_run(run, 1, Arc::default()))
             .await
             .unwrap_err();
         let error: Error = Error::transport("tie.head", 1, failure);
@@ -678,7 +705,7 @@ mod tests {
         let failure = core
             .sending_next(run.endpoint())
             .unwrap()
-            .send(request, TryInfo::for_run(run, 1))
+            .send(request, TryInfo::for_run(run, 1, Arc::default()))
             .await
             .unwrap_err();
         let error: Error = Error::transport("tie.connect", 1, failure);

@@ -321,14 +321,27 @@ impl RenewalError {
     /// refresh token: `NotSent` when Concord states that nothing of it was sent, and
     /// `Failed` otherwise.
     ///
-    /// Concord states it for one failure only: a request blocked, before it was sent, on
-    /// its first and only attempt (`error.class()` is `Some(Class::Blocked)` and
-    /// `error.tries()` is 1), as by a `concord::limit::Limit` that refuses to wait, or a
-    /// middleware layer or transport that refuses the request. A middleware layer or
-    /// a transport returns `blocked()` only when no request left during its call. Every
-    /// other error is `Failed`, a connection failure included: a failed connection does
-    /// not prove that nothing was written. A Build error is `Failed` too, because a
-    /// request that was sent once can fail to be built again for a retry.
+    /// It is `NotSent` when the call failed on its first and only attempt
+    /// (`error.tries()` is 1) and [`error.request_not_sent()`](Error::request_not_sent) is
+    /// `true`, which covers two cases:
+    ///
+    /// - the request was blocked before it was sent (`error.class()` is
+    ///   `Some(Class::Blocked)`), as by a `concord::limit::Limit` that refuses to wait, or a
+    ///   middleware layer or transport that refuses the request; a middleware layer or a
+    ///   transport returns `blocked()` only when no request left during its call;
+    /// - the connection could not be made: `concord::Http`, the default transport, states it
+    ///   for a refused connection, a host name that was not resolved, a failed TLS
+    ///   handshake or proxy, and its own connect timeout; a transport of your own states it
+    ///   with `TransportError::not_sent`.
+    ///
+    /// Every other error is `Failed`: a connection that failed after it was made, even one
+    /// reset before the server read anything, because the request may already have been
+    /// written; a `Connect` error from a `reqwest::Client` used as the transport; a timeout
+    /// of the call or of the response; a response, of any status; an error after more than
+    /// one attempt, or on a page after the first; and an attempt during which the chain also
+    /// sent the request elsewhere, or dropped a send before it returned. A Build error is
+    /// `Failed` too, because a request that was sent once can fail to be built again for a
+    /// retry.
     ///
     /// Use it in place of `?` on that call, not on a call made after it:
     ///
@@ -353,7 +366,7 @@ impl RenewalError {
     /// }
     /// ```
     pub fn from_call<P: Send + Sync + 'static>(error: Error<P>) -> Self {
-        if error.class() == Some(concord_core::error::Class::Blocked) && error.tries() == 1 {
+        if error.tries() == 1 && error.request_not_sent() {
             Self::not_sent(error)
         } else {
             Self::failed(error)

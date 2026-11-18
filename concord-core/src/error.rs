@@ -342,6 +342,8 @@ struct Inner<E> {
     from_byte_stream: bool,
     // The kept bytes are a decoder's input, not verified to be this response's body.
     decoder_input: bool,
+    // No byte of the call's request was written: see `request_not_sent`.
+    not_sent: bool,
 }
 
 /// The kind of an error: what went wrong, in four cases.
@@ -406,6 +408,7 @@ impl<E> Error<E> {
                 reader_details: None,
                 from_byte_stream: false,
                 decoder_input: false,
+                not_sent: false,
             }),
         }
     }
@@ -476,6 +479,7 @@ impl<E> Error<E> {
         let connect_timeout = failure.connect_timeout();
         let connection_kind = failure.connection_kind();
         let request_failure = failure.request_failure();
+        let not_sent = failure.states_not_sent();
         let (class, source) = failure.into_parts();
         let connection = match connection_kind {
             Some(std::io::ErrorKind::ConnectionRefused) => Connection::Refused,
@@ -495,7 +499,15 @@ impl<E> Error<E> {
             },
         );
         error.inner.source = source;
+        error.inner.not_sent = not_sent;
         error
+    }
+
+    /// Something of the call may have been written after all: an earlier attempt, an
+    /// earlier page, or another send within the attempt.
+    pub(crate) fn sent_before(mut self) -> Self {
+        self.inner.not_sent = false;
+        self
     }
 
     /// A failure while reading a wanted body, retaining the answer's head.
@@ -720,6 +732,7 @@ impl<E> Error<E> {
             reader_details,
             from_byte_stream,
             decoder_input,
+            not_sent,
         } = *self.inner;
         Error {
             inner: Box::new(Inner {
@@ -738,6 +751,7 @@ impl<E> Error<E> {
                 reader_details,
                 from_byte_stream,
                 decoder_input,
+                not_sent,
             }),
         }
     }
@@ -777,6 +791,40 @@ impl<E> Error<E> {
     /// Returns `true` if a timeout expired (the class is [`Class::Timeout`]).
     pub fn is_timeout(&self) -> bool {
         self.class() == Some(Class::Timeout)
+    }
+
+    /// Returns `true` when Concord states that no byte of this call's request was written to
+    /// the network, on any attempt and any page. `false` means that it may have been: it does
+    /// not mean that the request arrived.
+    ///
+    /// It is stated for a Transport error only, when every send that reached a transport
+    /// during the call ended with a failure stating it, or a middleware layer stated it
+    /// itself, and no earlier attempt or page sent anything:
+    ///
+    /// - the request was [`Blocked`](Class::Blocked) before it was sent;
+    /// - [`Http`](crate::Http) could not make the connection: the connection was refused,
+    ///   the host name was not resolved, the TLS handshake or a proxy failed, or the HTTP
+    ///   client's connect timeout expired before a connection existed;
+    /// - your own transport or middleware stated it with
+    ///   [`TransportError::not_sent`](crate::transport::TransportError::not_sent).
+    ///
+    /// A connection that failed after it was made, a timeout of the call or of the response,
+    /// a `reqwest::Client` used as the transport, a send dropped before it returned, and a
+    /// second send through the same chain after a response make it `false`, whatever
+    /// `TryInfo` a middleware passed with that send. So does a `TryInfo` of the attempt that
+    /// is still held when the attempt ends, for example by a task that a middleware started:
+    /// a send made with it could still write. A send that a middleware makes entirely
+    /// outside the chain, with a transport of its own and without the attempt's `TryInfo`,
+    /// is not seen: that is its author's responsibility.
+    ///
+    /// A caller may rely on it to reuse what the request carried: `RenewalError::from_call`
+    /// does, so that `Rotating` sends the same refresh token again. A false `true` makes that
+    /// token be used twice, and a server that sees it may revoke every session of the
+    /// account.
+    ///
+    /// The retry policy does not read it: the class decides whether an attempt is repeated.
+    pub fn request_not_sent(&self) -> bool {
+        self.inner.kind == Kind::Transport && self.inner.not_sent
     }
 
     /// Returns a reason supplied by the author, for example through `mismatch`.
