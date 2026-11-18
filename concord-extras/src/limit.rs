@@ -65,8 +65,9 @@
 //!
 //! When the server announces its budget, have the bucket learn it from each response
 //! instead. [`counts`] reads paired headers of capacities and counts; [`remaining`] reads
-//! a capacity, the units left and a reset date in Unix seconds. Each bucket can also set
-//! its own cost (one by default).
+//! a capacity, the units left and a reset date in Unix seconds, and [`remaining_rfc3339`]
+//! the same with a reset written as an RFC 3339 date-time. Each bucket can also set its
+//! own cost (one by default).
 //!
 //! ```no_run
 //! use concord::limit::{Bucket, Limit, counts};
@@ -143,8 +144,8 @@
 //! (until the end of its body, including a first request still awaiting its response).
 //! Learned windows are then learned again; configured windows still apply. Other bounds
 //! are constants: 8 windows per bucket, 512 UTF-8 bytes per key, 4096 history entries
-//! per window. On 64-bit Linux, one key's retained payload is at most 1,049,984 bytes:
-//! 512 key bytes + 128 bytes for the map entry + 8 × (96 window bytes +
+//! per window. On 64-bit Linux, one key's retained payload is at most 1,050,112 bytes:
+//! 512 key bytes + 128 bytes for the map entry + 8 × (112 window bytes +
 //! 4096 × 32 debit bytes). Spare slots of the hash table, allocator metadata, the shared
 //! settings and the calls and bodies owned by the caller come on top of this bound.
 //! A full history merges its two oldest entries at the later expiry, which errs on the
@@ -458,6 +459,8 @@ pub struct Window {
     capacity: u64,
     kind: Kind,
     remaining: Option<u64>,
+    // The reset of a fixed window as the server dated it, when a reader of dates knows it.
+    reset_at: Option<SystemTime>,
 }
 
 #[derive(Clone)]
@@ -478,6 +481,7 @@ impl Window {
             capacity,
             kind: Kind::Rolling(period),
             remaining: None,
+            reset_at: None,
         }
     }
 
@@ -498,6 +502,7 @@ impl Window {
             capacity,
             kind: Kind::Fixed(Instant::now().checked_add(resets_in)),
             remaining: None,
+            reset_at: None,
         }
     }
 
@@ -612,15 +617,26 @@ impl Seen<'_> {
         Some(date.duration_since(self.now).unwrap_or_default())
     }
 
-    /// Returns the time from `now()` until an RFC 3339 date-time, such as `2026-11-17T12:00:30Z`.
+    /// Returns the time until an RFC 3339 date-time, such as `2026-11-17T12:00:30Z`, counted
+    /// on the server's clock when the response gives it.
     ///
-    /// The text is a full date, `T` (or `t`, or one space), a full time with seconds, an
-    /// optional fraction and `Z` (or `z`) or an offset such as `+01:00`; spaces around it
-    /// are ignored. A second of `60` counts as the next second, and a fraction is kept to
-    /// the nanosecond, rounded up. Returns zero if the date is past, and `None` if the text
-    /// is not such a date-time, names a day that does not exist, or cannot be represented.
-    /// As with [`until_unix`](Self::until_unix), the date is compared with the wall clock
-    /// of this process; the limit itself waits on its internal timer.
+    /// The time is counted from the response's `Date` header when it appears once and is an
+    /// HTTP date in its usual form (`Sun, 06 Nov 1994 08:49:37 GMT`), so that a wrong clock
+    /// in this process does not move the reset. Without such a header it is counted from
+    /// [`now()`](Self::now), and a wrong clock then costs this much: a clock that is fast by
+    /// some minutes makes each reset that much nearer, so a window refills that much early,
+    /// and a reset nearer than the error looks past and teaches nothing; a clock that is
+    /// slow makes requests wait that much longer than the server needs. The limit then waits
+    /// on its internal timer, not on the wall clock. [`until_unix`](Self::until_unix) always
+    /// counts from `now()`.
+    ///
+    /// Accepted: a full date, then `T`, `t` or one space, a full time with seconds, an
+    /// optional fraction, then `Z`, `z` or an offset such as `+01:00`; spaces and tabs around
+    /// the text are ignored. A leap second, `23:59:60` UTC on the last day of a month, counts
+    /// as the next second. A fraction finer than a nanosecond is rounded up, never down.
+    /// Returns zero if the date is past. Returns `None` for any other separator, a date that
+    /// does not exist, a malformed offset, a leap second at another time, a text over 4096
+    /// bytes, or a date that cannot be represented.
     ///
     /// ```no_run
     /// fn reset(seen: &concord::limit::Seen<'_>) -> Option<std::time::Duration> {
@@ -628,12 +644,15 @@ impl Seen<'_> {
     /// }
     /// ```
     pub fn until_rfc3339(&self, text: &str) -> Option<Duration> {
-        let _ = (text, self.now);
-        // PANIC-SAFETY: The date grammar above is specified and not built yet; no input reaches this body in a release.
-        #[allow(clippy::unimplemented)]
-        {
-            unimplemented!()
-        }
+        let reset = headers::rfc3339(text)?;
+        Some(reset.duration_since(self.server_now()).unwrap_or_default())
+    }
+
+    /// The response's `Date` when it is one valid HTTP date; otherwise the local clock.
+    fn server_now(&self) -> SystemTime {
+        self.header("date")
+            .and_then(headers::http_date)
+            .unwrap_or(self.now)
     }
 }
 
@@ -994,4 +1013,44 @@ pub fn remaining(
     reset: impl Into<String>,
 ) -> Box<dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync> {
     headers::remaining(limit.into(), remaining.into(), reset.into())
+}
+
+/// Returns a `learn` function for headers of a capacity, the units left and a reset as an RFC 3339 date-time.
+///
+/// It reads as [`remaining`] does, with the reset written as a date-time such as
+/// `2026-11-17T12:00:30Z`, read as [`Seen::until_rfc3339`] reads it: counted from the
+/// response's `Date` header when it has a valid one, otherwise from the local clock. Each
+/// header may be at most 4096 bytes. The capacity and the units left must be readable
+/// nonnegative integers, written with digits only; the capacity must be positive, the units
+/// left must not exceed it, and the reset must be in the future. Otherwise nothing is
+/// learned. The result is one current fixed window that refills once, to its whole
+/// capacity, at that reset. A later response that names the same reset again, after that
+/// refill, teaches nothing, however late it arrives.
+///
+/// ```no_run
+/// use concord::limit::{remaining_rfc3339, Bucket, Limit};
+/// concord::api! {
+///     client Messages {
+///         base "https://messages.example.test";
+///         POST create() -> String { path "messages"; read concord::Text; }
+///     }
+/// }
+/// async fn create() -> Result<String, concord::Error> {
+///     let limit = Limit::new().bucket(Bucket::new(|_| Some("requests".into())).learn(remaining_rfc3339(
+///         "x-requests-limit",
+///         "x-requests-remaining",
+///         "x-requests-reset",
+///     )));
+///     Messages::new().with_middleware(limit).create().await
+/// }
+/// ```
+#[must_use = "attach the configured value to its bucket or client"]
+// PANIC-SAFETY: This lint exception keeps the public callback type explicit; it permits no panic.
+#[allow(clippy::type_complexity)]
+pub fn remaining_rfc3339(
+    limit: impl Into<String>,
+    remaining: impl Into<String>,
+    reset: impl Into<String>,
+) -> Box<dyn Fn(&Seen<'_>) -> Vec<Window> + Send + Sync> {
+    headers::remaining_rfc3339(limit.into(), remaining.into(), reset.into())
 }

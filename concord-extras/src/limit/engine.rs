@@ -202,6 +202,8 @@ struct History {
     configured: bool,
     events: VecDeque<(Instant, u128)>,
     used: u128,
+    // The reset as the server dated it, when a reader of dates gave it.
+    reset_at: Option<SystemTime>,
 }
 
 impl History {
@@ -214,6 +216,7 @@ impl History {
             configured,
             events: VecDeque::new(),
             used: 0,
+            reset_at: window.reset_at,
         };
         if let Kind::Rolling(period) = window.kind {
             if let Some(end) = now.checked_add(period) {
@@ -308,9 +311,26 @@ impl History {
     }
 
     fn observe(&mut self, new: &Window, cost: u64, others: u128, now: Instant) {
-        if let (Kind::Fixed(Some(old)), Kind::Fixed(Some(new))) = (&self.kind, &new.kind) {
-            if new < old || *new <= now {
-                return;
+        // Give a refill that is due before deciding whether it has been given.
+        self.available(now);
+        let mut same_reset = None;
+        if let (Kind::Fixed(Some(old)), Kind::Fixed(Some(at))) = (&self.kind, &new.kind) {
+            match (self.reset_at, new.reset_at) {
+                // A reset that the server dated: its date, not the instant that this
+                // response's own clock gives, says whether it is older, the same or newer.
+                (Some(known), Some(seen)) if seen < known => return,
+                (Some(known), Some(seen)) if seen == known => {
+                    // Its refill has been given: what this late head reports is spent before it.
+                    if self.refilled {
+                        return;
+                    }
+                    same_reset = Some((*old).max(*at));
+                }
+                _ => {
+                    if at < old || *at <= now {
+                        return;
+                    }
+                }
             }
         }
         let target = u128::from(
@@ -336,7 +356,8 @@ impl History {
                         .saturating_sub(self.capacity.saturating_sub(remaining)),
                 );
                 self.capacity = new.capacity;
-                self.kind = Kind::Fixed(reset);
+                self.kind = Kind::Fixed(same_reset.or(reset));
+                self.reset_at = new.reset_at;
                 self.refilled = false;
                 self.remaining = previous.min(target).min(new.capacity);
             }
@@ -814,7 +835,8 @@ mod tests {
             Window {
                 capacity: u64::MAX,
                 kind: Kind::Rolling(Duration::from_secs(1)),
-                remaining: None
+                remaining: None,
+                reset_at: None
             };
             MAX_WINDOWS
         ];
@@ -833,7 +855,7 @@ mod tests {
         let debit = std::mem::size_of::<(Instant, u128)>();
         let bound = MAX_KEY_BYTES + entry + MAX_WINDOWS * (history + MAX_HISTORY * debit);
         #[cfg(all(target_pointer_width = "64", target_os = "linux"))]
-        assert_eq!((entry, history, debit, bound), (128, 96, 32, 1_049_984));
+        assert_eq!((entry, history, debit, bound), (128, 112, 32, 1_050_112));
         assert!(bound >= MAX_KEY_BYTES);
     }
 
