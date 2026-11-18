@@ -156,6 +156,7 @@ fn renewal_texts() -> Vec<String> {
         RenewalError::WrongOrigin,
         RenewalError::InvalidPolicy,
         RenewalError::TimeOverflow,
+        RenewalError::not_sent(io::Error::other("private cause")),
     ]
     .iter()
     .map(ToString::to_string)
@@ -353,7 +354,7 @@ async fn c6_2_every_text_of_the_extras_and_of_a_repeatable_body_is_on_the_messag
     printed.extend(record_texts().await);
     printed.extend(transfer_texts());
     let documented = documented();
-    assert_eq!(documented.len(), 54);
+    assert_eq!(documented.len(), 55);
     for (index, (page, code)) in documented.iter().zip(&printed).enumerate() {
         assert_eq!(page, code, "row {} of the tables", index + 1);
     }
