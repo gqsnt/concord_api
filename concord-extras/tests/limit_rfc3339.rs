@@ -659,3 +659,105 @@ async fn c11_5_a_consumed_reset_named_again_leaves_a_live_undated_window_alone()
     assert_eq!(through_an_undated_window(Some(T + 1)).await, expected);
     assert_eq!(through_an_undated_window(Some(T + 2)).await, expected);
 }
+
+/// A learner whose `mode` header says what each of `width` positions is: all dated, a one-unit
+/// window, a live undated window of two at `target` (twenty elsewhere), or a replay of the
+/// dated reset at `target` (twenty elsewhere).
+fn resizing(target: usize) -> Limit {
+    let dated = remaining_rfc3339("x-limit", "x-remaining", "x-reset");
+    Limit::new()
+        .max_hold(sec(120))
+        .bucket(Bucket::new(|_| Some("requests".into())).learn(move |seen| {
+            let Some(width) = seen.header("width").and_then(|w| w.parse::<usize>().ok()) else {
+                return Vec::new();
+            };
+            let mode = seen.header("mode").unwrap_or_default();
+            let mut windows = Vec::new();
+            for at in 0..width {
+                if mode == "all-dated" || (mode == "replay" && at == target) {
+                    windows.extend(dated(seen));
+                } else if mode == "single-unit" {
+                    windows.push(concord::limit::Window::fixed(1, sec(1)).remaining(0));
+                } else if at == target {
+                    windows.push(concord::limit::Window::fixed(2, sec(8)).remaining(1));
+                } else {
+                    windows.push(concord::limit::Window::fixed(20, sec(8)).remaining(20));
+                }
+            }
+            windows
+        }))
+}
+
+fn report(script: &Script, mode: &str, width: usize, reset: u64) {
+    script
+        .answer(200)
+        .header("mode", mode)
+        .header("width", &width.to_string())
+        .header("date", &http_date(T))
+        .header("x-limit", "4")
+        .header("x-remaining", "0")
+        .header("x-reset", &rfc3339(T + reset));
+}
+
+/// Dated windows spent until T + 2, whose refill responses that teach nothing spend; maybe
+/// one window of one unit; then a live undated window, during which `replay` names the
+/// consumed reset again, or nothing does; then four calls at once.
+async fn resized(
+    initial: usize,
+    shrink: bool,
+    last: usize,
+    target: usize,
+    replay: bool,
+) -> Vec<Duration> {
+    let script = Script::new();
+    let limit = resizing(target);
+    let start = Instant::now();
+    report(&script, "all-dated", initial, 2);
+    call(&limit, &script).await.unwrap();
+    for _ in 0..4 {
+        script.answer(200);
+        call(&limit, &script).await.unwrap();
+    }
+    if shrink {
+        report(&script, "single-unit", 1, 0);
+        call(&limit, &script).await.unwrap();
+        script.answer(200);
+        call(&limit, &script).await.unwrap();
+    }
+    report(&script, "live-undated", last, 0);
+    call(&limit, &script).await.unwrap();
+    if replay {
+        report(&script, "replay", last, 2);
+    } else {
+        script.answer(200);
+    }
+    call(&limit, &script).await.unwrap();
+    for _ in 0..4 {
+        script.answer(200).after(sec(6));
+    }
+    let calls: Vec<_> = (0..4)
+        .map(|_| {
+            let (limit, script) = (limit.clone(), script.clone());
+            tokio::spawn(async move { call(&limit, &script).await.map(drop) })
+        })
+        .collect();
+    for call in calls {
+        call.await.unwrap().unwrap();
+    }
+    let sent = sent(&script, start);
+    sent[sent.len() - 4..].to_vec()
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_stays_paid_when_a_key_grows_its_windows() {
+    let expected = [sec(10), sec(10), sec(16), sec(22)];
+    assert_eq!(resized(1, false, 2, 0, false).await, expected);
+    assert_eq!(resized(1, false, 2, 0, true).await, expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_5_a_consumed_reset_stays_paid_when_a_position_is_removed_and_restored() {
+    let expected = [sec(11), sec(11), sec(17), sec(23)];
+    assert_eq!(resized(8, true, 8, 7, false).await, expected);
+    assert_eq!(resized(8, true, 8, 7, true).await, expected);
+}

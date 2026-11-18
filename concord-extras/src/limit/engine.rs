@@ -197,27 +197,31 @@ impl Account {
         }
         let others = self.in_flight.saturating_sub(u128::from(cost));
         if fresh && self.windows.len() != windows.len() {
-            self.windows = windows.iter().map(|_| History::unknown()).collect();
+            self.replace_windows(now, |slots| {
+                *slots = windows.iter().map(|_| History::unknown()).collect();
+            });
         }
-        let mut spare = None;
-        for (at, (old, new)) in self.windows.iter_mut().zip(windows).enumerate() {
-            // Valid lists hold at most MAX_WINDOWS windows, so a spare is never used.
-            let identity = self.resets.get_mut(at).unwrap_or(&mut spare);
-            let bit = u32::try_from(at)
-                .ok()
-                .and_then(|at| 1u8.checked_shl(at))
-                .unwrap_or(0);
-            // The dated window in this slot has refilled: its date has paid out.
-            old.available(now);
-            let mut paid = (self.paid & bit) != 0 || (old.dated && old.refilled);
-            if old.is_unknown() {
+        for (at, new) in windows.iter().enumerate() {
+            let bit = position(at);
+            let known = self.resets.get(at).copied().flatten();
+            if self.windows.get(at).is_some_and(History::is_unknown) {
                 // A dated reset already consumed by this key gives no second refill.
-                if matches!((*identity, new.reset_at), (Some(known), Some(seen)) if seen <= known) {
+                if matches!((known, new.reset_at), (Some(known), Some(seen)) if seen <= known) {
                     continue;
                 }
-                // PANIC-SAFETY: This assigns through a reference to the slot; it is not a multiplication.
-                *old = History::new(new, now, false);
+                self.replace_windows(now, |slots| {
+                    if let Some(slot) = slots.get_mut(at) {
+                        // PANIC-SAFETY: This assigns through a reference to the slot; it is not a multiplication.
+                        *slot = History::new(new, now, false);
+                    }
+                });
             }
+            // Valid lists hold at most MAX_WINDOWS windows: every position has its date.
+            let (Some(old), Some(identity)) = (self.windows.get_mut(at), self.resets.get_mut(at))
+            else {
+                continue;
+            };
+            let mut paid = (self.paid & bit) != 0;
             old.observe(new, cost, others, now, identity, &mut paid);
             self.paid = if paid {
                 self.paid | bit
@@ -225,6 +229,19 @@ impl Account {
                 self.paid & !bit
             };
         }
+    }
+
+    /// Replaces or drops window histories of this key: the only place where that happens.
+    /// Before anything else, it records in the key, for each position, whether the date that
+    /// its window held was paid out.
+    fn replace_windows(&mut self, now: Instant, change: impl FnOnce(&mut Vec<History>)) {
+        for (at, window) in self.windows.iter_mut().enumerate() {
+            window.available(now);
+            if window.dated && window.refilled {
+                self.paid |= position(at);
+            }
+        }
+        change(&mut self.windows);
     }
 }
 
@@ -435,6 +452,14 @@ impl History {
             }
         }
     }
+}
+
+/// The bit of a position among the paid-out flags of a key.
+fn position(at: usize) -> u8 {
+    u32::try_from(at)
+        .ok()
+        .and_then(|at| 1u8.checked_shl(at))
+        .unwrap_or(0)
 }
 
 fn valid(windows: &[Window], now: Instant) -> bool {
