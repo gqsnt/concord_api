@@ -27,24 +27,51 @@ pub async fn scale_to_five(kube: &Kubernetes) -> kubernetes::Result<()> {
     }
 }
 
-/// Every change to the pods of a namespace, for as long as the program runs.
-pub async fn follow(kube: &Kubernetes, mut handle: impl FnMut(Pod)) -> Result<(), BoxError> {
+/// The pods of a namespace, then every change to them, for as long as the program runs.
+/// `listed` receives the whole list: first, and again after a `410 Gone`, when what the caller
+/// knows must be replaced. `changed` receives each `Added`, `Modified` and `Deleted` event.
+pub async fn follow(
+    kube: &Kubernetes,
+    mut listed: impl FnMut(Vec<Pod>),
+    mut changed: impl FnMut(WatchEvent<Pod>),
+) -> Result<(), BoxError> {
     let pods = kube.core_v1().pods("shop");
-    let mut version = pods.list().limit(1).send().await?.metadata.resource_version;
-    loop {
-        let mut events = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true).await?;
-        while let Some(event) = events.try_next().await? {
-            match event {
-                WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
-                    version = pod.metadata.resource_version.clone();
-                    handle(pod);
+    'list: loop {
+        // Every page of the list; the watch starts at the version of the list.
+        let (mut all, mut version) = (Vec::new(), None);
+        let mut pages = pods.list().limit(500).pages();
+        loop {
+            match pages.try_next().await {
+                Ok(Some(page)) => {
+                    version = page.metadata.resource_version;
+                    all.extend(page.items);
                 }
-                WatchEvent::Bookmark(head) => version = head.metadata.resource_version,
-                WatchEvent::Error(status) if status.code == Some(410) => version = None, // too old
-                WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                Ok(None) => break,
+                Err(e) if e.is_status(410) => continue 'list,          // the token expired: list again
+                Err(e) => return Err(e.into()),
             }
         }
-        // The server ended the watch: watch again from `version`.
+        listed(all);
+        loop {
+            let watch = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true);
+            let mut events = match watch.await {
+                Ok(events) => events,
+                Err(e) if e.is_status(410) => continue 'list,          // the version is too old
+                Err(e) => return Err(e.into()),
+            };
+            while let Some(event) = events.try_next().await? {
+                match &event {
+                    WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
+                        version = pod.metadata.resource_version.clone();
+                        changed(event);
+                    }
+                    WatchEvent::Bookmark(head) => version = head.metadata.resource_version.clone(),
+                    WatchEvent::Error(status) if status.code == Some(410) => continue 'list,
+                    WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                }
+            }
+            // The server ended the watch: watch again from the last version seen.
+        }
     }
 }
 

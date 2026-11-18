@@ -104,3 +104,15 @@ pub use concord::multipart;
 
 pub use crate::credential_signing::Proof;
 pub use concord::Base;
+#[derive(Clone, Serialize)]
+pub struct DeleteOptions {
+    pub grace_seconds: u32,
+}
+pub fn optional_json<T: Serialize>(
+    value: &Option<T>,
+) -> Result<concord::Body, concord::body::WriteError> {
+    match value {
+        Some(value) => concord::json(value),
+        None => Ok(concord::Body::from(Vec::new())),
+    }
+}

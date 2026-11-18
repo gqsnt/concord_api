@@ -125,6 +125,53 @@ fn message(root: &Body, attachment: &Body) -> Result<Body, concord::MimeWriteErr
 
 A one-shot stream part or a part without one valid content type is refused with its one-based position, as is an empty list; the call then ends with a Build error, and nothing is sent. Repeatable stream parts are accepted and opened during each attempt. A boundary collision detected while reading fails the attempt before the colliding bytes are yielded. The rustdoc of `multipart_related` has the whole example, with its description and a call.
 
+**No body, or a body of no bytes.** An endpoint without a `body` statement sends no body. A body of no bytes is written like any other: `body concord::Body::from(Vec::new());` sends a body that is present and empty, with no content type (`Body::new(Vec::new(), "application/json")` gives it one). Over HTTP/1.1, the HTTP library sends a request without a body, or with an empty one, with no `Content-Length`. A server that refuses such a request (`411 Length Required`, for a `POST` or a `PUT` with nothing in it) needs the description to write it: `headers { "content-length" = "0"; }`. With no body, `0` is the only length that Concord accepts: any other is a Build error, and nothing is sent.
+
+**A body that the caller may leave out.** The `body` statement always sends a body: its expression returns a `Body`, or a `Result` of one, never an `Option`. So for a body that is present only when the caller sets an input, the description names a function of your own that returns a body of no bytes for `None`. `json(options)` would send `null` instead. (An API that must receive no body at all in that case needs two endpoints, one with `body` and one without.)
+
+```rust
+use concord::body::WriteError;
+use concord::Body;
+
+concord::api! {
+    pub client Store(token: concord::Secret) {
+        base "https://store.example.com";
+        headers { "authorization" = "Bearer {token}"; }
+
+        /// No body, and a length all the same: the server refuses a `POST` without one.
+        POST archive(id: u64) {
+            path "items/{id}/archive";
+            headers { "content-length" = "0"; }
+        }
+        /// A body that is present and holds no bytes.
+        PUT touch(id: u64) {
+            path "items/{id}/touched";
+            body concord::Body::from(Vec::new());
+        }
+        /// A JSON body when the caller sets `options`, and no bytes when it does not.
+        DELETE delete(id: u64, options?: DeleteOptions) {
+            path "items/{id}";
+            body optional_json(options);
+        }
+    }
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct DeleteOptions {
+    pub grace_seconds: u32,
+}
+
+/// The JSON of the value, or a body of no bytes and no content type for `None`.
+pub fn optional_json<T: serde::Serialize>(value: &Option<T>) -> Result<Body, WriteError> {
+    match value {
+        Some(value) => concord::json(value),
+        None => Ok(Body::from(Vec::new())),
+    }
+}
+```
+
+Tested: [`empty_body.rs`](../../tests/real-apis/fixtures/recipes/empty_body.rs), run by [`writer_recipes.rs`](../../tests/real-apis/tests/writer_recipes.rs), which compares this block with the file.
+
 **For a body in either form:**
 
 | | |
@@ -136,7 +183,7 @@ A one-shot stream part or a part without one valid content type is refused with 
 | `form` is flat | It writes pairs of strings. For a nested form (`metadata[key]=value`), `bracket_form` (feature `form`) writes `a[b]` for a map and `a[0]` for every list. An API with another convention (Rack and Rails read `a[0]` as a map key) needs your own function that returns a `Body`. |
 | `null` or absent | **With `body json(x)`, the body follows its type, not the rule for entries.** In an entry, a `None` sends nothing; in a path placeholder it is rejected. In a body built by an expression, a `None` is whatever the type serializes it as: `json!({ "cursor": cursor })` sends `null`, and a struct leaves it out with `#[serde(skip_serializing_if = "Option::is_none")]`. A body of entries is the shorter way. |
 | Retries | On a retry, bytes are sent again unchanged ([what holds for every retry](retries.md#what-holds-for-every-retry)), and a `Body::repeatable` is opened again from its first byte ([a body that is opened again](#a-body-that-is-opened-again-for-each-attempt)). **A `Body::stream` is sent once:** a call that has one gets one attempt, whatever the retry setting says ([a body that is a stream](#a-body-that-is-a-stream)). A clone of the call shares the stream of an input, and the first send consumes it: a second send of that same `Body`, through a clone or for the next page of a paginated call, is a Build error, and nothing is sent. (An expression that creates a new stream each time it runs gives each send its own stream.) A large upload that must survive a failure needs a body that can be opened again, or a loop in the caller's code. |
-| A stream has no length | When the server needs one, the description sets it: `headers { "content-length" = size; }`. For a `Body::stream`, it is sent as written. A `Body::repeatable` must give exactly that many bytes, or the attempt fails. For a body in memory, it must equal the length of the body, or the request is rejected when it is built. |
+| A stream has no length | When the server needs one, the description sets it: `headers { "content-length" = size; }`. For a `Body::stream`, it is sent as written. A `Body::repeatable` must give exactly that many bytes, or the attempt fails. For a body in memory, it must equal the length of the body, and without a body it must be `0`, or the request is rejected when it is built ([no body](#a-body-that-is-sent)). |
 
 ## The shipped writers
 

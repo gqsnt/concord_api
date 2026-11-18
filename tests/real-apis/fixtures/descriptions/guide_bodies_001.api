@@ -1,7 +1,20 @@
-pub client Logs {
-        base "https://logs.example.com";
-        POST write(events: Vec<String>) {
-            headers { "content-encoding" = "gzip"; }
-            body concord::gzip(concord::json(events)?);
+pub client Store(token: concord::Secret) {
+        base "https://store.example.com";
+        headers { "authorization" = "Bearer {token}"; }
+
+        /// No body, and a length all the same: the server refuses a `POST` without one.
+        POST archive(id: u64) {
+            path "items/{id}/archive";
+            headers { "content-length" = "0"; }
+        }
+        /// A body that is present and holds no bytes.
+        PUT touch(id: u64) {
+            path "items/{id}/touched";
+            body concord::Body::from(Vec::new());
+        }
+        /// A JSON body when the caller sets `options`, and no bytes when it does not.
+        DELETE delete(id: u64, options?: DeleteOptions) {
+            path "items/{id}";
+            body optional_json(options);
         }
     }

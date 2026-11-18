@@ -184,6 +184,13 @@ A signature has no default values. A filter that the provider documents as optio
 
 An entry whose value is `None` is left out: in `query`, in `headers`, and in a body of entries (below). No `if` is needed.
 
+**The order of the pairs** is the order in which they are written, not the order of the signature: the client's entries first, then those of each node down the tree, and in each node the entries of the parts that it names before its own ([a part](#a-part-the-same-inputs-on-many-endpoints)). So a part's `query` entries come before the endpoint's own, wherever `..page` stands among the inputs. With the `page` part below:
+
+```text
+stripe.customers().list().email("a@b.example").limit(50)
+GET https://api.stripe.com/v1/customers?limit=50&email=a%40b.example
+```
+
 **Nested query keys.** A fixed key is literal: `query { "a[b]" = value; "tags[]" = tags; }`. For a filter tree whose keys are known only at run time, `concord::bracket_pairs` (feature `form`) writes maps as `a[b]` and every list as `a[0]`, `a[1]`. Append its unencoded pairs with `edit_request`; `query_pairs_mut()` preserves the existing pairs and encodes the new ones once. Rack and Rails read an indexed list as a map with numeric keys, so those APIs need their own writer.
 
 ```rust
@@ -308,6 +315,13 @@ let made = stripe.customers().create(new_customer, "order-7781").await?;
 ```
 
 A part is written in the block of the client, after the statements and before the children. A node names it at the end of its inputs, with `..`, and then has the inputs and the statements of the part **as if it had written them**: `list` has `.limit(…)` and `.starting_after(…)`, and it is paginated; `create` takes the key as its second argument, and may be retried. Inside a part, a bare name refers to an input of the part, and `client.x` to an input of the client.
+
+**The part's entries come first.** Its statements go before the node's own, so its entries are written first: in `query` and in `headers` (and, merged, in a body of entries), the entries of the parts, in the order in which the node names them, then the node's own ([rules](../reference/rules.md) 10 and 25). The inputs, on the other hand, follow the node's own: `list(email?: String, ..page)` has `email` first in its signature, and second on the wire:
+
+```text
+stripe.customers().list().email("a@b.example").limit(50)
+GET https://api.stripe.com/v1/customers?limit=50&email=a%40b.example
+```
 
 A part may hold a `base`, since a part exists to keep an input together with the statement that places it. Riot puts a route in the host of almost every scope:
 

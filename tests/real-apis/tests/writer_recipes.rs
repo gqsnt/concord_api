@@ -44,13 +44,83 @@ mod redirect {
                 drop(answer);
             }
             let api = Archives::new("PRIVATE_API_KEY").with_transport(script.clone());
-            let error = download(&api, 7).await.unwrap_err();
+            // Each case is refused before the second client is made.
+            let error = download(&api, 7, Downloads::new).await.unwrap_err();
             assert_eq!(error.to_string(), expected);
             let requests = script.requests();
             assert_eq!(requests.len(), 1);
             assert_eq!(requests[0].url(), "https://api.example.com/archives/7");
             assert_eq!(requests[0].info().number(), 1);
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c11_12_download_recipe_follows_the_location_through_the_transport_it_is_given() {
+        let script = concord_testkit::Script::new();
+        script.answer(302).header(
+            "location",
+            "https://eu.downloads.example.com/archives/7?sig=a%2Fb",
+        );
+        script.answer(200).body("the ").body("archive");
+        let archives = Archives::new("PRIVATE_API_KEY").with_transport(script.clone());
+
+        let mut archive = download(&archives, 7, |origin| {
+            Downloads::new(origin).with_transport(script.clone())
+        })
+        .await
+        .unwrap();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = archive.try_next().await.unwrap() {
+            bytes.extend_from_slice(&chunk);
+        }
+        assert_eq!(bytes, b"the archive");
+
+        let sent = script.requests();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0].url(), "https://api.example.com/archives/7");
+        assert_eq!(
+            sent[0].header("authorization"),
+            Some("Bearer PRIVATE_API_KEY")
+        );
+        assert_eq!(
+            sent[1].url(),
+            "https://eu.downloads.example.com/archives/7?sig=a%2Fb"
+        );
+        assert_eq!(sent[1].header("authorization"), None);
+        assert_eq!(sent[1].info().endpoint(), "downloads.fetch");
+        assert_eq!(script.unused(), 0);
+    }
+}
+mod empty_body {
+    include!("../fixtures/recipes/empty_body.rs");
+
+    #[tokio::test(start_paused = true)]
+    async fn c2_12_no_body_an_empty_body_and_an_optional_body_go_out_as_the_guide_says() {
+        let script = concord_testkit::Script::new();
+        for _ in 0..4 {
+            script.answer(204);
+        }
+        let store = Store::new("PRIVATE_TOKEN").with_transport(script.clone());
+        store.archive(7).await.unwrap();
+        store.touch(7).await.unwrap();
+        store.delete(7).await.unwrap();
+        store
+            .delete(7)
+            .options(DeleteOptions { grace_seconds: 30 })
+            .await
+            .unwrap();
+
+        let sent = script.requests();
+        assert_eq!(sent.len(), 4);
+        assert_eq!(sent[0].body(), None);
+        assert_eq!(sent[0].header("content-length"), Some("0"));
+        for empty in &sent[1..3] {
+            assert_eq!(empty.body(), Some(&b""[..]));
+            assert_eq!(empty.header("content-type"), None);
+            assert_eq!(empty.header("content-length"), None);
+        }
+        assert_eq!(sent[3].body(), Some(&br#"{"grace_seconds":30}"#[..]));
+        assert_eq!(sent[3].header("content-type"), Some("application/json"));
     }
 }
 mod query {
@@ -78,6 +148,10 @@ fn c1_20_writer_recipe_blocks_match_the_guide_word_for_word() {
         (
             include_str!("../../../docs/guide/bodies.md"),
             include_str!("../fixtures/recipes/gzip.rs"),
+        ),
+        (
+            include_str!("../../../docs/guide/bodies.md"),
+            include_str!("../fixtures/recipes/empty_body.rs"),
         ),
     ] {
         assert!(page.contains(&format!("```rust\n{}\n```", code.trim())));

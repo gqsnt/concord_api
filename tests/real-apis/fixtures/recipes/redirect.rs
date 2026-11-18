@@ -12,7 +12,9 @@ concord::api! {
     }
 }
 
-async fn download(api: &Archives, id: u64)
+/// `downloads` makes the client of the chosen host: `Downloads::new` in a program, and
+/// a client with a test transport in a test.
+async fn download(api: &Archives, id: u64, downloads: impl FnOnce(concord::Base) -> Downloads)
     -> Result<concord::ByteStream, Box<dyn std::error::Error + Send + Sync>>
 {
     let response = api.download(id).send_raw().await?;
@@ -29,6 +31,6 @@ async fn download(api: &Archives, id: u64)
     }
     let origin: concord::Base = url.origin().ascii_serialization().parse()?;
     drop(response);
-    let downloads = Downloads::new(origin);
+    let downloads = downloads(origin);
     Ok(concord::transfer::at(downloads.fetch(), &location)?.await?)
 }

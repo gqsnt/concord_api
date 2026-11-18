@@ -364,24 +364,51 @@ pub async fn scale_to_five(kube: &Kubernetes) -> kubernetes::Result<()> {
     }
 }
 
-/// Every change to the pods of a namespace, for as long as the program runs.
-pub async fn follow(kube: &Kubernetes, mut handle: impl FnMut(Pod)) -> Result<(), BoxError> {
+/// The pods of a namespace, then every change to them, for as long as the program runs.
+/// `listed` receives the whole list: first, and again after a `410 Gone`, when what the caller
+/// knows must be replaced. `changed` receives each `Added`, `Modified` and `Deleted` event.
+pub async fn follow(
+    kube: &Kubernetes,
+    mut listed: impl FnMut(Vec<Pod>),
+    mut changed: impl FnMut(WatchEvent<Pod>),
+) -> Result<(), BoxError> {
     let pods = kube.core_v1().pods("shop");
-    let mut version = pods.list().limit(1).send().await?.metadata.resource_version;
-    loop {
-        let mut events = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true).await?;
-        while let Some(event) = events.try_next().await? {
-            match event {
-                WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
-                    version = pod.metadata.resource_version.clone();
-                    handle(pod);
+    'list: loop {
+        // Every page of the list; the watch starts at the version of the list.
+        let (mut all, mut version) = (Vec::new(), None);
+        let mut pages = pods.list().limit(500).pages();
+        loop {
+            match pages.try_next().await {
+                Ok(Some(page)) => {
+                    version = page.metadata.resource_version;
+                    all.extend(page.items);
                 }
-                WatchEvent::Bookmark(head) => version = head.metadata.resource_version,
-                WatchEvent::Error(status) if status.code == Some(410) => version = None, // too old
-                WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                Ok(None) => break,
+                Err(e) if e.is_status(410) => continue 'list,          // the token expired: list again
+                Err(e) => return Err(e.into()),
             }
         }
-        // The server ended the watch: watch again from `version`.
+        listed(all);
+        loop {
+            let watch = pods.watch().resource_version(version.clone()).allow_watch_bookmarks(true);
+            let mut events = match watch.await {
+                Ok(events) => events,
+                Err(e) if e.is_status(410) => continue 'list,          // the version is too old
+                Err(e) => return Err(e.into()),
+            };
+            while let Some(event) = events.try_next().await? {
+                match &event {
+                    WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
+                        version = pod.metadata.resource_version.clone();
+                        changed(event);
+                    }
+                    WatchEvent::Bookmark(head) => version = head.metadata.resource_version.clone(),
+                    WatchEvent::Error(status) if status.code == Some(410) => continue 'list,
+                    WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                }
+            }
+            // The server ended the watch: watch again from the last version seen.
+        }
     }
 }
 
@@ -403,7 +430,7 @@ pub async fn drain(kube: &Kubernetes) -> kubernetes::Result<()> {
 
 | Kubernetes wants | What to write |
 |---|---|
-| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others. A line that is too long or is not an event, or a stream that breaks, ends the watch with a `concord::read::RecordError`. The caller of a watch handles three cases: the call's error, `RecordError`, and the `Error` event. |
+| An `ERROR` line inside a watch, after a `200`: a `Status`, `410` when the version is too old. Concord builds its errors from the head of the response. | The event `WatchEvent::Error(Status)`, alongside the others. A line that is too long or is not an event, or a stream that breaks, ends the watch with a `concord::read::RecordError`. The caller of a watch handles three cases: the call's error, `RecordError`, and the `Error` event. A `410 Gone`, as the status of the watch (or of a page of the list) or as an `Error` event, means that the version is too old: `follow` reads the whole list again, then watches from the version of that list, and drops the rest of the stream that said `410`. |
 | The cluster's certificate, as much an input as the server. `new` cannot take it: a certificate is set on the transport. | `connect(server, ca_pem)`, with `concord::Http::with(…)`. The doc comment of the client points to it. |
 | Keys in camelCase, and inputs in snake_case: 17 of the 23 entries use the long form, `"labelSelector" = label_selector;`. | The long form, once for each key, in a part. |
 | A custom resource, typed. A scope has no type parameter. | `DynamicObject`, decoded by the caller with `serde_json::from_value`; or one scope for each type. |

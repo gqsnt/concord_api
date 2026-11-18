@@ -30,6 +30,14 @@ mod guide_bodies_001 {
     use super::support::*;
     include!("guide_bodies_001.rs");
     pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Store>()
+    }
+}
+#[doc(hidden)]
+mod guide_bodies_002 {
+    use super::support::*;
+    include!("guide_bodies_002.rs");
+    pub(super) fn compiled() -> &'static str {
         ::std::any::type_name::<Logs>()
     }
 }
@@ -186,12 +194,13 @@ mod guide_tour_003 {
     }
 }
 /// The concrete client types emitted by every documented description.
-pub fn compiled_descriptions() -> [&'static str; 35] {
+pub fn compiled_descriptions() -> [&'static str; 36] {
     [
         readme_001::compiled(),
         readme_002::compiled(),
         reference_overview_001::compiled(),
         guide_bodies_001::compiled(),
+        guide_bodies_002::compiled(),
         guide_credentials_001::compiled(),
         guide_describing_an_api_001::compiled(),
         guide_describing_an_api_002::compiled(),

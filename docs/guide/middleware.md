@@ -29,6 +29,15 @@ A request goes first through the middleware that a caller added with `with_middl
 
 So the author's layers are the last before the wire, and **the author writes the signing middleware last**: nothing changes a request after it was signed. A caller's layer runs before every layer of the description, so it cannot change a request after it was signed either: a `Renewed` added by a caller places its token, and a signer written in the description then signs the request with that token in place. A transport must not change a signed request.
 
+**A token and a limit.** A `Renewed` (or a `Rotating`) checks the token when the request passes through it, and places it in the request; a `Limit` may then hold the request for up to `max_hold`. So their order decides how old the token is when the request leaves:
+
+| Order | What happens | What the numbers must be |
+|---|---|---|
+| The limit first: `.with_middleware(limit).with_middleware(auth)` | The request waits in the limit, then the token is checked and placed, just before the transport. A token that expired during the wait is renewed then. That renewal (at most `renewal_timeout`, 30 seconds by default) happens after the limit has counted the request, while the request holds its place under `max_in_flight`. | Nothing more: `early_by` covers only the time from the token layer to the server. |
+| The token first: `.with_middleware(auth).with_middleware(limit)` | The token is placed, then the request waits in the limit, up to `max_hold` (60 seconds by default), with that token in its header. | `early_by` at least `max_hold`, plus the time a request takes to reach the server. With less, a token that had just over `early_by` left when it was placed expires during the wait, and the server answers `401`. |
+
+Put the limit first. Put the token first only when a bucket of the limit must read the token (a budget for each user, keyed on the `Authorization` header), and then set `early_by` at least to `max_hold`. Each attempt of a retry goes through both layers again, so a retried request is checked again. A `Renewed` written in the description runs after every layer that a caller adds, so a caller's `Limit` always waits before it.
+
 ## A layer that waits
 
 A middleware layer may wait before it passes a request on: for a token that is being renewed, for a rate limit, for a lock of its own. Its wait does not count as silence: the idle timeout watches the transport and a body while it is read, not middleware ([timeouts](calling.md#timeouts)). Only the call timeout, `timeout`, bounds a middleware. Without a `timeout`, a middleware may wait forever: that is its author's responsibility. Each layer that Concord ships bounds its own wait (below).
