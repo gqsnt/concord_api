@@ -1282,14 +1282,19 @@ mod reset_property {
         })
     }
 
-    proptest! {
-        #![proptest_config(ProptestConfig { cases: 4096, failure_persistence: None, ..ProptestConfig::default() })]
-        #[test]
-        fn c11_5_no_dated_reset_pays_out_more_than_its_capacity(
-            capacity in 2..=4u64,
-            steps in proptest::collection::vec(step(), 1..64),
-        ) {
-            run(capacity, &steps)?;
+    /// The runner is built here, not by the `proptest!` macro, so that `PROPTEST_CASES` does
+    /// not lower the number of cases: fewer do not find every fault this property guards.
+    #[test]
+    fn c11_5_no_dated_reset_pays_out_more_than_its_capacity() {
+        let config = ProptestConfig {
+            cases: 4096,
+            failure_persistence: None,
+            ..ProptestConfig::default()
+        };
+        let cases = (2..=4u64, proptest::collection::vec(step(), 1..64));
+        let mut runner = proptest::test_runner::TestRunner::new(config);
+        if let Err(failure) = runner.run(&cases, |(capacity, steps)| run(capacity, &steps)) {
+            panic!("{failure}");
         }
     }
 }
