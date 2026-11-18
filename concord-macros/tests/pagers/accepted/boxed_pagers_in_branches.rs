@@ -16,7 +16,7 @@ concord::api! {
     pub client Probe {
         base "https://probe.example.test";
         read Json;
-        GET list(after?: String) -> Page { query { after; } paginate if true { Box::new(concord::by_cursor(after, |page: &Page| page.next.clone())) as Box<dyn concord::page::Pager<probe::Call<probe::List>>> } else { Box::new(concord::page::Paging::from_fn(|call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.as_ref().map(|_| call))) }; }
+        GET list(after?: String) -> Page { query { after; } paginate { let pager: Box<dyn concord::page::Pager<probe::Call<probe::List>>> = if true { Box::new(concord::by_cursor(after, |page: &Page| page.next.clone())) } else { Box::new(concord::page::Paging::from_fn(|call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.as_ref().map(|_| call))) }; pager }; }
     }
 }
 fn main() {}

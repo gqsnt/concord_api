@@ -1,17 +1,17 @@
-error[E0277]: a macro in `paginate` must expand to a closure, and this one expands to `Paging<probe::Call<List>>`
+error[E0277]: `paginate` reads this expression as a closure, and its value is `Paging<probe::Call<List>>`
   --> tests/pagers/refused/matrix_fixture_shipped_in_macro.rs:19:70
    |
 19 |         GET list(after?: String) -> Page { query { after; } paginate shipped!(after); }
    |                                                                      ^^^^^^^ the trait `for<'a> FnMut(probe::Call<List>, &'a Answer<Page>)` is not implemented for `Paging<probe::Call<List>>`
    |
-   = note: for a pager value such as `by_cursor(…)`, write the macro inside a call: `paginate concord::page::Paging::from_pager(your_macro!(…));`
-   = note: required for `Paging<probe::Call<List>>` to implement `concord::__private::ClosureFromMacro<probe::Call<List>, _>`
-note: required by a bound in `concord::__private::pages_from_macro`
+   = note: a pager that is not a closure becomes one with `.into_fn()`, written after the pager: `by_cursor(…).into_fn()`, `my_pager!(…).into_fn()`; or write the pager as a call or a path, alone or in a plain block, `if` or `match`
+   = note: required for `Paging<probe::Call<List>>` to implement `concord::__private::InferredPager<probe::Call<List>, _>`
+note: required by a bound in `concord::__private::pages_inferred`
   --> $WORKSPACE/concord-core/src/__private/page.rs
    |
-   | pub fn pages_from_macro<C, N, F>(
-   |        ---------------- required by a bound in this function
+   | pub fn pages_inferred<C, N, F>(
+   |        -------------- required by a bound in this function
 ...
-   |     F: ClosureFromMacro<C, N> + Send + 'static,
-   |        ^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_from_macro`
+   |     F: InferredPager<C, N> + Send + 'static,
+   |        ^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_inferred`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

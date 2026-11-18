@@ -27,7 +27,7 @@ pub use data::{CallData, InputSlot};
 #[cfg(test)]
 use page::same_page_request;
 pub use page::{
-    pages, pages_from_macro, pages_of_pager, pages_with_pager, without_fragment, ClosureFromMacro,
+    pages, pages_inferred, pages_of_pager, pages_with_pager, without_fragment, InferredPager,
     SecretUrl,
 };
 pub use run::Run;

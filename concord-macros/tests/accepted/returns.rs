@@ -7,7 +7,7 @@
         POST post() { idempotent { return true; }; body { return Ok(::concord::json(1)); }; }
         GET page(start?: u32) -> Vec<u32> {
             query { start; }
-            paginate { return ::concord::by_offset(start); };
+            paginate { return ::concord::by_offset(start).into_fn(); };
         }
         GET arm() -> u32 { status { 404 => { return Ok(17); } } }
     }
