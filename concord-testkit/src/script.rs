@@ -168,7 +168,10 @@ impl Script {
                 .and_then(|body| body.as_bytes())
                 .map(Bytes::copy_from_slice),
             upload: Upload::default(),
-            info,
+            // The endpoint and the number only: a record that keeps the attempt's own
+            // `TryInfo` after the send would stop the call's error from stating that nothing
+            // was sent (`Error::request_not_sent`).
+            info: TryInfo::new(info.endpoint(), info.number()),
             at: Instant::now(),
         };
         let mut state = self.lock();

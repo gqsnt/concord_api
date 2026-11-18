@@ -1,6 +1,6 @@
 //! Middleware: what every request passes through before the transport actually sends it.
 
-use crate::transport::{Transport, TransportError, TryInfo};
+use crate::transport::{Sends, Transport, TransportError, TryInfo};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -113,14 +113,24 @@ type ResponseFuture<'a> =
     Pin<Box<dyn Future<Output = Result<reqwest::Response, TransportError>> + Send + 'a>>;
 
 pub(crate) trait ErasedTransport: Send + Sync {
-    fn send(&self, request: reqwest::Request, info: TryInfo) -> ResponseFuture<'_>;
+    fn send<'a>(
+        &'a self,
+        request: reqwest::Request,
+        info: TryInfo,
+        sends: Option<&'a Sends>,
+    ) -> ResponseFuture<'a>;
 }
 
 impl<T: Transport> ErasedTransport for T {
-    fn send(&self, request: reqwest::Request, info: TryInfo) -> ResponseFuture<'_> {
+    fn send<'a>(
+        &'a self,
+        request: reqwest::Request,
+        info: TryInfo,
+        sends: Option<&'a Sends>,
+    ) -> ResponseFuture<'a> {
         let url = request.url().clone();
-        // Every send that reaches a transport is recorded for its attempt.
-        let sends = info.sends();
+        // Every send that reaches a transport is recorded in the record of the `Next` that
+        // the engine created, whatever `TryInfo` comes with it.
         Box::pin(crate::transport::counted(sends, async move {
             Transport::send(self, request, info)
                 .await
@@ -162,6 +172,8 @@ impl<M: Middleware> ErasedMiddleware for M {
 pub struct Next<'a> {
     pub(crate) middlewares: &'a [Arc<dyn ErasedMiddleware>],
     pub(crate) transport: &'a dyn ErasedTransport,
+    // The record of the engine's attempt; `None` for a chain made with `Next::to`.
+    pub(crate) sends: Option<&'a Sends>,
 }
 
 impl std::fmt::Debug for Next<'_> {
@@ -177,6 +189,7 @@ impl<'a> Next<'a> {
         Next {
             middlewares: &[],
             transport,
+            sends: None,
         }
     }
 
@@ -189,7 +202,7 @@ impl<'a> Next<'a> {
         use std::task::Poll;
         use tokio::time::Instant;
         let Some(run) = info.run().cloned() else {
-            return self.transport.send(request, info).await;
+            return self.transport.send(request, info, self.sends).await;
         };
         if run.expired() {
             return Err(TransportError::clock(run.total_timeout()));
@@ -252,11 +265,11 @@ impl<'a> Next<'a> {
                 {
                     return Err(TransportError::clock(run.idle_timeout()));
                 }
-                self.transport.send(request, info).await
+                self.transport.send(request, info, self.sends).await
             })
         } else {
             // Keep construction and ownership of ordinary transport work unchanged.
-            futures_util::future::Either::Right(self.transport.send(request, info))
+            futures_util::future::Either::Right(self.transport.send(request, info, self.sends))
         });
         let mut work = work;
         let mut timer = started

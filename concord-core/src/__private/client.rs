@@ -89,6 +89,7 @@ impl<P> Core<P> {
         Next {
             middlewares: &self.middlewares,
             transport: self.transport.as_deref().unwrap_or(default),
+            sends: None,
         }
     }
 
@@ -107,6 +108,7 @@ impl<P> Core<P> {
         Ok(Next {
             middlewares: &self.middlewares,
             transport,
+            sends: None,
         })
     }
 

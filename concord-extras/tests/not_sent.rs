@@ -301,3 +301,66 @@ async fn c12_6_an_exchange_that_cannot_connect_keeps_the_refresh_token() {
     drop(data);
     driver.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn c12_6_an_exchange_that_the_server_read_leaves_the_marker() {
+    // The token endpoint reads the exchange and closes the connection without an answer:
+    // the refresh token may be consumed.
+    let identity = Server::start().await;
+    identity.on("POST", "/token").close();
+    let api = Server::start().await;
+    api.on("GET", "/data").reply(200).body("ok");
+
+    let tokens = Tokens::new()
+        .with_base(identity.url())
+        .with_transport(http());
+    let store = Memory(Arc::new(Mutex::new(Stored::Ready(TokenPair::new(
+        "a0", "r0", None,
+    )))));
+    let base: Base = api.url().parse().unwrap();
+    let (rotating, driver) = Rotating::new(&base, store.clone(), move |exchange: Exchange| {
+        let tokens = tokens.clone();
+        async move {
+            let reply = tokens
+                .exchange(exchange.refresh())
+                .await
+                .map_err(RenewalError::from_call)?;
+            Ok(TokenPair::expires_in(
+                reply.access,
+                reply.refresh,
+                Duration::from_secs(3600),
+            ))
+        }
+    });
+    let driver = tokio::spawn(driver);
+    let data = Data::new()
+        .with_base(api.url())
+        .with_transport(http())
+        .with_middleware(rotating);
+
+    let error = data.get().await.unwrap_err();
+    assert!(
+        matches!(
+            RotationError::find(&error),
+            Some(RotationError::Renewal(RenewalError::Failed(_)))
+        ),
+        "{error}"
+    );
+    assert!(matches!(*store.0.lock().unwrap(), Stored::Refreshing));
+    let error = data.get().await.unwrap_err();
+    assert!(matches!(
+        RotationError::find(&error),
+        Some(RotationError::NeedsReauthorization)
+    ));
+    assert!(matches!(*store.0.lock().unwrap(), Stored::Refreshing));
+    // One exchange reached the server in all, and no call reached the API.
+    let exchanges = identity.requests();
+    assert_eq!(exchanges.len(), 1);
+    assert_eq!(
+        exchanges[0].body(),
+        b"grant_type=refresh_token&refresh_token=r0"
+    );
+    assert!(api.requests().is_empty());
+    drop(data);
+    assert!(driver.await.unwrap().is_err());
+}

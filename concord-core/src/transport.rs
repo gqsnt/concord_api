@@ -56,8 +56,9 @@ impl Transport for reqwest::Client {
         request: reqwest::Request,
         info: TryInfo,
     ) -> Result<reqwest::Response, TransportError> {
+        let sends = info.sends();
         let sending = async move { self.execute(request).await.map_err(TransportError::from) };
-        counted(info.sends(), sending).await
+        counted(sends.as_deref(), sending).await
     }
 }
 
@@ -320,6 +321,12 @@ impl From<reqwest::Error> for TransportError {
 
 /// What a middleware layer or transport is told about the request: which endpoint, and which
 /// attempt.
+///
+/// A copy kept after the attempt has ended, by a record of your own or by a task, stops the
+/// call's error from stating that nothing was sent
+/// ([`Error::request_not_sent`](crate::Error::request_not_sent)), since a send made with it
+/// could still write. To keep what it says, keep [`endpoint`](TryInfo::endpoint) and
+/// [`number`](TryInfo::number), or `TryInfo::new(info.endpoint(), info.number())`.
 #[derive(Clone)]
 pub struct TryInfo {
     endpoint: &'static str,
@@ -331,10 +338,18 @@ pub struct TryInfo {
 }
 
 /// The sends that reached a transport during one attempt of a call, and how many of them
-/// ended with a failure stating that nothing was written. Every transport is counted where
-/// the chain hands the request to it, and [`Http`] and `reqwest::Client` count themselves
-/// again, so that a transport of the author's that wraps them is checked too. A send that
-/// was dropped before it returned is counted as started and never as unsent.
+/// ended with a failure stating that nothing was written.
+///
+/// The engine creates one for each attempt and owns it. The `Next` that it hands to the
+/// middleware borrows it, and every send that the chain hands to a transport is counted
+/// there, whatever `TryInfo` a middleware passes with it. The attempt's `TryInfo` holds a
+/// clone as well, through which [`Http`] and `reqwest::Client` count themselves again, so
+/// that a transport of the author's that wraps them is checked too. A send that was dropped
+/// before it returned is counted as started and never as unsent.
+///
+/// The engine reads it only once it holds the record alone ([`Sends::none_written`]): after
+/// the attempt, when no borrow through `Next` remains and every clone held by a `TryInfo`
+/// (kept by a middleware, given to a task) has been dropped. Nothing can then change it.
 #[derive(Default)]
 pub(crate) struct Sends {
     started: AtomicU32,
@@ -353,16 +368,20 @@ impl Sends {
         }
     }
 
-    /// No send of this attempt can have written a byte of the request.
-    pub(crate) fn none_written(&self) -> bool {
-        let started = self.started.load(Ordering::SeqCst);
-        started != u32::MAX && started == self.unsent.load(Ordering::SeqCst)
+    /// No send of this attempt can have written a byte of the request, nor can one still:
+    /// `false` while anything else holds the record.
+    pub(crate) fn none_written(record: Arc<Sends>) -> bool {
+        let Some(sends) = Arc::into_inner(record) else {
+            return false;
+        };
+        let started = sends.started.into_inner();
+        started != u32::MAX && started == sends.unsent.into_inner()
     }
 }
 
 /// Counts one send in the attempt's record, if the send belongs to an attempt.
 pub(crate) async fn counted<F>(
-    sends: Option<Arc<Sends>>,
+    sends: Option<&Sends>,
     send: F,
 ) -> Result<reqwest::Response, TransportError>
 where
@@ -416,13 +435,13 @@ impl TryInfo {
         false
     }
 
-    pub(crate) fn for_run(run: crate::__private::Run, number: u32) -> Self {
+    pub(crate) fn for_run(run: crate::__private::Run, number: u32, sends: Arc<Sends>) -> Self {
         Self {
             endpoint: run.endpoint(),
             number,
             run: Some(run),
             conditional: None,
-            sends: Some(Arc::default()),
+            sends: Some(sends),
             repeatable_body: false,
         }
     }
@@ -640,6 +659,20 @@ impl Http {
         // Then what the promises need, which the closure cannot change: no resend of
         // reqwest's own (`retry::never()` replaces the whole policy, for every protocol),
         // and no redirect.
+        //
+        // reqwest 0.13.5 offers no finer rule. Its default classifier, `ProtocolNacks`, is
+        // installed only by the private `retry::Builder::default()` (`retry.rs:195`); every
+        // public builder starts from `Never` (`77`, `88`, `105`), and `classify_fn` replaces
+        // the classifier. A classifier of ours sees `ReqRep`: the method, the URI, a status
+        // and the error (`407` to `423`). A refusal has no status, `is_request()` covers every
+        // failure without a response, and `is_connect()` names the connector, not a refusal;
+        // neither the error's text (h2 prints the same text for other errors, and a GOAWAY may
+        // append debug data: h2 `error.rs:162`) nor the depth of its `source()` chain
+        // identifies one. Telling one apart needs a downcast to `h2::Error`
+        // (`retry.rs:273` to `315`), a dependency this crate does not have. The one public
+        // workaround, `Body::wrap` on every body that must not be resent so that it cannot be
+        // cloned (`body.rs:138`), relies on reqwest's stock policy, which `f` may have
+        // replaced; and `ClientBuilder` is not `Clone`, so `f` cannot build a second client.
         let f = move |builder: reqwest::ClientBuilder| f(builder).retry(reqwest::retry::never());
         let client = f(builder)
             .redirect(reqwest::redirect::Policy::none())
@@ -665,7 +698,8 @@ impl Transport for Http {
                 .await
                 .map_err(|error| self.classify_error(error))
         };
-        counted(info.sends(), sending).await
+        let sends = info.sends();
+        counted(sends.as_deref(), sending).await
     }
 }
 
@@ -704,11 +738,21 @@ impl Transport for Http {
 ///    `c9_5_http_does_not_state_not_sent_after_the_request_was_written` and
 ///    `c9_5_http_does_not_state_not_sent_for_a_nested_connect_error`.
 ///
+/// 6. No redirect: `Http::with` forces `redirect::Policy::none()` after the closure, so no
+///    second request follows a response within one send.
+///
+/// The check is narrower than "the first cause is hyper-util's `Connect` error": a genuine
+/// connector failure whose chain holds another `reqwest::Error`, or a chain longer than the
+/// bound below, is left unknown, which is the safe side.
+///
 /// No test covers: the race of 4 (a pooled connection that closes as a request is handed
-/// to it), a transport of the author's built over another client, the connector
-/// layers that `Http::with` lets an author add (a layer receives the URI, not the request),
-/// HTTP/3 (reqwest's `http3` needs `--cfg reqwest_unstable`, and its errors carry no
-/// hyper-util error), and a resolved version other than the locked one.
+/// to it; a test needs a deterministic hook on that hand-off, which the test kit does not
+/// have), a transport of the author's built over another client, the connector layers that
+/// `Http::with` lets an author add (a layer receives the URI, not the request), HTTP/3
+/// (reqwest's `http3` needs `--cfg reqwest_unstable` and adds a wrapper of its own around
+/// the error; its errors carry no hyper-util error, so it is never stated), and a
+/// dependency resolution other than the one locked here: a consumer's own `Cargo.lock`
+/// decides the versions it builds with.
 fn connector_failed(error: &reqwest::Error) -> bool {
     if !error.is_request() || !error.is_connect() {
         return false;

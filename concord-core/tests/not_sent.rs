@@ -577,3 +577,136 @@ fn c9_3_a_failure_after_an_earlier_attempt_states_nothing() {
     assert_eq!(error.tries(), 2);
     assert!(error.request_not_sent());
 }
+
+/// Answers `200` to its first send and then fails with `failure`; records every arrival.
+struct Recorded {
+    arrivals: Arc<AtomicUsize>,
+    failure: fn() -> TransportError,
+}
+
+impl Transport for Recorded {
+    async fn send(
+        &self,
+        _: reqwest::Request,
+        _: TryInfo,
+    ) -> Result<reqwest::Response, TransportError> {
+        if self.arrivals.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Ok(concord_core::reply(200, ""));
+        }
+        Err((self.failure)())
+    }
+}
+
+/// Sends a copy through the chain with a `TryInfo` of its own making, then the request with
+/// the one it received.
+struct NewMetadata;
+
+impl Middleware for NewMetadata {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: Next<'_>,
+    ) -> Result<reqwest::Response, TransportError> {
+        let copy = request.try_clone().unwrap();
+        let made = TryInfo::new(info.endpoint(), info.number());
+        assert_eq!(next.send(copy, made).await?.status(), 200);
+        next.send(request, info).await
+    }
+}
+
+#[test]
+fn c9_6_a_send_with_metadata_of_the_middlewares_making_is_still_recorded() {
+    for failure in [
+        (|| TransportError::connect().not_sent()) as fn() -> TransportError,
+        TransportError::blocked,
+    ] {
+        let arrivals = Arc::new(AtomicUsize::new(0));
+        let transport = Recorded {
+            arrivals: arrivals.clone(),
+            failure,
+        };
+        let error = run(async {
+            let core = Core::<()>::default()
+                .with_middleware(NewMetadata)
+                .with_transport(transport);
+            post(&core, "http://identity.test/token").await
+        });
+        assert_eq!(
+            arrivals.load(Ordering::SeqCst),
+            2,
+            "a 200 was received first"
+        );
+        assert_eq!(error.tries(), 1);
+        assert!(!error.request_not_sent(), "{error}");
+    }
+}
+
+/// Hands a copy of the request, with the attempt's `TryInfo`, to a task that sends it to
+/// `other` once `gate` opens; with `queued`, the send is created before the request goes on.
+struct Deferred {
+    other: Arc<Recorded>,
+    queued: bool,
+    gate: std::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+    done: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+}
+
+impl Middleware for Deferred {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: Next<'_>,
+    ) -> Result<reqwest::Response, TransportError> {
+        let other = self.other.clone();
+        let copy = request.try_clone().unwrap();
+        let kept = info.clone();
+        let queued = self.queued;
+        let gate = self.gate.lock().unwrap().take().unwrap();
+        let done = self.done.lock().unwrap().take().unwrap();
+        tokio::spawn(async move {
+            let response = if queued {
+                let send = Next::to(&*other).send(copy, kept);
+                gate.await.unwrap();
+                send.await
+            } else {
+                gate.await.unwrap();
+                Next::to(&*other).send(copy, kept).await
+            };
+            assert_eq!(response.unwrap().status(), 200);
+            done.send(()).unwrap();
+        });
+        tokio::task::yield_now().await;
+        next.send(request, info).await
+    }
+}
+
+#[test]
+fn c9_6_a_send_that_holds_the_attempts_metadata_takes_the_statement_away() {
+    for queued in [true, false] {
+        let other = Arc::new(Recorded {
+            arrivals: Arc::new(AtomicUsize::new(0)),
+            failure: TransportError::connect,
+        });
+        let (open, gate) = tokio::sync::oneshot::channel();
+        let (done, finished) = tokio::sync::oneshot::channel();
+        let deferred = Deferred {
+            other: other.clone(),
+            queued,
+            gate: std::sync::Mutex::new(Some(gate)),
+            done: std::sync::Mutex::new(Some(done)),
+        };
+        run(async {
+            let core = Core::<()>::default()
+                .with_middleware(deferred)
+                .with_transport(Fails(|| TransportError::connect().not_sent()));
+            let error = post(&core, "http://identity.test/token").await;
+            assert_eq!(other.arrivals.load(Ordering::SeqCst), 0);
+            assert!(!error.request_not_sent(), "queued: {queued}");
+            open.send(()).unwrap();
+            finished.await.unwrap();
+            // The send arrived after the call returned its error.
+            assert_eq!(other.arrivals.load(Ordering::SeqCst), 1);
+        });
+    }
+}

@@ -423,8 +423,14 @@ where
         let next = core.sending_next(run.endpoint)?;
         n = n.saturating_add(1);
         run.clear();
-        let info = TryInfo::for_run(run.clone(), n);
-        let sends = info.sends();
+        // The record of this attempt's sends: the engine owns it, `next` borrows it, and the
+        // attempt's `TryInfo` holds a clone.
+        let record = Arc::new(Sends::default());
+        let next = crate::Next {
+            sends: Some(&*record),
+            ..next
+        };
+        let info = TryInfo::for_run(run.clone(), n, record.clone());
         let result = if let Some(observed) = &control {
             let mut info = info;
             info.repeatable_body = true;
@@ -483,10 +489,12 @@ where
             }
         };
         // A failure states that nothing was sent only if no send of this attempt, and no
-        // earlier attempt, may have written anything.
+        // earlier attempt, may have written anything. The attempt is over: the borrow of
+        // `next` has ended, and the record is read only if nothing else still holds it.
+        let none_written = Sends::none_written(record);
         let result = match result {
             Attempt::Failed(error) if error.request_not_sent() => {
-                if unsent && sends.as_deref().is_some_and(Sends::none_written) {
+                if unsent && none_written {
                     Attempt::Failed(error)
                 } else {
                     unsent = false;
@@ -661,7 +669,7 @@ mod tests {
         let failure = core
             .sending_next(run.endpoint())
             .unwrap()
-            .send(request, TryInfo::for_run(run, 1))
+            .send(request, TryInfo::for_run(run, 1, Arc::default()))
             .await
             .unwrap_err();
         let error: Error = Error::transport("tie.head", 1, failure);
@@ -697,7 +705,7 @@ mod tests {
         let failure = core
             .sending_next(run.endpoint())
             .unwrap()
-            .send(request, TryInfo::for_run(run, 1))
+            .send(request, TryInfo::for_run(run, 1, Arc::default()))
             .await
             .unwrap_err();
         let error: Error = Error::transport("tie.connect", 1, failure);

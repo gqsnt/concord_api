@@ -797,8 +797,12 @@ impl<E> Error<E> {
     ///
     /// A connection that failed after it was made, a timeout of the call or of the response,
     /// a `reqwest::Client` used as the transport, a send dropped before it returned, and a
-    /// second send through the same chain after a response make it `false`. A middleware
-    /// layer that sends with a client of its own, outside the chain, is not seen.
+    /// second send through the same chain after a response make it `false`, whatever
+    /// `TryInfo` a middleware passed with that send. So does a `TryInfo` of the attempt that
+    /// is still held when the attempt ends, for example by a task that a middleware started:
+    /// a send made with it could still write. A send that a middleware makes entirely
+    /// outside the chain, with a transport of its own and without the attempt's `TryInfo`,
+    /// is not seen: that is its author's responsibility.
     ///
     /// The retry policy does not read it: the class decides whether an attempt is repeated.
     pub fn request_not_sent(&self) -> bool {

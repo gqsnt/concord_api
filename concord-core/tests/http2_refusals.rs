@@ -135,9 +135,30 @@ mod peer {
         frame
     }
 
-    fn answer(stream: &mut TcpStream, id: u32) {
-        // `:status: 200`, HPACK static index 8, and no body.
-        let _ = stream.write_all(&frame(HEADERS, END_STREAM | END_HEADERS, id, &[0x88]));
+    #[derive(Clone, Copy)]
+    enum Reply {
+        Ok,
+        Refuse(Refusal),
+    }
+
+    impl Reply {
+        fn send(self, stream: &mut TcpStream, id: u32) {
+            let _ = match self {
+                // `:status: 200`, HPACK static index 8, and no body.
+                Reply::Ok => {
+                    stream.write_all(&frame(HEADERS, END_STREAM | END_HEADERS, id, &[0x88]))
+                }
+                Reply::Refuse(Refusal::Stream) => {
+                    stream.write_all(&frame(RST_STREAM, 0, id, &REFUSED_STREAM.to_be_bytes()))
+                }
+                Reply::Refuse(Refusal::GoAway) => {
+                    // The last stream that the server processed: none below this one.
+                    let mut payload = id.saturating_sub(2).to_be_bytes().to_vec();
+                    payload.extend_from_slice(&NO_ERROR.to_be_bytes());
+                    stream.write_all(&frame(GOAWAY, 0, 0, &payload))
+                }
+            };
+        }
     }
 
     fn serve(
@@ -149,7 +170,7 @@ mod peer {
     ) {
         stream.write_all(&frame(SETTINGS, 0, 0, &[])).unwrap();
         // Streams whose request has not ended yet, and whether the server answers them.
-        let mut open: HashMap<u32, (usize, bool)> = HashMap::new();
+        let mut open: HashMap<u32, (usize, Reply)> = HashMap::new();
         loop {
             let mut head = [0u8; 9];
             if stream.read_exact(&mut head).is_err() {
@@ -183,29 +204,21 @@ mod peer {
                     seen.requests += 1;
                     let refused = seen.requests <= refuse;
                     drop(seen);
-                    if refused {
-                        match refusal {
-                            Refusal::Stream => stream
-                                .write_all(&frame(RST_STREAM, 0, id, &REFUSED_STREAM.to_be_bytes()))
-                                .unwrap(),
-                            Refusal::GoAway => {
-                                // The last stream that the server processed: none below this one.
-                                let mut payload = id.saturating_sub(2).to_be_bytes().to_vec();
-                                payload.extend_from_slice(&NO_ERROR.to_be_bytes());
-                                stream.write_all(&frame(GOAWAY, 0, 0, &payload)).unwrap();
-                            }
-                        }
-                    }
-                    if flags & END_STREAM != 0 {
-                        if !refused {
-                            answer(&mut stream, id);
-                        }
+                    // Each request gets its answer or its refusal once it has ended, so that a
+                    // client that stops sending on a refusal cannot cut its body short.
+                    let reply = if refused {
+                        Reply::Refuse(refusal)
                     } else {
-                        open.insert(id, (at, !refused));
+                        Reply::Ok
+                    };
+                    if flags & END_STREAM != 0 {
+                        reply.send(&mut stream, id);
+                    } else {
+                        open.insert(id, (at, reply));
                     }
                 }
                 DATA => {
-                    let Some(&(at, answers)) = open.get(&id) else {
+                    let Some(&(at, reply)) = open.get(&id) else {
                         continue;
                     };
                     assert_eq!(flags & PADDED, 0, "unpadded DATA");
@@ -214,9 +227,7 @@ mod peer {
                         .extend_from_slice(&payload);
                     if flags & END_STREAM != 0 {
                         open.remove(&id);
-                        if answers {
-                            answer(&mut stream, id);
-                        }
+                        reply.send(&mut stream, id);
                     }
                 }
                 _ => {}
@@ -333,6 +344,8 @@ fn assert_transport_failure(error: &Error, tries: u32) {
     assert_eq!(error.kind(), Kind::Transport, "{error}");
     assert_eq!(error.class(), Some(Class::Connect), "{error}");
     assert_eq!(error.tries(), tries, "{error}");
+    // The server received the request's headers: nothing says that it was not sent.
+    assert!(!error.request_not_sent(), "{error}");
 }
 
 #[test]
@@ -383,6 +396,20 @@ fn c4_1_reqwest_resends_a_refused_post_and_http_does_not() {
 #[test]
 fn c4_4_a_refused_get_is_repeated_only_by_the_engine_and_counted() {
     for refusal in [Refusal::Stream, Refusal::GoAway] {
+        // reqwest's default client sends the GET again, below any count of attempts.
+        let peer = Peer::start(refusal, 1);
+        let url = peer.url();
+        let status = run(|_| async move {
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .http2_prior_knowledge()
+                .build()
+                .unwrap();
+            client.get(url).send().await.unwrap().status()
+        });
+        assert_eq!(status, 200);
+        assert_requests(&peer.finish(), GET, 2);
+
         // Retries are off: the transport does not send the GET again either.
         let peer = Peer::start(refusal, 1);
         let url = peer.url();
