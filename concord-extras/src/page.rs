@@ -52,9 +52,9 @@ where
         None => 0,
     };
     // counted in `u64`, with a check: an offset that cannot grow is an error, never a wrap
-    let next = u64::try_from(got)
-        .ok()
-        .and_then(|got| at.checked_add(got))
+    // PANIC-SAFETY: usize is at most 64 bits on supported targets; offset addition is checked.
+    let sum = at.checked_add(got as u64);
+    let next = sum
         .and_then(|next| S::Value::try_from(next).ok())
         .ok_or(Stuck::Overflow)?;
     Ok(start.set(call, next))
