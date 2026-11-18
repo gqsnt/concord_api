@@ -2,7 +2,7 @@
 use super::{Learn, Seen, Window};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use time::format_description::well_known::Rfc3339;
-use time::OffsetDateTime;
+use time::{Date, Month, OffsetDateTime};
 
 const MAX_HEADER_BYTES: usize = 4096;
 const MAX_WINDOWS: usize = 8;
@@ -168,12 +168,158 @@ pub(super) fn rfc3339(text: &str) -> Option<SystemTime> {
     at_nanos(nanos)
 }
 
-/// The `Date` of a response, in any of the three forms of an HTTP date, read by the core.
+/// The `Date` of a response, in any of the three forms of an HTTP date, by the grammar that
+/// the core uses for `Retry-After` (RFC 9110, section 5.6.7), on `time`'s calendar.
 pub(super) fn http_date(text: &str, now: SystemTime) -> Option<SystemTime> {
     if text.len() > MAX_HEADER_BYTES {
         return None;
     }
-    concord_core::retry::http_date(text.trim_matches([' ', '\t']), now)
+    let text = text.trim_matches([' ', '\t']);
+    let (year, month, day, weekday, clock) = if text.len() == 29 {
+        // IMF-fixdate: `Sun, 06 Nov 1994 08:49:37 GMT`.
+        let shape = text.get(3..5) == Some(", ")
+            && [7, 11, 16]
+                .iter()
+                .all(|at| text.get(*at..=*at) == Some(" "))
+            && text.get(25..) == Some(" GMT");
+        if !shape {
+            return None;
+        }
+        let year = i32::from(digits(text.get(12..16)?)?);
+        (
+            year,
+            text.get(8..11)?,
+            digits(text.get(5..7)?)?,
+            text.get(..3)?,
+            text.get(17..25)?,
+        )
+    } else if let Some((weekday, rest)) = text.split_once(", ") {
+        // RFC 850: `Sunday, 06-Nov-94 08:49:37 GMT`, a two-digit year by the fifty-year rule.
+        let shape = rest.len() == 22
+            && rest.get(2..3) == Some("-")
+            && rest.get(6..7) == Some("-")
+            && rest.get(9..10) == Some(" ")
+            && rest.get(18..) == Some(" GMT");
+        if !shape || weekday.len() < 6 {
+            return None;
+        }
+        let month = rest.get(3..6)?;
+        let day = digits(rest.get(..2)?)?;
+        let clock = rest.get(10..18)?;
+        let year = century(digits(rest.get(7..9)?)?, month, day, clock, now)?;
+        (year, month, day, weekday, clock)
+    } else if text.len() == 24 {
+        // asctime: `Sun Nov  6 08:49:37 1994`.
+        let shape = [3, 7, 10, 19]
+            .iter()
+            .all(|at| text.get(*at..=*at) == Some(" "));
+        if !shape {
+            return None;
+        }
+        let day = text.get(8..10)?;
+        let day = digits(day.strip_prefix(' ').unwrap_or(day))?;
+        let year = i32::from(digits(text.get(20..)?)?);
+        (
+            year,
+            text.get(4..7)?,
+            day,
+            text.get(..3)?,
+            text.get(11..19)?,
+        )
+    } else {
+        return None;
+    };
+    let date = calendar(year, month, day)?;
+    let (hour, minute, second) = time_of_day(clock)?;
+    // The written date names the weekday, also before a leap second rolls into the next day.
+    let names = if weekday.len() == 3 {
+        WEEKDAYS
+    } else {
+        LONG_WEEKDAYS
+    };
+    if names.get(usize::from(date.weekday().number_days_from_monday())) != Some(&weekday) {
+        return None;
+    }
+    let midnight = i128::from(date.midnight().assume_utc().unix_timestamp());
+    let of_day = i128::from(hour)
+        .checked_mul(3600)?
+        .checked_add(i128::from(minute).checked_mul(60)?)?
+        .checked_add(i128::from(second))?;
+    at_nanos(midnight.checked_add(of_day)?.checked_mul(1_000_000_000)?)
+}
+
+const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const LONG_WEEKDAYS: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+];
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+fn digits(text: &str) -> Option<u16> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
+}
+
+/// A date of the years 1 to 9999 that exists.
+fn calendar(year: i32, month: &str, day: u16) -> Option<Date> {
+    if !(1..=9999).contains(&year) {
+        return None;
+    }
+    let month = MONTHS.iter().position(|name| *name == month)?;
+    let month = Month::try_from(u8::try_from(month.checked_add(1)?).ok()?).ok()?;
+    Date::from_calendar_date(year, month, u8::try_from(day).ok()?).ok()
+}
+
+/// `HH:MM:SS`, with a second of 60 only at 23:59:60, as the core reads it.
+fn time_of_day(clock: &str) -> Option<(u16, u16, u16)> {
+    if clock.len() != 8 || clock.get(2..3) != Some(":") || clock.get(5..6) != Some(":") {
+        return None;
+    }
+    let (hour, minute) = (digits(clock.get(..2)?)?, digits(clock.get(3..5)?)?);
+    let second = digits(clock.get(6..)?)?;
+    let valid = hour < 24 && minute < 60 && (second < 60 || (hour, minute, second) == (23, 59, 60));
+    valid.then_some((hour, minute, second))
+}
+
+/// The year of a two-digit RFC 850 year: the latest one that is not more than fifty years
+/// after `now`, as the core reads it.
+fn century(two: u16, month: &str, day: u16, clock: &str, now: SystemTime) -> Option<i32> {
+    let seconds = match now.duration_since(UNIX_EPOCH) {
+        Ok(since) => i64::try_from(since.as_secs()).ok()?,
+        Err(before) => i64::try_from(before.duration().as_secs())
+            .ok()?
+            .checked_neg()?,
+    };
+    let now = OffsetDateTime::from_unix_timestamp(seconds).ok()?;
+    let limit_year = now.year().checked_add(50)?;
+    let month_number = MONTHS.iter().position(|name| *name == month)?;
+    let written = (month_number, day, time_of_day(clock)?);
+    let limit = (
+        usize::from(u8::from(now.month())).checked_sub(1)?,
+        u16::from(now.day()),
+        (
+            u16::from(now.hour()),
+            u16::from(now.minute()),
+            u16::from(now.second()),
+        ),
+    );
+    let mut year = limit_year
+        .checked_div(100)?
+        .checked_mul(100)?
+        .checked_add(i32::from(two))?;
+    if (year, written) > (limit_year, limit) {
+        year = year.checked_sub(100)?;
+    }
+    Some(year)
 }
 
 #[cfg(test)]
@@ -314,6 +460,24 @@ mod tests {
             until(base - Duration::from_secs(1), base),
             Some(Duration::ZERO)
         );
+    }
+
+    #[test]
+    fn c11_5_an_rfc_850_year_uses_the_fifty_year_rule_of_the_core() {
+        // 2026-01-01T00:00:00Z: exactly fifty years ahead stays in 2076, one second more
+        // goes back to 1976.
+        let now = UNIX_EPOCH + Duration::from_secs(1_767_225_600);
+        assert_eq!(
+            http_date("Wednesday, 01-Jan-76 00:00:00 GMT", now),
+            at(3_345_062_400, 0)
+        );
+        assert_eq!(
+            http_date("Thursday, 01-Jan-76 00:00:01 GMT", now),
+            at(189_302_401, 0)
+        );
+        assert_eq!(http_date("Wednesday, 01-Jan-76 00:00:01 GMT", now), None);
+        assert_eq!(http_date("Sunday, 06-Nov-94 08:49:37 UTC", now), None);
+        assert_eq!(http_date("Sun, 06-Nov-94 08:49:37 GMT", now), None);
     }
 
     #[test]

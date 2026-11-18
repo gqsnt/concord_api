@@ -276,13 +276,6 @@ impl<'a, P> Tried<'a, P> {
     }
 }
 
-/// Reads an HTTP date in any of its three forms, as `Retry-After` is read: a two-digit year by
-/// the fifty-year rule against `now`, a leap second as the next second.
-#[doc(hidden)]
-pub fn http_date(text: &str, now: SystemTime) -> Option<SystemTime> {
-    http_date::parse(text, now)
-}
-
 /// The evidence needed by the pure retry decision, before any middleware edits.
 #[doc(hidden)]
 pub struct Outcome<'a, P> {
