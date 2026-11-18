@@ -360,6 +360,11 @@ fn c1_16_growth_binds_inputs_once_and_emits_linear_sized_clients() {
             {
                 self.authored_expressions += 1;
             }
+            // The method spelling is counted too: a second write of one pair, in either
+            // spelling, shows as a repeated field.
+            if call.method == "query_value" {
+                self.query_value(&call.args[0], &call.args[2]);
+            }
             visit::visit_expr_method_call(self, call);
         }
 
@@ -369,38 +374,45 @@ fn c1_16_growth_binds_inputs_once_and_emits_linear_sized_clients() {
             let draft_query = matches!(&*call.func, syn::Expr::Path(path)
                 if path.path.segments.last().is_some_and(|s| s.ident == "query_value"));
             if draft_query {
-                let syn::Expr::Lit(syn::ExprLit {
-                    lit: syn::Lit::Str(key),
-                    ..
-                }) = &call.args[1]
-                else {
-                    panic!("shorthand must pass its literal query key");
-                };
-                struct Fields(Vec<u32>);
-                impl<'ast> Visit<'ast> for Fields {
-                    fn visit_expr_field(&mut self, field: &'ast syn::ExprField) {
-                        match &field.member {
-                            syn::Member::Named(name) => {
-                                if let Some(index) = name.to_string().strip_prefix("input_") {
-                                    self.0.push(index.parse().unwrap());
-                                }
-                            }
-                            syn::Member::Unnamed(index) => {
-                                if matches!(field.base.as_ref(), syn::Expr::Field(base)
-                                    if matches!(&base.member, syn::Member::Named(name) if name == "__inputs"))
-                                {
-                                    self.0.push(index.index);
-                                }
-                            }
-                        }
-                        visit::visit_expr_field(self, field);
-                    }
-                }
-                let mut fields = Fields(Vec::new());
-                fields.visit_expr(&call.args[3]);
-                self.fields.entry(key.value()).or_default().extend(fields.0);
+                self.query_value(&call.args[1], &call.args[3]);
             }
             visit::visit_expr_call(self, call);
+        }
+    }
+
+    impl Inputs {
+        /// One pair: its key, and the inputs that its value reads.
+        fn query_value(&mut self, key: &syn::Expr, value: &syn::Expr) {
+            let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(key),
+                ..
+            }) = key
+            else {
+                panic!("shorthand must pass its literal query key");
+            };
+            struct Fields(Vec<u32>);
+            impl<'ast> Visit<'ast> for Fields {
+                fn visit_expr_field(&mut self, field: &'ast syn::ExprField) {
+                    match &field.member {
+                        syn::Member::Named(name) => {
+                            if let Some(index) = name.to_string().strip_prefix("input_") {
+                                self.0.push(index.parse().unwrap());
+                            }
+                        }
+                        syn::Member::Unnamed(index) => {
+                            if matches!(field.base.as_ref(), syn::Expr::Field(base)
+                                if matches!(&base.member, syn::Member::Named(name) if name == "__inputs"))
+                            {
+                                self.0.push(index.index);
+                            }
+                        }
+                    }
+                    visit::visit_expr_field(self, field);
+                }
+            }
+            let mut fields = Fields(Vec::new());
+            fields.visit_expr(value);
+            self.fields.entry(key.value()).or_default().extend(fields.0);
         }
     }
 
