@@ -1241,7 +1241,7 @@ impl ByteStream {
 ///     match body.next_chunk().await? {
 ///         Some(chunk) if chunk.len() > 4096 => Err(body.fail(RecordFault::too_large())),
 ///         Some(chunk) => Ok((body, chunk.to_vec())),
-///         None => Err(body.fail(RecordFault::unfinished())),
+///         None => Err(body.fail(RecordFault::ended_early())),
 ///     }
 /// }
 /// ```
@@ -1379,14 +1379,14 @@ impl<P> RecordBody<P> {
     /// ```
     pub fn fail(self, fault: RecordFault) -> Error<P> {
         let failure = match fault.kind {
-            FaultKind::Unfinished => MismatchFailure::Unfinished,
+            FaultKind::EndedEarly => MismatchFailure::EndedEarly,
             kind => MismatchFailure::Record {
                 record: self.record,
                 fault: match kind {
                     FaultKind::TooLarge => RecordFaultKind::TooLarge,
                     FaultKind::NotUtf8 => RecordFaultKind::NotUtf8,
-                    FaultKind::NotTheType => RecordFaultKind::NotTheType,
-                    FaultKind::DoesNotFit | FaultKind::Unfinished => RecordFaultKind::DoesNotFit,
+                    FaultKind::NotDecoded => RecordFaultKind::NotDecoded,
+                    FaultKind::DoesNotFit | FaultKind::EndedEarly => RecordFaultKind::DoesNotFit,
                 },
             },
         };
@@ -1425,7 +1425,7 @@ impl<P> std::fmt::Debug for RecordBody<P> {
 ///
 /// ```no_run
 /// # use concord_core as concord;
-/// let fault = concord::read::RecordFault::not_the_type().at(1, 34);
+/// let fault = concord::read::RecordFault::not_decoded().at(1, 34);
 /// ```
 pub struct RecordFault {
     kind: FaultKind,
@@ -1437,9 +1437,9 @@ pub struct RecordFault {
 enum FaultKind {
     TooLarge,
     NotUtf8,
-    NotTheType,
+    NotDecoded,
     DoesNotFit,
-    Unfinished,
+    EndedEarly,
 }
 
 impl RecordFault {
@@ -1477,10 +1477,10 @@ impl RecordFault {
     ///
     /// ```no_run
     /// # use concord_core as concord;
-    /// let fault = concord::read::RecordFault::not_the_type();
+    /// let fault = concord::read::RecordFault::not_decoded();
     /// ```
-    pub fn not_the_type() -> Self {
-        Self::of(FaultKind::NotTheType)
+    pub fn not_decoded() -> Self {
+        Self::of(FaultKind::NotDecoded)
     }
 
     /// The place inside the record where the decoder stopped, a line and a column of the
@@ -1490,11 +1490,11 @@ impl RecordFault {
     ///
     /// ```no_run
     /// # use concord_core as concord;
-    /// let fault = concord::read::RecordFault::not_the_type().at(1, 34);
+    /// let fault = concord::read::RecordFault::not_decoded().at(1, 34);
     /// ```
     #[must_use]
     pub fn at(mut self, line: usize, column: usize) -> Self {
-        if matches!(self.kind, FaultKind::NotTheType) && line != 0 {
+        if matches!(self.kind, FaultKind::NotDecoded) && line != 0 {
             self.at = Some((line, column));
         }
         self
@@ -1532,10 +1532,10 @@ impl RecordFault {
     ///
     /// ```no_run
     /// # use concord_core as concord;
-    /// let fault = concord::read::RecordFault::unfinished();
+    /// let fault = concord::read::RecordFault::ended_early();
     /// ```
-    pub fn unfinished() -> Self {
-        Self::of(FaultKind::Unfinished)
+    pub fn ended_early() -> Self {
+        Self::of(FaultKind::EndedEarly)
     }
 }
 

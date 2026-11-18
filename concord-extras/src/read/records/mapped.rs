@@ -208,7 +208,7 @@ impl<P> RecordFail<P> {
             Cause::Problem(problem) => body.refuse(problem),
             Cause::Rejected(reason) => body.fail(RecordFault::rejected(reason)),
             Cause::Decode { line, column } => {
-                body.fail(RecordFault::not_the_type().at(line, column))
+                body.fail(RecordFault::not_decoded().at(line, column))
             }
             Cause::Other => body.fail(RecordFault::does_not_fit()),
         }
@@ -475,9 +475,9 @@ impl<F> TryMap<Sse, F> {
         self.finish(End::LastRecord)
     }
 
-    /// Finishes the reader: the end of the body ends the stream with `Ok(None)`. A record can
-    /// still end it earlier ([`Step::Last`], [`Step::End`]). For a stream that the server ends
-    /// when it is done, such as a watch.
+    /// Finishes the reader: the end of the body ends the stream with `Ok(None)`. A
+    /// [`Step::Last`] or a [`Step::End`] still ends the stream before the body does. For a
+    /// stream that the server ends when it is done, such as a watch.
     ///
     /// ```no_run
     /// use concord::read::{RecordFail, Sse, SseEvent, Step};
@@ -532,7 +532,7 @@ impl<F> TryMap<JsonLines, F> {
     }
 
     /// Finishes the reader: the end of the body ends the stream with `Ok(None)`, as a watch
-    /// ends; a record can still end it earlier.
+    /// ends. A [`Step::Last`] or a [`Step::End`] still ends the stream before the body does.
     ///
     /// ```no_run
     /// use concord::read::{JsonLine, JsonLines, RecordFail, Step};
@@ -686,7 +686,7 @@ impl<K, P, F> Typed<K, P, F> {
             RecordError::TooLarge { .. } => body.fail(RecordFault::too_large()),
             RecordError::Utf8 { .. } => body.fail(RecordFault::not_utf8()),
             RecordError::Decode { line, column, .. } => {
-                body.fail(RecordFault::not_the_type().at(line, column))
+                body.fail(RecordFault::not_decoded().at(line, column))
             }
         })
     }
@@ -717,7 +717,7 @@ where
                     let ended = this.lines.take().map(|lines| lines.input);
                     return match (this.end, ended) {
                         (End::LastRecord, Some(body)) => {
-                            Poll::Ready(Some(Err(body.fail(RecordFault::unfinished()))))
+                            Poll::Ready(Some(Err(body.fail(RecordFault::ended_early()))))
                         }
                         _ => Poll::Ready(None),
                     };

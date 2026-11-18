@@ -77,7 +77,7 @@ pub(crate) enum MismatchFailure {
         fault: RecordFaultKind,
     },
     // The body ended cleanly before the record that ends the stream.
-    Unfinished,
+    EndedEarly,
 }
 
 /// What is wrong with one record, as `RecordFault` says it.
@@ -85,7 +85,7 @@ pub(crate) enum MismatchFailure {
 pub(crate) enum RecordFaultKind {
     TooLarge,
     NotUtf8,
-    NotTheType,
+    NotDecoded,
     DoesNotFit,
 }
 
@@ -282,11 +282,11 @@ impl Note {
                     f.write_str(match fault {
                         RecordFaultKind::TooLarge => "exceeds the reader's size limit",
                         RecordFaultKind::NotUtf8 => "is not UTF-8",
-                        RecordFaultKind::NotTheType => "could not be decoded",
+                        RecordFaultKind::NotDecoded => "could not be decoded",
                         RecordFaultKind::DoesNotFit => "does not fit the stream",
                     })
                 }
-                MismatchFailure::Unfinished => f.write_str("the body ended before its last record"),
+                MismatchFailure::EndedEarly => f.write_str("the body ended before its last record"),
             },
         }
     }
@@ -593,7 +593,7 @@ impl<E> Error<E> {
             | MismatchFailure::InputDecode { .. }
             | MismatchFailure::InputEmpty
             | MismatchFailure::Record { .. }
-            | MismatchFailure::Unfinished => {
+            | MismatchFailure::EndedEarly => {
                 Some(Box::new(ReaderCause(Note::Mismatch(failure.clone()))) as Source)
             }
             _ => None,
