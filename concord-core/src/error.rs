@@ -794,35 +794,43 @@ impl<E> Error<E> {
     }
 
     /// Returns `true` when Concord states that no byte of this call's request was written to
-    /// the network, on any attempt and any page. `false` means that it may have been: it does
-    /// not mean that the request arrived.
+    /// the network, on any attempt and any page. `false` means that it may have been, or that
+    /// Concord cannot tell: it does not mean that the request arrived.
     ///
-    /// It is stated for a Transport error only, when every send that reached a transport
-    /// during the call ended with a failure stating it, or a middleware layer stated it
-    /// itself, and no earlier attempt or page sent anything:
+    /// It is stated for a Transport error only, when the failure that ends the call states
+    /// it, every send that Concord saw during that attempt ended with a failure that states
+    /// it (a middleware layer may also state it itself and send nothing), no copy of the
+    /// attempt's `TryInfo` is still held when the attempt ends, and no earlier attempt or
+    /// page may have written anything. A failure states it when:
     ///
     /// - the request was [`Blocked`](Class::Blocked) before it was sent;
-    /// - [`Http`](crate::Http) could not make the connection: the connection was refused,
-    ///   the host name was not resolved, the TLS handshake or a proxy failed, or the HTTP
-    ///   client's connect timeout expired before a connection existed;
+    /// - [`Http`](crate::Http) recognizes the failure as one of its connector's, so that the
+    ///   connection was not made: it was refused, the host name was not resolved, the TLS
+    ///   handshake or a proxy failed, or a connect timeout that it recognizes expired before
+    ///   a connection existed;
     /// - your own transport or middleware stated it with
     ///   [`TransportError::not_sent`](crate::transport::TransportError::not_sent).
     ///
-    /// A connection that failed after it was made, a timeout of the call or of the response,
-    /// a `reqwest::Client` used as the transport, a send dropped before it returned, and a
-    /// second send through the same chain after a response make it `false`, whatever
-    /// `TryInfo` a middleware passed with that send. So does a `TryInfo` of the attempt that
-    /// is still held when the attempt ends, for example by a task that a middleware started:
-    /// a send made with it could still write. A send that a middleware makes entirely
-    /// outside the chain, with a transport of its own and without the attempt's `TryInfo`,
-    /// is not seen: that is its author's responsibility.
+    /// A timeout of the call or of the response, a `reqwest::Client` used as the transport,
+    /// a send dropped before it returned, and a second send through the same chain after a
+    /// response make it `false`, whatever `TryInfo` a middleware passed with that send; with
+    /// `Http`, so do a connection that failed after it was made and a failure that it does
+    /// not recognize as one of its connector's (an error chain that it does not expect,
+    /// HTTP/3). So does a `TryInfo` of the attempt that is still held when the attempt ends,
+    /// for example by a task that a middleware started: a send made with it could still
+    /// write. A send that a middleware makes entirely outside the chain, with a transport of
+    /// its own and without the attempt's `TryInfo`, is not seen: that is its author's
+    /// responsibility.
     ///
     /// A caller may rely on it to reuse what the request carried: `RenewalError::from_call`
     /// does, so that `Rotating` sends the same refresh token again. A false `true` makes that
     /// token be used twice, and a server that sees it may revoke every session of the
     /// account.
     ///
-    /// The retry policy does not read it: the class decides whether an attempt is repeated.
+    /// For [`Http`](crate::Http), it rests on the versions of the HTTP libraries in your build
+    /// (see [`Http`](crate::Http)).
+    ///
+    /// The retry policy does not read it.
     pub fn request_not_sent(&self) -> bool {
         self.inner.kind == Kind::Transport && self.inner.not_sent
     }

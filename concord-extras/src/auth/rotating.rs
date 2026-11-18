@@ -225,8 +225,11 @@ pub trait CredentialStore: Send + Sync + 'static {
 
 /// What one exchange receives: its own copy of the refresh token to send.
 ///
-/// More inputs may be added later. Use a separate client for the token endpoint, with
-/// retries turned off, also in its transport. Set a timeout on that client's request
+/// More inputs may be added later. Use a separate client for the token endpoint, call it
+/// once per exchange, with no retry policy and no middleware that sends again, over a
+/// transport that neither resends nor follows a redirect: `concord::Http`, the default, does
+/// neither; a `reqwest::Client` of your own needs `.retry(reqwest::retry::never())` and
+/// `.redirect(reqwest::redirect::Policy::none())`. Set a timeout on that client's request
 /// yourself: the driver never cancels the exchange.
 ///
 /// ```no_run

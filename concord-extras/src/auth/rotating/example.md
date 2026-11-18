@@ -12,7 +12,7 @@ starts none. It keeps the driver alive while a long-lived work queue is served.
 
 ```no_run
 use concord::auth::{after_401, CredentialStore, Exchange, RenewalError, Rotating, RotationError, Stored, TokenPair};
-use concord::{Base, Http, Json, Retry, Secret, Text};
+use concord::{Base, Json, Retry, Secret, Text};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::{Duration, SystemTime}};
 
@@ -87,8 +87,7 @@ async fn serve(mut jobs: tokio::sync::mpsc::Receiver<()>, store: FileStore, appl
     -> Result<(), Box<dyn std::error::Error>>
 {
     let tokens = Tokens::new(application_key).with_timeout(Duration::from_secs(10))
-        .with_retry(Retry::none())
-        .with_transport(Http::with(|builder| builder.retry(concord::reqwest::retry::never()))?);
+        .with_retry(Retry::none()); // and `concord::Http`, which resends nothing on its own
     let base: Base = "https://documents.example.test/v2".parse()?;
     let recovery_store = store.clone();
     let (auth, driver) = Rotating::new(&base, store, move |exchange: Exchange| {

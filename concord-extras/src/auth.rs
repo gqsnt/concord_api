@@ -281,26 +281,32 @@ impl RenewalError {
     ///
     /// `Rotating` then saves the pair it had before the exchange again, without a usable
     /// expiry, and the next call exchanges the same refresh token; no owner sends that
-    /// access token again. Use it only when nothing was written to the
-    /// connection: a check of your own that fails before the call to the token endpoint,
-    /// or a refusal that you know happened before the request was handed to the network.
+    /// access token again. `Renewed` treats `NotSent` as `Failed`.
     ///
-    /// These failures are **not** `NotSent`, and must stay [`failed`](Self::failed): a
-    /// timeout, whatever its kind; a connection that failed or broke, even one refused
-    /// or reset, because the request may already have been written; a failure while the
-    /// body of the request or of the response was sent or read; and any response, of any
-    /// status. The server may have consumed the refresh token in each of these cases,
-    /// and a provider that sees a consumed refresh token used again usually revokes every
-    /// token of the account. When in doubt, use `failed`: the account then requires a
-    /// new authorization, which is the safe side. `Renewed` treats `NotSent` as `Failed`.
+    /// **When the exchange is a Concord call,** do not classify its error yourself: use
+    /// [`from_call`](Self::from_call), which gives `NotSent` exactly when the call made one
+    /// attempt and Concord states that nothing of it was sent, a connect timeout that
+    /// `concord::Http` recognizes included.
     ///
-    /// One exception to the connection rule: with native `reqwest` 0.13 called directly,
+    /// **When you classify an error yourself,** use `not_sent` only when you can establish
+    /// that no byte of the request that carries the refresh token was written, and that
+    /// none can still be written: a check of your own that fails before the call to the
+    /// token endpoint, or a refusal that you know happened before the request was handed
+    /// to the network. Otherwise use [`failed`](Self::failed): a timeout whose moment you do
+    /// not know, a connection that failed or broke when you cannot tell whether the request
+    /// was written, a failure while the body of the request or of the response was sent or
+    /// read, and any response, of any status. The server may have consumed the refresh
+    /// token in each of these cases, and a provider that sees a consumed refresh token used
+    /// again usually revokes every token of the account. When in doubt, use `failed`: the
+    /// account then requires a new authorization, which is the safe side.
+    ///
+    /// For an exchange made with `reqwest` directly: with native `reqwest` 0.13,
     /// `e.is_connect() && !e.is_timeout()` is enough to say `not_sent` for one buffered
     /// request through `reqwest`'s own connector, with no connection layer of your own,
     /// no redirect followed, no retry (`reqwest::retry::never()`) and no TLS early data:
     /// a connection that could not be made fails before the request is written. A form
     /// body needs the `form` feature of `reqwest`. A Concord call's `Connect` class proves
-    /// nothing of the kind; use [`from_call`](Self::from_call) there.
+    /// nothing of the kind.
     ///
     /// ```no_run
     /// use concord::auth::{Exchange, RenewalError, TokenPair};
@@ -329,14 +335,16 @@ impl RenewalError {
     ///   `Some(Class::Blocked)`), as by a `concord::limit::Limit` that refuses to wait, or a
     ///   middleware layer or transport that refuses the request; a middleware layer or a
     ///   transport returns `blocked()` only when no request left during its call;
-    /// - the connection could not be made: `concord::Http`, the default transport, states it
-    ///   for a refused connection, a host name that was not resolved, a failed TLS
-    ///   handshake or proxy, and its own connect timeout; a transport of your own states it
-    ///   with `TransportError::not_sent`.
+    /// - a failure that states that nothing was written: `concord::Http`, the default
+    ///   transport, states it for a failure that it recognizes as one of its connector's
+    ///   (a refused connection, a host name that was not resolved, a failed TLS handshake
+    ///   or proxy, its own connect timeout); a transport or middleware of your own states it
+    ///   with `TransportError::not_sent`, also after it opened a connection when no byte of
+    ///   the request was written or can still be written.
     ///
-    /// Every other error is `Failed`: a connection that failed after it was made, even one
-    /// reset before the server read anything, because the request may already have been
-    /// written; a `Connect` error from a `reqwest::Client` used as the transport; a timeout
+    /// Every other error is `Failed`: with `Http`, a connection that failed after it was
+    /// made, even one reset before the server read anything, because the request may
+    /// already have been written; a `Connect` error from a `reqwest::Client` used as the transport; a timeout
     /// of the call or of the response; a response, of any status; an error after more than
     /// one attempt, or on a page after the first; and an attempt during which the chain also
     /// sent the request elsewhere, or dropped a send before it returned. A Build error is
