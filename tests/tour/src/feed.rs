@@ -484,7 +484,7 @@ const _: () = {
     );
     impl feed::__spec::Paged for feed::ByCursor {
         fn pages(call: feed::Call<feed::ByCursor>) -> ::concord::Pages<Page> {
-            ::concord::__private::pages_with_pager(call, || {
+            ::concord::__private::pages_of_pager(call, || {
                 #[allow(unused_variables)]
                 let client = __Client;
                 #[allow(unused_variables)]
@@ -578,7 +578,7 @@ const _: () = {
     call_spec!(feed, feed::Linked, feed::__LinkedInputs, Page, (), "Linked");
     impl feed::__spec::Paged for feed::Linked {
         fn pages(call: feed::Call<feed::Linked>) -> ::concord::Pages<Page> {
-            ::concord::__private::pages_with_pager(call, || {
+            ::concord::__private::pages_of_pager(call, || {
                 #[allow(unused_variables)]
                 let client = __Client;
                 by_link()

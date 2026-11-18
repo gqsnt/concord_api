@@ -75,6 +75,77 @@ fn problem_needs_alias(ty: &syn::Type) -> bool {
     references.0
 }
 
+/// Where the value of a `paginate` expression comes from: each tail, branch, arm, `return` and
+/// `break` with a value, outside nested closures, items and `async` blocks.
+#[derive(Clone, Copy, PartialEq)]
+enum Origin {
+    /// A call, a method call or a path: its type is its own, any `Pager`.
+    Typed,
+    /// Anything else (a closure, a macro, a literal): it keeps the `FnMut` bound.
+    Inferred,
+}
+
+fn origins(expr: &syn::Expr, out: &mut Vec<Origin>) {
+    match expr {
+        syn::Expr::Paren(paren) => origins(&paren.expr, out),
+        syn::Expr::Group(group) => origins(&group.expr, out),
+        syn::Expr::Block(block) => block_origins(&block.block, out),
+        syn::Expr::Unsafe(block) => block_origins(&block.block, out),
+        syn::Expr::Const(block) => block_origins(&block.block, out),
+        syn::Expr::If(branch) => {
+            block_origins(&branch.then_branch, out);
+            match &branch.else_branch {
+                Some((_, otherwise)) => origins(otherwise, out),
+                None => out.push(Origin::Inferred),
+            }
+        }
+        syn::Expr::Match(choice) => choice.arms.iter().for_each(|arm| origins(&arm.body, out)),
+        syn::Expr::Return(exit) => match &exit.expr {
+            Some(value) => origins(value, out),
+            None => out.push(Origin::Inferred),
+        },
+        syn::Expr::Call(_) | syn::Expr::MethodCall(_) | syn::Expr::Path(_) => {
+            out.push(Origin::Typed)
+        }
+        _ => out.push(Origin::Inferred),
+    }
+}
+
+fn block_origins(block: &syn::Block, out: &mut Vec<Origin>) {
+    if let Some(syn::Stmt::Expr(tail, None)) = block.stmts.last() {
+        origins(tail, out);
+    }
+    let mut exits = Exits(out);
+    block.stmts.iter().for_each(|stmt| exits.visit_stmt(stmt));
+}
+
+/// The `return`s and the `break`s with a value of a block, which are values of the expression.
+struct Exits<'a>(&'a mut Vec<Origin>);
+impl<'ast> Visit<'ast> for Exits<'_> {
+    fn visit_expr_return(&mut self, exit: &'ast syn::ExprReturn) {
+        match &exit.expr {
+            Some(value) => origins(value, self.0),
+            None => self.0.push(Origin::Inferred),
+        }
+    }
+    fn visit_expr_break(&mut self, exit: &'ast syn::ExprBreak) {
+        if let Some(value) = &exit.expr {
+            origins(value, self.0);
+        }
+    }
+    fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+    fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+    fn visit_item(&mut self, _: &'ast syn::Item) {}
+}
+
+/// Whether `paginate` takes the expression as any `Pager`: when every value it can have is a
+/// call, a method call or a path. Every other form keeps the `FnMut` bound of earlier releases.
+fn typed_pager(expr: &syn::Expr) -> bool {
+    let mut found = Vec::new();
+    origins(expr, &mut found);
+    !found.is_empty() && found.iter().all(|origin| *origin == Origin::Typed)
+}
+
 impl Writer<'_> {
     pub(super) fn data_path(&self, index: usize) -> TokenStream {
         if self.nodes.get(index).is_some_and(|n| n.deprecated) {
@@ -373,21 +444,21 @@ impl Writer<'_> {
                 true,
                 expression.span(),
             );
-            // A closure, also in parentheses or as the tail of a block, keeps an `FnMut` bound
-            // that infers its parameters; any other expression is a `Pager` as it is.
             let mut unwrapped = expression;
             loop {
                 match unwrapped {
                     syn::Expr::Paren(paren) => unwrapped = &paren.expr,
                     syn::Expr::Group(group) => unwrapped = &group.expr,
-                    syn::Expr::Block(block) if block.label.is_none() => match block.block.stmts.last() {
-                        Some(syn::Stmt::Expr(tail, None)) => unwrapped = tail,
-                        _ => break,
-                    },
                     _ => break,
                 }
             }
-            let build = if matches!(unwrapped, syn::Expr::Closure(_)) {
+            // A value that is always a call, a method call or a path has a type of its own: any
+            // `Pager`. Every other form keeps the `FnMut` bound that infers a closure written in it.
+            let build = if typed_pager(expression) {
+                emit_at!(expression.span()=>
+                    ::concord::__private::pages_of_pager(__call, || { #bindings #expression })
+                )
+            } else if matches!(unwrapped, syn::Expr::Closure(_)) {
                 emit_at!(expression.span()=>
                     fn __pager<__C, __N, __F>(_: &__C, __make: impl ::core::ops::FnOnce() -> __F) -> __F
                     where __C: ::concord::page::Call,
@@ -397,6 +468,10 @@ impl Writer<'_> {
                     { __make() }
                     let __pager = __pager(&__call, || { #bindings #expression });
                     ::concord::__private::pages_with_pager(__call, || __pager)
+                )
+            } else if matches!(unwrapped, syn::Expr::Macro(_)) {
+                emit_at!(expression.span()=>
+                    ::concord::__private::pages_from_macro(__call, || { #bindings #expression })
                 )
             } else {
                 emit_at!(expression.span()=>

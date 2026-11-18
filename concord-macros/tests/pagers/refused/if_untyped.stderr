@@ -1,0 +1,10 @@
+error[E0282]: type annotations needed
+  --> tests/pagers/refused/if_untyped.rs:19:92
+   |
+19 | ... { after; } paginate if true { move |call, page| page.value().next.clone().map(|next| after.set(call, next)) } else { move |call,...
+   |                                               ^^^^  ---- type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+19 |         GET list(after?: String) -> Page { query { after; } paginate if true { move |call, page: /* Type */| page.value().next.clone().map(|next| after.set(call, next)) } else { move |call, page| page.value().next.clone().map(|next| after.set(call, next)) }; }
+   |                                                                                                ++++++++++++

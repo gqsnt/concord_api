@@ -1,0 +1,13 @@
+error[E0308]: `if` and `else` have incompatible types
+  --> tests/pagers/refused/if_typed.rs:19:208
+   |
+19 | ... { move |call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.clone().map(|next| after.set(call, next)) } else { move |call: probe::Call<probe::List>, page: &Answer<Page>| page.value().next.clone().map(|next| after.set(call, next)) }; }
+   |       ----------------------------------------------------------------------------------------------------------------------          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected closure, found a different closure
+   |       |
+   |       the expected closure
+   |       expected because of this
+   |
+   = note: expected closure `{closure@$DIR/tests/pagers/refused/if_typed.rs:19:80: 19:138}`
+              found closure `{closure@$DIR/tests/pagers/refused/if_typed.rs:19:208: 19:266}`
+   = note: no two closures, even if identical, have the same type
+   = help: consider boxing your closure and/or using it as a trait object

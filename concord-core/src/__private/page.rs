@@ -41,11 +41,25 @@ where
     })
 }
 
-/// Build an owning pager before handing off the original call. The macro writes a closure of
-/// the statement through a helper with an `FnMut` bound first, so that its parameters are
-/// inferred; every other expression reaches this bound as it is.
+/// Build an owning pager before handing off the original call.
 #[rustfmt::skip] // Keep the function name on its own line in diagnostics about the pager bound.
-pub fn pages_with_pager<C, P>(
+pub fn pages_with_pager<C, N, F>(
+    first: C,
+    make: impl FnOnce() -> F,
+) -> Pages<C::Value, C::Problem>
+where
+    C: Call,
+    N: IntoNext<C>,
+    F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
+{
+    pages(first, make())
+}
+
+/// `paginate` with a function call, a method call or a path: an expression whose type is known
+/// without the endpoint, so it may be any [`Pager`]. Every other form goes through
+/// [`pages_with_pager`] or [`pages_from_macro`], whose `FnMut` bound infers a closure.
+#[rustfmt::skip] // Keep the function name on its own line in diagnostics about the pager bound.
+pub fn pages_of_pager<C, P>(
     first: C,
     make: impl FnOnce() -> P,
 ) -> Pages<C::Value, C::Problem>
@@ -55,6 +69,35 @@ where
 {
     let mut pager = make();
     pages(first, move |call: C, answer: &Answer<C::Value>| pager.next_call(call, answer))
+}
+
+/// What a macro invocation in `paginate` must produce: a closure, inferred as in
+/// [`pages_with_pager`] through this trait's `FnMut` supertrait; its own bound only words the
+/// error for a pager value.
+#[diagnostic::on_unimplemented(
+    message = "a macro in `paginate` must expand to a closure, and this one expands to `{Self}`",
+    note = "for a pager value such as `by_cursor(…)`, write the macro inside a call: `paginate concord::page::Paging::new(your_macro!(…));`"
+)]
+pub trait ClosureFromMacro<C: Call, N>: FnMut(C, &Answer<C::Value>) -> N {}
+impl<C, F, N> ClosureFromMacro<C, N> for F
+where
+    C: Call,
+    F: FnMut(C, &Answer<C::Value>) -> N,
+{
+}
+
+/// `paginate your_macro!(…)`: [`pages_with_pager`], with the wording of [`ClosureFromMacro`].
+#[rustfmt::skip] // Keep the function name on its own line in diagnostics about the pager bound.
+pub fn pages_from_macro<C, N, F>(
+    first: C,
+    make: impl FnOnce() -> F,
+) -> Pages<C::Value, C::Problem>
+where
+    C: Call,
+    N: IntoNext<C>,
+    F: ClosureFromMacro<C, N> + Send + 'static,
+{
+    pages(first, make())
 }
 
 struct Sent {
