@@ -260,7 +260,13 @@ fn reservations() -> Vec<Reservation> {
     ]
 }
 
-const NAME_EXAMPLES: (&[(&str, &str)], &[(&str, &str)]) = (
+/// Examples in their positions: those to accept, then those to refuse.
+type Examples = (
+    &'static [(&'static str, &'static str)],
+    &'static [(&'static str, &'static str)],
+);
+
+const NAME_EXAMPLES: Examples = (
     &[
         ("endpoint_input", "by_puuid"),
         ("scope_in_client", "v2"),
@@ -277,7 +283,7 @@ const NAME_EXAMPLES: (&[(&str, &str)], &[(&str, &str)]) = (
     ],
 );
 
-const CLIENT_EXAMPLES: (&[(&str, &str)], &[(&str, &str)]) = (
+const CLIENT_EXAMPLES: Examples = (
     &[
         ("client", "Riot"),
         ("client", "GitHub"),

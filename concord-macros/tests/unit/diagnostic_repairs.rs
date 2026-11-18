@@ -761,14 +761,15 @@ fn wire_keys(source: &str) -> Vec<String> {
     keys
 }
 
-/// Rewrite a description as a token stream: `edit` sees each token with the one before.
-fn rewrite(
-    tokens: proc_macro2::TokenStream,
-    edit: &mut dyn FnMut(
+/// A replacement for the tokens at the start of `rest`, and how many it takes.
+type Edit<'a> = dyn FnMut(
         Option<&proc_macro2::TokenTree>,
         &[proc_macro2::TokenTree],
-    ) -> Option<(proc_macro2::TokenStream, usize)>,
-) -> proc_macro2::TokenStream {
+    ) -> Option<(proc_macro2::TokenStream, usize)>
+    + 'a;
+
+/// Rewrite a description as a token stream: `edit` sees each token with the one before.
+fn rewrite(tokens: proc_macro2::TokenStream, edit: &mut Edit<'_>) -> proc_macro2::TokenStream {
     use proc_macro2::{Group, TokenTree};
     let tokens: Vec<TokenTree> = tokens.into_iter().collect();
     let mut output = proc_macro2::TokenStream::new();
