@@ -4,8 +4,35 @@ use quote::{quote, ToTokens};
 use std::collections::{BTreeMap, BTreeSet};
 use syn::visit::{self, Visit};
 
+/// The tokens without their spacing. A string literal keeps its decoded text whole, so
+/// `"tasks.cre ate"` and `"tasks.create"` differ, and a raw string equals an ordinary one.
+fn spelled(tokens: proc_macro2::TokenStream) -> String {
+    use proc_macro2::{Delimiter, TokenTree};
+    tokens
+        .into_iter()
+        .map(|token| match token {
+            TokenTree::Group(group) => {
+                let (open, close) = match group.delimiter() {
+                    Delimiter::Parenthesis => ("(", ")"),
+                    Delimiter::Brace => ("{", "}"),
+                    Delimiter::Bracket => ("[", "]"),
+                    Delimiter::None => ("", ""),
+                };
+                format!("{open}{}{close}", spelled(group.stream()))
+            }
+            TokenTree::Literal(literal) => {
+                match syn::parse2::<syn::LitStr>(TokenTree::Literal(literal.clone()).into()) {
+                    Ok(text) => format!("{:?}", text.value()),
+                    Err(_) => literal.to_string(),
+                }
+            }
+            other => other.to_string(),
+        })
+        .collect()
+}
+
 fn canonical(tokens: impl ToTokens) -> String {
-    let mut text = tokens.to_token_stream().to_string().replace(' ', "");
+    let mut text = spelled(tokens.to_token_stream());
     for (old, new) in [
         ("::concord::", "concord::"),
         ("::std::", "std::"),
@@ -300,9 +327,12 @@ impl<'ast> Visit<'ast> for Surface {
             for associated in &item.items {
                 match associated {
                     syn::TraitItem::Type(ty) if !hidden(&ty.attrs) => {
-                        let mut ty = ty.clone();
-                        ty.attrs.clear();
-                        self.add(format!("{owner}::{}", ty.ident), canonical(&ty));
+                        let mut signature = ty.clone();
+                        signature.attrs.clear();
+                        self.add(
+                            format!("{owner}::{}", ty.ident),
+                            format!("{}{}", attributes(&ty.attrs), canonical(&signature)),
+                        );
                     }
                     syn::TraitItem::Fn(method) if !hidden(&method.attrs) => {
                         self.add(
@@ -349,17 +379,35 @@ impl<'ast> Visit<'ast> for Surface {
             }
             if name == "Unpin" {
                 // The whole header: a bound or a `where` clause would narrow the promise.
+                // Everything but the spelling of the trait's path and of the type, which
+                // the owner already names: polarity, `unsafe`, generics, `where`, items.
                 let trait_path = canonical(path).replace("std::marker::Unpin", "Unpin");
                 let generics = &item.generics;
                 let where_clause = &item.generics.where_clause;
+                let negative = item
+                    .trait_
+                    .as_ref()
+                    .is_some_and(|(bang, _, _)| bang.is_some());
+                let items = &item.items;
                 self.add(
                     format!("{owner}::__trait::Unpin"),
                     format!(
-                        "{}impl{}{trait_path}for{owner}{}{}",
+                        "{}{}{}impl{}{}{trait_path}for{owner}{}{{{}}}",
                         attributes(&item.attrs),
+                        if item.defaultness.is_some() {
+                            "default"
+                        } else {
+                            ""
+                        },
+                        if item.unsafety.is_some() {
+                            "unsafe"
+                        } else {
+                            ""
+                        },
                         canonical(generics),
+                        if negative { "!" } else { "" },
                         canonical(where_clause),
-                        if item.items.is_empty() { "{}" } else { "{..}" },
+                        canonical(quote!(#(#items)*)),
                     ),
                 );
             }
@@ -911,6 +959,12 @@ fn differences(
         .collect()
 }
 
+/// What is compared, item by item: the public items of both clients and their
+/// signatures; the documentation and the other attributes of the public items of each
+/// `Endpoint` trait; each endpoint's `Value` and `NAME`; whole `Unpin` headers; `Clone` and
+/// `Debug`; the capabilities of each call. What is not compared: method bodies, struct
+/// fields, the documentation of items outside the `Endpoint` trait, and the impls of other
+/// traits beyond those named here.
 #[test]
 fn c1_16_public_surface_matches_the_hand_written_client() {
     let mut violations = Vec::new();
@@ -977,6 +1031,24 @@ fn c1_16_surface_comparison_reports_each_drift_of_the_hand_written_client() {
             "const NAME: &'static str = \"tasks.create\";",
             "const NAME: &'static str = \"tasks.drift\";",
             "tasks::Create::__trait::Endpoint::NAME",
+        ),
+        (
+            "tasks",
+            "const NAME: &'static str = \"tasks.create\";",
+            "const NAME: &'static str = \"tasks.cre ate\";",
+            "tasks::Create::__trait::Endpoint::NAME",
+        ),
+        (
+            "declarations",
+            "impl Unpin for Tasks {}",
+            "impl !Unpin for Tasks {}",
+            "Tasks::__trait::Unpin",
+        ),
+        (
+            "call",
+            "    /// The value of a successful send. For a paged endpoint, this is one page.",
+            "    /// The value of a send.",
+            "tasks::Endpoint::Value",
         ),
         (
             "call",

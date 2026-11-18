@@ -43,7 +43,7 @@ pub(super) mod __spec {
 /// An endpoint of this client. Each endpoint has its own type and no value.
 /// Only this client can implement the trait.
 pub trait Endpoint: __spec::Spec + Sized + Send + Sync + 'static {
-    /// The value returned by a successful send.
+    /// The value of a successful send. For a paged endpoint, this is one page.
     type Value: Send + 'static;
 
     /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
