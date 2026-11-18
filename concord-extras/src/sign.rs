@@ -468,9 +468,10 @@ impl SigV4 {
     ///
     /// Returns `SignError::WrongOrigin` when the scheme, host or effective port of the request
     /// is not that of the base. Otherwise, it returns the error that the middleware would
-    /// return for this request if it had been given `region`: `region` is checked as the
-    /// middleware checks its own, so a region that holds another byte than an ASCII letter, a
-    /// digit, `-` or `_` is `InvalidCredentials`, and one longer than 256 bytes is `TooLarge`.
+    /// return for this request if it had been given `region`. `region` is checked as the
+    /// middleware checks its own: first its length, so a region longer than 256 bytes is
+    /// `TooLarge`, whatever it holds; then its bytes, so an empty region, or one that holds
+    /// another byte than an ASCII letter, a digit, `-` or `_`, is `InvalidCredentials`.
     ///
     /// ```no_run
     /// # fn sign(signer: &concord::sign::SigV4, request: &mut concord::reqwest::Request)
@@ -486,8 +487,8 @@ impl SigV4 {
     /// Signs the request for the given region, without checking its origin.
     ///
     /// It is the right method only for an adapter that signs for several origins on
-    /// purpose: a host for each bucket, or a global host beside regional ones, with one
-    /// set of credentials. The base given to [`SigV4::new`] then plays no part: a request
+    /// purpose: the origins of several buckets, or a global host beside regional ones,
+    /// with one set of credentials. The base given to [`SigV4::new`] then plays no part: a request
     /// that reaches this method unchecked is signed for whatever host it names, with the
     /// credentials of this signer. For one origin, use [`SigV4::sign`] or the middleware.
     ///
@@ -496,9 +497,9 @@ impl SigV4 {
     /// - Before calling it, check each request against the origins that it trusts with these
     ///   credentials, with [`check_origin`] for each one, and never against an origin taken
     ///   from the request, from a response or from any other value that the API returned.
-    /// - After signing, keep the signed fields unchanged: the method, the URL, the body and
-    ///   every header that was signed. A field changed after signing is sent under a
-    ///   signature that was not computed for it.
+    /// - After signing, do not edit the signed fields: the method, the URL, the body and
+    ///   every header that was signed. An edit after signing can make the signature invalid
+    ///   for the request that is sent.
     /// - Send the request through a transport that follows no redirect. Concord's own client,
     ///   `concord::Http`, follows none; a transport that replaces it must not either, or the
     ///   signed request, with its session token, can reach a host that was never checked.
