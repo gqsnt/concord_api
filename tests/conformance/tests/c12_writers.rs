@@ -795,7 +795,7 @@ async fn c12_1_bracket_pairs_are_not_encoded_and_the_url_encodes_them_once() {
     );
     let request = only_request(&script);
     assert_eq!(
-        request.url(),
+        request.url().as_str(),
         "https://writers.example.test/search?page=1&filter%5Bstatus%5D=50%25+off&filter%5Btags%5D%5B0%5D=a%26b"
     );
 }

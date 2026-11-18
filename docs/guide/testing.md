@@ -91,7 +91,7 @@ async fn a_silent_server_ends_the_call_after_30_seconds() {
 | `script.answer(status)` | The next attempt gets a response with this status. Then, chained in one statement: `.after(duration)` (the head arrives later), `.header(name, value)`, `.body(piece)` (one chunk per call), `.pause(duration)` between chunks, `.stall()` (the body never ends), `.cut()` (the body fails halfway), `.read_upload()` (the request body is read first). |
 | `script.fail(error)` | The next attempt fails before any head, with a `TransportError`; `.after(duration)` works here too. |
 | `script.never()` | The next attempt never gets a response. |
-| `script.requests()` | Every request the script received, in order: `method()`, `url()`, `header(name)`, `body()`, `info().number()` (the attempt) and `at()` (its instant on virtual time). |
+| `script.requests()` | Every request the script received, in order: `method()`, `url()` (a parsed URL, the same type as `request.url()` in a fake: compare its text with `url().as_str()`), `header(name)`, `body()`, `info().number()` (the attempt) and `at()` (its instant on virtual time). |
 | `script.unused()` | How many scripted attempts were not played. An attempt that finds nothing scripted gets a `599`, so that the test fails loudly. |
 
 Clones of a script share its state: give one to the client, and keep one to inspect. A `Script` also works on a multi-thread runtime (`#[tokio::test(flavor = "multi_thread")]`, tasks that share one client): the attempts are played in the order in which the sends reach it, and its waits are then in real time, since only a current-thread runtime can pause the clock.

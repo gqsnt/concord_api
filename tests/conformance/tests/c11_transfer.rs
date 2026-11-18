@@ -150,7 +150,7 @@ fn urls(script: &Script) -> Vec<String> {
     script
         .requests()
         .iter()
-        .map(|request| request.url().to_owned())
+        .map(|request| request.url().as_str().to_owned())
         .collect()
 }
 
@@ -523,10 +523,10 @@ async fn c11_12_nothing_of_the_api_client_travels_with_the_upload() {
     assert_eq!(requests[0].header("x-api-stamp"), Some("stamped"));
     assert_eq!(requests[0].header("x-api-plain"), Some("plain"));
     assert!(requests[0].headers().contains_key("authorization"));
-    assert!(requests[0].url().contains("api_key="));
+    assert!(requests[0].url().as_str().contains("api_key="));
 
     let upload = &requests[1];
-    assert_eq!(upload.url(), ticket.url);
+    assert_eq!(upload.url().as_str(), ticket.url);
     assert_eq!(upload.info().endpoint(), "uploads.send");
     assert_eq!(upload.header("x-upload"), Some("1"));
     assert_eq!(upload.body(), Some(&b"payload"[..]));
@@ -575,7 +575,7 @@ async fn c11_12_headers_returned_at_run_time_are_added_through_edit_request() {
     success(call.await);
 
     let upload = &script.requests()[1];
-    assert_eq!(upload.url(), "https://uploads.example.test/u");
+    assert_eq!(upload.url().as_str(), "https://uploads.example.test/u");
     let values = |name: &str| -> Vec<String> {
         upload
             .headers()

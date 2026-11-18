@@ -90,7 +90,7 @@ async fn c8_4_riot_counting_pager_builds_each_request_with_current_secrets() {
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].header("x-riot-token"), Some("old"));
     assert_eq!(requests[1].header("x-riot-token"), Some("new"));
-    assert!(requests[1].url().contains("start=2"));
+    assert!(requests[1].url().as_str().contains("start=2"));
 }
 
 #[tokio::test(start_paused = true)]
@@ -118,11 +118,11 @@ async fn c8_4_feed_pagers_follow_cursors_and_relative_links_through_empty_pages(
         assert_eq!(requests.len(), 2);
         if variant == 2 {
             assert_eq!(
-                requests[1].url(),
+                requests[1].url().as_str(),
                 "https://feed.example.com/other/next?page=2"
             );
         } else {
-            assert!(requests[1].url().contains("starting_after=next"));
+            assert!(requests[1].url().as_str().contains("starting_after=next"));
         }
     }
 }
@@ -182,7 +182,7 @@ async fn c10_10_page_preparation_sends_the_same_request_and_keeps_the_full_answe
     assert_eq!(answer.status(), 201);
     assert_eq!(answer.headers().get("x-kept"), Some("yes"));
     assert!(answer.value().data.is_empty());
-    assert_eq!(script.requests()[0].url(), url.as_str());
+    assert_eq!(script.requests()[0].url().as_str(), url.as_str());
     let answer = call.send_full().await.unwrap();
     assert_eq!(answer.status(), 201);
     assert_eq!(answer.headers().get("x-kept"), Some("yes"));

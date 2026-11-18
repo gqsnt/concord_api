@@ -92,10 +92,30 @@ async fn tries_play_in_order_and_record_the_try_and_the_instant() {
     assert_eq!(requests[0].method(), reqwest::Method::GET);
     assert_eq!(requests[0].body(), None);
     assert_eq!(requests[2].method(), reqwest::Method::POST);
-    assert_eq!(requests[2].url(), "http://api.test/a?x=1");
+    assert_eq!(requests[2].url().as_str(), "http://api.test/a?x=1");
     assert_eq!(requests[2].header("authorization"), Some("Bearer t"));
     assert_eq!(requests[2].headers().len(), 1);
     assert_eq!(requests[2].body(), Some(&b"the body"[..]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_recorded_url_has_the_type_of_the_url_a_transport_receives() {
+    // The same signature as `reqwest::Request::url`, the request a transport receives.
+    let recorded: fn(&concord_testkit::script::Request) -> &reqwest::Url =
+        concord_testkit::script::Request::url;
+    let sent: fn(&reqwest::Request) -> &reqwest::Url = reqwest::Request::url;
+
+    let script = Script::new();
+    script.answer(200);
+    let request = get("http://api.test/v1/items?page=2#top");
+    let url = sent(&request).clone();
+    script.send(request, info(1)).await.unwrap();
+
+    let requests = script.requests();
+    assert_eq!(recorded(&requests[0]), &url);
+    assert_eq!(requests[0].url().path(), "/v1/items");
+    assert_eq!(requests[0].url().query(), Some("page=2"));
+    assert_eq!(requests[0].url().fragment(), Some("top"));
 }
 
 #[tokio::test(start_paused = true)]

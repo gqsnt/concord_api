@@ -517,7 +517,7 @@ fn judge(
 fn judged(request: &concord_testkit::script::Request, who: &Who, payload: Payload<'_>) -> Verdict {
     judge(
         request.method(),
-        request.url(),
+        request.url().as_str(),
         request.headers(),
         who,
         payload,
@@ -802,7 +802,7 @@ async fn c12_9_the_four_aws_example_requests_sent_through_a_client_are_signed_as
 
     let requests = script.requests();
     assert_eq!(requests.len(), 4);
-    let urls: Vec<&str> = requests.iter().map(|r| r.url()).collect();
+    let urls: Vec<&str> = requests.iter().map(|r| r.url().as_str()).collect();
     assert_eq!(
         urls,
         [
@@ -857,7 +857,7 @@ async fn c12_9_a_query_with_repeated_empty_escaped_and_unordered_keys_is_signed_
     let requests = script.requests();
     assert_eq!(requests.len(), 4);
     for (request, query) in requests.iter().zip(raw_queries) {
-        assert!(request.url().ends_with(query), "{}", request.url());
+        assert!(request.url().as_str().ends_with(query), "{}", request.url());
         judged(request, &who, Payload::Bytes(b""));
     }
     judged(&requests[3], &who, Payload::Bytes(b""));
@@ -895,7 +895,7 @@ async fn c12_9_a_raw_plus_empty_fields_lower_case_escapes_and_reserved_character
     assert_eq!(requests.len(), raw_queries.len());
     for (request, query) in requests.iter().zip(raw_queries) {
         // The URL is sent as it was written; only the canonical form changes.
-        assert_eq!(request.url(), format!("{BUCKET}/?{query}"));
+        assert_eq!(request.url().as_str(), format!("{BUCKET}/?{query}"));
         judged(request, &who, Payload::Bytes(b""));
     }
 }
@@ -1065,11 +1065,11 @@ async fn c12_9_preserve_signs_an_aws_encoded_path_as_it_is_sent() {
     );
     let requests = script.requests();
     for (request, (_, path)) in requests.iter().zip(keys) {
-        assert_eq!(request.url(), format!("{BUCKET}{path}"));
+        assert_eq!(request.url().as_str(), format!("{BUCKET}{path}"));
         judged(request, &who, Payload::Bytes(b""));
     }
     assert_eq!(
-        requests[keys.len()].url(),
+        requests[keys.len()].url().as_str(),
         format!("{BUCKET}/a%2Fb%E2%82%AC")
     );
     judged(&requests[keys.len()], &who, Payload::Bytes(b""));
@@ -1141,7 +1141,7 @@ async fn c12_9_normalize_and_encode_encodes_the_path_once_more_as_aws_does_for_o
     assert_eq!(requests.len(), paths.len());
     for (request, (path, canonical)) in requests.iter().zip(paths) {
         // The URL is not rewritten.
-        assert_eq!(request.url(), format!("{origin}{path}"));
+        assert_eq!(request.url().as_str(), format!("{origin}{path}"));
         assert_eq!(aws::normalized_path(path), canonical, "the judge on {path}");
         judged(request, &who, Payload::Bytes(b""));
     }
@@ -1165,7 +1165,7 @@ async fn c12_9_one_path_is_signed_as_it_is_for_s3_and_encoded_again_for_other_se
     }
     let requests = script.requests();
     for request in &requests {
-        assert_eq!(request.url(), format!("{BUCKET}/a%20b"));
+        assert_eq!(request.url().as_str(), format!("{BUCKET}/a%20b"));
     }
     judged(&requests[0], &s3, Payload::Bytes(b""));
     judged(&requests[1], &iam, Payload::Bytes(b""));
@@ -1495,7 +1495,10 @@ async fn c12_9_a_conflicting_host_is_refused_and_a_port_is_signed_in_host() {
     assert_eq!(refusal(&error), "InvalidRequest", "a Host without its port");
     let requests = script.requests();
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[1].url(), "https://store.example.test:8443/k");
+    assert_eq!(
+        requests[1].url().as_str(),
+        "https://store.example.test:8443/k"
+    );
     judged(&requests[1], &who, Payload::Bytes(b""));
     judged(&requests[2], &who, Payload::Bytes(b""));
 }

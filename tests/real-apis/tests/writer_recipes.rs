@@ -48,7 +48,10 @@ mod redirect {
             assert_eq!(error.to_string(), expected);
             let requests = script.requests();
             assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].url(), "https://api.example.com/archives/7");
+            assert_eq!(
+                requests[0].url().as_str(),
+                "https://api.example.com/archives/7"
+            );
             assert_eq!(requests[0].info().number(), 1);
         }
     }
@@ -249,7 +252,7 @@ async fn c8_6_redirect_uses_a_second_credential_free_description_after_an_allowl
         Some("Bearer PRIVATE_API_KEY")
     );
     assert_eq!(requests[1].header("authorization"), None);
-    assert_eq!(requests[1].url(), location);
+    assert_eq!(requests[1].url().as_str(), location);
     let error = concord::transfer::at(downloads.fetch(), "https://internal.test/file")
         .unwrap()
         .await

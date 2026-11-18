@@ -161,7 +161,7 @@ impl Script {
     fn take(&self, request: &reqwest::Request, info: TryInfo) -> (usize, Option<Step>) {
         let request = Request {
             method: request.method().clone(),
-            url: request.url().as_str().to_owned(),
+            url: request.url().clone(),
             headers: request.headers().clone(),
             body: request
                 .body()
@@ -517,7 +517,7 @@ impl Never<'_> {
 #[derive(Clone, Debug)]
 pub struct Request {
     method: Method,
-    url: String,
+    url: reqwest::Url,
     headers: HeaderMap,
     body: Option<Bytes>,
     upload: Upload,
@@ -531,8 +531,10 @@ impl Request {
         &self.method
     }
 
-    /// Returns the whole URL.
-    pub fn url(&self) -> &str {
+    /// Borrows the whole URL, parsed, as the transport received it: the same type as
+    /// `request.url()` on the request a [`Transport`] gets. Compare its text with
+    /// `url().as_str()`.
+    pub fn url(&self) -> &reqwest::Url {
         &self.url
     }
 

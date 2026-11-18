@@ -202,7 +202,8 @@ impl Server {
         }
     }
 
-    /// Returns `http://127.0.0.1:<port>`, without a trailing slash.
+    /// Returns `http://127.0.0.1:<port>`, without a trailing slash: the text that a client's
+    /// `with_base` takes.
     pub fn url(&self) -> String {
         format!("http://{}", self.addr)
     }

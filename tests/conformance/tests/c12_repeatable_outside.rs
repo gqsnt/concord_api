@@ -1040,7 +1040,7 @@ async fn c12_12_each_page_opens_the_source_again() {
     let urls: Vec<String> = script
         .requests()
         .iter()
-        .map(|r| r.url().to_owned())
+        .map(|r| r.url().as_str().to_owned())
         .collect();
     assert_eq!(
         urls,
