@@ -599,7 +599,10 @@ mod c5_tests {
             assert_eq!(from_arm.to_string(), from_reader.to_string());
             assert_eq!(
                 from_arm.details().to_string(),
-                from_reader.details().to_string()
+                from_reader
+                    .details()
+                    .to_string()
+                    .replace("\nbody (", "\ndecoder input (")
             );
             assert_eq!(from_arm.body(), Some(b"PRIVATE_SENTINEL".as_slice()));
             assert_eq!(from_arm.kept(), Some(Kept::Complete));

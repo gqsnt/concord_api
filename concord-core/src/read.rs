@@ -616,7 +616,12 @@ impl ReadError {
     /// the status, headers, endpoint or attempt of the response it came from.
     pub(crate) fn into_evidence(self) -> Evidence {
         let failure = match self.kind {
-            ReadKind::Decode => EvidenceKind::Decode(self.source),
+            // Whether a content type was unexpected is a fact about the response that the
+            // reader read; the arm runs on a response of its own.
+            ReadKind::Decode => EvidenceKind::Decode(ReadSource {
+                place: self.source.place,
+                unexpected_label: false,
+            }),
             ReadKind::ContentType => EvidenceKind::ContentType,
             ReadKind::Limit => EvidenceKind::Limit,
             ReadKind::Transport(_) | ReadKind::Forward(_) => return Evidence::NotRead,
@@ -751,7 +756,7 @@ impl Evidence {
             if let Some(details) = details {
                 error = error.with_reader_details(details);
             }
-            return error;
+            return error.mark_decoder_input();
         }
         let failure = match failure {
             EvidenceKind::Decode(source) => decode_failure(source, &body, kept, &headers),
@@ -759,6 +764,7 @@ impl Evidence {
             EvidenceKind::Limit => MismatchFailure::BodyLimit,
         };
         mismatch_of_a_body(failure, &body, kept, details, status, headers, info)
+            .mark_decoder_input()
     }
 }
 

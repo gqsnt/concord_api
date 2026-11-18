@@ -318,6 +318,8 @@ struct Inner<E> {
     reason: Option<Cow<'static, str>>,
     reader_details: Option<String>,
     from_byte_stream: bool,
+    // The kept bytes are a decoder's input, not verified to be this response's body.
+    decoder_input: bool,
 }
 
 /// The kind of an error: what went wrong, in four cases.
@@ -381,6 +383,7 @@ impl<E> Error<E> {
                 reason: None,
                 reader_details: None,
                 from_byte_stream: false,
+                decoder_input: false,
             }),
         }
     }
@@ -622,6 +625,9 @@ impl<E> Error<E> {
     }
 
     /// Returns the start of the body, if one was kept: at most 64 KiB, in a buffer of its own.
+    ///
+    /// After an arm or a pager that returned [`Fail::from_read`], it is the decoder's input
+    /// instead, which [`details`](Error::details) names `decoder input`.
     pub fn body(&self) -> Option<&[u8]> {
         self.inner.body.as_deref()
     }
@@ -670,6 +676,7 @@ impl<E> Error<E> {
             reason,
             reader_details,
             from_byte_stream,
+            decoder_input,
         } = *self.inner;
         Error {
             inner: Box::new(Inner {
@@ -687,6 +694,7 @@ impl<E> Error<E> {
                 reason,
                 reader_details,
                 from_byte_stream,
+                decoder_input,
             }),
         }
     }
@@ -698,6 +706,12 @@ impl<E> Error<E> {
 
     pub(crate) fn is_from_byte_stream(&self) -> bool {
         self.inner.from_byte_stream
+    }
+
+    /// Marks the kept bytes as the input of a decoder that an arm or a pager ran.
+    pub(crate) fn mark_decoder_input(mut self) -> Self {
+        self.inner.decoder_input = self.inner.body.is_some();
+        self
     }
 
     /// Returns how many attempts entered the middleware chain. A middleware layer may send
@@ -823,7 +837,11 @@ impl<E: fmt::Debug> fmt::Display for Details<'_, E> {
         if let Some(problem) = error.problem() {
             write!(f, "\nproblem: {problem:?}")?;
         } else if let Some(body) = error.body() {
-            f.write_str("\nbody (")?;
+            f.write_str(if error.inner.decoder_input {
+                "\ndecoder input ("
+            } else {
+                "\nbody ("
+            })?;
             match error.kept() {
                 Some(Kept::Complete) => write!(f, "complete, {} bytes", body.len())?,
                 Some(Kept::Cut) => f.write_str("cut at 64 KiB")?,
@@ -912,12 +930,20 @@ impl<P> Fail<P> {
     /// For a `ReadError` that says the bytes do not fit (`not_the_type`, then `at` and
     /// `with_details`, as `Json::decode` returns it), the call ends with the error that a
     /// reader would have given for this response: on a 2xx, a Mismatch whose message and
-    /// `source()` name the location of the fault, with the decoder's message in `details()` and
-    /// the bytes in `body()`; on another status, a Refused error with those bytes and no
-    /// problem. `wrong_content_type()` and a body over a reader's limit give their own texts in
-    /// the same way. `reason()` is `None`, as for a body that a reader could not decode.
-    /// Nothing of the response reaches the message or the cause: the location is made of the
-    /// program's names and of indexes.
+    /// `source()` name the location of the fault, with the decoder's message in `details()`; on
+    /// another status, a Refused error with no problem. `wrong_content_type()` and a body over
+    /// a reader's limit give their own texts in the same way. `reason()` is `None`, as for a
+    /// body that a reader could not decode. Nothing of the response reaches the message or the
+    /// cause: the location is made of the program's names and of indexes.
+    ///
+    /// **What `body()` and `kept()` mean here.** They return the decoder's input, as the
+    /// `ReadError` kept it (at most 64 KiB), and its state; not the body of the response.
+    /// By the time the arm returns, it holds the body, and Concord cannot verify that the
+    /// decoder was given that body rather than a part of it (a cursor that a pager decodes) or
+    /// bytes kept from another call. So `details()` names them `decoder input (complete,
+    /// 31 bytes)`, never `body (…)`. For the same reason, the error never says that a content
+    /// type was unexpected: that is a fact about the response that a reader read, and
+    /// `Json::decode` does not look at one.
     ///
     /// Any other `ReadError` is a failure of a body that broke while it was read, or of a stream
     /// whose error a reader forwarded with `?`. It belongs to the response that it came from,

@@ -154,9 +154,14 @@ async fn c5_8_an_arm_that_decodes_fails_with_the_error_of_read_json() {
             .contains("reader: invalid type: integer `5`, expected a string at line 1 column 25"),
         "{details}"
     );
+    // The same lines, but the bytes are named for what Concord knows of them: what the
+    // decoder was given, which it cannot verify to be this response's body.
     assert_eq!(
         details.replace("wrapped.post", "plain.post"),
-        plain.details().to_string()
+        plain
+            .details()
+            .to_string()
+            .replace("\nbody (", "\ndecoder input (")
     );
 }
 
@@ -235,7 +240,10 @@ async fn c5_3_an_arm_that_decodes_on_another_status_is_refused_with_the_bytes() 
             .details()
             .to_string()
             .replace("wrapped.taken", "plain.taken"),
-        plain.details().to_string()
+        plain
+            .details()
+            .to_string()
+            .replace("\nbody (", "\ndecoder input (")
     );
 }
 
@@ -342,4 +350,145 @@ async fn c5_8_a_body_that_is_not_json_fails_in_the_first_pass_where_its_syntax_b
         .details()
         .to_string()
         .contains("reader: expected value at line 1 column 56"));
+}
+
+/// A decoder's error saved from one call, for a later call to return.
+static SAVED: std::sync::Mutex<Vec<concord::read::ReadError>> = std::sync::Mutex::new(Vec::new());
+
+fn save<T: DeserializeOwned>(body: Bytes) -> Result<u32, Fail<Refusal>> {
+    if let Err(error) = Json::decode::<T>(&body) {
+        if let Ok(mut saved) = SAVED.lock() {
+            saved.push(error);
+        }
+    }
+    Ok(0)
+}
+
+fn replay<T, P>() -> Result<T, Fail<P>> {
+    match SAVED.lock().ok().and_then(|mut saved| saved.pop()) {
+        Some(error) => Err(Fail::from_read(error)),
+        None => Err(concord::mismatch("nothing was saved")),
+    }
+}
+
+/// `paginate replayed();`: a pager that returns the saved error.
+fn replayed<C: Call>() -> impl Fn(C, &Answer<C::Value>) -> Next<C> + Send + 'static {
+    |_, _| replay()
+}
+
+#[derive(Debug, Deserialize)]
+struct Count {
+    #[allow(dead_code)] // PANIC-SAFETY: Only decoded, to fail; no panic lint is relaxed.
+    count: u32,
+}
+
+concord::api! {
+    client Saved {
+        base "https://api.test";
+        read Binary;
+        problem Refusal read Json;
+        GET first() -> u32 { path "first"; status { 2xx { body } => save::<Count>(body)? } }
+        GET later() -> u32 {
+            path "later";
+            status { 202 => replay()?, 409 => replay()?, 2xx => 7 }
+        }
+        GET pages() -> Vec<u32> {
+            path "pages";
+            read Json;
+            paginate replayed();
+        }
+    }
+}
+
+#[tokio::test]
+async fn c5_8_bytes_saved_from_another_call_are_shown_as_decoder_input() {
+    const OLD: &str = r#"{"ok": true, "count": "OLD"}"#;
+    let json = [("content-type", "application/json")];
+    let saved = Saved::new().with_transport(fake(move |request| {
+        Ok(match request.url().path() {
+            "/first" => reply(200, OLD),
+            "/pages" => concord::reply_with(200, &json, "[1]"),
+            _ if request.headers().contains_key("x-conflict") => {
+                concord::reply_with(409, &json, "{}")
+            }
+            _ => concord::reply_with(202, &json, "{}"),
+        })
+    }));
+    let mut errors = Vec::new();
+    for _ in 0..3 {
+        saved.first().await.unwrap();
+    }
+    errors.push(saved.later().await.unwrap_err());
+    errors.push(
+        saved
+            .later()
+            .edit_request(|request| {
+                request
+                    .headers_mut()
+                    .insert("x-conflict", concord::http::HeaderValue::from_static("1"));
+            })
+            .await
+            .unwrap_err(),
+    );
+    let mut pages = saved.pages().pages();
+    assert_eq!(*pages.try_next().await.unwrap().unwrap(), [1]);
+    errors.push(pages.try_next().await.unwrap_err());
+    let expected = [
+        (
+            Kind::Mismatch,
+            202,
+            "mismatch: status 202, count could not be decoded, in saved.later",
+        ),
+        (Kind::Refused, 409, "refused: status 409, in saved.later"),
+        (
+            Kind::Mismatch,
+            200,
+            "mismatch: status 200, count could not be decoded, in saved.pages",
+        ),
+    ];
+    for (error, (kind, status, text)) in errors.iter().zip(expected) {
+        assert_eq!(error.kind(), kind);
+        assert!(error.is_status(status));
+        assert_eq!(error.to_string(), text);
+        let details = error.details().to_string();
+        assert!(!details.contains("\nbody ("), "{details}");
+        assert!(
+            details.contains(&format!(
+                "\ndecoder input (complete, {} bytes): {OLD}",
+                OLD.len()
+            )),
+            "{details}"
+        );
+        assert_eq!(error.body(), Some(OLD.as_bytes()));
+        assert_eq!(error.kept(), Some(Kept::Complete));
+    }
+}
+
+#[tokio::test]
+async fn c5_8_a_saved_content_type_remark_is_not_shown_beside_another_response() {
+    use concord::read::{Incoming, Reader};
+    // The loose reader saw `text/html`; the response that the arm runs on says JSON.
+    let html = concord::reply_with(200, &[("content-type", "text/html")], r#"{"count": "x"}"#);
+    let failure = <Json as Reader<Count>>::read(&Json, Incoming::new(html))
+        .await
+        .unwrap_err();
+    let error = concord::__private::arm::<u32, Refusal>(
+        Err(Fail::from_read(failure)),
+        concord::http::StatusCode::ACCEPTED,
+        &concord::Headers::from(
+            concord::reply_with(202, &[("content-type", "application/json")], "")
+                .headers()
+                .clone(),
+        ),
+        &concord::transport::TryInfo::new("saved.later", 1),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "mismatch: status 202, count could not be decoded, in saved.later"
+    );
+    assert!(!error
+        .details()
+        .to_string()
+        .contains("unexpected content type"));
 }

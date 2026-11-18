@@ -75,8 +75,9 @@ impl Json {
     /// inside a `200`. [`Fail::from_read`](concord_core::Fail::from_read) makes the error the
     /// failure of the arm, and the call's error then names the location of the fault, as it
     /// does under `read Json;` (`name could not be decoded`, below), with the decoder's
-    /// message, its line and its column in `details()`, and at most 64 KiB of the bytes in
-    /// `body()`. A byte order mark at the start is skipped.
+    /// message, its line and its column in `details()`, and at most 64 KiB of its input in
+    /// `body()`, which `details()` names `decoder input`. A byte order mark at the start is
+    /// skipped.
     ///
     /// Three things that the reader does are not done here, because the bytes are already in
     /// memory. No byte limit applies: the limit is the one of the reader that read the bytes
@@ -86,10 +87,10 @@ impl Json {
     ///
     /// The value of the API below sits beside `ok`, not under a key of its own, so the
     /// client reads the bytes (`read Binary;`) and its arm decodes them twice: once for
-    /// `ok`, once for the value or the problem. When the body is valid JSON with `"ok": true`,
-    /// the second pass meets a fault exactly where `read Json;` would. A body whose
-    /// JSON is broken fails in the first pass instead, where its syntax breaks, which can be
-    /// after a value that does not fit.
+    /// `ok`, once for the value or the problem. When the first pass succeeds with `ok: true`,
+    /// the second pass meets a fault exactly where `read Json;` would. The first pass can fail
+    /// where `read Json;` would not: on a body whose JSON is broken, where its syntax breaks
+    /// (which can be after a value that does not fit), and on a body with `ok` twice.
     ///
     /// ```
     /// use concord::{bytes::Bytes, error::Kind, fake, reply, Binary, Fail, Json};
