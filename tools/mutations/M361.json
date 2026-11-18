@@ -1,0 +1,9 @@
+{
+  "id": "M361",
+  "area": "renewal",
+  "contract": "C12.6",
+  "description": "An exchange that returns the refresh token it was given is accepted",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "            Ok(pair) if !pair.refresh.is_empty() && pair.refresh != current.pair.refresh => {",
+  "replace": "            Ok(pair) if !pair.refresh.is_empty() => {"
+}

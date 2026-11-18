@@ -1,0 +1,10 @@
+{
+  "id": "M345",
+  "area": "single send",
+  "contract": "C9.5",
+  "description": "Http states that nothing was sent for any failure, not only its connector's",
+  "file": "concord-core/src/transport.rs",
+  "find": "        failure.not_sent = not_sent && failure.request_failure.is_none();",
+  "replace": "        failure.not_sent = failure.request_failure.is_none();",
+  "requires_sockets": true
+}

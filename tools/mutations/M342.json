@@ -1,0 +1,10 @@
+{
+  "id": "M342",
+  "area": "single send",
+  "contract": "C7.1",
+  "description": "Http leaves reqwest's own retries on, so a refused request is sent again below the engine",
+  "file": "concord-core/src/transport.rs",
+  "find": "        let f = move |builder: reqwest::ClientBuilder| f(builder).retry(reqwest::retry::never());",
+  "replace": "        let f = move |builder: reqwest::ClientBuilder| f(builder);",
+  "requires_sockets": true
+}

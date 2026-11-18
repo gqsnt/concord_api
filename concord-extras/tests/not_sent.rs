@@ -364,3 +364,23 @@ async fn c12_6_an_exchange_that_the_server_read_leaves_the_marker() {
     drop(data);
     assert!(driver.await.unwrap().is_err());
 }
+
+#[tokio::test(start_paused = true)]
+async fn c12_6_from_call_is_failed_after_more_than_one_attempt() {
+    // Two attempts, neither of which was sent: the call states it, and `from_call` still asks
+    // for one attempt.
+    let script = concord_testkit::Script::new();
+    script.fail(concord::transport::TransportError::connect().not_sent());
+    script.fail(concord::transport::TransportError::connect().not_sent());
+    let data = Data::new()
+        .with_transport(script.clone())
+        .with_retry(concord::Retry::standard().tries(2));
+    let error = data.get().await.unwrap_err();
+    assert_eq!(script.requests().len(), 2);
+    assert_eq!(error.tries(), 2);
+    assert!(error.request_not_sent());
+    assert!(matches!(
+        RenewalError::from_call(error),
+        RenewalError::Failed(_)
+    ));
+}

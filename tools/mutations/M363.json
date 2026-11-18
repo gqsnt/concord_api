@@ -1,0 +1,9 @@
+{
+  "id": "M363",
+  "area": "decode by hand",
+  "contract": "C5.8",
+  "description": "A decode by hand on a status that is not 2xx is a Mismatch instead of a Refused error",
+  "file": "concord-core/src/read.rs",
+  "find": "        if !status.is_success() {\n            let mut error = Error::refused(info.endpoint(), info.number(), status, headers, None);",
+  "replace": "        if false {\n            let mut error = Error::refused(info.endpoint(), info.number(), status, headers, None);"
+}

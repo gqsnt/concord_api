@@ -1,0 +1,10 @@
+{
+  "id": "M344",
+  "area": "single send",
+  "contract": "C7.1",
+  "description": "Http turns off redirects before the author's function, which can turn them on again",
+  "file": "concord-core/src/transport.rs",
+  "find": "        let f = move |builder: reqwest::ClientBuilder| f(builder).retry(reqwest::retry::never());\n        let client = f(builder)\n            .redirect(reqwest::redirect::Policy::none())\n            .build()?;",
+  "replace": "        let f = move |builder: reqwest::ClientBuilder| {\n            f(builder.redirect(reqwest::redirect::Policy::none())).retry(reqwest::retry::never())\n        };\n        let client = f(builder).build()?;",
+  "requires_sockets": true
+}

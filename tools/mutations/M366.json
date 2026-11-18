@@ -1,0 +1,9 @@
+{
+  "id": "M366",
+  "area": "decode by hand",
+  "contract": "C5.8",
+  "description": "An empty decoder input is said to be one that does not decode",
+  "file": "concord-core/src/read.rs",
+  "find": "            EvidenceKind::Decode(_) if body.is_empty() && kept == Some(Kept::Complete) => {",
+  "replace": "            EvidenceKind::Decode(_) if body.is_empty() && kept == Some(Kept::Cut) => {"
+}

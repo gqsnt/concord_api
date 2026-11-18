@@ -1,0 +1,10 @@
+{
+  "id": "M343",
+  "area": "single send",
+  "contract": "C7.1",
+  "description": "Http turns off reqwest's retries before the author's function, which can turn them on again",
+  "file": "concord-core/src/transport.rs",
+  "find": "        let f = move |builder: reqwest::ClientBuilder| f(builder).retry(reqwest::retry::never());",
+  "replace": "        let f = move |builder: reqwest::ClientBuilder| f(builder.retry(reqwest::retry::never()));",
+  "requires_sockets": true
+}

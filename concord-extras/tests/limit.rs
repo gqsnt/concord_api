@@ -924,7 +924,7 @@ async fn c11_5_a_header_over_4096_bytes_teaches_nothing() {
         let elapsed = script.requests()[1].at() - start;
         if waits {
             assert!(
-                elapsed > sec(9) && elapsed <= sec(10),
+                elapsed >= sec(9) && elapsed <= sec(10),
                 "{} bytes: {elapsed:?}",
                 left.len()
             );

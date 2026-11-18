@@ -1,0 +1,9 @@
+{
+  "id": "M358",
+  "area": "renewal",
+  "contract": "C12.6",
+  "description": "A reload that shows the pending pair is taken as proof that it was saved",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "                        Stored::Ready(pair) if pair.same_record(&pending.pair) => {\n                            // Visibility does not acknowledge durability; save again.\n                        }",
+  "replace": "                        Stored::Ready(pair) if pair.same_record(&pending.pair) => {\n                            return self.install(pending);\n                        }"
+}

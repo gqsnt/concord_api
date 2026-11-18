@@ -1,0 +1,9 @@
+{
+  "id": "M355",
+  "area": "renewal",
+  "contract": "C11.2",
+  "description": "A rejected_when function is shown a body one byte over 64 KiB",
+  "file": "concord-extras/src/auth/rejection.rs",
+  "find": "        if needed > LIMIT {",
+  "replace": "        if needed > LIMIT.saturating_add(1) {"
+}

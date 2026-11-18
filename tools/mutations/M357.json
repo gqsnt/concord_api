@@ -1,0 +1,9 @@
+{
+  "id": "M357",
+  "area": "renewal",
+  "contract": "C12.6",
+  "description": "A pair whose save failed is used all the same",
+  "file": "concord-extras/src/auth/rotating/engine.rs",
+  "find": "            self.lock().reload = true;\n            return Err(error);\n        }\n        self.install(next)",
+  "replace": "            self.lock().reload = true;\n            drop(error);\n        }\n        self.install(next)"
+}

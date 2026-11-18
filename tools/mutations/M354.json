@@ -1,0 +1,9 @@
+{
+  "id": "M354",
+  "area": "renewal",
+  "contract": "C11.2",
+  "description": "Rotating rejects its token on a 401 from another origin than its base",
+  "file": "concord-extras/src/auth/rotating.rs",
+  "find": "        if !super::rejection::same_origin(self.inner.origin.as_ref(), &response) {\n            return Ok(response);\n        }\n",
+  "replace": ""
+}
