@@ -456,6 +456,42 @@ impl Writer<'_> {
             ),
             None => (emit!(()), emit!(Self::Value), TokenStream::new()),
         };
+        // The check of the declared type against the client's problem type, for every endpoint:
+        // a function that is never called, in a module of its own, where none of the author's
+        // names is in scope; the module is inside an anonymous constant, so that no name of the
+        // check can be written, or met, at the level of the description. The type is the endpoint's own `Value`, as the compiler resolved it:
+        // the author's tokens are written once, in the endpoint, and never again here.
+        let check = ident(&format!("__check_problem_{index}"));
+        let declared = endpoint
+            .node
+            .output
+            .as_ref()
+            .map_or_else(|| node.node.name.span(), |written| written.ty.span());
+        let problem_alias = self.problem_alias();
+        let check_call = emit_at!(declared=>
+            (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
+                .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
+        );
+        let problem_check = emit!(
+            #(#cfg)* const _: () = {
+            impl #check::Declared for #check::Witness {
+                type Value = <#marker as #root::Endpoint>::Value;
+                type Problem = #problem_alias;
+            }
+            #[allow(dead_code, clippy::needless_borrow)]
+            mod #check {
+                pub(super) struct Witness;
+                pub(super) trait Declared {
+                    type Value: ?::core::marker::Sized;
+                    type Problem;
+                }
+                fn check() {
+                    use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
+                    #check_call
+                }
+            }
+            };
+        );
         let path = &endpoint.path;
         let debug = name::type_name(&node.node.name.to_string());
         let problem = self.problem_alias();
@@ -574,6 +610,7 @@ impl Writer<'_> {
         });
         emit! {
             #read_alias
+            #problem_check
             #impl_attrs impl #root::Endpoint for #marker {
                 type Data<__T: #root::__Types> = #data<__T>;
                 type Value = #output;

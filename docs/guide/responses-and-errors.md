@@ -121,7 +121,7 @@ while let Some(chunk) = pdf.try_next().await? {
 - A failure after the head is reported by `try_next()` as a `concord::read::StreamError`: a Transport error that keeps the status and the headers. `?` converts it into the client's error (`billing::Error`), or into a `ReadError` inside your own reader.
 - Once a stream has been handed to you, it is never retried.
 
-**Records.** JSON Lines and server-sent events have readers of their own, which split the body into records ([below](#a-stream-of-records)). For another format, such as CSV, a crate that reads a stream of bytes can read a `ByteStream`. A record inside the stream that reports an error is yours to handle. A JSON array is read whole into `Vec<T>` with `read Json.limit(…)`; the limit bounds the complete body, and Concord has no incremental JSON reader.
+**Records.** JSON Lines and server-sent events have readers of their own, which split the body into records ([below](#a-stream-of-records)). For another format, such as CSV, a crate that reads a stream of bytes can read a `ByteStream`. A record inside the stream that reports an error is yours to handle: an item of the stream, or, in a [typed stream](#a-typed-stream), the client's own error. A JSON array is read whole into `Vec<T>` with `read Json.limit(…)`; the limit bounds the complete body, and Concord has no incremental JSON reader.
 
 ## A stream of records
 
@@ -146,7 +146,7 @@ async fn follow(cluster: &Cluster) -> Result<(), Box<dyn std::error::Error>> {
     while let Some(event) = events.try_next().await? {    // its error is a `RecordError`
         match event {
             PodEvent::Added(pod) => …,
-            PodEvent::Error(status) => break,             // an error record of the API is a record like any other
+            PodEvent::Error(status) => break,             // a raw stream: an error record of the API is a record like any other
         }
     }
     Ok(())
@@ -159,8 +159,73 @@ async fn follow(cluster: &Cluster) -> Result<(), Box<dyn std::error::Error>> {
 | `JsonLines` | One JSON value per line, decoded into `T` with `serde` (feature `json`). LF and CRLF both end a line, and a last line without LF is read. An empty line is an error. |
 | `Sse` | The rules of server-sent events: LF, CRLF or CR ends a line, a byte order mark at the start is skipped, comments are ignored, and the `data` lines of an event are joined with LF. An `SseEvent` has `event` (`message` when none was given), `data`, and the last `id` and `retry` that the server sent. An event that the body ends before its blank line is dropped. `event.json::<T>()` decodes `data` (feature `json`). Event names mean nothing to the reader: an `error` or a `done` event is yours to handle. |
 | The head | The call returns as soon as the head has arrived with a success status, as with `read Stream;`. `status()` and `headers()` on the stream stay readable, also after its end or an error. |
-| **An error** | `try_next()` returns a `concord::read::RecordError`, and the first error ends the stream: `TooLarge` (over the bound), `Utf8` (bytes that are not UTF-8), `Decode` (a record that does not decode, with its line and column, and its record number when it is known), or `Stream`, the failure of the body itself, kept whole as a `StreamError` with the status and the headers. No error holds bytes of the response. A `RecordError` does not convert into the client's error, so a function that uses `?` on the call and on `try_next()` returns an error that holds both: `Box<dyn std::error::Error>`, or an enum of your own. |
+| **An error** | `try_next()` returns a `concord::read::RecordError`, and the first error ends the stream: `TooLarge` (over the bound), `Utf8` (bytes that are not UTF-8), `Decode` (a record that does not decode, with its line and column, and its record number when it is known), or `Stream`, the failure of the body itself, kept whole as a `StreamError` with the status and the headers. No error holds bytes of the response. A `RecordError` does not convert into the client's error, so a function that uses `?` on the call and on `try_next()` returns an error that holds both: `Box<dyn std::error::Error>`, or an enum of your own. A typed stream ([below](#a-typed-stream)) fails with the client's own error instead. |
 | Timeouts and retries | As with `read Stream;`: both timeouts keep running, and the idle timeout watches the bytes that arrive, comments included, not the records. A stream of records is never retried, and a stream of events is never reconnected. Dropping the stream releases the body. |
+
+### A typed stream
+
+Most streams of records mean something: an LLM's reply sends typed events, skips `ping`, ends with `message_stop`, and reports the API's error as an `error` event inside its `200`; a watch sends typed lines, one of which is the API's error. A function of your own says what each record is, and the reader gives a typed stream whose error is the client's own: `?` on the call and `?` on `try_next()` meet in one type.
+
+```rust
+POST stream(request: MessageRequest) -> RecordStream<StreamEvent, chat::Error> {
+    path "messages";
+    body json(request);
+    read Sse::new(64 * concord::KIB).try_map(event).until_last_record();
+}
+
+fn event(event: SseEvent) -> Result<Step<StreamEvent>, RecordFail<ApiProblem>> {
+    Ok(match event.event.as_str() {
+        "ping" => Step::Skip,
+        "error" => return Err(RecordFail::problem(event.json()?)),
+        _ => match event.json()? {
+            StreamEvent::MessageStop => Step::Last(StreamEvent::MessageStop),
+            typed => Step::Next(typed),
+        },
+    })
+}
+
+async fn reply(chat: &Chat, request: MessageRequest) -> chat::Result<Vec<StreamEvent>> {
+    let mut events = chat.stream(request).await?;          // the call's error
+    let mut all = Vec::new();
+    while let Some(event) = events.try_next().await? {     // the same error type
+        all.push(event);
+    }
+    Ok(all)
+}
+```
+
+| | |
+|---|---|
+| **The mapping** | `Sse::new(n).try_map(f)` gives `f` each `SseEvent`; `JsonLines::new(n).try_map(f)` gives it each line, a `JsonLine`, which `line.json()` decodes (or `line.text()` reads as it is). The framing is the reader's, and so is the bound `n`, of the record as it arrives: for an event, the lines of its block (an `id` that it carries over from an earlier event is not counted). A `JsonLine` is the line as it is, plain text or an empty line: only `line.json()` checks that it is JSON. `f` is cloned for each response: state that it owns starts afresh with each stream, and state that it holds behind an `Arc` is shared by every stream. |
+| **Ending the stream** | A mapped reader is finished by one of two methods, and without one the description does not compile (the compiler names both): `.until_last_record()`, when the stream ends with a record of its own (`message_stop`, `[DONE]`), so that a body that ends before it is an error, never a whole reply; `.until_end_of_body()`, when the end of the body is the normal end (a watch, a file of results). |
+| **The four steps** | `Ok(Step::Next(value))` yields the value. `Ok(Step::Skip)` yields nothing for this record. `Ok(Step::Last(value))` yields the value and ends the stream; `Ok(Step::End)` ends it with nothing. After `Last` or `End`, nothing more of the body is read, and the body is released at once. |
+| **The three failures** | `Err(RecordFail::problem(p))`: the API's own error, a Refused error whose `problem()` is `p`, with the status (the `200`) and the headers of the response. `Err(RecordFail::mismatch("…"))`: a record, or the sequence so far, does not fit; a Mismatch, `record 7 does not fit the stream`, with your fixed sentence in `reason()` and `details()` (never in the text, `Debug` or the cause; it must hold nothing of the response). `?` on `event.json()` or `line.json()`: the record does not decode, a Mismatch, `record 7 could not be decoded`, with the decoder's line and column in `details()` when the decoder gives them. `?` cannot also turn a problem into a failure: write `Err(RecordFail::problem(p))`. Nor does it convert an error of your own: say what it means, `let count: u32 = text.parse().map_err(|_| RecordFail::mismatch("a count that is not a number"))?;`. |
+| **The client's problem type** | The stream's error names the client's problem type: `RecordStream<Event, client::Error>`, and `RecordFail<Problem>` in the mapping. Another problem type does not compile, however the type is written: behind an alias, in an `Option`, a `Result` or a `Box`, or read by a reader of your own. A stream type of your own takes part when it implements `concord::error::CarriesProblem`. |
+| **An error ends it** | As for every stream of records, the first error ends the stream: a record over the bound, bytes that are not UTF-8, a record that does not decode, the body that breaks, a timeout. An error about one record names it by its position, as the reader counts its records (a line; an event block, blocks that dispatch nothing included); a refusal and an end before the last record name none. After the error, `try_next()` returns `None`, and the body is already released, as it is when the stream is dropped, and when the mapping panics. |
+| **Skipped records** | All the records skipped in one poll of the stream share one budget of work; when it is spent, the poll yields to the executor and the next poll goes on, and the call's timeout (`with_timeout`) is checked before it yields. A server that sends only `ping` holds the caller until that timeout ends the call, not a thread. |
+
+**An input of the call in the mapping.** The description gives each expression its inputs by reference, so a closure written in `read` that keeps one fails to compile: the compiler says that `__value` escapes (`borrowed data escapes outside of associated function`). Take an owned copy first:
+
+```rust
+GET feed(prefix: String) -> RecordStream<String, feed::Error> {
+    read {
+        let prefix = prefix.clone();
+        Sse::new(16 * concord::KIB)
+            .try_map(move |event| Ok(Step::Next(format!("{prefix}{}", event.data))))
+            .until_end_of_body()
+    };
+}
+```
+
+**Moving a stream that you wrote by hand.** A client that wrapped `RecordStream<SseEvent>` in a type of its own (a struct with `try_next`, a `stopped` flag, an error enum of the API's event, of the end before the last event and of `RecordError`) can describe the endpoint as a typed stream and delete the wrapper. Its users then lose:
+
+- the wrapper's own methods (a `final_message` that collects the stream), unless the client keeps them as functions over the stream;
+- the old error type: the stream's error is now the client's, so code that matched the variants of the old error, or that downcast to `concord::read::RecordError` (a decoding failure, a record over the bound, a broken body), changes: these are a Mismatch or a Transport error of the client, told apart by `kind()` and their text; the structured fields of `RecordError` are gone (`TooLarge`'s `limit`, `Decode`'s `line` and `column`; the line and column are in `details()` when the decoder gives them);
+- the items that the mapping no longer yields: records that it skips, and an end record that it ends with (`Step::End`);
+- what a raw record held and the mapping drops: the raw data, the event's name, its `id` and its `retry` hint;
+- an error record as an item (`WatchEvent::Error`): it is now an `Err` whose `problem()` holds it, and its status is the `200` of the stream, so test the body's code, not `is_status`; and nothing after it can be polled, nor after the last record.
+
+The raw route stays: an endpoint that keeps `read Sse::new(n);` and `-> RecordStream<SseEvent>`, or `read JsonLines::new(n);` and `-> RecordStream<WatchEvent<Pod>>`, reads exactly as before.
 
 ## When a status means something
 

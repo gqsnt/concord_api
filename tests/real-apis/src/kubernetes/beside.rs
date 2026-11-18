@@ -1,4 +1,5 @@
 use concord::http::HeaderValue;
+use concord::read::{JsonLine, RecordFail, Step};
 use concord::transport::{TransportError, TryInfo};
 use concord::{reqwest, Base, Middleware, Next};
 use serde::de::{DeserializeOwned, Deserializer};
@@ -92,6 +93,16 @@ pub enum WatchEvent<T> {
     Deleted(T),
     Bookmark(Bookmark),
     Error(Status),
+}
+
+/// What one line of a watch is: an `ERROR` line is the API's own error, which ends the watch as
+/// the call's error with `problem()`; any other line is an event. So a watch never yields
+/// `WatchEvent::Error`.
+pub fn watch_event<T: DeserializeOwned>(line: JsonLine) -> Result<Step<WatchEvent<T>>, RecordFail<Status>> {
+    match line.json()? {
+        WatchEvent::Error(status) => Err(RecordFail::problem(status)),
+        event => Ok(Step::Next(event)),
+    }
 }
 
 /// A `BOOKMARK` line: an object whose `metadata` promises only `resourceVersion`.

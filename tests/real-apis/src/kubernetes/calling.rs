@@ -77,7 +77,20 @@ pub async fn follow(
                 }
                 Err(e) => return Err(e.into()),
             };
-            while let Some(event) = events.try_next().await? {
+            loop {
+                let event = match events.try_next().await {
+                    Ok(Some(event)) => event,
+                    Ok(None) => break,
+                    // An `ERROR` line with 410: the version is too old. The stream has released its body.
+                    Err(e) if e.problem().is_some_and(|status| status.code == Some(410)) => {
+                        expired += 1;
+                        continue 'list;
+                    }
+                    Err(e) => return Err(match e.into_problem() {
+                        Ok(status) => format!("{:?}", status.reason).into(),   // another `ERROR` line
+                        Err(e) => e.into(),                                    // a broken body, a line that does not decode
+                    }),
+                };
                 match &event {
                     WatchEvent::Added(pod) | WatchEvent::Modified(pod) | WatchEvent::Deleted(pod) => {
                         version = pod.metadata.resource_version.clone().filter(|v| !v.is_empty())
@@ -88,11 +101,7 @@ pub async fn follow(
                         return Err("a bookmark has no resourceVersion".into());
                     }
                     WatchEvent::Bookmark(mark) => version = mark.metadata.resource_version.clone(),
-                    WatchEvent::Error(status) if status.code == Some(410) => {
-                        expired += 1;
-                        continue 'list;                            // the rest of this stream is dropped
-                    }
-                    WatchEvent::Error(status) => return Err(format!("{:?}", status.reason).into()),
+                    WatchEvent::Error(_) => {}                         // never yielded: `watch_event`
                 }
                 expired = 0;                                       // an event or a bookmark: progress
             }

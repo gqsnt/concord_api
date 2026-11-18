@@ -64,7 +64,7 @@ data: {\"type\":\"message_stop\"}\n\n";
 
 #[tokio::test(start_paused = true)]
 async fn c11_9_a_streamed_reply_is_typed_by_the_authors_function() {
-    use real_apis::anthropic::{stream, Anthropic, ReplyError};
+    use real_apis::anthropic::{stream, Anthropic};
     let script = Script::new();
     script
         .answer(200)
@@ -80,14 +80,19 @@ async fn c11_9_a_streamed_reply_is_typed_by_the_authors_function() {
 
     let text = stream(&api, "a-model", "Name two rivers.").await.unwrap();
     assert_eq!(text, "Nile, Amazon");
-    match stream(&api, "a-model", "again").await.unwrap_err() {
-        ReplyError::Api(error) => assert_eq!(error.kind, "overloaded_error"),
-        other => panic!("{other:?}"),
-    }
-    assert!(matches!(
-        stream(&api, "a-model", "again").await.unwrap_err(),
-        ReplyError::Unfinished
-    ));
+    // The API's error event: the client's own error, Refused, with the problem.
+    let error = stream(&api, "a-model", "again").await.unwrap_err();
+    assert_eq!(error.problem().unwrap().error.kind, "overloaded_error");
+    assert_eq!(
+        error.to_string(),
+        "refused: status 200, in anthropic.stream"
+    );
+    // A reply that ends before `message_stop`.
+    let error = stream(&api, "a-model", "again").await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "mismatch: status 200, the body ended before its last record, in anthropic.stream"
+    );
 
     let requests = script.requests();
     assert_eq!(requests.len(), 3);
@@ -112,20 +117,16 @@ async fn c11_9_a_streamed_reply_is_typed_by_the_authors_function() {
 
 #[tokio::test(start_paused = true)]
 async fn c11_9_an_api_error_before_the_stream_is_the_clients_problem() {
-    use real_apis::anthropic::{stream, Anthropic, ReplyError};
+    use real_apis::anthropic::{stream, Anthropic};
     let script = Script::new();
     script
         .answer(400)
         .header("content-type", "application/json")
         .body("{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"max_tokens\"}}");
     let api = Anthropic::new("PRIVATE_API_KEY").with_transport(script.clone());
-    match stream(&api, "a-model", "Hello").await.unwrap_err() {
-        ReplyError::Call(error) => {
-            assert!(error.is_status(400));
-            assert_eq!(error.problem().unwrap().error.kind, "invalid_request_error");
-        }
-        other => panic!("{other:?}"),
-    }
+    let error = stream(&api, "a-model", "Hello").await.unwrap_err();
+    assert!(error.is_status(400));
+    assert_eq!(error.problem().unwrap().error.kind, "invalid_request_error");
 }
 
 #[tokio::test]

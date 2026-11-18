@@ -71,6 +71,22 @@ pub(crate) enum MismatchFailure {
         place: Place,
     },
     InputEmpty,
+    // What a reader of records found after the head, with the record that the body counted.
+    Record {
+        record: usize,
+        fault: RecordFaultKind,
+    },
+    // The body ended cleanly before the record that ends the stream.
+    EndedEarly,
+}
+
+/// What is wrong with one record, as `RecordFault` says it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RecordFaultKind {
+    TooLarge,
+    NotUtf8,
+    NotDecoded,
+    DoesNotFit,
 }
 
 #[derive(Clone, Copy)]
@@ -261,6 +277,16 @@ impl Note {
                     }
                 }
                 MismatchFailure::InputEmpty => f.write_str("the decoder's input is empty"),
+                MismatchFailure::Record { record, fault } => {
+                    write!(f, "record {record} ")?;
+                    f.write_str(match fault {
+                        RecordFaultKind::TooLarge => "exceeds the reader's size limit",
+                        RecordFaultKind::NotUtf8 => "is not UTF-8",
+                        RecordFaultKind::NotDecoded => "could not be decoded",
+                        RecordFaultKind::DoesNotFit => "does not fit the stream",
+                    })
+                }
+                MismatchFailure::EndedEarly => f.write_str("the body ended before its last record"),
             },
         }
     }
@@ -577,7 +603,9 @@ impl<E> Error<E> {
             | MismatchFailure::InputContentType
             | MismatchFailure::InputLimit
             | MismatchFailure::InputDecode { .. }
-            | MismatchFailure::InputEmpty => {
+            | MismatchFailure::InputEmpty
+            | MismatchFailure::Record { .. }
+            | MismatchFailure::EndedEarly => {
                 Some(Box::new(ReaderCause(Note::Mismatch(failure.clone()))) as Source)
             }
             _ => None,
@@ -624,6 +652,12 @@ impl<E> Error<E> {
     /// Reader free text is copied into a bounded allocation and is only printed by details.
     pub(crate) fn with_reader_details(mut self, details: String) -> Self {
         self.inner.reader_details = Some(crate::__private::cut_details(details));
+        self
+    }
+
+    /// The fixed reason of a mapping that rejected a record: `reason()` and `details()` only.
+    pub(crate) fn with_fixed_reason(mut self, reason: &'static str) -> Self {
+        self.inner.reason = Some(Cow::Borrowed(reason));
         self
     }
 }
@@ -1115,6 +1149,56 @@ impl<P> Fail<P> {
             ),
         }
     }
+}
+
+/// A type whose value fails with the error of one client, and so names that client's problem
+/// type.
+///
+/// The generated code checks the declared type of every endpoint: when it implements this
+/// trait, its `Problem` must be the problem type of the client that declares the endpoint, or
+/// the description does not compile. `concord::read::RecordStream<T, concord::Error<P>>`
+/// implements it with `P`. A stream type of your own whose items fail with the client's error
+/// implements it too, and takes part in the same check.
+///
+/// The check does not depend on how a type is spelled: an alias is seen through, and the
+/// wrappers that a return type can have carry the problem of what they wrap (`Option<S>`,
+/// `Result<S, E>` and `Box<S>`, where `S` implements this trait). A newtype or a tuple struct of
+/// your own, and a type of your own that dereferences to a stream, are checked when you
+/// implement this trait for it, and not otherwise; a tuple such as `(Stream, u32)` cannot be
+/// marked, because the orphan rule forbids implementing this trait for it, so wrap it in a
+/// tuple struct of your own. An arm that consumes a stream and returns something else exposes no
+/// stream error, and has nothing to check. An implementation that names another problem than
+/// the one its value's error holds misleads only its author: it hides a foreign error from the
+/// check, or refuses a correct endpoint.
+///
+/// ```
+/// # use concord_core as concord;
+/// use concord::error::CarriesProblem;
+///
+/// /// A stream of the author's own, whose items fail with `concord::Error<P>`.
+/// pub struct Changes<P> {
+///     error: Option<concord::Error<P>>,
+/// }
+///
+/// impl<P> CarriesProblem for Changes<P> {
+///     type Problem = P;
+/// }
+/// ```
+pub trait CarriesProblem {
+    /// The problem type that the value's error names.
+    type Problem;
+}
+
+impl<S: CarriesProblem> CarriesProblem for Option<S> {
+    type Problem = S::Problem;
+}
+
+impl<S: CarriesProblem, E> CarriesProblem for Result<S, E> {
+    type Problem = S::Problem;
+}
+
+impl<S: CarriesProblem + ?Sized> CarriesProblem for Box<S> {
+    type Problem = S::Problem;
 }
 
 #[cfg(test)]

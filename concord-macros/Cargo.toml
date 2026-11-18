@@ -35,6 +35,8 @@ concord-attr-probe = { path = "tests/attr-probe" }
 # `multipart`: the page of the language shows a multipart body, and its doc test checks the bytes.
 concord = { package = "concord-api", path = "../concord-api", features = ["multipart"] }
 prettyplease = "0.2"
+# `compiler-errors/problem-type/05_type_macro.rs`: a type macro that expands differently each time.
+type-macro = { path = "../tests/type-macro" }
 # The reference of the language (src/reference.md) is a page of doc tests: they run on Tokio
 # and read into `serde` types.
 tokio.workspace = true

@@ -11,8 +11,19 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+mod mapped;
+#[cfg(feature = "json")]
+pub use mapped::JsonLine;
+pub use mapped::{EndOfRecords, RecordFail, Step, TryMap};
+
 /// The status and headers of a response, and a stream of its records that ends after
 /// the first error.
+///
+/// `E` is the error of the stream. A reader of records gives [`RecordError`], the default:
+/// `RecordStream<SseEvent>`. A reader whose records go through a mapping of your own
+/// ([`Sse::try_map`], `JsonLines::try_map`) gives the client's own error, `concord::Error<P>`,
+/// so that `?` on the call and `?` on `try_next` meet in one type:
+/// `RecordStream<StreamEvent, anthropic::Error>`.
 ///
 /// `try_next` and `Stream` drive the same parser; you can switch from one to the other
 /// between records. Dropping this stream releases its body and its place in any cap on
@@ -42,13 +53,13 @@ use std::time::Duration;
 /// }
 /// ```
 #[must_use = "pull records from the stream or drop it to release the body"]
-pub struct RecordStream<T> {
-    records: Option<Box<dyn Pull<T> + Send>>,
+pub struct RecordStream<T, E = RecordError> {
+    records: Option<Box<dyn Pull<T, E> + Send>>,
     status: StatusCode,
     headers: Headers,
 }
 
-impl<T> RecordStream<T> {
+impl<T, E> RecordStream<T, E> {
     /// Returns the response status, kept when the stream was created; it stays available
     /// after the end of the body or a framing error.
     ///
@@ -75,10 +86,11 @@ impl<T> RecordStream<T> {
 
     /// Reads the next record, or `None` at the end of the body.
     ///
-    /// The first error is returned once and ends the stream. A [`RecordError`] is
-    /// returned directly, never inside a `concord::Error`. Dropping this future, even
-    /// before it is polled, keeps the partial record and stops the idle timer, like
-    /// [`ByteStream::try_next`]. The call timeout keeps running.
+    /// The first error is returned once and ends the stream. With the default `E`, a
+    /// [`RecordError`] is returned directly, never inside a `concord::Error`; a mapped
+    /// stream returns the client's own `concord::Error<P>` instead ([`Step`]). Dropping
+    /// this future, even before it is polled, keeps the partial record and stops the idle
+    /// timer, like [`ByteStream::try_next`]. The call timeout keeps running.
     ///
     /// ```no_run
     /// async fn first<T>(mut records: concord::read::RecordStream<T>)
@@ -87,16 +99,16 @@ impl<T> RecordStream<T> {
     ///     records.try_next().await
     /// }
     /// ```
-    pub fn try_next(&mut self) -> impl Future<Output = Result<Option<T>, RecordError>> + Send + '_ {
-        struct Wait<'a, T>(&'a mut RecordStream<T>);
-        impl<T> Future for Wait<'_, T> {
-            type Output = Result<Option<T>, RecordError>;
+    pub fn try_next(&mut self) -> impl Future<Output = Result<Option<T>, E>> + Send + '_ {
+        struct Wait<'a, T, E>(&'a mut RecordStream<T, E>);
+        impl<T, E> Future for Wait<'_, T, E> {
+            type Output = Result<Option<T>, E>;
 
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 Pin::new(&mut *self.0).poll_next(cx).map(Option::transpose)
             }
         }
-        impl<T> Drop for Wait<'_, T> {
+        impl<T, E> Drop for Wait<'_, T, E> {
             fn drop(&mut self) {
                 if let Some(records) = &mut self.0.records {
                     records.cancel_wait();
@@ -107,7 +119,13 @@ impl<T> RecordStream<T> {
     }
 }
 
-impl<T> fmt::Debug for RecordStream<T> {
+// A stream whose error is a client's error carries that client's problem type: the generated
+// code checks it against the problem type of the client that declares the endpoint.
+impl<T, P> concord_core::error::CarriesProblem for RecordStream<T, concord_core::Error<P>> {
+    type Problem = P;
+}
+
+impl<T, E> fmt::Debug for RecordStream<T, E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RecordStream")
             .field("status", &self.status)
@@ -120,19 +138,22 @@ impl<T> fmt::Debug for RecordStream<T> {
 /// wait for bytes includes the time between polls. This implementation cannot see an
 /// outer `next()` future being dropped; use [`RecordStream::try_next`] when dropping a
 /// read must stop that timer.
-impl<T> Stream for RecordStream<T> {
-    type Item = Result<T, RecordError>;
+impl<T, E> Stream for RecordStream<T, E> {
+    type Item = Result<T, E>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        let Some(records) = &mut this.records else {
+        // Held outside the stream while it is polled: a panic of a mapping unwinds through
+        // this frame and drops the body, its place in any cap on concurrency and the partial
+        // framing, and a later poll finds the stream ended.
+        let Some(mut records) = this.records.take() else {
             return Poll::Ready(None);
         };
         let result = Pin::new(records.as_mut()).poll_next(cx);
-        if matches!(result, Poll::Ready(None | Some(Err(_)))) {
-            // Release the body and all partial framing immediately, even if the
-            // caller keeps the exhausted stream to inspect its response head.
-            this.records = None;
+        // Release the body and all partial framing immediately at the end or after an
+        // error, even if the caller keeps the exhausted stream to inspect its response head.
+        if !matches!(result, Poll::Ready(None | Some(Err(_)))) {
+            this.records = Some(records);
         }
         result
     }
@@ -518,14 +539,14 @@ fn decode<T: serde::de::DeserializeOwned>(
 // The byte stream owns its pending transport operation. Framing and field state
 // live here, never in a temporary pull future. Polling cannot yield between
 // consuming a byte and retaining its effect.
-trait Pull<T>: Stream<Item = Result<T, RecordError>> + Unpin {
+trait Pull<T, E = RecordError>: Stream<Item = Result<T, E>> + Unpin {
     fn cancel_wait(&mut self);
 }
 
 type Parse<T> = dyn FnMut(Vec<u8>) -> Result<Option<T>, RecordError> + Send;
 
 struct Framed<T> {
-    lines: Lines,
+    lines: Lines<ByteStream>,
     parse: Box<Parse<T>>,
 }
 
@@ -549,7 +570,7 @@ impl<T> Pull<T> for Framed<T> {
     fn cancel_wait(&mut self) {
         // ByteStream's public pull guard resets its idle timer on drop, even
         // when unpolled. Its body, call clock and buffered bytes stay in place.
-        drop(self.lines.input.try_next());
+        self.lines.input.cancel_wait();
     }
 }
 
@@ -597,8 +618,40 @@ fn spend(remaining: &mut usize, cx: &mut Context<'_>) -> bool {
 
 // Line framing: LF for JSON Lines, LF/CRLF/CR for SSE, a bounded
 // unfinished line, and at most one transport-owned chunk retained at a time.
-struct Lines {
-    input: ByteStream,
+// Where a framer takes its chunks: the body itself, or a body read as records.
+trait Source: Unpin + Send {
+    fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, StreamError>>>;
+    // A pull guard dropped unpolled resets the idle timer and keeps the body and its bytes.
+    fn cancel_wait(&mut self);
+    fn check_deadline(&mut self) -> Result<(), StreamError>;
+}
+
+impl Source for ByteStream {
+    fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, StreamError>>> {
+        Pin::new(self).poll_next(cx)
+    }
+    fn cancel_wait(&mut self) {
+        drop(self.try_next());
+    }
+    fn check_deadline(&mut self) -> Result<(), StreamError> {
+        ByteStream::check_deadline(self)
+    }
+}
+
+impl<P> Source for concord_core::read::RecordBody<P> {
+    fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, StreamError>>> {
+        concord_core::read::RecordBody::poll_chunk(self, cx)
+    }
+    fn cancel_wait(&mut self) {
+        drop(self.next_chunk());
+    }
+    fn check_deadline(&mut self) -> Result<(), StreamError> {
+        concord_core::read::RecordBody::check_deadline(self)
+    }
+}
+
+struct Lines<S> {
+    input: S,
     chunk: Bytes,
     pos: usize,
     line: Vec<u8>,
@@ -612,8 +665,8 @@ struct Lines {
 
 const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 
-impl Lines {
-    fn new(input: ByteStream, max: usize, sse: bool) -> Self {
+impl<S: Source> Lines<S> {
+    fn new(input: S, max: usize, sse: bool) -> Self {
         Self {
             input,
             chunk: Bytes::new(),
@@ -625,6 +678,16 @@ impl Lines {
             bom: sse.then_some(0),
             empty_cr: false,
             event_size: 0,
+        }
+    }
+
+    // The work budget of this pull is spent, and the task is already woken: the call's
+    // deadline is checked before the pull yields, so that input which is always ready (comments,
+    // skipped records) cannot outlast it.
+    fn yield_now(&mut self) -> Poll<Result<Option<Vec<u8>>, RecordError>> {
+        match self.input.check_deadline() {
+            Ok(()) => Poll::Pending,
+            Err(error) => Poll::Ready(Err(error.into())),
         }
     }
 
@@ -663,7 +726,7 @@ impl Lines {
         loop {
             while let Some(byte) = self.chunk.get(self.pos).copied() {
                 if !spend(&mut work.bytes, cx) {
-                    return Poll::Pending;
+                    return self.yield_now();
                 }
                 self.pos = self.pos.saturating_add(1);
                 if let Some(matched) = self.bom {
@@ -711,9 +774,9 @@ impl Lines {
             self.chunk = Bytes::new();
             self.pos = 0;
             if !spend(&mut work.chunks, cx) {
-                return Poll::Pending;
+                return self.yield_now();
             }
-            match Pin::new(&mut self.input).poll_next(cx) {
+            match self.input.poll_chunk(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Err(error))) => return Poll::Ready(Err(error.into())),
                 Poll::Ready(Some(Ok(chunk))) => self.chunk = chunk,

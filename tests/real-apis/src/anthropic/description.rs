@@ -1,4 +1,4 @@
-use concord::read::{RecordStream, Sse, SseEvent};
+use concord::read::{RecordStream, Sse};
 use concord::{by_cursor, json, Json, Secret};
 use std::time::Duration;
 
@@ -21,10 +21,10 @@ concord::api! {
         POST create(..request) -> Message { path "messages"; }
 
         /// The same request with `"stream": true`: the reply arrives as events, read one by one.
-        POST stream(..request) -> RecordStream<SseEvent> {
+        POST stream(..request) -> RecordStream<Streamed, anthropic::Error> {
             path "messages";
             body json { "stream" = true; }
-            read Sse::new(64 * concord::KIB);
+            read Sse::new(64 * concord::KIB).try_map(streamed).until_last_record();
             idle_timeout Duration::from_secs(120);
         }
 

@@ -59,7 +59,7 @@ mod engine_contracts;
 pub use answer::{Answer, Headers};
 pub use base::Base;
 pub use body::Body;
-pub use error::{mismatch, Error, Fail};
+pub use error::{mismatch, CarriesProblem, Error, Fail};
 pub use middleware::{Middleware, Next};
 pub use page::{Items, Pages};
 pub use read::{ByteStream, Reader};
