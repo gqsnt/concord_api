@@ -773,7 +773,10 @@ fn spent_until_four(script: &Script, after: u64) {
         .header("x-reset", &rfc3339(T + 4));
 }
 
-fn reader() -> Box<dyn Fn(&Seen<'_>) -> Vec<concord::limit::Window> + Send + Sync> {
+/// The learner that `remaining_rfc3339` returns.
+type Reader = Box<dyn Fn(&Seen<'_>) -> Vec<concord::limit::Window> + Send + Sync>;
+
+fn reader() -> Reader {
     remaining_rfc3339("x-limit", "x-remaining", "x-reset")
 }
 
