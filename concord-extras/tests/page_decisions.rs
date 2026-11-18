@@ -222,6 +222,7 @@ mod offsets {
                 paginate by_offset_limit(start, count);
             }
             GET plain(start?: At) -> Page { path "plain"; query { start; } paginate by_offset(start); }
+            GET signed(start?: i32) -> Page { path "signed"; query { start; } paginate by_offset(start); }
             GET bounded(start?: At, count?: u32) -> Page {
                 path "bounded";
                 query { start; count; }
@@ -269,6 +270,44 @@ mod offsets {
             (Kind::Mismatch, Some(UNREADABLE))
         );
         assert_eq!(script.requests().len(), 1);
+    }
+
+    /// The error after the first page, which must arrive.
+    async fn second<T: Send + std::fmt::Debug, P: Send>(
+        mut pages: concord::Pages<T, P>,
+    ) -> concord::Error<P> {
+        assert!(pages.try_next().await.unwrap().is_some());
+        pages.try_next().await.unwrap_err()
+    }
+
+    /// The same mistake does not pass on an empty list and fail on a full one: the offset is read
+    /// when the move runs, whatever the page holds.
+    #[tokio::test(start_paused = true)]
+    async fn c8_6_an_offset_that_cannot_be_read_is_a_mismatch_on_an_empty_page_too() {
+        for which in [
+            "by_offset",
+            "by_offset_limit",
+            "by_offset_limit(3)",
+            "by_offset_total",
+        ] {
+            let script = Script::new();
+            script.answer(200).body(r#"{"items":[],"total":0}"#);
+            let offsets = Offsets::new().with_transport(script.clone());
+            let error = match which {
+                "by_offset" => second(offsets.signed().start(-3).pages()).await,
+                "by_offset_limit" => second(offsets.limited().start(-3).pages()).await,
+                "by_offset_limit(3)" => {
+                    second(offsets.limited().start(-3).count(3u32).pages()).await
+                }
+                _ => second(offsets.total().start(-3).pages()).await,
+            };
+            assert_eq!(
+                (error.kind(), error.reason()),
+                (Kind::Mismatch, Some(UNREADABLE)),
+                "{which}"
+            );
+            assert_eq!(script.requests().len(), 1, "{which}");
+        }
     }
 
     #[tokio::test(start_paused = true)]

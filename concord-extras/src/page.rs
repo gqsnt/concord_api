@@ -41,16 +41,25 @@ impl Stuck {
     }
 }
 
+/// The offset of the call, read when the move runs, whatever the page holds: an offset that is
+/// not set is zero.
+fn offset<C: Call, S>(start: S, call: &C) -> Result<u64, Stuck>
+where
+    S: Slot<C>,
+    S::Value: Copy + TryInto<u64>,
+{
+    match start.get(call) {
+        Some(at) => (*at).try_into().map_err(|_| Stuck::Unreadable),
+        None => Ok(0),
+    }
+}
+
 fn advance<C: Call, S>(start: S, call: C, got: usize) -> Result<C, Stuck>
 where
     S: Slot<C>,
     S::Value: Copy + TryFrom<u64> + TryInto<u64>,
 {
-    // An offset that is not set is zero.
-    let at: u64 = match start.get(&call) {
-        Some(at) => (*at).try_into().map_err(|_| Stuck::Unreadable)?,
-        None => 0,
-    };
+    let at = offset(start, &call)?;
     // counted in `u64`, with a check: an offset that cannot grow is an error, never a wrap
     // PANIC-SAFETY: usize is at most 64 bits on supported targets; offset addition is checked.
     let sum = at.checked_add(got as u64);
@@ -61,7 +70,8 @@ where
 }
 
 /// `paginate by_offset(start);`: the next call starts after the items that arrived. The pages end
-/// with an empty page.
+/// with an empty page. An offset that is not a number of items (a negative one) is a Mismatch,
+/// on an empty page too.
 pub fn by_offset<C, S>(start: S) -> Paging<C>
 where
     C: Call,
@@ -70,7 +80,7 @@ where
     C::Value: IntoItems,
 {
     Paging::<C>::from_fn(move |call, answer| match answer.value().count() {
-        0 => Ok(None),
+        0 => offset(start, &call).map(|_| None).map_err(Stuck::fail),
         got => advance(start, call, got).map(Some).map_err(Stuck::fail),
     })
 }
@@ -105,7 +115,7 @@ where
     Paging::<C>::from_fn(move |call, answer| {
         let got = answer.value().count();
         if got == 0 {
-            return Ok(None);
+            return offset(start, &call).map(|_| None).map_err(Stuck::fail);
         }
         let ended = short(&call, got);
         // A valid offset whose successor cannot be held ends a short page quietly: no next call

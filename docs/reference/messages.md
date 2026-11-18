@@ -656,7 +656,7 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 | Two statements of one page (`has_more`, a total) disagree: one says more, the other no more | `the page's statements disagree on whether more items follow` |
 | The total that `by_offset_total` reads cannot be read as an unsigned number of items | `the total of the list could not be read` |
 | The call sets the inputs of two `or_when_set` | `the call chooses two moves: it sets two inputs that each choose one` |
-| An offset of the call (`by_offset`, `by_offset_limit`, `by_offset_total`) that cannot be read as an unsigned number of items (a negative one), also on a short page | `the offset of the call is not a number of items` |
+| An offset of the call (`by_offset`, `by_offset_limit`, `by_offset_total`) that cannot be read as an unsigned number of items (a negative one), also on a short or an empty page | `the offset of the call is not a number of items` |
 | A valid offset whose next one overflows or cannot be held by the type of the input; `by_offset_limit` ends quietly instead when the page is shorter than its `count` | `the offset cannot grow any further` |
 | A page number (`by_page`) that cannot grow | `the page number cannot grow any further` |
 | A `Link` field that cannot be parsed (`by_link`) | `the Link field could not be read` |
