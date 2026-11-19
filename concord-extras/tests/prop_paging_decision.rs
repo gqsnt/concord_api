@@ -7,13 +7,17 @@ use concord::error::Kind;
 use concord::page::{by_offset_total, Call, InputId, IntoItems, Pager, Paging, Slot};
 use concord::{by_cursor, by_link, by_next_url, by_offset, by_offset_limit, by_page, Answer, Fail};
 use concord_testkit::Script;
-use proptest::{prelude::*, test_runner::TestRunner};
+use proptest::{
+    prelude::*,
+    test_runner::{TestCaseResult, TestRunner},
+};
 use serde::{Deserialize, Serialize};
+use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Request {
-    inputs: [Option<i16>; 2],
+    inputs: [Option<i16>; 3],
     wide: Option<u64>,
     url: Option<String>,
     edits: Vec<u8>,
@@ -33,6 +37,7 @@ impl Call for Request {
 enum Field {
     Start = 0,
     Count = 1,
+    Gate = 2,
 }
 
 impl Slot<Request> for Field {
@@ -53,18 +58,40 @@ impl Slot<Request> for Field {
 }
 
 #[derive(Clone, Copy)]
-struct Forwarded(Field);
+struct Forwarded {
+    first: Field,
+    later: Field,
+}
+
+thread_local! {
+    static LATER: Cell<bool> = const { Cell::new(false) };
+    static VISITS: RefCell<Vec<Visit>> = const { RefCell::new(Vec::new()) };
+}
+
+impl Forwarded {
+    fn field(self) -> Field {
+        if LATER.get() {
+            self.later
+        } else {
+            self.first
+        }
+    }
+}
+
+fn visit(event: Visit) {
+    VISITS.with_borrow_mut(|visits| visits.push(event));
+}
 
 impl Slot<Request> for Forwarded {
     type Value = i16;
     fn get<'a>(&self, call: &'a Request) -> Option<&'a i16> {
-        self.0.get(call)
+        self.field().get(call)
     }
     fn set(&self, call: Request, value: i16) -> Request {
-        self.0.set(call, value)
+        self.field().set(call, value)
     }
     fn input(&self) -> InputId {
-        self.0.input()
+        self.field().input()
     }
 }
 
@@ -81,7 +108,7 @@ impl Slot<Request> for Wide {
         call
     }
     fn input(&self) -> InputId {
-        InputId::new(2)
+        InputId::new(3)
     }
 }
 
@@ -124,6 +151,7 @@ impl IntoItems for Sheet {
         vec![(); self.items]
     }
     fn count(&self) -> usize {
+        visit(Visit::Count);
         self.items
     }
 }
@@ -149,6 +177,7 @@ enum Rule {
     Sized(i16),
     // The forwarded slot and the original can appear together in any order.
     Choose(Field, bool, Option<bool>),
+    Switch(Field, Field),
     Edit(u8),
 }
 
@@ -171,7 +200,7 @@ fn mismatch(reason: &'static str) -> Decision {
 }
 
 fn successor(base: Move, mut call: Request, page: &Sheet) -> Decision {
-    let [start, count] = call.inputs;
+    let [start, count, _] = call.inputs;
     let n = page.items as i128;
     match base {
         Move::Offset | Move::Limited => {
@@ -238,14 +267,17 @@ fn expected(
     call: &Request,
     page: &Sheet,
     visits: &mut Vec<Visit>,
+    later: bool,
 ) -> Decision {
     let set = |field: Field| call.inputs[field as usize].is_some();
     let choices: Vec<_> = rules
         .iter()
         .filter_map(|rule| match *rule {
-            Rule::Choose(field, forwarded, inner) if set(field) => Some((field, forwarded, inner)),
+            Rule::Choose(field, forwarded, inner) => Some((field, forwarded, inner)),
+            Rule::Switch(first, second) => Some((if later { second } else { first }, true, None)),
             _ => None,
         })
+        .filter(|&(field, _, _)| set(field))
         .collect();
     if let Some((first, _, _)) = choices.first() {
         if choices.iter().any(|(field, _, _)| field != first) {
@@ -261,6 +293,7 @@ fn expected(
 
     let mut statements = Vec::new();
     if matches!(base, Move::Total) {
+        visits.push(Visit::Count);
         let reached = i128::from(call.wide.unwrap_or(0)) + page.items as i128;
         statements.push(if reached > i128::from(u64::MAX) {
             Err(OVERFLOW)
@@ -293,8 +326,17 @@ fn expected(
     }
 
     let moved = match choices.first() {
-        None => successor(base, call.clone(), page),
+        None => {
+            if matches!(
+                base,
+                Move::Offset | Move::Limited | Move::Total | Move::Numbered
+            ) {
+                visits.push(Visit::Count);
+            }
+            successor(base, call.clone(), page)
+        }
         Some(&(_, forwarded, inner)) => {
+            visits.push(Visit::Move);
             let alternative = if forwarded { Move::Url } else { Move::Cursor };
             match (inner, successor(alternative, call.clone(), page)) {
                 (Some(false), _) => Decision::End,
@@ -303,29 +345,32 @@ fn expected(
             }
         }
     };
+    if !more && !matches!(moved, Decision::Fault(..)) {
+        let limit = matches!(base, Move::Limited)
+            .then_some(call.inputs[1])
+            .flatten();
+        let largest = rules
+            .iter()
+            .filter_map(|rule| match *rule {
+                Rule::Short(size) => Some(size as i16),
+                Rule::Sized(default) => Some(call.inputs[1].unwrap_or(default)),
+                _ => None,
+            })
+            .chain(limit)
+            .filter_map(|size| usize::try_from(size).ok())
+            .max();
+        if let Some(size) = largest {
+            visits.push(Visit::Count);
+            if page.items < size {
+                return Decision::End;
+            }
+        }
+    }
     match moved {
         Decision::Fault(..) => moved,
         Decision::End if more => mismatch(NO_NEXT),
         Decision::End => moved,
         Decision::Next(mut next) => {
-            let bare_limit = matches!(base, Move::Limited)
-                .then_some(call.inputs[1])
-                .flatten();
-            let sizes = rules
-                .iter()
-                .filter_map(|rule| match *rule {
-                    Rule::Short(size) => Some(size as i16),
-                    Rule::Sized(default) => Some(call.inputs[1].unwrap_or(default)),
-                    _ => None,
-                })
-                .chain(bare_limit);
-            if !more
-                && sizes
-                    .filter_map(|n| usize::try_from(n).ok())
-                    .any(|n| page.items < n)
-            {
-                return Decision::End;
-            }
             next.edits
                 .extend(rules.iter().filter_map(|rule| match *rule {
                     Rule::Edit(digit) => {
@@ -341,12 +386,12 @@ fn expected(
 
 #[derive(Debug, PartialEq, Eq)]
 enum Visit {
+    Count,
+    Move,
     Total,
     Statement(usize),
     Edit(u8),
 }
-
-type Visits = Arc<Mutex<Vec<Visit>>>;
 
 fn alternative(forwarded: bool, inner: Option<bool>) -> Paging<Request> {
     let pager = if forwarded {
@@ -354,28 +399,29 @@ fn alternative(forwarded: bool, inner: Option<bool>) -> Paging<Request> {
     } else {
         by_cursor(Field::Count, |sheet: &Sheet| sheet.cursor)
     };
-    match inner {
+    let mut pager = match inner {
         None => pager,
         Some(more) => Paging::from_fn(pager.has_more(move |_| more).into_fn()),
-    }
+    };
+    Paging::from_fn(move |call, answer: &Answer<Sheet>| {
+        visit(Visit::Move);
+        pager.next_call(call, answer)
+    })
 }
 
-fn assemble(base: Move, rules: &[Rule], visits: &Visits) -> Paging<Request> {
+fn assemble(base: Move, rules: &[Rule]) -> Paging<Request> {
     use Field::{Count, Start};
     let mut paging = match base {
         Move::Offset => by_offset(Start),
         Move::Limited => by_offset_limit(Start, Count),
-        Move::Total => {
-            let seen = visits.clone();
-            by_offset_total(Wide, move |sheet: &Sheet| {
-                seen.lock().unwrap().push(Visit::Total);
-                sheet.total
-            })
-        }
+        Move::Total => by_offset_total(Wide, |sheet: &Sheet| {
+            visit(Visit::Total);
+            sheet.total
+        }),
         Move::Numbered => by_page(Start, 3),
         Move::Cursor => by_cursor(Count, |sheet: &Sheet| sheet.cursor),
         Move::Link => by_link(),
-        Move::Url => alternative(true, None),
+        Move::Url => by_next_url(|sheet: &Sheet| sheet.cursor.map(|_| format!("{URL}#fragment"))),
         Move::Refuse => Paging::from_fn(
             |_: Request, _: &Answer<Sheet>| -> Result<Option<Request>, Fail<()>> {
                 Err(Fail::from(()))
@@ -390,35 +436,36 @@ fn assemble(base: Move, rules: &[Rule], visits: &Visits) -> Paging<Request> {
     for rule in rules {
         paging = match *rule {
             Rule::Gate(field) => paging.only_when_set(field),
-            Rule::Says(which) => {
-                let seen = visits.clone();
-                paging.has_more(move |sheet| {
-                    seen.lock().unwrap().push(Visit::Statement(which));
-                    sheet.says[which]
-                })
-            }
+            Rule::Says(which) => paging.has_more(move |sheet| {
+                visit(Visit::Statement(which));
+                sheet.says[which]
+            }),
             Rule::Short(size) => paging.stop_on_short_page_of(size),
             Rule::Sized(default) => paging.stop_on_short_page(Count, default),
-            Rule::Choose(field, true, inner) => {
-                paging.or_when_set(Forwarded(field), alternative(true, inner))
-            }
+            Rule::Choose(field, true, inner) => paging.or_when_set(
+                Forwarded {
+                    first: field,
+                    later: field,
+                },
+                alternative(true, inner),
+            ),
             Rule::Choose(field, false, inner) => {
                 paging.or_when_set(field, alternative(false, inner))
             }
-            Rule::Edit(digit) => {
-                let seen = visits.clone();
-                paging.map_next(move |mut next, _| {
-                    seen.lock().unwrap().push(Visit::Edit(digit));
-                    next.edits.push(digit);
-                    next
-                })
+            Rule::Switch(first, later) => {
+                paging.or_when_set(Forwarded { first, later }, alternative(true, None))
             }
+            Rule::Edit(digit) => paging.map_next(move |mut next, _| {
+                visit(Visit::Edit(digit));
+                next.edits.push(digit);
+                next
+            }),
         };
     }
     paging
 }
 
-type Decide = dyn FnMut(&Answer<Sheet>) -> Result<(), Fail<()>> + Send;
+type Decide = dyn FnMut(&Answer<Sheet>) -> Result<Option<Request>, Fail<()>> + Send;
 
 #[derive(Clone)]
 struct Job(Arc<Mutex<Box<Decide>>>);
@@ -426,12 +473,20 @@ struct Job(Arc<Mutex<Box<Decide>>>);
 concord::api! {
     client Store {
         base "https://store.test";
-        GET scan(job: Job) -> Sheet {
+        GET scan(job: Job, start?: i16, count?: i16, gate?: i16, wide?: u64, edits?: String) -> Sheet {
+            path "scan";
+            query { start; count; gate; wide; edits; }
             read concord::Json;
             paginate move |call, answer| {
-                // Use Pages to turn the opaque failure into the public client error.
-                (job.get(&call).unwrap().0.lock().unwrap())(answer)?;
-                Ok(None)
+                let next = (job.get(&call).unwrap().0.lock().unwrap())(answer)?;
+                Ok(next.map(|next| {
+                    let call = call.start(next.inputs[0]).count(next.inputs[1])
+                        .gate(next.inputs[2]).wide(next.wide).edits(edit_text(&next.edits));
+                    match next.url {
+                        Some(url) => Call::at_url(call, &url),
+                        None => call,
+                    }
+                }))
             };
         }
     }
@@ -440,7 +495,7 @@ concord::api! {
 fn rule() -> impl Strategy<Value = Rule> {
     let field = || prop_oneof![Just(Field::Start), Just(Field::Count)];
     prop_oneof![
-        field().prop_map(Rule::Gate),
+        prop_oneof![field(), Just(Field::Gate)].prop_map(Rule::Gate),
         (0..2usize).prop_map(Rule::Says),
         (0..5usize).prop_map(Rule::Short),
         (-1..5i16).prop_map(Rule::Sized),
@@ -450,15 +505,173 @@ fn rule() -> impl Strategy<Value = Rule> {
     ]
 }
 
-#[test]
-fn c8_6_one_page_follows_the_decision_order() {
-    // Keep the decision sample size even when the workspace runs other properties with fewer cases.
-    let mut runner = TestRunner::new(ProptestConfig {
-        cases: 6_804,
-        failure_persistence: None,
-        ..ProptestConfig::default()
+fn edit_text(edits: &[u8]) -> Option<String> {
+    (!edits.is_empty()).then(|| {
+        edits
+            .iter()
+            .map(|&digit| char::from(b'0' + digit))
+            .collect()
+    })
+}
+
+fn target(call: &Request) -> String {
+    if let Some(url) = &call.url {
+        return format!("https://store.test{url}");
+    }
+    let [start, count, gate] = call.inputs;
+    let pairs: Vec<_> = [
+        ("start", start.map(|n| n.to_string())),
+        ("count", count.map(|n| n.to_string())),
+        ("gate", gate.map(|n| n.to_string())),
+        ("wide", call.wide.map(|n| n.to_string())),
+        ("edits", edit_text(&call.edits)),
+    ]
+    .into_iter()
+    .filter_map(|(key, value)| value.map(|value| format!("{key}={value}")))
+    .collect();
+    if pairs.is_empty() {
+        "https://store.test/scan".into()
+    } else {
+        format!("https://store.test/scan?{}", pairs.join("&"))
+    }
+}
+
+#[derive(Debug)]
+struct Walk {
+    base: Move,
+    rules: Vec<Rule>,
+    call: Request,
+    sheets: Vec<Sheet>,
+}
+
+async fn check_walk(walk: Walk) -> TestCaseResult {
+    let Walk {
+        base,
+        rules,
+        call,
+        mut sheets,
+    } = walk;
+
+    let decisions = sheets.len();
+    // A successor from the last decision is still sent and its response is returned.
+    sheets.push(Sheet {
+        items: 0,
+        says: [false; 2],
+        total: 0,
+        cursor: None,
+        link: Link::Missing,
     });
-    let cases = (
+    let script = Script::new();
+    let mut urls = vec![target(&call)];
+    let mut visits = Vec::new();
+    let mut want = Decision::End;
+    let mut successors = Vec::new();
+    let mut current = call.clone();
+    for (step, sheet) in sheets.iter().enumerate() {
+        let mut reply = script.answer(200).body(serde_json::to_vec(sheet).unwrap());
+        for field in sheet.link.fields() {
+            reply = reply.header("link", field);
+        }
+        drop(reply);
+        if step == decisions {
+            break;
+        }
+        match expected(base, &rules, &current, sheet, &mut visits, step > 0) {
+            Decision::Next(next) => {
+                successors.push(next.clone());
+                let url = target(&next);
+                if urls.last() == Some(&url) {
+                    want = Decision::Fault(Kind::Mismatch, None);
+                    break;
+                }
+                urls.push(url);
+                current = next;
+            }
+            decision => {
+                want = decision;
+                break;
+            }
+        }
+    }
+
+    VISITS.with_borrow_mut(Vec::clear);
+    LATER.set(false);
+    let mut pager = assemble(base, &rules);
+    let mut current = call.clone();
+    let mut step = 0;
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let recorded = observed.clone();
+    let job = Job(Arc::new(Mutex::new(Box::new(move |page| {
+        if step == decisions {
+            return Ok(None);
+        }
+        LATER.set(step > 0);
+        step += 1;
+        let next = pager.next_call(current.clone(), page)?;
+        if let Some(next) = &next {
+            recorded.lock().unwrap().push(next.clone());
+            current = next.clone();
+        }
+        Ok(next)
+    }))));
+    let [start, count, gate] = call.inputs;
+    let mut pages = Store::new()
+        .with_transport(script.clone())
+        .scan(job)
+        .start(start)
+        .count(count)
+        .gate(gate)
+        .wide(call.wide)
+        .edits(edit_text(&call.edits))
+        .pages();
+
+    for sheet in sheets.into_iter().take(urls.len()) {
+        prop_assert_eq!(pages.try_next().await.unwrap(), Some(sheet));
+    }
+    match (pages.try_next().await, want) {
+        (Ok(None), Decision::End) => (),
+        (Err(error), Decision::Fault(kind, reason)) => {
+            prop_assert_eq!(error.kind(), kind);
+            prop_assert_eq!(error.reason(), reason);
+        }
+        (got, want) => prop_assert!(false, "got {:?}, expected {:?}", got, want),
+    }
+    prop_assert_eq!(pages.try_next().await.unwrap(), None);
+    let sent: Vec<_> = script
+        .requests()
+        .iter()
+        .map(|request| request.url().to_string())
+        .collect();
+    prop_assert_eq!(sent, urls);
+    prop_assert_eq!(VISITS.with_borrow_mut(std::mem::take), visits);
+    Ok(())
+}
+
+fn sheet() -> impl Strategy<Value = Sheet> {
+    (
+        0..5usize,
+        any::<[bool; 2]>(),
+        -1..10i64,
+        prop::option::of(0..5i16),
+        prop_oneof![
+            Just(Link::Missing),
+            Just(Link::Anchored),
+            Just(Link::Next),
+            Just(Link::BrokenAfterNext)
+        ],
+    )
+        .prop_map(|(items, says, total, cursor, link)| Sheet {
+            items,
+            says,
+            total,
+            cursor,
+            link,
+        })
+}
+
+fn walks() -> impl Strategy<Value = Walk> {
+    use Field::{Count, Gate, Start};
+    let any_walk = (
         prop_oneof![
             Just(Move::Offset),
             Just(Move::Limited),
@@ -473,88 +686,82 @@ fn c8_6_one_page_follows_the_decision_order() {
         prop::collection::vec(rule(), 0..10),
         prop::option::of(prop_oneof![(-1..4i16), Just(i16::MAX)]),
         prop::option::of(-1..5i16),
+        prop::option::of(-1..5i16),
         prop::option::of(prop_oneof![(0..6u64), Just(u64::MAX)]),
-        0..5usize,
-        any::<[bool; 2]>(),
-        -1..10i64,
-        prop::option::of(0..5i16),
-        prop_oneof![
-            Just(Link::Missing),
-            Just(Link::Anchored),
-            Just(Link::Next),
-            Just(Link::BrokenAfterNext)
+        sheet(),
+    )
+        .prop_map(|(base, rules, start, count, gate, wide, sheet)| Walk {
+            base,
+            rules,
+            call: Request {
+                inputs: [start, count, gate],
+                wide,
+                ..Request::default()
+            },
+            sheets: vec![sheet],
+        });
+
+    let closed_gate = (any::<i16>(), any::<i16>(), sheet()).prop_map(|(a, b, sheet)| Walk {
+        base: Move::Offset,
+        rules: vec![
+            Rule::Choose(Start, false, None),
+            Rule::Gate(Gate),
+            Rule::Choose(Count, true, None),
         ],
-    );
+        call: Request {
+            inputs: [Some(a), Some(b), None],
+            ..Request::default()
+        },
+        sheets: vec![sheet],
+    });
+
+    let changing_slot = (0..4i16, sheet(), sheet()).prop_map(|(cursor, mut first, second)| {
+        first.cursor = Some(cursor);
+        Walk {
+            base: Move::Cursor,
+            rules: vec![Rule::Choose(Start, false, None), Rule::Switch(Start, Count)],
+            call: Request {
+                inputs: [Some(0), Some(cursor + 1), None],
+                ..Request::default()
+            },
+            sheets: vec![first, second],
+        }
+    });
+
+    let counted = (0..5usize, sheet()).prop_map(|(size, mut sheet)| {
+        sheet.cursor = Some(1);
+        Walk {
+            base: Move::Reject,
+            rules: vec![
+                Rule::Choose(Start, false, None),
+                Rule::Short(size),
+                Rule::Edit(2),
+            ],
+            call: Request {
+                inputs: [Some(0), None, None],
+                ..Request::default()
+            },
+            sheets: vec![sheet],
+        }
+    });
+
+    prop_oneof![12 => any_walk, 1 => closed_gate, 1 => changing_slot, 1 => counted]
+}
+
+#[test]
+fn c8_6_one_page_follows_the_decision_order() {
+    // Keep the decision sample size even when the workspace runs other properties with fewer cases.
+    let mut runner = TestRunner::new(ProptestConfig {
+        cases: 6_804,
+        failure_persistence: None,
+        ..ProptestConfig::default()
+    });
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_time()
         .start_paused(true)
         .build()
         .unwrap();
-    let result = runner.run(
-        &cases,
-        |(base, rules, start, count, wide, items, says, total, cursor, link)| {
-            let call = Request {
-                inputs: [start, count],
-                wide,
-                ..Request::default()
-            };
-            let sheet = Sheet {
-                items,
-                says,
-                total,
-                cursor,
-                link,
-            };
-            let mut expected_visits = Vec::new();
-            let wanted = expected(base, &rules, &call, &sheet, &mut expected_visits);
-
-            let script = Script::new();
-            let mut reply = script.answer(200).body(serde_json::to_vec(&sheet).unwrap());
-            for field in link.fields() {
-                reply = reply.header("link", field);
-            }
-            drop(reply);
-
-            let visits = Visits::default();
-            let mut pager = assemble(base, &rules, &visits);
-            let next = Arc::new(Mutex::new(None));
-            let result = next.clone();
-            let job = Job(Arc::new(Mutex::new(Box::new(move |page| {
-                *result.lock().unwrap() = pager.next_call(call.clone(), page)?;
-                Ok(())
-            }))));
-            let mut pages = Store::new()
-                .with_transport(script.clone())
-                .scan(job)
-                .pages();
-            runtime.block_on(async {
-                prop_assert_eq!(pages.try_next().await.unwrap(), Some(sheet));
-                let actual = match pages.try_next().await {
-                    Ok(page) => {
-                        prop_assert_eq!(page, None);
-                        next.lock()
-                            .unwrap()
-                            .take()
-                            .map_or(Decision::End, Decision::Next)
-                    }
-                    Err(error) => {
-                        let reason = match &wanted {
-                            Decision::Fault(_, expected) => *expected,
-                            _ => None,
-                        };
-                        prop_assert_eq!(error.reason(), reason, "{:?}", error);
-                        Decision::Fault(error.kind(), reason)
-                    }
-                };
-                prop_assert_eq!(actual, wanted);
-                prop_assert_eq!(&*visits.lock().unwrap(), &expected_visits);
-                prop_assert_eq!(pages.try_next().await.unwrap(), None);
-                prop_assert_eq!(script.requests().len(), 1);
-                Ok(())
-            })
-        },
-    );
-    if let Err(failure) = result {
+    if let Err(failure) = runner.run(&walks(), |walk| runtime.block_on(check_walk(walk))) {
         panic!("{failure}");
     }
 }
