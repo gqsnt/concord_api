@@ -46,6 +46,8 @@ Upgrading from 5.0.0-rc.1: the changes that stop a program from compiling come f
 ### Fixed
 
 - **Generated code takes fewer names from your module.** A client named `Diagnostic` compiles. The status of an arm, an optional input and the `Debug` text of a client or a handle are read through full paths (`StatusCode::as_u16`, `Option::as_ref`, `DebugStruct`), not by method syntax in your scope. Generated code still calls some methods by method syntax where the description is written: `__adapt` on every value and `__push` on each entry of a body, and other calls inside the items that it generates (on a call's options, on the formatter of a call's `Debug`). Names that begin with `__` are Concord's: a trait in scope there that gives `__adapt` or `__push` to every type changes what is sent.
+- **`transfer::at` refuses a URL in which `://` comes after a `/`, `?`, `#` or backslash with `TransferError::NotAbsolute`**, where it gave `InvalidUrl`: such a `://` follows no scheme and starts no authority (`/x://example`, `urn:example:x?q=https://u.test/p`).
+- **`Json.strict()` requires a media type with a type and a subtype**, each a token: a content type such as `bogus+json`, which has no `/`, is refused before the body is read, as any content type that is not JSON is.
 
 ### Documentation
 
