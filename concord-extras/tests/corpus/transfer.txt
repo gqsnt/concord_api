@@ -37,3 +37,5 @@ transfer URL could not be parsed	https://[invalid]/p
 transfer URL could not be parsed	https://storage.test:70000/p
 transfer URL could not be parsed	https://sto rage.test/p
 transfer URL is not an HTTP URI	https://sto`rage.test/p
+# A `://` in the query of a URL with no authority starts none.
+transfer URL must have an absolute authority	urn:example:x?q=https://u.test/p

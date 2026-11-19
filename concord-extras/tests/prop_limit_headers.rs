@@ -477,7 +477,7 @@ fn rfc3339_model(text: &str) -> Option<i128> {
     if second == 60 {
         // Only the last second of a month in UTC, which counts as the next second.
         let (_, _, d, h, mi, s) = calendar(utc + 1);
-        // The next second must also be one that the grammar can write: not in the year 10000.
+        // The reader checks the next second on its calendar, which ends with the year 9999.
         if (d, h, mi, s) != (1, 0, 0, 0) || utc + 1 > LAST {
             return None;
         }
@@ -950,44 +950,89 @@ fn c11_5_the_http_date_corpus_reads_alike_in_both_readers() {
 fn c11_5_an_rfc_850_date_takes_its_century_at_the_fifty_year_edge_of_this_clock() {
     let rt = runtime();
     for near in [-1i64, 0, 1] {
-        // The response must be seen in the second its date was written for: try again if not.
-        let mut checked = false;
-        for _ in 0..20 {
-            let start = nanos_of(SystemTime::now()).div_euclid(1_000_000_000) as i64;
-            let (y, mo, d, h, mi, s) = calendar(start);
-            let day = d.min(month_days(y + 50, mo));
-            let edge = days_from_civil(y + 50, mo, day) * 86_400 + h * 3600 + mi * 60 + s;
-            let text = http_text(edge + near, 1, 0, false);
-            let mut headers = HeaderMap::new();
-            header(&mut headers, "date", text.as_bytes());
-            let probe = text.clone();
-            // A reset one second after the date read fifty years ahead.
-            let reset = rfc3339_text(i128::from(edge + near + 1) * 1_000_000_000);
-            let (now, model, until) = seen(&rt, headers, move |seen| {
-                let now = seen.now();
-                (
-                    now,
-                    http_date_model(&probe, now),
-                    seen.until_rfc3339(&reset),
-                )
-            });
-            if nanos_of(now).div_euclid(1_000_000_000) as i64 != start {
-                continue;
-            }
-            if near <= 0 {
-                // Fifty years ahead or less: this century.
-                assert_eq!(model, Some(edge + near), "{text}");
-                assert_eq!(until, Some(sec(1)), "{text}");
-            } else {
-                // One second further: a hundred years back, where the weekday is not this
-                // one, so it is no date; from this clock, the reset is over fifty years ahead.
-                assert_eq!(model, None, "{text}");
-                assert_eq!(until, None, "{text}");
-            }
-            checked = true;
-            break;
-        }
-        assert!(checked, "the clock never stayed in one second");
+        // Written for the fifty-year edge of this second; read on whatever clock `Date` sees,
+        // which the expectation also uses, so a clock that moves changes nothing.
+        let start = nanos_of(SystemTime::now()).div_euclid(1_000_000_000) as i64;
+        let (y, mo, d, h, mi, s) = calendar(start);
+        let day = d.min(month_days(y + 50, mo));
+        let edge = days_from_civil(y + 50, mo, day) * 86_400 + h * 3600 + mi * 60 + s;
+        let text = http_text(edge + near, 1, 0, false);
+        let mut headers = HeaderMap::new();
+        header(&mut headers, "date", text.as_bytes());
+        let probe = text.clone();
+        // A reset one second after the date as written fifty years ahead.
+        let reset = i128::from(edge + near + 1) * 1_000_000_000;
+        let (now, model, until) = seen(&rt, headers, move |seen| {
+            let now = seen.now();
+            (
+                now,
+                http_date_model(&probe, now),
+                seen.until_rfc3339(&rfc3339_text(reset)),
+            )
+        });
+        let from = model.map_or_else(|| nanos_of(now), |date| i128::from(date) * 1_000_000_000);
+        let expected = (reset - from <= i128::from(FIFTY_YEARS) * 1_000_000_000)
+            .then(|| duration(reset - from));
+        assert_eq!(until, expected, "{text}");
+    }
+}
+
+#[test]
+/// Also proves C4.3.
+fn c11_5_an_rfc_850_year_at_the_fifty_year_edge_of_fixed_clocks() {
+    // (clock, date read fifty years ahead or a hundred years back, expected instant)
+    let at = |y: i64, mo: i64, d: i64, h: i64, mi: i64, s: i64| {
+        days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + s
+    };
+    let cases = [
+        // 2026-11-19T10:20:30Z: 10:20:30 of 2076-11-19 is the last second of this century.
+        (at(2026, 11, 19, 10, 20, 30), at(2076, 11, 19, 10, 20, 29)),
+        (at(2026, 11, 19, 10, 20, 30), at(2076, 11, 19, 10, 20, 30)),
+        (at(2026, 11, 19, 10, 20, 30), at(1976, 11, 19, 10, 20, 31)),
+        // On a leap day the edge is the 29th of February 2074, a day that does not exist:
+        // the whole 28th is this century, the 1st of March is a hundred years back.
+        (at(2024, 2, 29, 12, 0, 0), at(2074, 2, 28, 23, 59, 59)),
+        (at(2024, 2, 29, 12, 0, 0), at(1974, 3, 1, 0, 0, 0)),
+    ];
+    for (clock, date) in cases {
+        let text = http_text(date, 1, 0, false);
+        let now = system(i128::from(clock) * 1_000_000_000);
+        assert_eq!(http_date_model(&text, now), Some(date), "{text}");
+        let mut map = HeaderMap::new();
+        map.insert("retry-after", HeaderValue::from_str(&text).unwrap());
+        let wait = Headers::from(map).retry_after_at(now);
+        assert_eq!(
+            wait,
+            Some(duration(i128::from(date - clock) * 1_000_000_000)),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn c11_5_a_reset_exactly_fifty_years_ahead_is_read_and_one_nanosecond_more_is_not() {
+    let rt = runtime();
+    let server = 1_893_456_000i64;
+    let horizon = i128::from(server + FIFTY_YEARS as i64) * 1_000_000_000;
+    for (reset, expected) in [
+        (
+            horizon - 1,
+            Some(Duration::new(FIFTY_YEARS - 1, 999_999_999)),
+        ),
+        (horizon, Some(sec(FIFTY_YEARS))),
+        (horizon + 1, None),
+    ] {
+        let mut headers = HeaderMap::new();
+        header(
+            &mut headers,
+            "date",
+            http_text(server, 0, 0, false).as_bytes(),
+        );
+        header(&mut headers, "x-reset", rfc3339_text(reset).as_bytes());
+        let until = seen(&rt, headers, |seen| {
+            seen.until_rfc3339(seen.header("x-reset").unwrap())
+        });
+        assert_eq!(until, expected, "{}", rfc3339_text(reset));
     }
 }
 
