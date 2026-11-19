@@ -9,22 +9,3 @@ help: the binding `key` is available in a different scope in the same function
   |
 2 | query { "client" = key; }
   |         ^^^^^^^^
-
-error: this function depends on never type fallback being `()`
- --> tests/compiler-errors/expressions/query_entry.rs:1:1
-  |
-1 | / concord::api! { client Leak(key: String) { base "https://api.example.com";
-2 | | query { "client" = key; }
-3 | | GET get() { query { "endpoint" = key.len().to_string(); } } } }
-  | |_______________________________________________________________^
-  |
-  = help: specify the types explicitly
-note: in edition 2024, the requirement `&concord::__private::ValueRef<&!>: concord::__private::AdaptPlacement<_>` will fail
- --> tests/compiler-errors/expressions/query_entry.rs:3:34
-  |
-3 | GET get() { query { "endpoint" = key.len().to_string(); } } } }
-  |                                  ^^^
-  = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in Rust 2024 and in a future release in all editions!
-  = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/never-type-fallback.html>
-  = note: `#[deny(dependency_on_unit_never_type_fallback)]` (part of `#[deny(rust_2024_compatibility)]`) on by default
-  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

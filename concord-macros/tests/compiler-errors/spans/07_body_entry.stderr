@@ -1,18 +1,9 @@
-error[E0277]: the trait bound `&concord::__private::ValueRef<&NotSer>: concord::__private::AdaptPlacement<_>` is not satisfied
- --> tests/compiler-errors/spans/07_body_entry.rs:2:1
+error[E0277]: `&NotSer` cannot be written as a request value
+ --> tests/compiler-errors/spans/07_body_entry.rs:3:22
   |
-2 | / concord::api! { client C { base "https://span.test"; POST get(value:NotSer) {
-3 | | body concord::json { value; }
-  | |                      ----- required by a bound introduced by this call
-4 | | } } }
-  | |_____^ the trait `concord::__private::AdaptPlacement<_>` is not implemented for `&concord::__private::ValueRef<&NotSer>`
+3 | body concord::json { value; }
+  |                      ^^^^^ this value cannot be written
   |
-help: `&concord::__private::ValueRef<T>` implements trait `concord::__private::AdaptPlacement<Mode>`
- --> $WORKSPACE/concord-core/src/__private/value.rs
-  |
-  | impl<'a, T: SecretInput> AdaptPlacement<SecretPlacement> for &'a ValueRef<T> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::__private::AdaptPlacement<concord::__private::value::SecretPlacement>`
-...
-  | impl<'a, T: serde::Serialize> AdaptPlacement<SerdePlacement> for &'a ValueRef<T> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord::__private::AdaptPlacement<concord::__private::value::SerdePlacement>`
+  = help: the trait `concord::__private::AdaptPlacement<'_, _>` is not implemented for `&NotSer`
+  = note: request values must implement `serde::Serialize` or be a supported form of `concord::Secret`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

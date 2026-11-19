@@ -70,6 +70,11 @@ pub trait Call: crate::page::Call {
         Sending::new(async move { self.prepare()?.send().await })
     }
 
+    /// Prepare once, then send through the response head without reading its body.
+    fn send_raw(self) -> Sending<reqwest::Response, Self::Problem> {
+        Sending::new(async move { self.prepare()?.send_raw().await })
+    }
+
     /// Changes each request after it is built and before it enters the middleware chain.
     /// Header values this edit marks sensitive are omitted from page request comparison.
     /// Changing the URL discards its secret marks; its URL is then compared as it is.
@@ -87,6 +92,12 @@ pub struct ConditionalAccess<C>(std::marker::PhantomData<fn(C) -> C>);
 pub trait ConditionalCall: Call {
     /// Set the header on this call before building its request.
     fn set_if_none_match(&mut self, access: ConditionalAccess<Self>, etag: &str);
+
+    /// Prepare and send the conditional call on its first poll.
+    fn send_conditional(self, etag: &str) -> Sending<Answer<Option<Self::Value>>, Self::Problem> {
+        let etag = etag.to_owned();
+        Sending::new(async move { prepare_conditional(self, &etag)?.send().await })
+    }
 }
 
 /// Prepare a conditional call, keeping its reader and response evidence.

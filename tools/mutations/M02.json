@@ -3,9 +3,9 @@
   "area": "calls",
   "contract": "C3.1",
   "description": "Build a raw call twice",
-  "file": "concord-macros/src/write/call.rs",
-  "find": "::concord::Sending::new(async move { #send_raw_prepared(<Self as ::concord::__private::Call>::prepare(self)?).await })",
-  "replace": "::concord::Sending::new(async move {\n    let _ = Self::into_request(::core::clone::Clone::clone(&self))?;\n    #send_raw_prepared(<Self as ::concord::__private::Call>::prepare(self)?).await\n})",
+  "file": "concord-core/src/__private/call.rs",
+  "find": "Sending::new(async move { self.prepare()?.send_raw().await })",
+  "replace": "Sending::new(async move {\n        let _ = self.clone().prepare()?;\n        self.prepare()?.send_raw().await\n    })",
   "checks": [
     "generated-tour"
   ]

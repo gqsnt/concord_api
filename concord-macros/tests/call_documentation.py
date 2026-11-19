@@ -380,7 +380,7 @@ def call_page_violations(path, problem=None, *, macro_problem=False):
 
     def resolved(signature):
         if macro_problem:
-            return signature.replace("<() as __Types>::__Problem", problem)
+            return signature.replace("<Call<ClientKey> as ClientProblem>::Problem", problem)
         return signature
 
     problems = [

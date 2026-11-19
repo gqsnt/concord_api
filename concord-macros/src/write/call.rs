@@ -198,27 +198,9 @@ impl<'ast> Visit<'ast> for Uncertain {
 }
 
 impl Writer<'_> {
-    pub(super) fn data_path(&self, index: usize) -> TokenStream {
-        if self.nodes.get(index).is_some_and(|n| n.deprecated) {
-            let root = &self.root;
-            let alias = ident(&format!("__DataImpl{index}"));
-            return emit!(#root::#alias);
-        }
-        self.raw_data_path(index)
-    }
-
-    pub(super) fn raw_data_path(&self, index: usize) -> TokenStream {
-        let Some(node) = self.nodes.get(index) else {
-            return TokenStream::new();
-        };
-        let modules = &node.modules;
-        let data = ident(&format!("__Data{index}"));
-        emit!(#(#modules::)* #data)
-    }
-
     pub(super) fn call_type(&self, node: &NodeInfo<'_>) -> TokenStream {
         let root = &self.root;
-        let ty = &node.implementation;
+        let ty = &node.path;
         emit!(#root::Call<#ty>)
     }
 
@@ -228,35 +210,11 @@ impl Writer<'_> {
         };
         let depth = node.modules.len();
         let vis = self.visibility(depth);
-        let field_vis = Self::field_visibility(depth);
-        let supers = (1..depth).map(|_| ident("super")).collect::<Vec<_>>();
-        let parent = ident(&format!("__Node{}", node.parent.unwrap_or(0)));
-        let data = ident(&format!("__Data{index}"));
         let ty = Ident::new(
             &name::type_name(&node.node.name.to_string()),
             node.node.name.span(),
         );
         let attrs = &node.node.attrs;
-        let hidden_attrs = node.endpoint_attrs();
-        let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
-        let state = if self.tuple_data(index) {
-            let inputs = node.inputs.iter().map(|input| {
-                let id = self.input_id(input);
-                stored(input.input, emit!(<__T as #(#supers::)* __Types>::#id))
-            });
-            emit!(#vis type #data<__T = ()> = ::concord::__private::CallData<<__T as #(#supers::)* __Types>::#parent, (#(#inputs,)*), #ty>;)
-        } else {
-            let fields = node.inputs.iter().map(|input| {
-                let field = &input.input.name;
-                let id = self.input_id(input);
-                let ty = stored(input.input, emit!(<__T as #(#supers::)* __Types>::#id));
-                emit!(#field_vis #field: #ty,)
-            });
-            emit!(#vis struct #data<__T: #(#supers::)* __Types = ()> {
-                #field_vis __parent: <__T as #(#supers::)* __Types>::#parent,
-                #(#fields)*
-            })
-        };
         let docs = self
             .endpoints
             .get(&(node.node as *const Node))
@@ -274,7 +232,6 @@ impl Writer<'_> {
             #(#attrs)* #docs
             #[allow(missing_debug_implementations)]
             #vis enum #ty {}
-            #hidden_attrs #allow #[doc(hidden)] #state
         }
     }
 
@@ -295,13 +252,28 @@ impl Writer<'_> {
             /// Use the endpoint name to find its options.
             #must_use
             #call_vis struct Call<E: Endpoint> {
-                __data: E::Data<()>,
+                __data: E::Data,
                 __options: ::concord::__private::Options<__Problem>,
             }
         );
         emit! {
             mod __sealed { pub trait Sealed {} }
             #(#seals)*
+            impl __sealed::Sealed for ::concord::__private::ClientKey {}
+            #[doc(hidden)]
+            impl Endpoint for ::concord::__private::ClientKey {
+                type Value = ::core::convert::Infallible;
+                type Data = ::core::convert::Infallible;
+                type Paging = ::concord::call::NoPaginate;
+                type Conditional = ::concord::call::NotGetOrHead;
+                const NAME: &'static ::core::primitive::str = "";
+                const __DEBUG: &'static ::core::primitive::str = "";
+                fn __core(value: &Self::Data) -> &::concord::__private::Core<__Problem> { match *value {} }
+                fn __build_draft(value: &Self::Data) -> Result<::concord::__private::Draft> { match *value {} }
+                async fn __read_answer(value: &Self::Data, _: ::concord::reqwest::Response, _: ::concord::transport::TryInfo)
+                    -> Result<::concord::Answer<Self::Value>> { match *value {} }
+                fn __pages(_: Call<Self>, proof: ::core::convert::Infallible) -> ::concord::Pages<Self::Value, __Problem> { match proof {} }
+            }
 
             /// The endpoint types of this client. The client supplies all implementations.
             ///
@@ -310,9 +282,9 @@ impl Writer<'_> {
                 /// The value of a successful send. For a paged endpoint, this is one page.
                 type Value: ::core::marker::Send + 'static;
                 #[doc(hidden)]
-                type Data<__T: __Types>: ::core::clone::Clone + ::core::marker::Send + ::core::marker::Sync + 'static;
+                type Data: ::core::clone::Clone + ::core::marker::Send + ::core::marker::Sync + 'static;
                 #[doc(hidden)]
-                type Paging: ::concord::call::PagingMode + __PagesFor<Self>;
+                type Paging: ::concord::call::PagingMode;
                 #[doc(hidden)]
                 type Conditional: ::concord::call::ConditionalMode;
                 /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
@@ -323,34 +295,19 @@ impl Writer<'_> {
                 #[doc(hidden)]
                 const __DEBUG: &'static ::core::primitive::str;
                 #[doc(hidden)]
-                fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<__Problem>;
+                fn __core(__value: &Self::Data) -> &::concord::__private::Core<__Problem>;
                 #[doc(hidden)]
-                fn __settings(__value: &Self::Data<()>, __draft: &mut ::concord::__private::Options<__Problem>) -> ::concord::__private::Idempotent {
+                fn __settings(__value: &Self::Data, __draft: &mut ::concord::__private::Options<__Problem>) -> ::concord::__private::Idempotent {
                     ::concord::__private::Idempotent::ByMethod
                 }
                 #[doc(hidden)]
-                fn __build_draft(__value: &Self::Data<()>) -> Result<::concord::__private::Draft>;
+                fn __build_draft(__value: &Self::Data) -> Result<::concord::__private::Draft>;
                 #[doc(hidden)]
-                fn __read_answer(__value: &Self::Data<()>, __response: ::concord::reqwest::Response, __info: ::concord::transport::TryInfo)
+                fn __read_answer(__value: &Self::Data, __response: ::concord::reqwest::Response, __info: ::concord::transport::TryInfo)
                     -> impl ::core::future::Future<Output = Result<::concord::Answer<Self::Value>>> + ::core::marker::Send;
-            }
-            #[doc(hidden)]
-            #vis trait __Pager: Endpoint {
-                fn __pages(__call: Call<Self>) -> ::concord::Pages<Self::Value, __Problem>;
-            }
-            #[doc(hidden)]
-            #vis trait __PagesFor<__E: Endpoint>: ::concord::call::PagingMode {
-                fn __pages(__call: Call<__E>, __proof: Self::Proof) -> ::concord::Pages<__E::Value, __Problem>;
-            }
-            impl<__E: Endpoint> __PagesFor<__E> for ::concord::call::NoPaginate {
-                fn __pages(_: Call<__E>, __proof: ::core::convert::Infallible) -> ::concord::Pages<__E::Value, __Problem> {
-                    match __proof {}
-                }
-            }
-            impl<__E: __Pager> __PagesFor<__E> for ::concord::call::Paged {
-                fn __pages(__call: Call<__E>, _: ()) -> ::concord::Pages<__E::Value, __Problem> {
-                    <__E as __Pager>::__pages(__call)
-                }
+                #[doc(hidden)]
+                fn __pages(__call: Call<Self>, __proof: <Self::Paging as ::concord::call::PagingMode>::Proof)
+                    -> ::concord::Pages<Self::Value, __Problem>;
             }
 
             #call
@@ -363,12 +320,11 @@ impl Writer<'_> {
         };
         let ty = self.call_type(node);
         let root = &self.root;
-        let data = self.data_path(index);
         let attrs = node.endpoint_attrs();
         let impl_attrs = node.endpoint_impl_attrs();
         let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
         let endpoint = self.endpoints.get(&(node.node as *const Node));
-        let marker = &node.implementation;
+        let marker = &node.path;
         let must_use = docs::call_must_use(endpoint.is_some_and(|ep| ep.pager.is_some()));
         let setters: Vec<_> = node.inputs.iter().filter(|input| input.input.optional.is_some()).map(|input| {
             let name = &input.input.name;
@@ -396,24 +352,12 @@ impl Writer<'_> {
             let (named, chained): (Vec<_>, Vec<_>) = setters.into_iter().unzip();
             emit! {
                 #impl_attrs #allow impl #marker { #(#named)* }
-                #impl_attrs #[doc(hidden)] impl #ty { #(#chained)* }
-            }
-        });
-        let clone = (!self.tuple_data(index)).then(|| {
-        let clone_fields = node.inputs.iter().map(|input| {
-            let field = &input.input.name;
-            emit!(#field: ::core::clone::Clone::clone(&self.#field),)
-        });
-            emit! {
-                #impl_attrs #allow impl<__T: #root::__Types> ::core::clone::Clone for #data<__T> {
-                    fn clone(&self) -> Self { Self { __parent: ::core::clone::Clone::clone(&self.__parent), #(#clone_fields)* } }
-                }
+                #impl_attrs #allow #[doc(hidden)] impl #ty { #(#chained)* }
             }
         });
         let endpoint = endpoint.map(|endpoint| self.endpoint_impl(index, endpoint));
         emit! {
             #setters
-            #clone
             #endpoint
         }
     }
@@ -426,8 +370,60 @@ impl Writer<'_> {
         let ty = self.call_type(node);
         let cfg = &node.cfg;
         let impl_attrs = node.endpoint_impl_attrs();
-        let data = self.data_path(index);
-        let marker = &node.implementation;
+        let marker = if node.deprecated {
+            let key = self.client_key();
+            let id = self.node_id(index);
+            emit!(<#key as ::concord::__private::EndpointType<#id>>::Value)
+        } else {
+            node.path.clone()
+        };
+        let parent = self.node_type(node.parent.unwrap_or_default(), self.client_key());
+        let (state, storage) = if self.tuple_data(index) {
+            let types = node
+                .inputs
+                .iter()
+                .map(|input| stored(input.input, self.input_type(input)));
+            (
+                emit!(::concord::__private::CallData<#parent, (#(#types,)*), Self>),
+                TokenStream::new(),
+            )
+        } else {
+            let key = self.client_key();
+            let id = self.node_id(self.nodes.len() + index);
+            let fields = node.inputs.iter().map(|input| {
+                let field = &input.input.name;
+                let ty = stored(input.input, self.input_type(input));
+                emit!(pub #field: #ty,)
+            });
+            let clones = node.inputs.iter().map(|input| {
+                let field = &input.input.name;
+                emit!(#field: ::core::clone::Clone::clone(&self.#field),)
+            });
+            let storage = emit!(
+                #(#cfg)* const _: () = {
+                    #[doc(hidden)]
+                    pub struct __State {
+                        pub __parent: #parent,
+                        #(#fields)*
+                    }
+                    impl ::core::clone::Clone for __State {
+                        fn clone(&self) -> Self {
+                            Self { __parent: ::core::clone::Clone::clone(&self.__parent), #(#clones)* }
+                        }
+                    }
+                    #[doc(hidden)] impl ::concord::__private::EndpointType<#id> for #key {
+                        type Value = __State;
+                    }
+                };
+            );
+            (self.data_type(index), storage)
+        };
+        let data_span = match node.inputs.as_slice() {
+            [input] => input.input.ty.span(),
+            _ => node.node.name.span(),
+        };
+        let data = emit_at!(data_span=> type Data = #state;);
+        let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
         let output = endpoint
             .node
             .output
@@ -457,7 +453,7 @@ impl Writer<'_> {
                 .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
         );
         let problem_check = emit!(
-            #(#cfg)* const _: () = {
+            #(#cfg)* #allow const _: () = {
             impl #check::Declared for #check::Witness {
                 type Value = <#marker as #root::Endpoint>::Value;
                 type Problem = #problem_alias;
@@ -501,7 +497,7 @@ impl Writer<'_> {
             None => emit!(::concord::__private::Idempotent::ByMethod),
         };
         let settings = (endpoint.idle_timeout.is_some() || endpoint.idempotent.is_some()).then(|| emit! {
-            fn __settings(__value: &Self::Data<()>, __draft: &mut ::concord::__private::Options<#problem>) -> ::concord::__private::Idempotent {
+            fn __settings(__value: &Self::Data, __draft: &mut ::concord::__private::Options<#problem>) -> ::concord::__private::Idempotent {
                 #idle_timeout #idempotent
             }
         });
@@ -522,7 +518,7 @@ impl Writer<'_> {
             type Paging = ::concord::call::#paging_mode;
             type Conditional = ::concord::call::#conditional;
         };
-        let paging_method = endpoint.pager.as_ref().map(|pager| {
+        let paging_method = if let Some(pager) = &endpoint.pager {
             let expression = pager.value;
             let bindings = self.bindings_at(
                 &pager.origin,
@@ -561,14 +557,17 @@ impl Writer<'_> {
                 )
             };
             emit_at!(expression.span()=>
-                #impl_attrs impl #root::__Pager for #marker {
-                    fn __pages(__call: #root::Call<Self>) -> ::concord::Pages<Self::Value, #problem> {
-                        let __owners = ::core::clone::Clone::clone(&__call);
-                        #build
-                    }
+                fn __pages(__call: #root::Call<Self>, _: ()) -> ::concord::Pages<Self::Value, #problem> {
+                    let __owners = ::core::clone::Clone::clone(&__call);
+                    #build
                 }
             )
-        });
+        } else {
+            emit!(
+                fn __pages(_: #root::Call<Self>, __proof: ::core::convert::Infallible)
+                    -> ::concord::Pages<Self::Value, #problem> { match __proof {} }
+            )
+        };
         let slots = endpoint.pager.as_ref().map(|_| {
             let slots = node.inputs.iter().map(|input| {
                 let slot = self.slot_type(index, input);
@@ -590,16 +589,16 @@ impl Writer<'_> {
         });
         emit! {
             #problem_check
+            #storage
             #impl_attrs impl #root::Endpoint for #marker {
-                type Data<__T: #root::__Types> = #data<__T>;
+                #data
                 type Value = #output;
                 #modes
                 const NAME: &'static ::core::primitive::str = #path;
                 const __DEBUG: &'static ::core::primitive::str = #debug;
-                fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<#problem> { &#core }
-                #settings #request #answer
+                fn __core(__value: &Self::Data) -> &::concord::__private::Core<#problem> { &#core }
+                #settings #request #answer #paging_method
             }
-            #paging_method
             #slots
         }
     }
@@ -657,13 +656,13 @@ impl Writer<'_> {
             }
             impl<E: Endpoint> Call<E> {
                 #[doc(hidden)]
-                pub(super) fn __new(data: E::Data<()>) -> Self {
+                pub(super) fn __new(data: E::Data) -> Self {
                     Self { __data: data, __options: ::concord::__private::Options::default() }
                 }
                 #[doc(hidden)]
-                pub(super) fn __data(&self) -> &E::Data<()> { &self.__data }
+                pub(super) fn __data(&self) -> &E::Data { &self.__data }
                 #[doc(hidden)]
-                pub(super) fn __data_mut(&mut self) -> &mut E::Data<()> { &mut self.__data }
+                pub(super) fn __data_mut(&mut self) -> &mut E::Data { &mut self.__data }
 
                 fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
                     ::concord::__private::Draft::finish_request(
@@ -783,8 +782,6 @@ impl Writer<'_> {
         let send_raw_doc = call_docs::send_raw();
         let conditional_doc = call_docs::send_if_none_match();
         let pages_doc = call_docs::pages();
-        let send_prepared = self.at_problem(emit!(::concord::__private::Prepared::send));
-        let send_raw_prepared = self.at_problem(emit!(::concord::__private::Prepared::send_raw));
         // A function item in scope lets the argument bind even if the author
         // has declared a constant with the same name.
         let retry_binding = shown_problem.as_ref().map(|_| {
@@ -809,7 +806,7 @@ impl Writer<'_> {
             where E::Paging: ::concord::call::DeclaresPaginate {
                 #pages_doc
                 pub fn pages(self) -> ::concord::Pages<E::Value #problem> {
-                    <E::Paging as #root_at_client::__PagesFor<E>>::__pages(self, ())
+                    <E as #root_at_client::Endpoint>::__pages(self, ())
                 }
             }
         );
@@ -823,8 +820,7 @@ impl Writer<'_> {
                 #conditional_doc
                 pub fn send_if_none_match(self, etag: &::core::primitive::str)
                     -> ::concord::Sending<::concord::Answer<::core::option::Option<E::Value>> #problem> {
-                    let etag = <::core::primitive::str as ::std::borrow::ToOwned>::to_owned(etag);
-                    ::concord::Sending::new(async move { #send_prepared(Self::__prepare_if_none_match(self, &etag)?).await })
+                    <Self as ::concord::__private::ConditionalCall>::send_conditional(self, etag)
                 }
         );
         let conditional_impl = quote::quote_spanned!(span=>
@@ -866,7 +862,7 @@ impl Writer<'_> {
 
                 #send_raw_doc
                 pub fn send_raw(self) -> ::concord::Sending<::concord::reqwest::Response #problem> {
-                    ::concord::Sending::new(async move { #send_raw_prepared(<Self as ::concord::__private::Call>::prepare(self)?).await })
+                    <Self as ::concord::__private::Call>::send_raw(self)
                 }
 
                 #retry

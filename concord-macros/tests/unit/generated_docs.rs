@@ -404,7 +404,7 @@ fn c10_4_doc_rule_5_only_the_authors_example_is_copied_to_the_client() {
 }
 #[test]
 fn c10_4_doc_rule_6_internal_traits_slots_and_impls_cannot_leak() {
-    use super::generation::{impls, slot_key, struct_at};
+    use super::generation::{impls, slot_key};
     use super::surface::{rendered_signature, rustdoc_output, signature_text};
     use std::collections::BTreeSet;
     use syn::visit_mut::{self, VisitMut};
@@ -425,15 +425,10 @@ fn c10_4_doc_rule_6_internal_traits_slots_and_impls_cannot_leak() {
 
     #[derive(Default)]
     struct Visible {
-        types: usize,
         violations: Vec<String>,
     }
     impl<'ast> Visit<'ast> for Visible {
         fn visit_item_trait(&mut self, tr: &'ast syn::ItemTrait) {
-            if tr.ident == "__Types" {
-                assert!(hidden(&tr.attrs));
-                self.types += 1;
-            }
             if tr.ident == "Endpoint" {
                 for item in &tr.items {
                     if matches!(item, syn::TraitItem::Type(ty) if !hidden(&ty.attrs))
@@ -484,7 +479,6 @@ fn c10_4_doc_rule_6_internal_traits_slots_and_impls_cannot_leak() {
         let file = tree(&source);
         let mut visible = Visible::default();
         visible.visit_file(&file);
-        assert_eq!(visible.types, 1, "one doc-hidden type trait per client");
 
         let mut engine = BTreeSet::new();
         let mut slots = 0;
@@ -507,7 +501,10 @@ fn c10_4_doc_rule_6_internal_traits_slots_and_impls_cannot_leak() {
                 }
                 Some(path) if path.starts_with("::concord::page::Slot<") => {
                     assert!(hidden(&block.attrs));
-                    assert!(hidden(&struct_at(&file, &slot_key(block)).attrs));
+                    assert_eq!(
+                        slot_key(block),
+                        "docs::Call<::concord::__private::ClientKey>"
+                    );
                     slots += 1;
                 }
                 None => {
@@ -639,7 +636,7 @@ fn c10_4_doc_rule_6_internal_traits_slots_and_impls_cannot_leak() {
             };
             // A type macro can expand to the private alias's own name.
             // Rustdoc shows the storage projection used to avoid that capture.
-            let lexical = lexical.replace("<() as __Types>::__Problem", "E");
+            let lexical = lexical.replace("<Call<ClientKey> as ClientProblem>::Problem", "E");
             assert!(
                 !lexical
                     .split(|ch: char| !ch.is_alphanumeric() && ch != '_')
@@ -679,7 +676,7 @@ fn c10_4_doc_rule_6_internal_traits_slots_and_impls_cannot_leak() {
                 .replace(",)", ")")
         };
         assert_eq!(
-            compact(&rendered).replace("<()as__Types>::__Problem", "E"),
+            compact(&rendered).replace("<Call<ClientKey>asClientProblem>::Problem", "E"),
             compact(expected),
             "Docs::Call::{method}: {rendered}"
         );

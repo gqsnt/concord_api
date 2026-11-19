@@ -53,32 +53,6 @@ pub(super) fn slot_key(block: &syn::ItemImpl) -> String {
     compact(key)
 }
 
-pub(super) fn struct_at<'a>(file: &'a syn::File, name: &str) -> &'a syn::ItemStruct {
-    let mut items = file.items.as_slice();
-    let mut segments = name.split("::").peekable();
-    while let Some(segment) = segments.next() {
-        if segments.peek().is_none() {
-            return items
-                .iter()
-                .find_map(|item| match item {
-                    syn::Item::Struct(item) if item.ident == segment => Some(item),
-                    _ => None,
-                })
-                .unwrap_or_else(|| panic!("struct {name} is missing"));
-        }
-        items = items
-            .iter()
-            .find_map(|item| match item {
-                syn::Item::Mod(item) if item.ident == segment => {
-                    Some(item.content.as_ref().unwrap().1.as_slice())
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("module {segment} in {name} is missing"));
-    }
-    unreachable!("expected a nonempty path")
-}
-
 #[test]
 fn c1_18_sound_siblings_compile_after_one_endpoint_is_refused() {
     let source = r#"concord::api! { pub client Three {
@@ -153,7 +127,7 @@ fn c1_18_a_refused_problem_type_does_not_reach_the_client_shell() {
 }
 
 #[test]
-fn c1_12_slots_are_visible_only_to_the_parent() {
+fn c1_12_slots_use_the_client_without_exporting_a_key() {
     let file: syn::File = syn::parse2(crate::expand(
         r#"pub client Paging {
         base "https://pages.test"; read Json;
@@ -176,14 +150,11 @@ fn c1_12_slots_are_visible_only_to_the_parent() {
         .collect();
     assert_eq!(slots.len(), 1, "one specialization for the one paged input");
     let (module, slot) = &slots[0];
-    let key = slot_key(slot);
-    let key = if module.is_empty() {
-        key
-    } else {
-        format!("{module}::{key}")
-    };
-    assert!(key.starts_with("paging::"), "{key}");
-    assert_eq!(compact(&struct_at(&file, &key).vis), "pub(super)");
+    assert!(module.is_empty());
+    assert_eq!(
+        slot_key(slot),
+        "paging::Call<::concord::__private::ClientKey>"
+    );
 }
 
 #[test]
@@ -260,7 +231,11 @@ fn c1_16_no_empty_impl_is_written() {
         .iter()
         .any(|bound| compact(bound) == "__sealed::Sealed"));
 
-    let mut endpoint_types = BTreeSet::from(["Get".to_owned(), "nested::Post".to_owned()]);
+    let mut endpoint_types = BTreeSet::from([
+        "Get".to_owned(),
+        "nested::Post".to_owned(),
+        "::concord::__private::ClientKey".to_owned(),
+    ]);
     // `Unpin` is a marker: its implementations are empty by nature, one for the call and
     // one for the client and each handle (C10.2). Each is matched whole: its module, its
     // attributes, its generics and bounds, and no `where` clause.
@@ -279,7 +254,7 @@ fn c1_16_no_empty_impl_is_written() {
             ),
             (
                 "",
-                "#[allow(deprecated)]impl::core::marker::Unpinforminimal::__Impl6{}",
+                "#[allow(deprecated)]impl::core::marker::Unpinforminimal::Old{}",
             ),
         ]
         .map(|(module, block)| (module.to_owned(), block.to_owned())),
@@ -540,20 +515,19 @@ fn c1_16_every_call_delegates_once_without_copying_common_methods() {
                         "{owner} copied preparation"
                     );
                 }
-                for delegate in ["__core", "__build_draft", "__read_answer"] {
+                for delegate in ["__core", "__build_draft", "__read_answer", "__pages"] {
                     assert_eq!(
                         methods.iter().filter(|f| f.sig.ident == delegate).count(),
                         1,
                         "{owner}: {delegate}"
                     );
                 }
-            }
-            Some("calls::__Pager") => {
-                assert!(pager.insert(owner.clone()), "duplicate pager {owner}");
-                assert_eq!(methods.len(), 1);
-                assert_eq!(methods[0].sig.ident, "__pages");
-                assert_eq!(calls(&methods[0].block, "pages_of_pager"), 1);
-                assert_eq!(calls(&methods[0].block, "by_offset"), 1);
+                let pages = methods.iter().find(|f| f.sig.ident == "__pages").unwrap();
+                if calls(&pages.block, "pages_of_pager") > 0 {
+                    assert!(pager.insert(owner));
+                    assert_eq!(calls(&pages.block, "pages_of_pager"), 1);
+                    assert_eq!(calls(&pages.block, "by_offset"), 1);
+                }
             }
             Some("::concord::__private::Call") => {
                 let prepare = methods.iter().find(|f| f.sig.ident == "prepare").unwrap();
@@ -609,10 +583,8 @@ fn c1_16_every_call_delegates_once_without_copying_common_methods() {
     for (method, delegate) in [
         ("send", "send_full"),
         ("send_full", "send_full"),
-        ("send_raw", "prepare"),
         ("send_raw", "send_raw"),
-        ("send_if_none_match", "__prepare_if_none_match"),
-        ("send_if_none_match", "send"),
+        ("send_if_none_match", "send_conditional"),
         ("__prepare_if_none_match", "prepare_conditional"),
         ("__prepare_inner", "__settings"),
         ("__prepare_inner", "__build_draft"),

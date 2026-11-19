@@ -35,7 +35,7 @@ impl Writer<'_> {
             "__read_answer",
             Span::mixed_site().located_at(endpoint.node.name.span()),
         );
-        let receiver = emit!(__value: &Self::Data<()>);
+        let receiver = emit!(__value: &Self::Data);
         if endpoint.arms.is_empty() {
             let body = self.shared_answer(index, endpoint, read_type);
             let reader = if endpoint.node.output.is_some() {

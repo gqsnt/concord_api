@@ -4,8 +4,8 @@
   "contract": "C10.4",
   "description": "Show endpoint-specific setters on the shared Call page.",
   "file": "concord-macros/src/write/call.rs",
-  "find": "#impl_attrs #[doc(hidden)] impl #ty { #(#chained)* }",
-  "replace": "#impl_attrs impl #ty { #(#chained)* }",
+  "find": "#impl_attrs #allow #[doc(hidden)] impl #ty { #(#chained)* }",
+  "replace": "#impl_attrs #allow impl #ty { #(#chained)* }",
   "checks": [
     "macro-compiler"
   ]

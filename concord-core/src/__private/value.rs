@@ -142,12 +142,17 @@ impl<'a, T: serde::Serialize> AdaptValue for &&'a ValueRef<T> {
 
 /// Selects a placement writer through a qualified call. Rust infers the mode
 /// from the bounds on the authored value.
-pub trait AdaptPlacement<Mode> {
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be written as a request value",
+    label = "this value cannot be written",
+    note = "request values must implement `serde::Serialize` or be a supported form of `concord::Secret`"
+)]
+pub trait AdaptPlacement<'a, Mode> {
     /// The value accepted by the placement writer.
     type Adapted: Value;
 
     /// Selects the placement writer.
-    fn adapt_placement(self) -> Self::Adapted;
+    fn adapt_placement(&'a self) -> Self::Adapted;
 }
 
 /// Selects the writer for secret values.
@@ -158,19 +163,19 @@ pub enum SecretPlacement {}
 #[derive(Debug)]
 pub enum SerdePlacement {}
 
-impl<'a, T: SecretInput> AdaptPlacement<SecretPlacement> for &'a ValueRef<T> {
+impl<'a, T: SecretInput + 'a> AdaptPlacement<'a, SecretPlacement> for T {
     type Adapted = SecretValue<'a, T>;
 
-    fn adapt_placement(self) -> Self::Adapted {
-        AdaptValue::adapt(self)
+    fn adapt_placement(&'a self) -> Self::Adapted {
+        SecretValue(self)
     }
 }
 
-impl<'a, T: serde::Serialize> AdaptPlacement<SerdePlacement> for &'a ValueRef<T> {
+impl<'a, T: serde::Serialize + 'a> AdaptPlacement<'a, SerdePlacement> for T {
     type Adapted = &'a T;
 
-    fn adapt_placement(self) -> Self::Adapted {
-        AdaptValue::adapt(&self)
+    fn adapt_placement(&'a self) -> Self::Adapted {
+        self
     }
 }
 

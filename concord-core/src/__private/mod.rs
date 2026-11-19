@@ -24,7 +24,9 @@ pub use call::{
     prepare_conditional, Call, ConditionalAccess, ConditionalCall, Prepared, RequestSecrets,
 };
 pub use client::{Core, Options};
-pub use data::{CallData, InputSlot};
+pub use data::{
+    CallData, ClientKey, ClientProblem, EndpointType, InputSlot, OwnerView, StoredType,
+};
 pub use output::{OrdinaryOutput, Output, SameProblem, TypedStream, WrappedOutput};
 #[cfg(test)]
 use page::same_page_request;

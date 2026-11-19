@@ -78,7 +78,6 @@ fn public_name(ident: &syn::Ident) -> bool {
 struct Surface {
     lines: BTreeMap<String, String>,
     prefix: Vec<String>,
-    aliases: BTreeMap<String, String>,
     problems: BTreeMap<String, String>,
     local_types: BTreeMap<String, String>,
     future_aliases: BTreeMap<(String, String), String>,
@@ -148,10 +147,15 @@ impl Surface {
             _ => root,
         };
         let problem = self.problems.get(root).map_or("()", String::as_str);
-        let storage_problem = format!("{root}::__Problem");
+        let storage_problem = format!(
+            "<{root}::Call<concord::__private::ClientKey>asconcord::__private::ClientProblem>::Problem"
+        );
+        let local_projection =
+            "<Call<concord::__private::ClientKey>asconcord::__private::ClientProblem>::Problem";
         let text = canonical(tokens)
             .replace(&storage_problem, problem)
             .replace("<Selfasconcord::page::Call>::Problem", problem)
+            .replace(local_projection, problem)
             .replace("<()as__Types>::__Problem", problem)
             .replace("__Problem", problem)
             .replace("self::Retry", "Retry");
@@ -199,9 +203,6 @@ impl Surface {
 
     fn owner(&self, ty: &syn::Type) -> String {
         let name = canonical(ty);
-        if let Some(alias) = self.aliases.get(&name) {
-            return alias.clone();
-        }
         if self.prefix.is_empty() || name.starts_with("concord::") {
             name
         } else {
@@ -243,19 +244,24 @@ impl<'ast> Visit<'ast> for Surface {
                 let Some((_, path, _)) = &item.trait_ else {
                     continue;
                 };
-                let mut segments = path.segments.iter();
-                let (Some(client), Some(types), None) =
-                    (segments.next(), segments.next(), segments.next())
-                else {
+                if !path
+                    .segments
+                    .last()
+                    .is_some_and(|part| part.ident == "ClientProblem")
+                {
+                    continue;
+                }
+                let syn::Type::Path(self_ty) = &*item.self_ty else {
                     continue;
                 };
-                if types.ident == "__Types" {
-                    for item in &item.items {
-                        if let syn::ImplItem::Type(ty) = item {
-                            if ty.ident == "__Problem" {
-                                self.problems
-                                    .insert(client.ident.to_string(), canonical(&ty.ty));
-                            }
+                let Some(client) = self_ty.path.segments.first() else {
+                    continue;
+                };
+                for item in &item.items {
+                    if let syn::ImplItem::Type(ty) = item {
+                        if ty.ident == "Problem" {
+                            self.problems
+                                .insert(client.ident.to_string(), canonical(&ty.ty));
                         }
                     }
                 }
@@ -379,14 +385,6 @@ impl<'ast> Visit<'ast> for Surface {
     }
 
     fn visit_item_type(&mut self, item: &'ast syn::ItemType) {
-        if item.ident.to_string().starts_with("__Impl") {
-            let ty = canonical(&item.ty);
-            let target = match ty.strip_prefix("self::") {
-                Some(path) => self.qualified(&path),
-                None => ty,
-            };
-            self.aliases.insert(self.qualified(&item.ident), target);
-        }
         if public(&item.vis, &item.ident) {
             let (name, generics, ty) = (&item.ident, &item.generics, &item.ty);
             let owner = self.qualified(name);

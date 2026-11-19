@@ -14,48 +14,23 @@
 ///
 /// A client for `tasks`.
 pub struct Tasks {
-    __core: ::concord::__private::Core<<() as tasks::__Types>::__Problem>,
+    __core: ::concord::__private::Core<
+        <tasks::Call<
+            ::concord::__private::ClientKey,
+        > as ::concord::__private::ClientProblem>::Problem,
+    >,
 }
 ///Calls and results for [`Tasks`].
 pub mod tasks {
-    #[doc(hidden)]
-    pub trait __Types: 'static {
-        type __Input0: ::core::clone::Clone
-            + ::core::marker::Send
-            + ::core::marker::Sync
-            + 'static;
-        type __Input1: ::core::clone::Clone
-            + ::core::marker::Send
-            + ::core::marker::Sync
-            + 'static;
-        type __Input2: ::core::clone::Clone
-            + ::core::marker::Send
-            + ::core::marker::Sync
-            + 'static;
-        type __Input3: ::core::clone::Clone
-            + ::core::marker::Send
-            + ::core::marker::Sync
-            + 'static;
-        type __Input4: ::core::clone::Clone
-            + ::core::marker::Send
-            + ::core::marker::Sync
-            + 'static;
-        type __Node0: ::core::clone::Clone
-            + ::core::marker::Send
-            + ::core::marker::Sync
-            + 'static;
-        type __Problem: ::core::marker::Send + ::core::marker::Sync + 'static;
-    }
+    type __Problem = <Call<
+        ::concord::__private::ClientKey,
+    > as ::concord::__private::ClientProblem>::Problem;
     ///The error of each call: [`concord::Error`].
     pub type Error = ::concord::Error;
     /// The result of a call, with this client's error.
     pub type Result<T> = ::core::result::Result<T, Error>;
     ///The retry policy for this client: [`concord::Retry`].
     pub type Retry = ::concord::Retry;
-    #[doc(hidden)]
-    pub(super) type __Problem = <() as __Types>::__Problem;
-    #[doc(hidden)]
-    pub(super) struct __View0;
     mod __sealed {
         pub trait Sealed {}
     }
@@ -67,6 +42,35 @@ pub mod tasks {
     impl __sealed::Sealed for Get {}
     #[allow(deprecated)]
     impl __sealed::Sealed for Delete {}
+    impl __sealed::Sealed for ::concord::__private::ClientKey {}
+    #[doc(hidden)]
+    impl Endpoint for ::concord::__private::ClientKey {
+        type Value = ::core::convert::Infallible;
+        type Data = ::core::convert::Infallible;
+        type Paging = ::concord::call::NoPaginate;
+        type Conditional = ::concord::call::NotGetOrHead;
+        const NAME: &'static ::core::primitive::str = "";
+        const __DEBUG: &'static ::core::primitive::str = "";
+        fn __core(value: &Self::Data) -> &::concord::__private::Core<__Problem> {
+            match *value {}
+        }
+        fn __build_draft(value: &Self::Data) -> Result<::concord::__private::Draft> {
+            match *value {}
+        }
+        async fn __read_answer(
+            value: &Self::Data,
+            _: ::concord::reqwest::Response,
+            _: ::concord::transport::TryInfo,
+        ) -> Result<::concord::Answer<Self::Value>> {
+            match *value {}
+        }
+        fn __pages(
+            _: Call<Self>,
+            proof: ::core::convert::Infallible,
+        ) -> ::concord::Pages<Self::Value, __Problem> {
+            match proof {}
+        }
+    }
     /// The endpoint types of this client. The client supplies all implementations.
     ///
     /// Use `E: Endpoint` with `Call<E>` to write code that accepts any call of this client.
@@ -74,12 +78,12 @@ pub mod tasks {
         /// The value of a successful send. For a paged endpoint, this is one page.
         type Value: ::core::marker::Send + 'static;
         #[doc(hidden)]
-        type Data<__T: __Types>: ::core::clone::Clone
+        type Data: ::core::clone::Clone
             + ::core::marker::Send
             + ::core::marker::Sync
             + 'static;
         #[doc(hidden)]
-        type Paging: ::concord::call::PagingMode + __PagesFor<Self>;
+        type Paging: ::concord::call::PagingMode;
         #[doc(hidden)]
         type Conditional: ::concord::call::ConditionalMode;
         /// The endpoint's stable name, the one `TryInfo::endpoint()` reports: the module of the
@@ -90,50 +94,29 @@ pub mod tasks {
         #[doc(hidden)]
         const __DEBUG: &'static ::core::primitive::str;
         #[doc(hidden)]
-        fn __core(__value: &Self::Data<()>) -> &::concord::__private::Core<__Problem>;
+        fn __core(__value: &Self::Data) -> &::concord::__private::Core<__Problem>;
         #[doc(hidden)]
         fn __settings(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
             __draft: &mut ::concord::__private::Options<__Problem>,
         ) -> ::concord::__private::Idempotent {
             ::concord::__private::Idempotent::ByMethod
         }
         #[doc(hidden)]
-        fn __build_draft(
-            __value: &Self::Data<()>,
-        ) -> Result<::concord::__private::Draft>;
+        fn __build_draft(__value: &Self::Data) -> Result<::concord::__private::Draft>;
         #[doc(hidden)]
         fn __read_answer(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
             __response: ::concord::reqwest::Response,
             __info: ::concord::transport::TryInfo,
         ) -> impl ::core::future::Future<
             Output = Result<::concord::Answer<Self::Value>>,
         > + ::core::marker::Send;
-    }
-    #[doc(hidden)]
-    pub trait __Pager: Endpoint {
-        fn __pages(__call: Call<Self>) -> ::concord::Pages<Self::Value, __Problem>;
-    }
-    #[doc(hidden)]
-    pub trait __PagesFor<__E: Endpoint>: ::concord::call::PagingMode {
+        #[doc(hidden)]
         fn __pages(
-            __call: Call<__E>,
-            __proof: Self::Proof,
-        ) -> ::concord::Pages<__E::Value, __Problem>;
-    }
-    impl<__E: Endpoint> __PagesFor<__E> for ::concord::call::NoPaginate {
-        fn __pages(
-            _: Call<__E>,
-            __proof: ::core::convert::Infallible,
-        ) -> ::concord::Pages<__E::Value, __Problem> {
-            match __proof {}
-        }
-    }
-    impl<__E: __Pager> __PagesFor<__E> for ::concord::call::Paged {
-        fn __pages(__call: Call<__E>, _: ()) -> ::concord::Pages<__E::Value, __Problem> {
-            <__E as __Pager>::__pages(__call)
-        }
+            __call: Call<Self>,
+            __proof: <Self::Paging as ::concord::call::PagingMode>::Proof,
+        ) -> ::concord::Pages<Self::Value, __Problem>;
     }
     /// A call to the endpoint named by its type argument.
     ///
@@ -141,7 +124,7 @@ pub mod tasks {
     /// Use the endpoint name to find its options.
     #[must_use = "a call does nothing until sent or awaited"]
     pub struct Call<E: Endpoint> {
-        __data: E::Data<()>,
+        __data: E::Data,
         __options: ::concord::__private::Options<__Problem>,
     }
     impl<E: Endpoint> ::core::marker::Unpin for Call<E> {}
@@ -172,18 +155,18 @@ pub mod tasks {
     }
     impl<E: Endpoint> Call<E> {
         #[doc(hidden)]
-        pub(super) fn __new(data: E::Data<()>) -> Self {
+        pub(super) fn __new(data: E::Data) -> Self {
             Self {
                 __data: data,
                 __options: ::concord::__private::Options::default(),
             }
         }
         #[doc(hidden)]
-        pub(super) fn __data(&self) -> &E::Data<()> {
+        pub(super) fn __data(&self) -> &E::Data {
             &self.__data
         }
         #[doc(hidden)]
-        pub(super) fn __data_mut(&mut self) -> &mut E::Data<()> {
+        pub(super) fn __data_mut(&mut self) -> &mut E::Data {
             &mut self.__data
         }
         fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
@@ -371,15 +354,6 @@ pub mod tasks {
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
     #[allow(missing_debug_implementations)]
     pub enum List {}
-    #[doc(hidden)]
-    pub type __Data1<__T = ()> = ::concord::__private::CallData<
-        <__T as __Types>::__Node0,
-        (
-            ::core::option::Option<<__T as __Types>::__Input0>,
-            ::core::option::Option<<__T as __Types>::__Input1>,
-        ),
-        List,
-    >;
     /// Create a task with a title.
     ///
     /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
@@ -404,12 +378,6 @@ pub mod tasks {
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
     #[allow(missing_debug_implementations)]
     pub enum Create {}
-    #[doc(hidden)]
-    pub type __Data2<__T = ()> = ::concord::__private::CallData<
-        <__T as __Types>::__Node0,
-        (<__T as __Types>::__Input2,),
-        Create,
-    >;
     /// Fetch one task by its identifier.
     ///
     /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
@@ -432,12 +400,6 @@ pub mod tasks {
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
     #[allow(missing_debug_implementations)]
     pub enum Get {}
-    #[doc(hidden)]
-    pub type __Data3<__T = ()> = ::concord::__private::CallData<
-        <__T as __Types>::__Node0,
-        (<__T as __Types>::__Input3,),
-        Get,
-    >;
     /// Delete one task by its identifier.
     ///
     /// Its name in errors and logs: [`Endpoint::NAME`](super::tasks::Endpoint::NAME).
@@ -460,12 +422,6 @@ pub mod tasks {
     /// Methods shared by every call: see [`Call`](super::tasks::Call).
     #[allow(missing_debug_implementations)]
     pub enum Delete {}
-    #[doc(hidden)]
-    pub type __Data4<__T = ()> = ::concord::__private::CallData<
-        <__T as __Types>::__Node0,
-        (<__T as __Types>::__Input4,),
-        Delete,
-    >;
 }
 #[allow(
     unused_variables,
@@ -475,14 +431,57 @@ pub mod tasks {
     clippy::redundant_closure_call
 )]
 const _: () = {
-    impl tasks::__Types for () {
-        type __Node0 = Tasks;
-        type __Input0 = bool;
-        type __Input1 = Vec<String>;
-        type __Input2 = NewTask;
-        type __Input3 = u64;
-        type __Input4 = u64;
-        type __Problem = ();
+    #[doc(hidden)]
+    impl ::concord::__private::StoredType<5usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Value = Tasks;
+    }
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointType<0usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Value = bool;
+    }
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointType<1usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Value = Vec<String>;
+    }
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointType<2usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Value = NewTask;
+    }
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointType<3usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Value = u64;
+    }
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointType<4usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Value = u64;
+    }
+    const _: () = {
+        #[doc(hidden)]
+        pub struct __View {}
+        #[allow(unused_imports)]
+        use ::core::mem::drop as __fields;
+        impl __View {
+            #[doc(hidden)]
+            pub fn new(__fields: ()) -> Self {
+                Self {}
+            }
+        }
+        #[doc(hidden)]
+        impl ::concord::__private::OwnerView<0usize>
+        for tasks::Call<::concord::__private::ClientKey> {
+            type View<'__a> = __View;
+        }
+    };
+    #[doc(hidden)]
+    impl ::concord::__private::ClientProblem
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Problem = ();
     }
     const _: () = {
         #[allow(unused_imports)]
@@ -498,7 +497,9 @@ const _: () = {
             ) -> tasks::Result<
                 ::concord::__private::Prepared<
                     ::core::option::Option<E::Value>,
-                    tasks::__Problem,
+                    <tasks::Call<
+                        ::concord::__private::ClientKey,
+                    > as ::concord::__private::ClientProblem>::Problem,
                 >,
             > {
                 ::concord::__private::prepare_conditional(self, etag)
@@ -523,15 +524,10 @@ const _: () = {
             ) -> ::concord::Sending<
                 ::concord::Answer<::core::option::Option<E::Value>>,
             > {
-                let etag = <::core::primitive::str as ::std::borrow::ToOwned>::to_owned(
+                <Self as ::concord::__private::ConditionalCall>::send_conditional(
+                    self,
                     etag,
-                );
-                ::concord::Sending::new(async move {
-                    ::concord::__private::Prepared::send(
-                            Self::__prepare_if_none_match(self, &etag)?,
-                        )
-                        .await
-                })
+                )
             }
         }
         impl<E: tasks::Endpoint> tasks::Call<E> {
@@ -574,12 +570,7 @@ const _: () = {
             /// Sending a call needs a Tokio 1.x runtime with its time and IO drivers enabled.
             /// Polling elsewhere panics with Tokio's own message. Building a client or call needs no runtime.
             pub fn send_raw(self) -> ::concord::Sending<::concord::reqwest::Response> {
-                ::concord::Sending::new(async move {
-                    ::concord::__private::Prepared::send_raw(
-                            <Self as ::concord::__private::Call>::prepare(self)?,
-                        )
-                        .await
-                })
+                <Self as ::concord::__private::Call>::send_raw(self)
             }
         }
         impl<E: tasks::Endpoint> tasks::Call<E>
@@ -588,7 +579,7 @@ const _: () = {
         {
             /// `.send().await` returns one page; `.pages()` yields them all, and `.pages().items()` each item.
             pub fn pages(self) -> ::concord::Pages<E::Value> {
-                <E::Paging as tasks::__PagesFor<E>>::__pages(self, ())
+                <E as tasks::Endpoint>::__pages(self, ())
             }
         }
     };
@@ -857,7 +848,9 @@ const _: () = {
     const _: () = {
         impl __check_problem_1::Declared for __check_problem_1::Witness {
             type Value = <tasks::List as tasks::Endpoint>::Value;
-            type Problem = tasks::__Problem;
+            type Problem = <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_1 {
@@ -876,19 +869,40 @@ const _: () = {
         }
     };
     impl tasks::Endpoint for tasks::List {
-        type Data<__T: tasks::__Types> = tasks::__Data1<__T>;
+        type Data = ::concord::__private::CallData<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::StoredType<5usize>>::Value,
+            (
+                ::core::option::Option<
+                    <tasks::Call<
+                        ::concord::__private::ClientKey,
+                    > as ::concord::__private::EndpointType<0usize>>::Value,
+                >,
+                ::core::option::Option<
+                    <tasks::Call<
+                        ::concord::__private::ClientKey,
+                    > as ::concord::__private::EndpointType<1usize>>::Value,
+                >,
+            ),
+            Self,
+        >;
         type Value = Vec<Task>;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
         const NAME: &'static ::core::primitive::str = "tasks.list";
         const __DEBUG: &'static ::core::primitive::str = "List";
         fn __core(
-            __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<tasks::__Problem> {
+            __value: &Self::Data,
+        ) -> &::concord::__private::Core<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
             &__value.__parent.__core
         }
         fn __build_draft(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
         ) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::from_literal(
                 ::concord::http::Method::GET,
@@ -900,7 +914,7 @@ const _: () = {
                     "done",
                     "done",
                     ::concord::__private::AdaptPlacement::adapt_placement(
-                        &::concord::__private::ValueRef(&__value.__inputs.0),
+                        &&__value.__inputs.0,
                     ),
                 );
                 ::concord::__private::Draft::query_value(
@@ -908,14 +922,14 @@ const _: () = {
                     "tags",
                     "tags",
                     ::concord::__private::AdaptPlacement::adapt_placement(
-                        &::concord::__private::ValueRef(&__value.__inputs.1),
+                        &&__value.__inputs.1,
                     ),
                 );
             }
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
             __response: ::concord::reqwest::Response,
             __info: ::concord::transport::TryInfo,
         ) -> impl ::core::future::Future<
@@ -927,7 +941,9 @@ const _: () = {
                 move || {
                     #[allow(unused_imports)]
                     use ::core::mem::drop as client;
-                    let client = tasks::__View0;
+                    let client = <tasks::Call<
+                        ::concord::__private::ClientKey,
+                    > as ::concord::__private::OwnerView<0usize>>::View::new(());
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -937,11 +953,24 @@ const _: () = {
                 ::concord::__private::PlainRefusal,
             )
         }
+        fn __pages(
+            _: tasks::Call<Self>,
+            __proof: ::core::convert::Infallible,
+        ) -> ::concord::Pages<
+            Self::Value,
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
+            match __proof {}
+        }
     }
     const _: () = {
         impl __check_problem_2::Declared for __check_problem_2::Witness {
             type Value = <tasks::Create as tasks::Endpoint>::Value;
-            type Problem = tasks::__Problem;
+            type Problem = <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_2 {
@@ -960,19 +989,33 @@ const _: () = {
         }
     };
     impl tasks::Endpoint for tasks::Create {
-        type Data<__T: tasks::__Types> = tasks::__Data2<__T>;
+        type Data = ::concord::__private::CallData<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::StoredType<5usize>>::Value,
+            (
+                <tasks::Call<
+                    ::concord::__private::ClientKey,
+                > as ::concord::__private::EndpointType<2usize>>::Value,
+            ),
+            Self,
+        >;
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::Post;
         const NAME: &'static ::core::primitive::str = "tasks.create";
         const __DEBUG: &'static ::core::primitive::str = "Create";
         fn __core(
-            __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<tasks::__Problem> {
+            __value: &Self::Data,
+        ) -> &::concord::__private::Core<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
             &__value.__parent.__core
         }
         fn __build_draft(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
         ) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::from_literal(
                 ::concord::http::Method::POST,
@@ -981,7 +1024,9 @@ const _: () = {
             {
                 #[allow(unused_imports)]
                 use ::core::mem::drop as client;
-                let client = tasks::__View0;
+                let client = <tasks::Call<
+                    ::concord::__private::ClientKey,
+                > as ::concord::__private::OwnerView<0usize>>::View::new(());
                 let task = &__value.__inputs.0;
                 let __body = ::concord::__private::evaluate_body(
                     <Self as tasks::Endpoint>::NAME,
@@ -992,7 +1037,7 @@ const _: () = {
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
             __response: ::concord::reqwest::Response,
             __info: ::concord::transport::TryInfo,
         ) -> impl ::core::future::Future<
@@ -1004,7 +1049,9 @@ const _: () = {
                 move || {
                     #[allow(unused_imports)]
                     use ::core::mem::drop as client;
-                    let client = tasks::__View0;
+                    let client = <tasks::Call<
+                        ::concord::__private::ClientKey,
+                    > as ::concord::__private::OwnerView<0usize>>::View::new(());
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -1014,11 +1061,24 @@ const _: () = {
                 ::concord::__private::PlainRefusal,
             )
         }
+        fn __pages(
+            _: tasks::Call<Self>,
+            __proof: ::core::convert::Infallible,
+        ) -> ::concord::Pages<
+            Self::Value,
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
+            match __proof {}
+        }
     }
     const _: () = {
         impl __check_problem_3::Declared for __check_problem_3::Witness {
             type Value = <tasks::Get as tasks::Endpoint>::Value;
-            type Problem = tasks::__Problem;
+            type Problem = <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_3 {
@@ -1037,19 +1097,33 @@ const _: () = {
         }
     };
     impl tasks::Endpoint for tasks::Get {
-        type Data<__T: tasks::__Types> = tasks::__Data3<__T>;
+        type Data = ::concord::__private::CallData<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::StoredType<5usize>>::Value,
+            (
+                <tasks::Call<
+                    ::concord::__private::ClientKey,
+                > as ::concord::__private::EndpointType<3usize>>::Value,
+            ),
+            Self,
+        >;
         type Value = Task;
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::GetOrHead;
         const NAME: &'static ::core::primitive::str = "tasks.get";
         const __DEBUG: &'static ::core::primitive::str = "Get";
         fn __core(
-            __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<tasks::__Problem> {
+            __value: &Self::Data,
+        ) -> &::concord::__private::Core<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
             &__value.__parent.__core
         }
         fn __build_draft(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
         ) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::from_literal(
                 ::concord::http::Method::GET,
@@ -1059,14 +1133,14 @@ const _: () = {
                 &mut __draft,
                 "id",
                 ::concord::__private::AdaptPlacement::adapt_placement(
-                    &::concord::__private::ValueRef(&__value.__inputs.0),
+                    &&__value.__inputs.0,
                 ),
                 false,
             );
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
             __response: ::concord::reqwest::Response,
             __info: ::concord::transport::TryInfo,
         ) -> impl ::core::future::Future<
@@ -1078,7 +1152,9 @@ const _: () = {
                 move || {
                     #[allow(unused_imports)]
                     use ::core::mem::drop as client;
-                    let client = tasks::__View0;
+                    let client = <tasks::Call<
+                        ::concord::__private::ClientKey,
+                    > as ::concord::__private::OwnerView<0usize>>::View::new(());
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -1088,11 +1164,24 @@ const _: () = {
                 ::concord::__private::PlainRefusal,
             )
         }
+        fn __pages(
+            _: tasks::Call<Self>,
+            __proof: ::core::convert::Infallible,
+        ) -> ::concord::Pages<
+            Self::Value,
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
+            match __proof {}
+        }
     }
     const _: () = {
         impl __check_problem_4::Declared for __check_problem_4::Witness {
             type Value = <tasks::Delete as tasks::Endpoint>::Value;
-            type Problem = tasks::__Problem;
+            type Problem = <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_4 {
@@ -1111,19 +1200,33 @@ const _: () = {
         }
     };
     impl tasks::Endpoint for tasks::Delete {
-        type Data<__T: tasks::__Types> = tasks::__Data4<__T>;
+        type Data = ::concord::__private::CallData<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::StoredType<5usize>>::Value,
+            (
+                <tasks::Call<
+                    ::concord::__private::ClientKey,
+                > as ::concord::__private::EndpointType<4usize>>::Value,
+            ),
+            Self,
+        >;
         type Value = ();
         type Paging = ::concord::call::NoPaginate;
         type Conditional = ::concord::call::NotGetOrHead;
         const NAME: &'static ::core::primitive::str = "tasks.delete";
         const __DEBUG: &'static ::core::primitive::str = "Delete";
         fn __core(
-            __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<tasks::__Problem> {
+            __value: &Self::Data,
+        ) -> &::concord::__private::Core<
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
             &__value.__parent.__core
         }
         fn __build_draft(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
         ) -> tasks::Result<::concord::__private::Draft> {
             let mut __draft = ::concord::__private::Draft::from_literal(
                 ::concord::http::Method::DELETE,
@@ -1133,14 +1236,14 @@ const _: () = {
                 &mut __draft,
                 "id",
                 ::concord::__private::AdaptPlacement::adapt_placement(
-                    &::concord::__private::ValueRef(&__value.__inputs.0),
+                    &&__value.__inputs.0,
                 ),
                 false,
             );
             ::core::result::Result::Ok(__draft)
         }
         fn __read_answer(
-            __value: &Self::Data<()>,
+            __value: &Self::Data,
             __response: ::concord::reqwest::Response,
             __info: ::concord::transport::TryInfo,
         ) -> impl ::core::future::Future<
@@ -1151,6 +1254,17 @@ const _: () = {
                 __info,
                 ::concord::__private::PlainRefusal,
             )
+        }
+        fn __pages(
+            _: tasks::Call<Self>,
+            __proof: ::core::convert::Infallible,
+        ) -> ::concord::Pages<
+            Self::Value,
+            <tasks::Call<
+                ::concord::__private::ClientKey,
+            > as ::concord::__private::ClientProblem>::Problem,
+        > {
+            match __proof {}
         }
     }
 };
