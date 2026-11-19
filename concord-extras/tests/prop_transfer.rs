@@ -143,7 +143,12 @@ fn kept_url() -> impl Strategy<Value = String> {
 /// One change that C11.11 refuses, with the words of its refusal.
 fn refused(url: &str, how: u8) -> (String, &'static str) {
     let (scheme, rest) = url.split_once("://").unwrap();
-    match how % 9 {
+    match how % 10 {
+        9 => (
+            // The same URL inside a path: a relative reference, whatever follows it.
+            format!("/{}", url.replacen("://", "/x://", 1)),
+            "transfer URL must have an absolute authority",
+        ),
         0 => (
             format!("{}://{rest}", scheme.to_uppercase()),
             "transfer URL spelling would change",

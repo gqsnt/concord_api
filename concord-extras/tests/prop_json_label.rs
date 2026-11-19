@@ -13,9 +13,16 @@ use concord_core::{
 use concord_extras::read::Json;
 use proptest::prelude::*;
 
-/// The media type before its parameters, compared without case: `application/json`, or a
-/// type with the structured syntax suffix `+json`.
+/// RFC 9110, section 8.3.1: a media type is `type "/" subtype`, each a token, before its
+/// parameters, compared without case. JSON is `application/json`, or a subtype with the
+/// structured syntax suffix `+json` (RFC 6839).
 fn json_model(label: Option<&str>) -> bool {
+    let token = |text: &str| {
+        !text.is_empty()
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+    };
     let essence = label
         .unwrap_or("")
         .split(';')
@@ -23,11 +30,14 @@ fn json_model(label: Option<&str>) -> bool {
         .unwrap_or("")
         .trim_matches([' ', '\t'])
         .to_ascii_lowercase();
-    essence == "application/json" || essence.ends_with("+json")
+    let Some((kind, subtype)) = essence.split_once('/') else {
+        return false;
+    };
+    token(kind) && token(subtype) && (essence == "application/json" || subtype.ends_with("+json"))
 }
 
 fn label() -> impl Strategy<Value = Option<String>> {
-    prop::option::weighted(
+    let spelled = prop::option::weighted(
         0.9,
         (
             prop::sample::select(vec!["", " ", "\t"]),
@@ -65,7 +75,24 @@ fn label() -> impl Strategy<Value = Option<String>> {
             .prop_map(|(before, kind, sub, params, after)| {
                 format!("{before}{kind}/{sub}{params}{after}")
             }),
-    )
+    );
+    // Texts that are no media type: no `/`, or an empty or broken type or subtype.
+    let broken = prop::sample::select(vec![
+        "bogus+json",
+        "+json",
+        "json",
+        "application",
+        "/json",
+        "application/",
+        "/+json",
+        "app lication/json",
+        "application/js on+json",
+        "application//json",
+        "a/b/+json",
+        "bogus+json; charset=utf-8",
+    ])
+    .prop_map(|label| Some(label.to_owned()));
+    prop_oneof![3 => spelled, 1 => broken]
 }
 
 proptest! {
@@ -93,5 +120,30 @@ proptest! {
                 prop_assert_eq!(error.kind(), Kind::Mismatch);
             }
         }
+    }
+}
+
+#[test]
+fn c5_2_a_content_type_without_a_slash_is_not_json() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    for label in [
+        "bogus+json",
+        "+json",
+        "application/js on+json",
+        "application/json",
+    ] {
+        let mut response = Response::new(reqwest::Body::from("[1]"));
+        response
+            .headers_mut()
+            .insert("content-type", HeaderValue::from_static(label));
+        let read: Result<Vec<u8>, Error> = rt.block_on(read_body(
+            &Json.strict(),
+            reqwest::Response::from(response),
+            &TryInfo::new("props.label", 1),
+        ));
+        assert_eq!(read.is_ok(), label == "application/json", "{label}");
     }
 }

@@ -16,6 +16,11 @@ transfer URL must have an absolute authority	/relative
 transfer URL must have an absolute authority	
 transfer URL must have an absolute authority	mailto:user@example.test
 transfer URL must have an absolute authority	#only
+# A `://` inside a path, a query or a fragment is no scheme's: the URL is relative.
+transfer URL must have an absolute authority	/x://example
+transfer URL must have an absolute authority	x/y://example/p
+transfer URL must have an absolute authority	?q=https://example/p
+transfer URL must have an absolute authority	/x://a@b/p
 transfer URL must use HTTP or HTTPS	ftp://storage.test/p
 transfer URL must use HTTP or HTTPS	data://storage.test/p
 transfer URL spelling would change	HTTPS://storage.test/p
