@@ -10,18 +10,19 @@ fn c12_12_promises_document_one_boundary_per_streaming_multipart_body() {
     assert!(!row.contains("such a body is sent only once"));
 }
 #[test]
-fn c12_11_extension_pages_name_only_tower_as_using_a_hidden_core_helper() {
+fn c12_11_extension_pages_distinguish_public_writers_from_hidden_helpers() {
     for docs in [
         include_str!("../../docs/internals/engineering.md"),
         include_str!("../../docs/reference/crates.md"),
         include_str!("../../docs/guide/extending.md"),
     ] {
         assert!(docs.contains(
-            "Only the `tower` adapter uses a hidden helper of the core, for the response URL."
+            "The `tower` adapter and `transfer::at_call` also use hidden helpers of the core, for the response URL and the Build error respectively."
+        ));
+        assert!(docs.contains(
+            "Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods."
         ));
         assert!(!docs.contains("`multipart` a hidden method"));
-        assert!(!docs.contains("two items also use a hidden part"));
-        assert!(!docs.contains("Two items also use a hidden part"));
     }
 }
 #[test]

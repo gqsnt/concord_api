@@ -25,7 +25,7 @@ Before you write your own, check what Concord ships. The macro knows none of the
 | `auth::Rotating` | `rotating` (turns on `auth`) | Each exchange consumes the refresh token and returns its replacement ([a refresh token that rotates](credentials.md#a-refresh-token-that-rotates)). |
 | `sign::SigV4`, `sign::body_bytes`, `sign::check_origin` | `sign` | The API uses AWS Signature Version 4; the two helpers serve a provider's own proof ([a signature](credentials.md#a-signature)). |
 | `limit::Limit` | `limit` | The API limits the rate of calls, and requests should wait before the server refuses them ([rate limits](limits.md)). |
-| `transfer::at(call, url)` | none | The API returned a URL on another host ([below](#a-url-that-the-api-returned)). |
+| `transfer::at(call, url)`, `transfer::at_call(call, url)` | none | The API returned a URL on another host ([below](#a-url-that-the-api-returned)). |
 | `tower::Tower` | `tower` | You already send requests through a stack of `tower` layers ([a transport](#a-transport)). |
 
 The optional features are off by default. Turn on the ones that you use:
@@ -57,10 +57,10 @@ A `Limit` keeps a budget that every call spends; a `when` rule follows a wait th
 | A request that you send yourself | — | `request()`, then `read_response(response)`. |
 | The response | A typed value | `send_full()`. `send_if_none_match(etag)`. `send_raw()`: the `reqwest::Response` after retry, with no status rule and nothing read (retry then looks at the head only). `read Stream;` for bytes as they arrive. |
 | The client | `Riot::new(key)` | `with_middleware(…)` for what every request passes through: your own layer, or one that Concord ships (`auth::Renewed`, `auth::Rotating`, `sign::SigV4`, `limit::Limit`). `with_transport(…)` for the transport, and `concord::Http::with(…)` for a setting of the HTTP client. `with_base(…)`. |
-| A URL that the API returned, on another host | — | A second description with its own `base`, and `concord::transfer::at(call, url)` ([below](#a-url-that-the-api-returned)). |
+| A URL that the API returned, on another host | — | A second description with its own `base`, and `concord::transfer::at_call(call, url)` or `concord::transfer::at(call, url)` ([below](#a-url-that-the-api-returned)). |
 | Below | — | Plain `reqwest`: `Request`, `Response`, `Client`. |
 
-These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `concord::page::Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset`, the readers of records, `auth::Renewed`, `limit::Limit`, `transfer::at` and the others are in a crate of their own, `concord-extras`, and every file in it except `tower.rs` is an example worth reading. Only the `tower` adapter uses a hidden helper of the core, for the response URL. That helper is not a public extension point. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods.
+These extension points and escape hatches are public and stable: the traits `Reader`, `Middleware` and `Transport`, a body as a function that returns a `Body`, a pager as a function (with `Slot` and `concord::page::Call`), your own page type (with `IntoItems`), `edit_request`, `into_request`, `read_response`. What Concord ships is built on the same extension points: `json`, `Json`, `by_offset`, the readers of records, `auth::Renewed`, `limit::Limit`, `transfer::at`, `transfer::at_call` and the others are in a crate of their own, `concord-extras`, and show how to use those extension points. The `tower` adapter and `transfer::at_call` also use hidden helpers of the core, for the response URL and the Build error respectively. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods.
 
 ## A writer of bodies
 
@@ -246,14 +246,16 @@ let mut returned = HeaderMap::new();                       // headers that the A
 for header in &ticket.headers {
     returned.append(HeaderName::from_bytes(header.name.as_bytes())?, HeaderValue::from_str(&header.value)?);
 }
-concord::transfer::at(uploads.send(bytes), &ticket.url)?
+concord::transfer::at_call(uploads.send(bytes), &ticket.url)?
     .edit_request(move |request| request.headers_mut().extend(returned.clone()))
     .await?;
 ```
 
 | | |
 |---|---|
-| `concord::transfer::at(call, url)` | It checks the text of the URL, then returns `call.at_url(url)`: the same call, with the path and the query of that URL. It sends nothing. It returns a `TransferError`, which never holds the URL, for a URL that would not be sent as it is written: a relative URL, a scheme other than HTTP or HTTPS, user information, a fragment, a spelling that parsing would change, or more than 65,534 bytes. An accepted URL reaches the transport with its path and its query byte for byte (a lone `?` or a query of `&` only included), a signature included, for a second description with no `Secret` query entry: the engine adds such an entry again to a URL given to `at_url`. |
+| `concord::transfer::at_call(call, url)` | Use it in a helper returning the upload client's `Result`. A refused URL gives a Build error of the second client, with a `TransferError` as its source. In a helper returning the API client's `Result`, `?` propagates that error only when both clients have the same `problem` type. |
+| `concord::transfer::at(call, url)` | Use it when you want to match on `TransferError` directly. |
+| What both check | Both check the text of the URL and return the call with that path and query, without sending anything. They refuse a relative URL, a scheme other than HTTP or HTTPS, user information, a fragment, a spelling that parsing would change, or more than 65,534 bytes. `TransferError` never holds the URL. An accepted URL reaches the transport with its path and query byte for byte (a lone `?` or a query of `&` only included), for a second description with no `Secret` query entry. The engine adds such an entry again to a URL given to `at_url`. |
 | The origin | The URL must be at the origin of the second description's `base`. A URL at another origin is a Build error, and nothing is sent, as with any `at_url` ([a pager of your own](pages.md#a-pager-of-your-own)). |
 | What travels with it | Only what the second description says. Nothing of the API's client: no key, no header, no middleware. |
 | Headers that the API returned | They are known only at run time, so `edit_request` adds them. `HeaderMap::extend` replaces each name that it is given, and keeps several values of one name. These headers are your code's: send only the ones that you trust and that agree with the body. |

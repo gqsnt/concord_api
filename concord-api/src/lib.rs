@@ -239,8 +239,8 @@ pub mod retry {
     pub use concord_core::retry::*;
 }
 
-/// Lists that span several responses: the building blocks of a pager, seven pagers, and the
-/// `Paging` that they return.
+/// Lists that span several responses: the building blocks of a pager, eight pagers (seven
+/// also at the root), and the `Paging` that they return.
 pub mod page {
     pub use concord_core::page::*;
     pub use concord_extras::page::*;

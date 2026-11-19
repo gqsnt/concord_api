@@ -5,16 +5,21 @@
 use concord::error::Kind;
 use concord_testkit::Script;
 
-include!("../fixtures/recipes/failure.rs");
+include!("../fixtures/recipes/failure_stream.rs");
+include!("../fixtures/recipes/failure_ticket.rs");
 
 #[tokio::test(start_paused = true)]
 async fn the_failure_recipe_preserves_the_owner_and_response_evidence() {
     let guide = include_str!("../../../docs/guide/responses-and-errors.md");
-    let recipe = include_str!("../fixtures/recipes/failure.rs");
-    assert!(
-        guide.contains(&format!("```rust\n{recipe}```")),
-        "the guide must print the compiled recipe"
-    );
+    for recipe in [
+        include_str!("../fixtures/recipes/failure_stream.rs"),
+        include_str!("../fixtures/recipes/failure_ticket.rs"),
+    ] {
+        assert!(
+            guide.contains(&format!("```rust\n{recipe}```")),
+            "the guide must print each compiled recipe"
+        );
+    }
 
     let script = Script::new();
     script

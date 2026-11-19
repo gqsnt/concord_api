@@ -16,7 +16,7 @@ pub client Shop {
         /// A page number, and the number of pages.
         GET products(page?: u32) -> Numbered<Product> {
             query { page; }
-            paginate by_page(page, 1).has_more(|list| list.page < list.pages);
+            paginate by_page_bounds(page, |list| Some((list.page, list.pages)));
         }
         /// The URL of the next page, in a `Link` header.
         GET reviews(per_page?: u32) -> Vec<Review> {

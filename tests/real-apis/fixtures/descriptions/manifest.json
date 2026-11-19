@@ -176,7 +176,7 @@
   },
   {
     "page": "docs/guide/responses-and-errors.md",
-    "block": 18,
+    "block": 19,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_003.api",
     "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_003.rs",
     "client": "Files"

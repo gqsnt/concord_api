@@ -1,6 +1,6 @@
 //! What Concord ships next to its core.
 //!
-//! JSON, form and optional gzip and multipart writers, bounded readers (including records), seven pagers,
+//! JSON, form and optional gzip and multipart writers, bounded readers (including records), eight pagers,
 //! HTTP Basic, credential renewal (`auth`), request signing (`sign`), shared limits (`limit`), returned-URL checks
 //! ([`transfer`]), and an adapter for `tower`. These extensions use the public traits of
 //! `concord-core`. Body writers use

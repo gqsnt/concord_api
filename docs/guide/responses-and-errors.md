@@ -433,20 +433,18 @@ Every endpoint below still returns its own type. An arm on the client that binds
 
 ## A failure that is not the API's
 
-A helper can fail after the call has returned. For example, the caller may already have taken
-`message_start` from a typed stream. Give the helper its own error for that case, and use `From`
-so that `?` carries an actual stream error through unchanged.
+A `concord::Error` belongs to a call. It names the endpoint, records the attempt count and
+keeps the status if there is a response. A failure in your own code after a call returns has
+no such evidence of its own, so give it a type of its own.
 
-If a response is missing a value the endpoint promises, check it in the status arm. An upload
-ticket missing its URL or file id is a Mismatch. The call's error keeps the endpoint, status,
-headers and attempts, and the upload helper receives the error before it can send the file.
+A helper that needs the stream's first event can fail because the caller has already read
+that event. Return `StartAlreadyConsumed` for that case. Implement `From` so that `?`
+carries an actual stream error through unchanged.
 
 ```rust
 use concord::read::{RecordFail, RecordStream, Sse, SseEvent, Step};
-use concord::{mismatch, Binary, Fail, Json};
-use serde::Deserialize;
 
-/// The two events needed to tell whether the caller consumed the start.
+/// The start and stop events of a message.
 #[derive(Debug, PartialEq)]
 pub enum MessageEvent {
     /// The start of a message.
@@ -498,6 +496,15 @@ async fn finish(
         Err(FinishError::StartAlreadyConsumed)
     }
 }
+```
+
+If a response is missing a value the endpoint promises, check it in the status arm. An upload
+ticket missing its URL or file ID is a Mismatch. The call's error keeps the endpoint, status,
+headers and attempts, and the upload helper receives the error before it can send the file.
+
+```rust
+use concord::{mismatch, Binary, Fail, Json};
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Ticket {

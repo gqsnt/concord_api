@@ -10,7 +10,7 @@ This page is for a developer who changes Concord. It lists the rules that the co
 |---|---|
 | `concord-core` | The traits and the engine. No format, no authentication scheme, no pager. |
 | `concord-macros` | `api!`. |
-| `concord-extras` | What ships with Concord: `json`, `form`, `multipart` and the other body writers, the readers (with `JsonLines` and `Sse` for records), the pagers, `basic`, `auth`, `sign`, `limit`, `transfer`, `tower`. Uses the public traits and helpers of the core. Only the `tower` adapter uses a hidden helper of the core, for the response URL. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods. |
+| `concord-extras` | What ships with Concord: `json`, `form`, `multipart` and the other body writers, the readers (with `JsonLines` and `Sse` for records), the pagers, `basic`, `auth`, `sign`, `limit`, `transfer`, `tower`. Uses the public traits and helpers of the core. The `tower` adapter and `transfer::at_call` also use hidden helpers of the core, for the response URL and the Build error respectively. Wrapping writers use the public `Body::get_content_type`, `Body::map_stream` and `Body::is_repeatable` methods. |
 | `concord-api` | The facade that people depend on (package `concord-api`, library `concord`). |
 | `concord-testkit` | For tests: a scripted local server, and a scripted transport with virtual time. |
 | `tests/tour` | The test clients, written by hand with the public types and methods the macro generates: `Tasks` and `Riot` of [the tour](../guide/tour.md), and `Files`, `Feed`, `Shapes`. |

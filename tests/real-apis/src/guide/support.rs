@@ -145,7 +145,7 @@ pub fn optional_json<T: Serialize>(
 
 // `pages.md`: the pages of a shop, one shape of list for each way to page.
 pub use concord::page::{by_offset_total, Pager, Paging, Slot};
-pub use concord::{by_link, by_next_url, by_offset, by_page, Answer};
+pub use concord::{by_link, by_next_url, by_offset, by_page, by_page_bounds, Answer};
 data!(Order, Product, Review, Item, Change);
 #[derive(Debug, Deserialize)]
 pub struct Batch<T> {
@@ -199,18 +199,12 @@ impl<T: Send> concord::page::IntoItems for Counted<T> {
         self.items.len()
     }
 }
-impl<T: Send> concord::page::IntoItems for Numbered<T> {
-    type Item = T;
-    fn into_items(self) -> Vec<T> {
-        self.rows
-    }
-    fn count(&self) -> usize {
-        self.rows.len()
-    }
-}
 
 // The descriptions and the test use the types and functions printed by the guide.
-#[path = "../../fixtures/recipes/failure.rs"]
-mod failure;
+#[path = "../../fixtures/recipes/failure_stream.rs"]
+mod failure_stream;
+#[path = "../../fixtures/recipes/failure_ticket.rs"]
+mod failure_ticket;
 pub use concord::read::{RecordStream, Sse};
-pub use failure::{check_ticket, message_event, MessageEvent, UploadTicket};
+pub use failure_stream::{message_event, MessageEvent};
+pub use failure_ticket::{check_ticket, UploadTicket};
