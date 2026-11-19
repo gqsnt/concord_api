@@ -498,18 +498,23 @@ impl From<&Body> for Body {
     }
 }
 
-/// What the expression of a `body` statement may return.
+/// Converts a writer's result into a present request body.
 ///
-/// A [`Body`], a `&Body`, or a `Result` of one of these with any error that converts into
-/// `Box<dyn Error + Send + Sync>`: an `Err` is a Build error, nothing is sent, and the error of your writer becomes the `source()` of that
-/// error. A body writer is a function that returns a [`Body`]: `concord`'s `json` and `form`
-/// are two, and your own writer is used in the same way.
+/// A [`Body`], a `&Body`, and a `Result` of one of these implement this trait. The error
+/// in a `Result` must convert into `Box<dyn Error + Send + Sync>`. An `Err` stops the call
+/// before sending and becomes the `source()` of a Build error. The functions `json` and
+/// `form` that Concord ships are body writers.
+///
+/// A `body` statement also accepts `Option<B>` or `Result<Option<B>, E>` where
+/// `B: IntoBody`. A whole-body `None` omits the body and its inferred content type.
+/// For an input `payload` of type `Option<Body>`, write `body payload.as_ref();`.
+/// The statement sees the input as an `&Option<Body>` and `as_ref()` yields an `Option<&Body>`.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a body",
     note = "a body expression returns a `concord::Body` or a `Result` of one, as `json(x)`, `form(x)` or your own function do"
 )]
 pub trait IntoBody: sealed::Sealed {
-    /// Returns the body, or the reason there is none.
+    /// Returns the body or its writer's error.
     fn into_body(self) -> Result<Body, Box<dyn std::error::Error + Send + Sync>>;
 }
 

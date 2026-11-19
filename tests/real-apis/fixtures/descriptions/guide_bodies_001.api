@@ -12,9 +12,9 @@ pub client Store(token: concord::Secret) {
             path "items/{id}/touched";
             body concord::Body::from(Vec::new());
         }
-        /// A JSON body when the caller sets `options`, and no bytes when it does not.
+        /// A JSON body when the caller sets `options`. Otherwise the body is omitted.
         DELETE delete(id: u64, options?: DeleteOptions) {
             path "items/{id}";
-            body optional_json(options);
+            body options.as_ref().map(concord::json).transpose();
         }
     }

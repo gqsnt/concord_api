@@ -1,7 +1,7 @@
 # Concord public surface v2 (x86_64-unknown-linux-gnu)
 # All features: public signatures and hidden fingerprints.
 
-# concord: 397 hidden items
+# concord: 398 hidden items
 # hidden concord 007056c809f102eb17b4ba049a6c28c5
 # hidden concord 008a6fbf9c8a5d42a6704afebd428cdb
 # hidden concord 01162974251b6d9686a57e6655dc381c
@@ -34,6 +34,7 @@
 # hidden concord 1224a1b478608e29c8b7a5c0f1a050e7
 # hidden concord 12c0b132158b737444a19b021851d5f5
 # hidden concord 130aae60664627f69f87149ef704c738
+# hidden concord 135e87db1cbec6c79568d01cff6ad979
 # hidden concord 137aff4e90b6f36d5935db5dc2e825c7
 # hidden concord 138b89d90554cbf412eb6f0f970a0cd1
 # hidden concord 1409f5c8968b2416e4e192c49be23d36

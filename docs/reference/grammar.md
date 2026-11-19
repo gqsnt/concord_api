@@ -84,7 +84,7 @@ The statements of a part count as the statements of the node that names it (sent
 |---|---|---|
 | `base`, `path` | A template: text with placeholders. `base` may also name one input of type `concord::Base`. | Text. A placeholder is an input: one segment of a path or part of one (`{*x}`: several whole segments, sentence 13), one label of a host or part of one. |
 | An entry of `query` or `headers` | A template, or a Rust expression. | Something that `serde` serializes as nothing, one string, or a list of strings; or a `concord::Secret`. |
-| `body` | A Rust expression. | A `concord::Body`, or a `Result` of one. `json(x)` and `form(x)` are two functions that return one. |
+| `body` | A Rust expression. | A `concord::Body`, a borrowed body, an optional body, or a `Result` of one of these. See C2.9 of [the contracts](contracts.md#c2-building-a-request). |
 | `body f { … }` | The path of a function, and entries as in `query`. | `f` is called with one `concord::body::Entries` and returns what a `body` expression must return (sentence 18). The value of an entry is a template, anything that `serde` can serialize, or a `concord::Secret` (written as its text). A `None` writes nothing ([rule 9](rules.md)). |
 | `idle_timeout` | A Rust expression, with the inputs as variables. | A `std::time::Duration`. |
 | `read`, on its own line or on the `problem` line | A Rust expression. | A value that implements `concord::Reader` for the type to read. `Json`, `Text`, `Binary` and `concord::read::Stream` are four of them. |

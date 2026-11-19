@@ -18,10 +18,3 @@ impl<T: DeserializeOwned + Send> Reader<T> for Xml {
 pub fn xml<T: Serialize>(value: &T) -> Result<Body, quick_xml::SeError> {
     Ok(Body::new(quick_xml::se::to_string(value)?, "application/xml"))
 }
-
-pub fn create_bucket_body(value: &Option<CreateBucketConfiguration>) -> Result<Body, quick_xml::SeError> {
-    match value {
-        Some(configuration) => xml(configuration),
-        None => Ok(Body::new("", "application/xml")),
-    }
-}

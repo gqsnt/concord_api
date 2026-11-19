@@ -7,7 +7,6 @@ include!("stand_ins.rs");
 include!("stand_in_wire.rs");
 #[cfg(test)]
 mod wire {
-    use super::*;
     include!("wire.rs");
 }
 #[cfg(test)]

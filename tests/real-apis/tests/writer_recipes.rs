@@ -121,14 +121,14 @@ mod empty_body {
         assert_eq!(sent.len(), 6);
         assert_eq!(sent[0].body(), None);
         assert_eq!(sent[0].header("content-length"), Some("0"));
-        for empty in &sent[1..3] {
-            assert_eq!(empty.body(), Some(&b""[..]));
-            assert!(!empty.headers().contains_key("content-type"));
-            assert!(!empty.headers().contains_key("content-length"));
-        }
+        assert_eq!(sent[1].body(), Some(&b""[..]));
+        assert!(!sent[1].headers().contains_key("content-type"));
+        assert!(!sent[1].headers().contains_key("content-length"));
+        assert_eq!(sent[2].body(), None);
+        assert!(!sent[2].headers().contains_key("content-type"));
+        assert!(!sent[2].headers().contains_key("content-length"));
         assert_eq!(sent[3].body(), Some(&br#"{"grace_seconds":30}"#[..]));
         assert_eq!(sent[3].header("content-type"), Some("application/json"));
-        // `remove` without options: the edit takes the empty body away.
         assert_eq!(sent[4].method(), "DELETE");
         assert_eq!(sent[4].body(), None);
         assert!(!sent[4].headers().contains_key("content-type"));

@@ -295,7 +295,7 @@ impl Writer<'_> {
             Some(flat::BodyLine::Expression(line)) => {
                 let bindings = self.bindings(&line.origin, index, emit!(__value), false);
                 let expression = line.value;
-                let place = emit_at!(expression.span() => ::concord::__private::Draft::body(&mut __draft, __body););
+                let place = emit_at!(expression.span() => ::concord::__private::Draft::whole_body(&mut __draft, __body););
                 emit!({
                     #bindings
                     let __body = ::concord::__private::evaluate_body(#endpoint_name, || ::core::result::Result::Ok({ #expression }))?;
@@ -376,7 +376,7 @@ impl Writer<'_> {
             #setup
             let mut __entries = ::concord::body::Entries::new();
             #writes
-            ::concord::__private::Draft::body(&mut __draft, #function(__entries));
+            ::concord::__private::Draft::whole_body(&mut __draft, #function(__entries));
         })
     }
 

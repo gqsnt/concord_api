@@ -64,7 +64,7 @@ These extension points and escape hatches are public and stable: the traits `Rea
 
 ## A writer of bodies
 
-A writer is a function that returns a `concord::Body`, or a `Result` of one. The description names it after `body`, just as it names `json`:
+A writer is a function that returns a `concord::Body`, a borrowed body, or an optional body, any of which may be returned in a `Result`. The description names it after `body`, just as it names `json`:
 
 ```rust
 // plain Rust, beside the macro: `body csv(rows);`

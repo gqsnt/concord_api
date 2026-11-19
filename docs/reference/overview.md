@@ -206,7 +206,7 @@ If you guess wrong about one of these, no message tells you, so learn them first
 
 And the silent half of seven rules that are otherwise checked:
 
-- **9.** In a body built by an expression, a `None` is whatever the type serializes (`null` in `json!`). A body of entries leaves out every `None`; in JSON, `"k" = Some(x);` writes `null` when `x` is `None`. A form has no `null`.
+- **9.** A whole-body `None` omits the body and its inferred content type. A `None` passed to the JSON writer can produce `null`. A body of entries leaves out an entry whose outer value is `None`; in JSON, `"k" = Some(x);` writes `null` when `x` is `None`. A form has no `null`.
 - **10.** An `override` with `None` sends nothing for that key. For each send, the order is `idle_timeout`, then `idempotent`, then the request by kind, from the client down. An entry keeps the position where its key was first written.
 - **11.** There is no default format: the nearest `read` applies. `Json`, `Text` and `Binary` stop at 10 MiB. An alias of `Option` after the arrow is not recognized.
 - **12.** With no arrow, success returns `()` and the body is ignored.

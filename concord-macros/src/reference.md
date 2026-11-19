@@ -213,9 +213,15 @@ GET search(author: String, year?: u16, tag: Vec<String>) -> Vec<String> {
 # } }
 ```
 
-**`body`** is an expression that returns a `concord::Body` (`json(x)`, `form(x)`, or
-`Body::new(bytes, "image/png")`), or a body of entries: `body json { title; author; }`.
-In a body of entries, a `None` writes nothing.
+**`body`** accepts an expression that returns a `concord::Body`, a `&Body`, or a
+`Result` of one of these. For an optional body, return `Option<B>` or
+`Result<Option<B>, E>`, where `B` is a writer result for a present body. A whole-body
+`None` omits the body and its inferred `Content-Type`. For `payload?: Body` or
+`payload: Option<Body>`, the expression sees `payload` as an `&Option<Body>`.
+Write `body payload.as_ref();` to pass an `Option<&Body>`.
+
+The other form builds a body from entries, as in `body json { title; author; }`.
+In a body of entries, a `None` leaves out the entry.
 
 ```rust
 # use concord::{json, Body, Json};
@@ -226,6 +232,9 @@ POST create(title: String, author: String, year?: u16) -> String {
 PUT cover(isbn: String, png: concord::bytes::Bytes) {
     path "books/{isbn}/cover";
     body Body::new(png.clone(), "image/png");   // `png` is a `&Bytes`: clone it
+}
+PUT upload(payload?: Body) {
+    body payload.as_ref();
 }
 # } }
 ```
