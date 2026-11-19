@@ -4,7 +4,7 @@
 
 This page is for you when you must know exactly what Concord does in one case, or when you change Concord and must not break a promise. It is the specification of the macro, the engine and the shipped items, and it says **what** each of them does. **How** the engine does it is described in [the engine](../internals/engine.md), and how the macro does it in [the macro](../internals/macro.md); where a line links there, the linked section is its design.
 
-There are 130 numbers in twelve groups, `C1` to `C12`. A number is never reused; five are not used. Other pages cite a contract by its number.
+There are 131 numbers in twelve groups, `C1` to `C12`. A number is never reused; five are not used. Other pages cite a contract by its number.
 
 **The tests of a contract carry its number.** A test of contract C5.4 has `c5_4_` at the start of its name. `just matrix` lists every contract with its tests, in `target/contracts-matrix.md`.
 
