@@ -32,7 +32,7 @@ The blocks of this page are fragments: the rustdoc of `concord::limit` has a who
 let limit = Limit::new().max_in_flight(4);                  // at most 4 requests at once
 ```
 
-A request keeps its place until the body of its response has been read to the end, has failed, or has been dropped: with `read Stream;`, until you are done with the stream. A cap of zero is an error at the first call.
+A request keeps its place until the body of its response has been read to the end, has failed, or has been dropped: with `read Stream;`, until you are done with the stream. With a stream of records, the place is held while the body is open, not until you have pulled every record: when the last records arrive in the body's final chunk, the place is free once the body has ended, while those records are still unread. A cap of zero is an error at the first call.
 
 A cap can also belong to each key of a bucket. Xero allows five calls in progress at once for each tenant; a client of many tenants keeps a cap for all of them as well:
 
