@@ -9,17 +9,17 @@ use concord::transport::{TransportError, TryInfo};
 use concord::{reqwest, Body, Middleware, Next, Retry};
 use concord_testkit::Script;
 use sha2::{Digest, Sha256};
-use std::{error::Error as _, io};
+use std::{any::Any, borrow::Borrow as _, error::Error as _, io, sync::Arc};
 
 concord::api! {
     client Payloads {
         base "https://payloads.test";
 
-        PUT upload(payload?: Body) { body payload; }
-        POST create(payload?: Body) { body payload; }
+        PUT upload(payload?: Body) { body payload.as_ref(); }
+        POST create(payload?: Body) { body payload.as_ref(); }
         PUT labelled(payload?: Body) {
             headers { "content-type" = "application/example"; }
-            body payload;
+            body payload.as_ref();
         }
         PUT xml() { body empty_xml { "version" = 1; } }
         PUT optional_json(value?: Option<u32>) {
@@ -32,8 +32,12 @@ concord::api! {
         }
         PUT opaque() { body opaque_writer(); }
         PUT optional_opaque(present: bool) { body present.then(opaque_writer); }
+        PUT borrowed(blob: Box<Body>) { body blob.borrow(); }
+        PUT downcast(cache: Arc<dyn Any + Send + Sync>) {
+            body cache.downcast_ref().unwrap();
+        }
         POST page(payload?: Body) -> Vec<u32> {
-            body payload;
+            body payload.as_ref();
             read concord::Json;
             paginate |call: payloads::Call<payloads::Page>, _| Some(call.payload(Body::from("")));
         }
@@ -162,6 +166,26 @@ fn opaque_writer_works_with_and_without_an_option() {
     let request = client.optional_opaque(false).request().unwrap();
     assert!(request.body().is_none());
     assert!(!request.headers().contains_key(CONTENT_TYPE));
+}
+
+#[tokio::test(start_paused = true)]
+async fn boxed_body_borrow_infers_body_and_sends_payload() {
+    let script = Script::new();
+    script.answer(204);
+    payloads(&script)
+        .borrowed(Box::new(Body::new("payload", "text/plain")))
+        .await
+        .unwrap();
+    assert_eq!(script.requests()[0].body(), Some(&b"payload"[..]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn downcast_ref_infers_body_and_sends_payload() {
+    let script = Script::new();
+    script.answer(204);
+    let cache: Arc<dyn Any + Send + Sync> = Arc::new(Body::new("cached", "text/plain"));
+    payloads(&script).downcast(cache).await.unwrap();
+    assert_eq!(script.requests()[0].body(), Some(&b"cached"[..]));
 }
 
 struct Checksum;

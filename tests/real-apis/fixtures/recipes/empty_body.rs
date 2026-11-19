@@ -1,6 +1,3 @@
-use concord::body::WriteError;
-use concord::Body;
-
 concord::api! {
     pub client Store(token: concord::Secret) {
         base "https://store.example.com";
@@ -16,10 +13,10 @@ concord::api! {
             path "items/{id}/touched";
             body concord::Body::from(Vec::new());
         }
-        /// A JSON body when the caller sets `options`, and no bytes when it does not.
+        /// A JSON body when the caller sets `options`. Otherwise the body is omitted.
         DELETE delete(id: u64, options?: DeleteOptions) {
             path "items/{id}";
-            body optional_json(options);
+            body options.as_ref().map(concord::json).transpose();
         }
     }
 }
@@ -29,21 +26,7 @@ pub struct DeleteOptions {
     pub grace_seconds: u32,
 }
 
-/// The JSON of the value, or a body of no bytes and no content type for `None`.
-pub fn optional_json<T: serde::Serialize>(value: &Option<T>) -> Result<Body, WriteError> {
-    match value {
-        Some(value) => concord::json(value),
-        None => Ok(Body::from(Vec::new())),
-    }
-}
-
-/// `delete` with its options, or, without them, with no body at all.
+/// Send a delete with any options the caller supplied.
 pub async fn remove(store: &Store, id: u64, options: Option<DeleteOptions>) -> store::Result<()> {
-    let call = match options {
-        Some(options) => store.delete(id).options(options),
-        None => store.delete(id).edit_request(|request| {
-            request.body_mut().take();
-        }),
-    };
-    call.await
+    store.delete(id).options(options).await
 }

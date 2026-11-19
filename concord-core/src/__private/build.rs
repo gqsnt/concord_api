@@ -644,6 +644,8 @@ type BuildSource = Box<dyn std::error::Error + Send + Sync>;
 
 /// Converts the result of a generated body statement. Separate modes let an
 /// opaque `impl IntoBody` use its existing bound.
+/// Optional writers return an `Option` by value. Accepting a reference to one
+/// would compete with `&Body` when Rust infers the target of a borrow.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a body",
     note = "a body expression returns a `concord::Body`, a `&Body`, an optional body, or a `Result` of one of these"
@@ -670,12 +672,6 @@ impl<B: IntoBody> WholeBody<PresentBody> for B {
 impl<B: IntoBody> WholeBody<OptionalBody> for Option<B> {
     fn into_whole_body(self) -> Result<Option<Body>, BuildSource> {
         self.map(IntoBody::into_body).transpose()
-    }
-}
-
-impl WholeBody<OptionalBody> for &Option<Body> {
-    fn into_whole_body(self) -> Result<Option<Body>, BuildSource> {
-        self.as_ref().into_whole_body()
     }
 }
 
