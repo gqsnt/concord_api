@@ -3,6 +3,9 @@ next=/2	</2>; rel=next
 next=/2	</1>; rel=prev, </2>; rel="prev next"
 none	</2>; rel=next; anchor="/x"
 none	</2>; anchor="/x"; rel=next
+none	</2>; AncHor="/x"; rel=next
+none	</2>; rel=next; aNCHOR="/x"
+next=/2	</2>; ReL=nExT
 next=/a,b;c	</a,b;c>; rel=next
 next=/2	</1>; title="a, b; rel=next", </2>; REL=NEXT
 none	</1>; title="rel=next"

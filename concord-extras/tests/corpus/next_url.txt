@@ -18,3 +18,4 @@ https://example.test/next?&&token=S	/next?&token=&	S
 https://example.test/next?TOKEN=kept&token%3D=kept&token=S	/next?TOKEN=kept&token%3D=kept	S
 https://example.test/next?token=S	/next	S
 https://example.test/sl%20ice?a=%zz	/sl ice?a=%zz
+https://example.test/next?token=a%20b%26c%3Dd%2F%C3%A9	/next?token=one	a b&c=d/é

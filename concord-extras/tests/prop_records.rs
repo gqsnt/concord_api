@@ -149,6 +149,30 @@ fn most_polls(records: usize, bytes: usize, chunks: usize) -> usize {
     records + 2 + bytes / 16_384 + (chunks + 1) / 64
 }
 
+/// One poll takes at most 64 chunks and 16 KiB: a body read whole took at least that many polls.
+fn spent_within_budget(
+    cost: &Cost,
+    pulled: usize,
+    bytes: usize,
+    end: &End,
+) -> Result<(), TestCaseError> {
+    prop_assert!(
+        pulled <= 64 * cost.polls,
+        "{} chunks in {} polls",
+        pulled,
+        cost.polls
+    );
+    if *end == End::Clean {
+        prop_assert!(
+            bytes <= 16_384 * cost.polls,
+            "{} bytes in {} polls",
+            bytes,
+            cost.polls
+        );
+    }
+    Ok(())
+}
+
 /// The end of a stream, as the model and the reader give it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum End {
@@ -346,6 +370,7 @@ fn check_sse(input: &[u8], sizes: &[usize], max: usize) -> Result<(), TestCaseEr
         prop_assert_eq!(pulled.load(Ordering::SeqCst), count);
     }
     prop_assert!(cost.polls <= most_polls(events.len(), input.len(), count));
+    spent_within_budget(&cost, pulled.load(Ordering::SeqCst), input.len(), &actual)?;
     Ok(())
 }
 
@@ -373,6 +398,7 @@ fn check_json_lines(input: &[u8], sizes: &[usize], max: usize) -> Result<(), Tes
     prop_assert_eq!(&actual, &end);
     prop_assert!(pulled.load(Ordering::SeqCst) <= count);
     prop_assert!(cost.polls <= most_polls(values.len(), input.len(), count));
+    spent_within_budget(&cost, pulled.load(Ordering::SeqCst), input.len(), &actual)?;
     Ok(())
 }
 
@@ -443,7 +469,11 @@ fn json_input() -> impl Strategy<Value = Vec<u8>> {
 
 /// Chunk sizes: zero-length chunks, single bytes, and larger pieces.
 fn sizes() -> impl Strategy<Value = Vec<usize>> {
-    proptest::collection::vec(prop_oneof![Just(0usize), 1usize..4, 1usize..64], 0..48)
+    prop_oneof![
+        3 => proptest::collection::vec(prop_oneof![Just(0usize), 1usize..4, 1usize..64], 0..48),
+        // More chunks than one poll may take, most of them empty.
+        1 => proptest::collection::vec(prop_oneof![3 => Just(0usize), 1 => 1usize..3], 64..400),
+    ]
 }
 
 /// A bound at, just under and just over what the body needs, or any small one.
@@ -688,5 +718,78 @@ fn c11_9_the_json_lines_corpus_reads_as_written_wherever_it_is_cut() {
         for sizes in every_cut(input) {
             check_json_lines(input, &sizes, max).unwrap_or_else(|e| panic!("line {line}: {e}"));
         }
+    }
+}
+
+/// The resident memory of this process, from `/proc/self/status`, in KiB.
+#[cfg(target_os = "linux")]
+fn resident_kib() -> usize {
+    let status = std::fs::read_to_string("/proc/self/status").unwrap();
+    let line = status
+        .lines()
+        .find(|line| line.starts_with("VmRSS:"))
+        .unwrap();
+    line.split_whitespace().nth(1).unwrap().parse().unwrap()
+}
+
+/// A body of `total` bytes of one record repeated, made a chunk at a time.
+fn repeated(record: &'static [u8], total: usize) -> impl Iterator<Item = Vec<u8>> + Send + 'static {
+    (0..total.div_ceil(4096)).map(move |n| {
+        (n * 4096..((n + 1) * 4096).min(total))
+            .map(|at| record[at % record.len()])
+            .collect()
+    })
+}
+
+/// A reader holds the record it decodes, not the records before it. Without an allocator of
+/// its own, the test sees the resident memory of the process on Linux: 32 MiB of records must
+/// leave it less than 16 MiB higher. It cannot see a smaller retention, memory that is given
+/// back before the body ends, or anything on another system, where it checks only the count.
+#[test]
+fn c11_8_a_reader_keeps_no_record_after_it_is_returned() {
+    const TOTAL: usize = 32 * 1024 * 1024;
+    #[cfg(feature = "json")]
+    {
+        let line: &'static [u8] =
+            b"\"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghij\"\n";
+        #[cfg(target_os = "linux")]
+        let before = resident_kib();
+        let records: RecordStream<serde::de::IgnoredAny> = JsonLines::new(80)
+            .read(body(repeated(line, TOTAL), Arc::default()))
+            .now_or_never()
+            .unwrap()
+            .unwrap();
+        let mut count = 0;
+        drain(
+            records,
+            |item| count += usize::from(item.is_ok()),
+            usize::MAX,
+        );
+        assert_eq!(count, TOTAL / line.len());
+        #[cfg(target_os = "linux")]
+        {
+            let grown = resident_kib().saturating_sub(before);
+            assert!(grown < 16 * 1024, "JSON lines: {grown} KiB more held");
+        }
+    }
+    let event: &'static [u8] = b"data: abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n\n";
+    #[cfg(target_os = "linux")]
+    let before = resident_kib();
+    let records: RecordStream<SseEvent> = Sse::new(80)
+        .read(body(repeated(event, TOTAL), Arc::default()))
+        .now_or_never()
+        .unwrap()
+        .unwrap();
+    let mut count = 0;
+    drain(
+        records,
+        |item| count += usize::from(item.is_ok()),
+        usize::MAX,
+    );
+    assert_eq!(count, TOTAL / event.len());
+    #[cfg(target_os = "linux")]
+    {
+        let grown = resident_kib().saturating_sub(before);
+        assert!(grown < 16 * 1024, "events: {grown} KiB more held");
     }
 }

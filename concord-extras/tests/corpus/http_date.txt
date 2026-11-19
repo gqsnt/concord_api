@@ -1,8 +1,10 @@
 # HTTP dates, read alike by `Retry-After` (the core) and `Date` (a limit): `at=` the seconds
-# from 1970, or `none`. A two-digit year is read on this machine's clock: these stay the
-# same until 2044.
+# from 1970, or `none`, then the text, then the clock that a two-digit year is read on
+# (`clock=` seconds from 1970; 2030 when there is none).
 at=784111777	Sun, 06 Nov 1994 08:49:37 GMT
-at=784111777	Sunday, 06-Nov-94 08:49:37 GMT
+at=784111777	Sunday, 06-Nov-94 08:49:37 GMT	clock=1893456000
+at=3345062400	Wednesday, 01-Jan-76 00:00:00 GMT	clock=1767225600
+at=189302401	Thursday, 01-Jan-76 00:00:01 GMT	clock=1767225600
 at=784111777	Sun Nov  6 08:49:37 1994
 at=784111777	Sun Nov 06 08:49:37 1994
 at=784111777	 \tSun, 06 Nov 1994 08:49:37 GMT\t 

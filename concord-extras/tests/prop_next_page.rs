@@ -220,8 +220,26 @@ fn param() -> impl Strategy<Value = Param> {
     (
         prop_oneof![2 => rel, 3 => other],
         [ows(), ows(), ows(), ows()],
+        any::<u64>(),
     )
-        .prop_map(|((name, value), space)| Param { name, value, space })
+        .prop_map(|((name, value), space, case)| Param {
+            name: mixed_case(&name, case),
+            value,
+            space,
+        })
+}
+/// A name with the case of each letter chosen by one bit: `AncHor`, `rEL`.
+fn mixed_case(name: &str, bits: u64) -> String {
+    name.chars()
+        .enumerate()
+        .map(|(n, c)| {
+            if bits >> (n % 64) & 1 == 1 {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
+        .collect()
 }
 fn target() -> impl Strategy<Value = String> {
     prop_oneof![
@@ -384,7 +402,17 @@ fn expected(next: &str, secret: Option<&str>) -> Option<Url> {
                     .collect()
             })
             .unwrap_or_default();
-        parts.push(format!("token={secret}"));
+        // Written again as a query value: every byte but the unreserved ones escaped.
+        let escaped: String = secret
+            .bytes()
+            .map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                    char::from(b).to_string()
+                }
+                _ => format!("%{b:02X}"),
+            })
+            .collect();
+        parts.push(format!("token={escaped}"));
         url.set_query(Some(&parts.join("&")));
     }
     Some(url)
@@ -459,7 +487,7 @@ proptest! {
             1 => proptest::collection::vec(any::<char>(), 0..48)
                 .prop_map(|chars| chars.into_iter().collect::<String>()),
         ],
-        secret in prop::option::of("[A-Za-z0-9]{1,12}"),
+        secret in prop::option::of("[A-Za-z0-9 &=+/%#?é~._-]{1,12}"),
     ) {
         let answer = Answer::new(StatusCode::OK, HeaderMap::new().into(), next.clone());
         let call = by_next_url(|text: &String| Some(text.clone()))

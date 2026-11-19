@@ -881,7 +881,11 @@ fn date_reader(text: &[u8], at: Option<i64>, rt: &tokio::runtime::Runtime) -> Op
     })
 }
 /// What `Retry-After` makes of the text, from this clock and from the second before `at`.
-fn retry_after(text: &[u8], at: Option<i64>) -> (Option<Duration>, Option<Duration>) {
+fn retry_after(
+    text: &[u8],
+    at: Option<i64>,
+    clock: SystemTime,
+) -> (Option<Duration>, Option<Duration>) {
     let Ok(value) = HeaderValue::from_bytes(text) else {
         return (None, None);
     };
@@ -890,7 +894,7 @@ fn retry_after(text: &[u8], at: Option<i64>) -> (Option<Duration>, Option<Durati
     let headers = Headers::from(map);
     let before = system((i128::from(at.unwrap_or(FIRST + 1)) - 1) * 1_000_000_000);
     (
-        headers.retry_after_at(SystemTime::now()),
+        headers.retry_after_at(clock),
         headers.retry_after_at(before),
     )
 }
@@ -903,11 +907,28 @@ fn c11_5_the_http_date_corpus_reads_alike_in_both_readers() {
         let at: Option<i64> = corpus::text(&fields[0])
             .strip_prefix("at=")
             .map(|at| at.parse().unwrap());
-        let (from_now, from_before) = retry_after(&fields[1], at);
-        let until = date_reader(&fields[1], at, &rt);
-        if let Some(at) = at {
-            assert!(from_now.is_some(), "line {line}");
+        // The clock that a two-digit year is read on: the line's own, or 2030.
+        let clock = fields.get(2).map_or(1_893_456_000, |field| {
+            corpus::text(field)
+                .strip_prefix("clock=")
+                .unwrap()
+                .parse()
+                .unwrap()
+        });
+        let clock = system(i128::from(clock) * 1_000_000_000);
+        let text = corpus::text(&fields[1]);
+        assert_eq!(http_date_model(text, clock), at, "line {line}");
+        let (from_clock, from_before) = retry_after(&fields[1], at, clock);
+        if at.is_some() {
+            assert!(from_clock.is_some(), "line {line}");
             assert_eq!(from_before, Some(sec(1)), "line {line}");
+        } else {
+            assert_eq!((from_clock, from_before), (None, None), "line {line}");
+        }
+        // `Date` reads a two-digit year on this machine's clock: the model says what on it.
+        let here = http_date_model(text, SystemTime::now());
+        let until = date_reader(&fields[1], here, &rt);
+        if let Some(at) = here {
             // Counted from the date: one second, or none past the year 9999.
             assert_eq!(
                 until,
@@ -915,7 +936,6 @@ fn c11_5_the_http_date_corpus_reads_alike_in_both_readers() {
                 "line {line}"
             );
         } else {
-            assert_eq!((from_now, from_before), (None, None), "line {line}");
             // Counted from this clock: a thousand seconds, less the time it took.
             let until = until.unwrap();
             assert!(
@@ -923,11 +943,51 @@ fn c11_5_the_http_date_corpus_reads_alike_in_both_readers() {
                 "line {line}: {until:?}"
             );
         }
-        assert_eq!(
-            http_date_model(corpus::text(&fields[1]), SystemTime::now()),
-            at,
-            "line {line}"
-        );
+    }
+}
+
+#[test]
+fn c11_5_an_rfc_850_date_takes_its_century_at_the_fifty_year_edge_of_this_clock() {
+    let rt = runtime();
+    for near in [-1i64, 0, 1] {
+        // The response must be seen in the second its date was written for: try again if not.
+        let mut checked = false;
+        for _ in 0..20 {
+            let start = nanos_of(SystemTime::now()).div_euclid(1_000_000_000) as i64;
+            let (y, mo, d, h, mi, s) = calendar(start);
+            let day = d.min(month_days(y + 50, mo));
+            let edge = days_from_civil(y + 50, mo, day) * 86_400 + h * 3600 + mi * 60 + s;
+            let text = http_text(edge + near, 1, 0, false);
+            let mut headers = HeaderMap::new();
+            header(&mut headers, "date", text.as_bytes());
+            let probe = text.clone();
+            // A reset one second after the date read fifty years ahead.
+            let reset = rfc3339_text(i128::from(edge + near + 1) * 1_000_000_000);
+            let (now, model, until) = seen(&rt, headers, move |seen| {
+                let now = seen.now();
+                (
+                    now,
+                    http_date_model(&probe, now),
+                    seen.until_rfc3339(&reset),
+                )
+            });
+            if nanos_of(now).div_euclid(1_000_000_000) as i64 != start {
+                continue;
+            }
+            if near <= 0 {
+                // Fifty years ahead or less: this century.
+                assert_eq!(model, Some(edge + near), "{text}");
+                assert_eq!(until, Some(sec(1)), "{text}");
+            } else {
+                // One second further: a hundred years back, where the weekday is not this
+                // one, so it is no date; from this clock, the reset is over fifty years ahead.
+                assert_eq!(model, None, "{text}");
+                assert_eq!(until, None, "{text}");
+            }
+            checked = true;
+            break;
+        }
+        assert!(checked, "the clock never stayed in one second");
     }
 }
 
@@ -938,7 +998,7 @@ fn c11_5_a_date_of_4097_bytes_is_read_by_retry_after_and_not_by_date() {
     for (width, read_by_date) in [(4096, true), (4097, false)] {
         let text = format!("{date}{}", " ".repeat(width - date.len()));
         assert_eq!(text.len(), width);
-        let (_, from_before) = retry_after(text.as_bytes(), Some(784_111_777));
+        let (_, from_before) = retry_after(text.as_bytes(), Some(784_111_777), SystemTime::now());
         assert_eq!(from_before, Some(sec(1)));
         // Read, the reset is a second after the date; not read, it is long past on this clock.
         let until = date_reader(text.as_bytes(), Some(784_111_777), &rt);

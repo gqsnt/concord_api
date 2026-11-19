@@ -190,10 +190,12 @@ proptest! {
             Some(Ok(length)) => {
                 // Over the limit: a Mismatch before anything is read; within it, a body that
                 // ends before its announced size: a Transport error.
-                let under = usize::try_from(length - 1).unwrap();
+                // A length beyond `usize` (on a 32-bit target) is over every limit.
+                let under = usize::try_from(length - 1).unwrap_or(usize::MAX);
                 prop_assert_eq!(read_empty(&value, under, &rt).unwrap_err().kind(), Kind::Mismatch, "{:?}", text);
-                let exact = usize::try_from(length).unwrap();
-                prop_assert_eq!(read_empty(&value, exact, &rt).unwrap_err().kind(), Kind::Transport, "{:?}", text);
+                if let Ok(exact) = usize::try_from(length) {
+                    prop_assert_eq!(read_empty(&value, exact, &rt).unwrap_err().kind(), Kind::Transport, "{:?}", text);
+                }
             }
             // Not a length: nothing is announced, and the transport's exact size counts.
             _ => {
@@ -305,7 +307,8 @@ fn c5_4_the_corpus_of_numbers_reads_as_written() {
             "0" => assert!(read_empty(&value, 0, &rt).is_ok(), "line {line}"),
             n => {
                 let n: u64 = n.parse().unwrap();
-                let under = usize::try_from(n - 1).unwrap();
+                // A length beyond `usize` (on a 32-bit target) is over every limit.
+                let under = usize::try_from(n - 1).unwrap_or(usize::MAX);
                 assert_eq!(
                     read_empty(&value, under, &rt).unwrap_err().kind(),
                     Kind::Mismatch,
