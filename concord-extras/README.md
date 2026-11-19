@@ -6,9 +6,9 @@ Everything here is built on the core's public traits and helpers: the writers us
 the `Json` reader `read::details`, the pagers `page::fragmentless`, the credentials, the signer and the limit
 `Middleware`, and `transfer` the `page::Call` trait. Your own reader, writer, pager or middleware
 uses the same items, and `gzip` keeps the content type of the body it compresses with
-`Body::get_content_type`. Only the `tower` adapter also uses a hidden helper of the core, for the
-URL of a response; `multipart` checks its boundary inside a stream part with the public
-`Body::map_stream`.
+`Body::get_content_type`. The `tower` adapter uses a hidden core helper for the URL of a response,
+and `transfer::at_call` uses one to build an error in the destination client's error type.
+`multipart` checks its boundary inside a stream part with the public `Body::map_stream`.
 
 | What | Items |
 |---|---|

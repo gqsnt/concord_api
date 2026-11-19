@@ -340,6 +340,16 @@ impl<'a> Writer<'a> {
         emit!(<#key as ::concord::__private::StoredType<#id>>::Value)
     }
 
+    fn endpoint_marker(&self, index: usize, node: &NodeInfo<'_>) -> TokenStream {
+        if node.deprecated {
+            let key = self.client_key();
+            let id = self.node_id(index);
+            emit!(<#key as ::concord::__private::EndpointType<#id>>::Value)
+        } else {
+            node.path.clone()
+        }
+    }
+
     fn problem_alias(&self) -> TokenStream {
         let key = self.client_key();
         self.at_problem(emit!(<#key as ::concord::__private::ClientProblem>::Problem))
@@ -397,7 +407,9 @@ impl<'a> Writer<'a> {
     ) -> Option<(TokenStream, usize)> {
         let node = self.nodes.get(index)?;
         let position = self.input_position(index, input)?;
-        Some((self.call_type(node), position))
+        let root = &self.root;
+        let marker = self.endpoint_marker(index, node);
+        Some((emit!(#root::Call<#marker>), position))
     }
 
     fn core(&self, current: usize) -> TokenStream {

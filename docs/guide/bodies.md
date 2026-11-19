@@ -139,6 +139,8 @@ A one-shot stream part or a part without one valid content type is refused with 
 
 **A body that the caller may leave out.** In `delete`, `map` calls the JSON writer only when `options` is set, and `transpose` puts the result in the form `Result<Option<Body>, E>`. Without options, the call omits the body and its inferred content type. Passing `options` directly to `json` would serialize a missing value as JSON `null`. The `remove` function passes its `Option<DeleteOptions>` to the generated setter.
 
+If a server requires `Content-Length: 0` when an optional body is absent, make the header optional too. In `configure`, the header entry returns `Some("0")` when `configuration` is absent and `None` when it is present, leaving the length of a present body to the transport.
+
 ```rust
 concord::api! {
     pub client Store(token: concord::Secret) {
@@ -159,6 +161,12 @@ concord::api! {
         DELETE delete(id: u64, options?: DeleteOptions) {
             path "items/{id}";
             body options.as_ref().map(concord::json).transpose();
+        }
+        /// Declares a length of zero only when no configuration is supplied.
+        PUT configure(id: u64, configuration?: concord::Body) {
+            path "items/{id}/configuration";
+            headers { "content-length" = configuration.is_none().then_some("0"); }
+            body configuration.as_ref();
         }
     }
 }

@@ -433,13 +433,9 @@ Every endpoint below still returns its own type. An arm on the client that binds
 
 ## A failure that is not the API's
 
-A `concord::Error` belongs to a call. It names the endpoint, records the attempt count and
-keeps the status if there is a response. A failure in your own code after a call returns has
-no such evidence of its own, so give it a type of its own.
+A `concord::Error` belongs to a call. It names the endpoint, records the attempt count and keeps the status if there is a response. A failure in your own code after a call returns has no such evidence of its own, so give it a type of its own.
 
-A helper that needs the stream's first event can fail because the caller has already read
-that event. Return `StartAlreadyConsumed` for that case. Implement `From` so that `?`
-carries an actual stream error through unchanged.
+A helper that needs the stream's first event can fail because the caller has already read that event. Return `StartAlreadyConsumed` for that case. Implement `From` so that `?` carries an actual stream error through unchanged.
 
 ```rust
 use concord::read::{RecordFail, RecordStream, Sse, SseEvent, Step};
@@ -498,9 +494,7 @@ async fn finish(
 }
 ```
 
-If a response is missing a value the endpoint promises, check it in the status arm. An upload
-ticket missing its URL or file ID is a Mismatch. The call's error keeps the endpoint, status,
-headers and attempts, and the upload helper receives the error before it can send the file.
+If a response is missing a value the endpoint promises, check it in the status arm. An upload ticket missing its URL or file ID is a Mismatch. The call's error keeps the endpoint, status, headers and attempts, and the upload helper receives the error before it can send the file.
 
 ```rust
 use concord::{mismatch, Binary, Fail, Json};

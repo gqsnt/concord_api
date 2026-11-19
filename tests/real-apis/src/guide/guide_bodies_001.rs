@@ -18,5 +18,11 @@ pub client Store(token: concord::Secret) {
             path "items/{id}";
             body options.as_ref().map(concord::json).transpose();
         }
+        /// Declares a length of zero only when no configuration is supplied.
+        PUT configure(id: u64, configuration?: concord::Body) {
+            path "items/{id}/configuration";
+            headers { "content-length" = configuration.is_none().then_some("0"); }
+            body configuration.as_ref();
+        }
     }
 }
