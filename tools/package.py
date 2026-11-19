@@ -33,7 +33,8 @@ TARGET = REPO_ROOT / "target"
 CHECK = TARGET / "package-check"
 # In the order that cargo can package them: a crate after the crates it depends on.
 PUBLISHED = ("concord-core", "concord-macros", "concord-extras", "concord-api", "concord-testkit")
-NEVER = ("tests/tour", "tests/tour-gen", "tests/conformance", "tests/conformance-gen", "tests/real-apis")
+NEVER = ("tests/tour", "tests/tour-gen", "tests/conformance", "tests/conformance-gen", "tests/real-apis",
+         "tests/wire")
 # What cargo writes into every package by itself, whatever `include` says.
 PACKAGE = ("cargo", "package", "--offline", "--allow-dirty", "--no-verify", "--exclude-lockfile")
 GENERATED = {"Cargo.toml", "Cargo.toml.orig", "Cargo.lock", ".cargo_vcs_info.json"}

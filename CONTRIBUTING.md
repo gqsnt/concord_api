@@ -107,6 +107,8 @@ A need that the description cannot express becomes a value in `concord-extras`, 
 3. In `tests/tour/src/<client>.rs`, write by hand the code that the macro generates for it, in the same way as the endpoints around it.
 4. Write its test once, in `tests/tour/tests` or `tests/conformance/tests`. It runs on both sides.
 
+**Against a real server.** `tests/wire` puts generated clients against a local [axum](https://github.com/tokio-rs/axum) server, over HTTP/1.1 and over HTTP/2 without TLS: retries, HTTP/2 connections, redirects, compression, bodies, records, pages and limits, as a real server stack frames them. Each test starts its own server on `127.0.0.1`; a test that waits runs on Tokio's paused clock, which the server shares. `just wire` runs them alone. Every test there opens a socket, so a new one is also added to `tools/socket-tests.txt`, where `CONCORD_SKIP_SOCKETS=1` finds it.
+
 ## The rules of the code
 
 The workspace lints enforce these rules, and `just gate` fails on any violation:

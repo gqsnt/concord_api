@@ -28,6 +28,11 @@ lint:
 test:
     @python3 -B tools/gate.py test
 
+# Run the tests against a local axum server, over HTTP/1.1 and HTTP/2; they open sockets.
+[no-exit-message]
+wire:
+    @cargo nextest run --offline -p wire --all-features
+
 # Build documentation with warnings treated as errors.
 [no-exit-message]
 doc:
