@@ -16,7 +16,7 @@ class Release(unittest.TestCase):
         with patch.object(release.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run, redirect_stdout(output):
             self.assertEqual(release.main([]), 0)
         self.assertEqual([call.args[0] for call in run.call_args_list], [
-            ["just", "surface"], ["just", "gate"], ["just", "docs-audit"], ["just", "doc-examples"],
+            ["just", "surface", "--release"], ["just", "gate"], ["just", "docs-audit"], ["just", "doc-examples"],
             ["just", "call-doc-search"], ["just", "call-editor"],
             ["just", "panics"], ["just", "package"],
             ["just", "features-all"], ["just", "mutants", "--jobs", "1"],
@@ -47,7 +47,7 @@ class Release(unittest.TestCase):
             self.assertEqual(release.main([]), 0)
             self.assertEqual(os.environ["CONCORD_SKIP_SOCKETS"], "1")
         commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands[0], ["just", "surface"])
+        self.assertEqual(commands[0], ["just", "surface", "--release"])
         self.assertEqual(commands[-1], ["just", "mutants", "--jobs", "1"])
         self.assertTrue(all(call.kwargs == {"cwd": release.REPO_ROOT, "check": False}
                             for call in run.call_args_list))

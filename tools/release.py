@@ -17,7 +17,9 @@ def main(argv=None):
     parser.parse_args(argv)
     for step in STEPS:
         command = ["just", step]
-        if step == "mutants":
+        if step == "surface":
+            command.append("--release")
+        elif step == "mutants":
             command += ["--jobs", "1"]
         detail = ""
         try:

@@ -1,6 +1,6 @@
 """Regression tests for the rustdoc surface and its changelog check."""
 
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from copy import deepcopy
 import io
 import json
@@ -68,12 +68,36 @@ def public_fixture():
     return {
         "concord": facade,
         "concord_core": rustdoc("concord_core", items, paths, []),
+        "concord_macros": rustdoc("concord_macros", {}, {}, []),
         "concord_testkit": rustdoc("concord_testkit", {}, {}, []),
     }
 
 
 def snapshot(crates):
     return surface.Surface(crates).generate()
+
+
+@contextmanager
+def checking(crates, before, notes="## Unreleased\n", defaults=None):
+    baseline = Mock()
+    baseline.read_text.return_value = before
+    if defaults is None:
+        defaults = {name: rustdoc(name, {}, {}, []) for name in surface.PUBLIC_CRATES}
+
+    def refresh(text):
+        baseline.read_text.return_value = text
+
+    def run(*args):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            status = surface.main(args)
+        return status, output.getvalue()
+
+    with (patch.object(surface, "build", side_effect=lambda **kwargs: defaults if kwargs.get("default") else crates),
+          patch.object(surface, "SNAPSHOT", baseline),
+          patch.object(surface, "update_snapshot", side_effect=refresh) as update,
+          patch.object(Path, "read_text", return_value=notes) as changelog):
+        yield run, baseline, update, changelog
 
 
 class PublicSurface(unittest.TestCase):
@@ -152,43 +176,163 @@ class PublicSurface(unittest.TestCase):
         self.assertNotIn("__private", after)
         self.assertNotIn("::ready", after)
 
-        baseline = Mock()
-        baseline.read_text.return_value = before
-
-        def refresh(text):
-            baseline.read_text.return_value = text
-
-        def run(args, status, message):
-            output = io.StringIO()
-            with redirect_stdout(output):
-                self.assertEqual(surface.main(args), status)
-            self.assertIn(message, output.getvalue())
-            self.assertNotIn("missing from Unreleased", output.getvalue())
-            return output.getvalue()
-
         empty_notes = "## Unreleased\n"
-        with (patch.object(surface, "build", return_value=crates),
-              patch.object(surface, "SNAPSHOT", baseline),
-              patch.object(surface, "update_snapshot", side_effect=refresh),
-              patch.object(Path, "read_text", return_value=empty_notes) as changelog):
-            output = run([], 1, "3 added, 0 removed")
+        with checking(crates, before, empty_notes) as (check, baseline, _, changelog):
+            def run(status, message, *args):
+                code, output = check(*args)
+                self.assertEqual(code, status)
+                self.assertIn(message, output)
+                self.assertNotIn("missing from Unreleased", output)
+                return output
+
+            output = run(1, "3 added, 0 removed")
             self.assertIn("refresh the snapshot with just surface --update", output)
             self.assertIn("+# concord: 3 hidden items", output)
             changelog.return_value += "- `concord::__private`, `concord::__private::ready`, `concord::ready`\n"
-            run([], 1, "3 added, 0 removed")
+            run(1, "3 added, 0 removed")
             changelog.return_value = empty_notes
-            run(["--update"], 0, "SURFACE: updated")
-            run([], 0, "SURFACE: matches")
+            run(0, "SURFACE: updated", "--update")
+            run(0, "SURFACE: matches")
 
             crate.items[12]["name"] = "renamed"
-            run([], 1, "1 added, 1 removed")
-            run(["--update"], 0, "SURFACE: updated")
-            run([], 0, "SURFACE: matches")
+            run(1, "1 added, 1 removed")
+            run(0, "SURFACE: updated", "--update")
+            run(0, "SURFACE: matches")
 
             baseline.read_text.return_value = snapshot(crates).replace(
                 "# concord: 3 hidden items", "# concord: 4 hidden items"
             )
-            run([], 1, "0 added, 1 removed")
+            run(1, "0 added, 1 removed")
+
+    def test_hidden_bound_changes_require_a_snapshot_refresh(self):
+        crates = public_fixture()
+        owner = crates["concord_core"]
+        owner.items[2]["inner"]["impl"]["items"] = [3]
+        owner.items[3]["attrs"] = [HIDDEN]
+        before = snapshot(crates)
+        owner.items[3]["inner"]["function"]["generics"] = {
+            "params": [],
+            "where_predicates": [{"bound_predicate": {
+                "type": {"generic": "Self"}, "generic_params": [],
+                "bounds": [{"trait_bound": {
+                    "trait": {"id": 14, "path": "Send", "args": None},
+                    "generic_params": [], "modifier": "none",
+                }}],
+            }}],
+        }
+        with checking(crates, before) as (run, _, _, _):
+            status, output = run()
+            self.assertEqual(status, 1)
+            self.assertIn("1 added, 1 removed", output)
+            self.assertNotIn("missing from Unreleased", output)
+            self.assertEqual(run("--update")[0], 0)
+            self.assertEqual(run()[0], 0)
+
+    def test_documented_pass_shows_later_changes_at_the_same_path(self):
+        crates = public_fixture()
+        owner = crates["concord_core"]
+        owner.items[2]["inner"]["impl"]["items"] = [3]
+        notes = "## Unreleased\n- Added `concord::Request::ready()`.\n"
+        with checking(crates, snapshot(crates), notes) as (run, _, _, _):
+            owner.items[3] = method("u32")
+            status, output = run()
+            self.assertEqual(status, 0)
+            self.assertIn("-concord::Request::ready\tfn ready(self: &Self) -> bool", output)
+            self.assertIn("+concord::Request::ready\tfn ready(self: &Self) -> u32", output)
+
+    def test_release_requires_refreshed_snapshot_for_documented_change(self):
+        crates = public_fixture()
+        before = snapshot(crates)
+        crates["concord_core"].items[2]["inner"]["impl"]["items"] = [3]
+        notes = "## Unreleased\n- Added `concord::Request::ready()`.\n"
+        with checking(crates, before, notes) as (run, _, _, _):
+            status, output = run("--release")
+            self.assertEqual(status, 1)
+            self.assertIn("snapshot is stale", output)
+            self.assertEqual(run("--update")[0], 0)
+            self.assertEqual(run("--release")[0], 0)
+
+    def test_update_refuses_undocumented_public_changes(self):
+        crates = public_fixture()
+        before = snapshot(crates)
+        crates["concord_core"].items[2]["inner"]["impl"]["items"] = [3]
+        with checking(crates, before) as (run, baseline, update, changelog):
+            status, output = run()
+            self.assertEqual(status, 1)
+            self.assertIn("missing from Unreleased: concord::Request::ready", output)
+            self.assertEqual(run("--update"), (status, output))
+            update.assert_not_called()
+            self.assertEqual(baseline.read_text.return_value, before)
+            changelog.return_value += "- Added `concord::Request::ready()`.\n"
+            self.assertEqual(run("--update")[0], 0)
+            self.assertEqual(run()[0], 0)
+
+    def test_feature_gated_reexport_requires_a_changelog_entry(self):
+        crates = public_fixture()
+        defaults = deepcopy(crates)
+        with checking(crates, snapshot(crates), "## Unreleased\n- Added `concord::Request`.\n",
+                      defaults) as (run, _, _, changelog):
+            self.assertEqual(run("--update")[0], 0)
+            defaults["concord"].items[0]["inner"]["module"]["items"] = []
+            changelog.return_value = "## Unreleased\n"
+            status, output = run()
+            self.assertEqual(status, 1)
+            self.assertIn("-concord::Request\n", output)
+            self.assertIn("missing from Unreleased: concord::Request\n", output)
+            changelog.return_value += "- Gated `concord::Request`.\n"
+            self.assertEqual(run()[0], 0)
+
+    def test_variant_inserted_first_changes_only_its_own_row(self):
+        crates = public_fixture()
+        facade = crates["concord"]
+        facade.items.update({
+            10: item("Status", "enum", {"generics": GENERICS, "variants": [11, 12]}),
+            11: item("Ready", "variant", {"kind": "plain", "discriminant": None}),
+            12: item("Done", "variant", {"kind": "plain", "discriminant": {"value": "10"}}),
+        })
+        facade.items[0]["inner"]["module"]["items"].append(10)
+        before = snapshot(crates)
+        facade.items[13] = item("Pending", "variant", {"kind": "plain", "discriminant": None})
+        facade.items[10]["inner"]["enum"]["variants"].insert(0, 13)
+        after = snapshot(crates)
+        self.assertEqual(surface.undocumented(before, after, ""), ["concord::Status::Pending"])
+        self.assertIn("variant Done = 10", after)
+
+    def test_blankets_keep_only_concord_and_standard_library_traits(self):
+        crates = public_fixture()
+        owner = crates["concord_core"]
+        owner.paths.update({
+            20: (("tracing", "instrument", "Instrument"), "trait"),
+            21: (("core", "any", "Any"), "trait"),
+            22: (("concord_core", "Local"), "trait"),
+        })
+        owner.items[22] = item("Local", "trait", {})
+        owner.items[0]["inner"]["module"]["items"].append(22)
+        for impl_id, trait_id in ((7, 20), (8, 21), (9, 22), (10, 20)):
+            implementation = impl({"id": trait_id, "path": "", "args": None})
+            value = implementation["inner"]["impl"]
+            value["is_synthetic"] = False
+            if impl_id != 10:
+                value["blanket_impl"] = {"generic": "T"}
+            owner.items[impl_id] = implementation
+            owner.items[1]["inner"]["struct"]["impls"].append(impl_id)
+        result = snapshot(crates)
+        self.assertNotIn("tracing::instrument::Instrument for concord_core::requests::Request [blanket", result)
+        self.assertIn("tracing::instrument::Instrument for concord_core::requests::Request\n", result)
+        self.assertIn("core::any::Any for concord_core::requests::Request [blanket", result)
+        self.assertIn("concord_core::Local for concord_core::requests::Request [blanket", result)
+
+    def test_rustdoc_build_failure_has_a_plain_diagnostic(self):
+        error = subprocess.CalledProcessError(101, ["cargo", "doc"])
+        errors = io.StringIO()
+        with patch.object(surface, "build", side_effect=error), redirect_stderr(errors):
+            self.assertEqual(surface.main([]), 1)
+        self.assertEqual(errors.getvalue(),
+                         "SURFACE: FAILED: rustdoc did not build; run cargo doc to see why\n")
+
+    def test_json_format_mismatch_names_the_toolchain_to_install(self):
+        with self.assertRaisesRegex(ValueError, r"install nightly-2026-10-13"):
+            surface.Crate({"format_version": 60, "includes_private": True})
 
     def test_inline_reexport_exposes_a_hidden_definition(self):
         crates = public_fixture()

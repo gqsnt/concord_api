@@ -3,6 +3,7 @@
 
 import argparse
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 import difflib
 from hashlib import sha256
@@ -10,13 +11,17 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / "tools/public-surface.txt"
+WORK = ROOT / "target/surface-snapshot"
 RUSTDOC_FORMAT = 61
+RUSTDOC_TOOLCHAIN = "nightly-2026-10-13"
 TARGET = "x86_64-unknown-linux-gnu"
 PACKAGES = {
     "concord-api": "concord",
@@ -29,7 +34,9 @@ PUBLIC_CRATES = ("concord", "concord_testkit")
 MACRO_PACKAGE = "concord-macros"
 JSON_FLAGS = ("-Z", "unstable-options", "--output-format", "json",
               "--document-hidden-items", "--document-private-items")
-HEADER = f"# Concord public surface v1 ({TARGET}, all features)"
+HEADER = f"# Concord public surface v2 ({TARGET})"
+DEFAULT_HEADER = "# Public paths with default features"
+BLANKET_TRAIT_CRATES = {*PACKAGES.values(), "alloc", "core", "std"}
 RUST_INTERNAL_TRAITS = {
     "core::asserting::Printable",
     "core::clone::CloneToUninit",
@@ -67,7 +74,8 @@ class Crate:
     def __init__(self, data, expected_target=TARGET):
         if data["format_version"] != RUSTDOC_FORMAT or not data["includes_private"]:
             raise ValueError(f"expected private rustdoc JSON format {RUSTDOC_FORMAT}, "
-                             f"got format {data['format_version']}")
+                             f"got format {data['format_version']}; install {RUSTDOC_TOOLCHAIN} "
+                             f"and set CONCORD_SURFACE_TOOLCHAIN={RUSTDOC_TOOLCHAIN}")
         if expected_target is not None and data["target"]["triple"] != expected_target:
             raise ValueError(f"expected rustdoc JSON for {expected_target}")
         self.root = data["root"]
@@ -177,7 +185,7 @@ class Surface:
             if item is not None and "module" in item["inner"]:
                 yield from self.walk(defining, item_id, path, excluded, active)
 
-    def generate(self):
+    def collect(self):
         # A private supertrait is inaccessible even through the supporting crates.
         public = {}
         for name, crate in self.crates.items():
@@ -187,18 +195,22 @@ class Surface:
             for path, export, excluded in public[name]:
                 crate, item_id = export.crate, export.item_id
                 if item_id not in crate.items:
-                    origin, kind = crate.paths[item_id]
-                    self.record(path, kind, f"pub use {'::'.join(origin)}", excluded)
+                    origin, _ = crate.paths[item_id]
+                    self.record(path, f"pub use {'::'.join(origin)}", excluded)
                     continue
                 origin = ""
                 if export.reexport:
                     origin = " [from " + "::".join(crate.paths[item_id][0]) + "]"
                 self.item(crate, item_id, path, excluded, origin=origin, export=True)
-        return render_snapshot(self.rows, self.hidden)
+        return self
 
-    def record(self, path, kind, signature, hidden):
+    def generate(self, default_paths=()):
+        self.collect()
+        return render_snapshot(self.rows, self.hidden, default_paths)
+
+    def record(self, path, signature, hidden):
         if hidden:
-            self.hidden.add((path, kind))
+            self.hidden.add((path, signature))
         else:
             self.rows[path].add(signature)
 
@@ -210,11 +222,8 @@ class Surface:
         if doc_only(item):
             return
         name = path.rsplit("::", 1)[-1]
-        if not hidden:
-            attrs = "#[non_exhaustive] " if "non_exhaustive" in item["attrs"] else ""
-            self.record(path, kind, attrs + rust.declaration(name, kind, value) + origin + context, False)
-        else:
-            self.record(path, kind, "", True)
+        attrs = "#[non_exhaustive] " if "non_exhaustive" in item["attrs"] else ""
+        self.record(path, attrs + rust.declaration(name, kind, value) + origin + context, hidden)
 
         if kind in {"struct", "union", "variant"}:
             shape = value["kind"] if kind != "union" else {"plain": value}
@@ -229,9 +238,9 @@ class Surface:
                         field_name = str(index) if layout == "tuple" else member["name"]
                         self.item(crate, field, f"{path}::{field_name}", hidden)
         if kind == "enum":
-            for ordinal, variant in enumerate(value["variants"]):
+            for variant in value["variants"]:
                 name = crate.items[variant]["name"]
-                self.item(crate, variant, f"{path}::{name}", hidden, context=f" [variant {ordinal}]")
+                self.item(crate, variant, f"{path}::{name}", hidden)
         if kind == "trait":
             if not hidden:
                 seals = self.seals(crate, item_id)
@@ -281,6 +290,8 @@ class Surface:
             trait_name = rust.path(trait, with_args=False)
             if trait_name in RUST_INTERNAL_TRAITS:
                 return
+            if impl["blanket_impl"] is not None and trait_name.partition("::")[0] not in BLANKET_TRAIT_CRATES:
+                return
             defining, target = self.resolve(crate, trait["id"])
             definition = defining.items.get(target)
             hidden = hidden or doc_hidden(item) or (
@@ -288,11 +299,7 @@ class Surface:
             ) or "__private" in trait_name.split("::")
             if definition is not None and (defining, target) not in self.reachable:
                 return
-            if hidden:
-                # The name describes the public owner and the implemented trait.
-                # Several implementations of one trait can have the same name.
-                if not impl["is_synthetic"] and impl["blanket_impl"] is None:
-                    self.hidden.add((f"{path}::impl", rust.implementation(impl)))
+            if hidden and (impl["is_synthetic"] or impl["blanket_impl"] is not None):
                 return
             signature = rust.implementation(impl)
             bindings = []
@@ -302,13 +309,14 @@ class Surface:
                 # differ in every implementation and are part of its signature.
                 if kind in {"assoc_type", "assoc_const"}:
                     entry = crate.items[member]
-                    if doc_hidden(entry):
-                        self.hidden.add((f"{path}::{entry['name']}", signature))
+                    declaration = rust.declaration(entry["name"], kind, value)
+                    if not hidden and doc_hidden(entry):
+                        self.record(f"{path}::{entry['name']}", f"{declaration} [{signature}]", True)
                     else:
-                        bindings.append(rust.declaration(entry["name"], kind, value))
+                        bindings.append(declaration)
             if bindings:
                 signature += " { " + ", ".join(sorted(bindings)) + " }"
-            self.rows[path].add(signature)
+            self.record(f"{path}::impl" if hidden else path, signature, hidden)
         else:
             context = f" [{rust.implementation(impl)}]"
             for member in impl["items"]:
@@ -555,21 +563,29 @@ class Rust:
         return f"{prefix}{negative}{self.path(trait)} for {subject}{where}{annotation}"
 
 
-def fingerprint(path):
-    return sha256(path.encode("utf-8")).hexdigest()[:32]
+def fingerprint(path, signature):
+    return sha256(f"{path}\0{signature}".encode("utf-8")).hexdigest()[:32]
 
 
-def render_snapshot(rows, hidden):
-    lines = [HEADER, "# Rows are keyed by the public Rust path; hidden paths appear only as fingerprints."]
+def render_snapshot(rows, hidden, default_paths=()):
+    lines = [HEADER, "# All features: public signatures and hidden fingerprints."]
     for root in PUBLIC_CRATES:
-        fingerprints = sorted(fingerprint(path) for path, _ in hidden if path.startswith(root + "::"))
+        fingerprints = sorted(fingerprint(path, signature) for path, signature in hidden
+                              if path.startswith(root + "::"))
         label = "hidden item" if len(fingerprints) == 1 else "hidden items"
         lines.extend(("", f"# {root}: {len(fingerprints)} {label}"))
         lines.extend(f"# hidden {root} {digest}" for digest in fingerprints)
         lines.append("")
         lines.extend(f"{path}\t{signature}" for path in sorted(rows) if path.startswith(root + "::")
                      for signature in sorted(rows[path]))
+    lines.extend(("", DEFAULT_HEADER, *sorted(default_paths)))
     return "\n".join(lines) + "\n"
+
+
+def generate():
+    all_crates = build()
+    default_crates = build(default=True, macro=all_crates[PACKAGES[MACRO_PACKAGE]])
+    return Surface(all_crates).generate(Surface(default_crates).collect().rows)
 
 
 PATH = r"(?:r#)?\w+(?:::(?:r#)?\w+)+"
@@ -610,8 +626,16 @@ def snapshot_rows(snapshot):
     if not lines or lines[0] != HEADER:
         raise ValueError("unexpected snapshot header; review the format before updating")
     rows = defaultdict(list)
+    defaults = False
     for line in lines[1:]:
-        if line and not line.startswith("#"):
+        if line == DEFAULT_HEADER:
+            defaults = True
+        elif line and not line.startswith("#"):
+            if defaults:
+                if not re.fullmatch(PATH, line):
+                    raise ValueError(f"invalid default feature path: {line}")
+                rows[line].append(None)
+                continue
             path, signature = line.split("\t", 1)
             if not re.fullmatch(PATH, path) or not signature:
                 raise ValueError(f"invalid public snapshot row: {line}")
@@ -652,7 +676,7 @@ def undocumented(before, after, notes):
                   if old.get(path) != new.get(path) and path not in documented)
 
 
-def build():
+def build(*, default=False, macro=None):
     # Unlike a missing cargo +nightly invocation, rustup which never installs a toolchain.
     toolchain = os.environ.get("CONCORD_SURFACE_TOOLCHAIN", "nightly")
     missing = f"an installed Rust nightly toolchain is required for rustdoc JSON (selected {toolchain})"
@@ -666,7 +690,7 @@ def build():
     if not os.access(os.fsdecode(nightly.stdout.strip()), os.X_OK):
         raise ValueError("the installed Rust nightly toolchain needs its rustdoc component")
 
-    target = ROOT / "target/surface-snapshot/rustdoc"
+    target = WORK / ("rustdoc-default" if default else "rustdoc")
     env = os.environ.copy()
     env.pop("CARGO_ENCODED_RUSTDOCFLAGS", None)
     env.update(
@@ -675,24 +699,64 @@ def build():
         RUSTDOCFLAGS=" ".join(JSON_FLAGS),
     )
     cargo = ["rustup", "run", toolchain, "cargo"]
-    options = ["--offline", "--locked", "--all-features", "--target", TARGET]
-    command = [*cargo, "doc", "--no-deps", *options]
+    options = ["--offline", "--locked", "--target", TARGET]
+    libraries = [*cargo, "doc", "--no-deps", "--lib", *options]
     for package in PACKAGES:
         if package != MACRO_PACKAGE:
-            command.extend(("-p", package))
-    subprocess.run(command, cwd=ROOT, env=env, check=True)
+            libraries.extend(("-p", package))
+    if default:
+        with default_workspace() as workspace:
+            env["RUSTDOCFLAGS"] += " -A rustdoc::broken_intra_doc_links"
+            subprocess.run([*libraries, *default_feature_args(workspace)], cwd=workspace, env=env, check=True)
+        return load_crates(target, macro=macro)
+
+    subprocess.run([*libraries, "--all-features"], cwd=ROOT, env=env, check=True)
     # With --target, Cargo applies RUSTDOCFLAGS to target crates only.
     # Pass the flags directly to the host proc macro's rustdoc invocation.
-    command = [*cargo, "rustdoc", *options, "-p", MACRO_PACKAGE, "--lib", "--", *JSON_FLAGS]
+    command = [*cargo, "rustdoc", *options, "--all-features", "-p", MACRO_PACKAGE,
+               "--lib", "--", *JSON_FLAGS]
     subprocess.run(command, cwd=ROOT, env={**env, "RUSTDOCFLAGS": ""}, check=True)
     return load_crates(target)
 
 
-def load_crates(target):
+def default_feature_args(workspace):
+    # Selecting the supporting libraries must not enable their independent
+    # defaults. Let Concord's public crates select dependency features as usual.
+    args = ["--no-default-features"]
+    for package, name in PACKAGES.items():
+        if name in PUBLIC_CRATES:
+            with (workspace / package / "Cargo.toml").open("rb") as manifest:
+                if "default" in tomllib.load(manifest).get("features", {}):
+                    args.extend(("--features", f"{package}/default"))
+    return args
+
+
+@contextmanager
+def default_workspace():
+    # The doc-only sample uses items that need not be in the default API.
+    # Leave the source tree intact, and omit the sample only from this build.
+    WORK.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="defaults-", dir=WORK) as directory:
+        workspace = Path(directory) / "source"
+        shutil.copytree(ROOT, workspace, ignore=shutil.ignore_patterns(
+            ".git", ".agents", ".aws", ".codex", "target", "__pycache__"
+        ))
+        facade = workspace / "concord-api/src/lib.rs"
+        text = facade.read_text(encoding="utf-8")
+        sample = "#[cfg(doc)]\npub mod sample;"
+        if sample in text:
+            facade.write_text(text.replace(sample, "#[cfg(any())]\npub mod sample;", 1), encoding="utf-8")
+        yield workspace
+
+
+def load_crates(target, *, macro=None):
     crates = {}
     for name in PACKAGES.values():
         # Cargo documents the proc macro for the host even with --target.
         host = name == PACKAGES[MACRO_PACKAGE]
+        if host and macro is not None:
+            crates[name] = macro
+            continue
         directory = target if host else target / TARGET
         data = json.loads((directory / "doc" / f"{name}.json").read_text(encoding="utf-8"))
         crates[name] = Crate(data, expected_target=None if host else TARGET)
@@ -700,7 +764,7 @@ def load_crates(target):
 
 
 def update_snapshot(text):
-    with tempfile.NamedTemporaryFile(dir=ROOT / "target/surface-snapshot",
+    with tempfile.NamedTemporaryFile(dir=WORK,
                                      mode="w", encoding="utf-8", delete=False) as file:
         temporary = Path(file.name)
         try:
@@ -714,37 +778,47 @@ def update_snapshot(text):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--update", action="store_true", help="rewrite tools/public-surface.txt")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--update", action="store_true", help="rewrite tools/public-surface.txt for documented changes")
+    mode.add_argument("--release", action="store_true", help="require an exact match to tools/public-surface.txt")
     args = parser.parse_args(argv)
     try:
-        current = Surface(build()).generate()
-        if args.update:
+        current = generate()
+        baseline = SNAPSHOT.read_text(encoding="utf-8")
+        missing = []
+        if current != baseline:
+            missing = undocumented(baseline, current, (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+        if args.update and not missing:
             update_snapshot(current)
             print("SURFACE: updated tools/public-surface.txt")
             return 0
-        baseline = SNAPSHOT.read_text(encoding="utf-8")
         if current == baseline:
             print("SURFACE: matches tools/public-surface.txt")
             return 0
-        missing = undocumented(baseline, current, (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
         added, removed = hidden_changes(baseline, current)
+        print("".join(difflib.unified_diff(baseline.splitlines(keepends=True),
+                                         current.splitlines(keepends=True),
+                                         fromfile="tools/public-surface.txt",
+                                         tofile="current public surface", n=0)), end="", flush=True)
+        for path in missing:
+            print(f"SURFACE: missing from Unreleased: {path}")
+        if added or removed:
+            print(f"SURFACE: hidden items changed ({added} added, {removed} removed); "
+                  "refresh the snapshot with just surface --update")
         if missing or added or removed:
-            print("".join(difflib.unified_diff(baseline.splitlines(keepends=True),
-                                             current.splitlines(keepends=True),
-                                             fromfile="tools/public-surface.txt",
-                                             tofile="current public surface", n=0)), end="", flush=True)
-            for path in missing:
-                print(f"SURFACE: missing from Unreleased: {path}")
-            if added or removed:
-                print(f"SURFACE: hidden items changed ({added} added, {removed} removed); "
-                      "refresh the snapshot with just surface --update")
             print("SURFACE: FAILED (undocumented changes)" if missing else "SURFACE: FAILED (hidden changes)")
+            return 1
+        if args.release:
+            print("SURFACE: FAILED (snapshot is stale); refresh with just surface --update")
             return 1
         if snapshot_rows(baseline) == snapshot_rows(current):
             raise ValueError("snapshot formatting changed; review it and run just surface --update")
         print("SURFACE: changes documented in Unreleased; refresh with just surface --update")
         return 0
-    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+    except subprocess.CalledProcessError:
+        print("SURFACE: FAILED: rustdoc did not build; run cargo doc to see why", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"SURFACE: FAILED ({error})", file=sys.stderr)
         return 1
 
