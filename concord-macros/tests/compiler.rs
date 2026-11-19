@@ -99,6 +99,7 @@ fn c1_12_prelude_and_crate_names_may_be_shadowed() {
 fn c1_12_generated_deprecated_uses_are_quiet_and_author_expressions_are_not() {
     let t = trybuild::TestCases::new();
     t.pass("tests/accepted/deprecated_node.rs");
+    t.pass("tests/accepted/deprecated_pager.rs");
     t.compile_fail("tests/compiler-errors/bindings/deprecated_expression.rs");
 }
 #[test]

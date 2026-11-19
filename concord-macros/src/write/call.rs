@@ -370,13 +370,7 @@ impl Writer<'_> {
         let ty = self.call_type(node);
         let cfg = &node.cfg;
         let impl_attrs = node.endpoint_impl_attrs();
-        let marker = if node.deprecated {
-            let key = self.client_key();
-            let id = self.node_id(index);
-            emit!(<#key as ::concord::__private::EndpointType<#id>>::Value)
-        } else {
-            node.path.clone()
-        };
+        let marker = self.endpoint_marker(index, node);
         let parent = self.node_type(node.parent.unwrap_or_default(), self.client_key());
         let (state, storage) = if self.tuple_data(index) {
             let types = node
