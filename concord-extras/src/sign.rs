@@ -1515,3 +1515,117 @@ mod tests {
         assert_eq!(hash.finalize(), Sha256::digest(&bytes));
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/paging_requests.rs"]
+mod paging_requests;
+
+#[cfg(test)]
+mod signed_pages {
+    use super::{paging_requests::assert_requests, CanonicalPath, Credentials, SigV4};
+    use concord::auth::{AccessToken, Renewed};
+    use concord::http::{HeaderName, HeaderValue};
+    use concord::{by_link, by_next_url, Body, Secret};
+    use concord_testkit::Script;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    const ORIGIN: &str = "https://pages.test";
+    const PAYLOAD: &[u8] = "one\né\n".as_bytes();
+    const DATA: &str = include_str!("sign/paging_requests.http");
+
+    concord::api! {
+        client Shelf {
+            base "https://pages.test";
+            headers { "x-mode" = ["one", "two"]; }
+            part signed(token: Secret) {
+                body Body::new(PAYLOAD, "application/octet-stream");
+                query { "mode" = "fixed"; token; }
+                headers { "authorization" = "old-authorization"; }
+            }
+            POST linked(..signed) -> String {
+                path "api/signed";
+                read concord::Text;
+                paginate by_link();
+            }
+            POST announced(..signed) -> String {
+                path "api/signed";
+                read concord::Text;
+                paginate by_next_url(|body: &String| (!body.is_empty()).then(|| body.clone()));
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn c8_2_the_signer_sees_the_exact_next_url_and_current_secret() {
+        for (name, supplied, through_body) in [
+            ("signed-empty", "/slice?#discard", false),
+            (
+                "signed-pairs",
+                "/slice?x=%2f&&token=fake&x=a+b&token=again#discard",
+                false,
+            ),
+            (
+                "signed-body-renewed",
+                "/slice?x=%2f&&token=fake#discard",
+                true,
+            ),
+        ] {
+            let base = ORIGIN.parse().unwrap();
+            let signer = SigV4::new(
+                &base,
+                Credentials::new("EXAMPLE", "fixture-secret"),
+                "us-east-1",
+                "s3",
+                CanonicalPath::Preserve,
+            )
+            .at(UNIX_EPOCH + Duration::from_secs(1_440_938_160));
+            let script = Script::new();
+            if through_body {
+                script.answer(200).body(supplied);
+            } else {
+                script
+                    .answer(200)
+                    .header("link", "</back>; rel=prev")
+                    .header("link", &format!("<{supplied}>; rel=next"));
+            }
+            script.answer(200);
+            let client = Shelf::new().with_transport(script.clone());
+            let client = if through_body {
+                let renewed = Renewed::new(&base, || async {
+                    AccessToken::expires_in("renewed-token", Duration::from_secs(60))
+                })
+                .early_by(Duration::ZERO)
+                .with_token(
+                    AccessToken::expires_in("original-token", Duration::from_secs(2)).unwrap(),
+                )
+                .unwrap()
+                .header(HeaderName::from_static("x-token"), |token| {
+                    HeaderValue::from_str(&token.expose())
+                });
+                client.with_middleware(renewed)
+            } else {
+                client
+            };
+            let client = client.with_middleware(signer);
+            let token = Secret::new("A");
+            let mut pages = if through_body {
+                client.announced(token.clone()).pages()
+            } else {
+                client.linked(token.clone()).pages()
+            };
+            let first = pages.try_next().await.unwrap().unwrap();
+            assert_eq!(first, if through_body { supplied } else { "" }, "{name}");
+            token.replace("B+z");
+            if through_body {
+                tokio::time::advance(Duration::from_secs(3)).await;
+            }
+            assert_eq!(
+                pages.try_next().await.unwrap().as_deref(),
+                Some(""),
+                "{name}"
+            );
+            assert!(pages.try_next().await.unwrap().is_none());
+            assert_requests(DATA, &script, name);
+        }
+    }
+}

@@ -1,0 +1,77 @@
+=== signed-body-renewed ===
+POST https://pages.test/api/signed?mode=fixed&token=A
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode;x-token, Signature=8dd2932952419aec881e31d867f7a5409de83c07815f775957bb4c42993e106f
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+x-token: original-token
+
+7 bytes
+one
+é
+POST https://pages.test/slice?x=%2f&&token=B%2Bz
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode;x-token, Signature=8c2076344ac3570f6dd224323b5034dcaf7ee3cd202fc6e1c71a7acce1674444
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123603Z
+x-mode: one
+x-mode: two
+x-token: renewed-token
+
+7 bytes
+one
+é
+=== signed-empty ===
+POST https://pages.test/api/signed?mode=fixed&token=A
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=4eec5f7a591ef7d46f23d03d397366d4498eee5185b117b6e064f387bf9c7c92
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/slice?&token=B%2Bz
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=a4ca7477c69ba1b66ba5cc8c97433d6063ec58bd6f814b0587da198a20915aa1
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== signed-pairs ===
+POST https://pages.test/api/signed?mode=fixed&token=A
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=4eec5f7a591ef7d46f23d03d397366d4498eee5185b117b6e064f387bf9c7c92
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/slice?x=%2f&&x=a+b&token=B%2Bz
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=3b06e98f5cd91ca93e58bad0ad44939e736322f62bfd0a44650614e7de0b4567
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é

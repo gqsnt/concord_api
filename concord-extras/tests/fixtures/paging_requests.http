@@ -1,0 +1,154 @@
+=== offsets ===
+POST https://pages.test/api/offsets
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/offsets?start=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== limited ===
+POST https://pages.test/api/limited?count=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/limited?start=2&count=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== totals ===
+POST https://pages.test/api/totals
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/totals?start=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== numbered ===
+POST https://pages.test/api/numbered
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/numbered?number=4
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== cursors ===
+POST https://pages.test/api/cursors
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/cursors?after=a%2Bb%20%2F
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== linked ===
+POST https://pages.test/api/linked
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/wire%2fnext?b=%2f&&b=a+b
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== announced ===
+POST https://pages.test/api/announced
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/from-body?
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== repeated-cursor ===
+POST https://pages.test/api/cursors?after=again
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== foreign-origin ===
+POST https://pages.test/api/announced
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== same-path-query ===
+POST https://pages.test/api/announced
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/announced?&&
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
