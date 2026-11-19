@@ -32,7 +32,7 @@ Most APIs page in one of five ways, and each is one line. The shop below has one
 
 ```rust
 use concord::page::{by_offset_total, IntoItems};
-use concord::{by_cursor, by_link, by_next_url, by_page, Json};
+use concord::{by_cursor, by_link, by_next_url, by_page_bounds, Json};
 
 concord::api! {
     pub client Shop {
@@ -53,7 +53,7 @@ concord::api! {
         /// A page number, and the number of pages.
         GET products(page?: u32) -> Numbered<Product> {
             query { page; }
-            paginate by_page(page, 1).has_more(|list| list.page < list.pages);
+            paginate by_page_bounds(page, |list| Some((list.page, list.pages)));
         }
         /// The URL of the next page, in a `Link` header.
         GET reviews(per_page?: u32) -> Vec<Review> {
@@ -85,8 +85,10 @@ impl<T: Send> IntoItems for Batch<T> {
     fn into_items(self) -> Vec<T> { self.data }
     fn count(&self) -> usize { self.data.len() }
 }
-// The same for `Counted` (`items`) and `Numbered` (`rows`).
+// The same for `Counted` (`items`).
 ```
+
+Use `by_page` to advance the requested number and find the end by counting items, or `by_page_bounds` to follow the server's reported current and last page numbers without counting items.
 
 Two more shapes are common. An API that states nothing about the rest of the list, and promises full pages until the last one, ends on a short page: `paginate by_offset(start).stop_on_short_page(count, 20);`, where `20` is the server's default page size ([a short page](#more-items-but-nothing-to-continue-with-is-an-error)). An API that pages only when the caller asks for a page, and otherwise sends the whole list in one response, adds `.only_when_set(page)`.
 
@@ -94,11 +96,11 @@ Two more shapes are common. An API that states nothing about the rest of the lis
 
 **A closure given to a pager or to one of its methods reads the page as the endpoint's return type**, with no type to write, whenever the pager moves an input: the slot tells Rust which call it is. `by_link()` and `by_next_url(…)` move no input, so there the closure names the type of the page: `by_next_url(|page: &Linked<Invoice>| page.next.clone())`, `by_link().has_more(|page: &Batch<Review>| page.has_more)`. Without it, `rustc` reports ``type annotations needed for `&_` ``. A function of the page works everywhere: a method of the list type (`by_next_url(Linked::next_url)`, for a `fn next_url(&self) -> Option<String>`), or a method of a trait of your own that every list type of the API implements, so that the same line fits each list endpoint.
 
-Six of the shipped pagers are at the root of `concord` and in `concord::page`; `by_offset_total`, and `Paging`, the type that they all return, are in `concord::page`. They are ordinary items, and the macro treats none of them specially.
+Seven of the shipped pagers are at the root of `concord` and in `concord::page`; `by_offset_total`, and `Paging`, the type that they all return, are in `concord::page`. They are ordinary items, and the macro treats none of them specially.
 
 ## The shipped pagers
 
-Seven functions say how the next call is made. Each returns a `Paging`:
+Eight functions say how the next call is made. Each returns a `Paging`:
 
 | Written | The next call | The list ends |
 |---|---|---|
@@ -107,10 +109,11 @@ Seven functions say how the next call is made. Each returns a `Paging`:
 | `by_offset_limit(start, count)` | The same, and the same `count`. | On an empty page, or on a page shorter than the `count` that the caller set. Use it only for an API that promises full pages until the last one. |
 | `by_offset_total(start, f)` | The same as `by_offset`. `f` reads the total number of items from the page. | When `start` plus the items of this page reaches the total. Below it, the move must give a next call: an empty page there is an error ([below](#more-items-but-nothing-to-continue-with-is-an-error)), unless a pager chosen by `or_when_set`, such as a cursor, still gives one. |
 | `by_page(page, first)` | `page + 1`. With no `page` set, the page just fetched was number `first`. | On an empty page. |
+| `by_page_bounds(page, f)` | The reported current page number plus one, even if the server returned a different number from the one requested. `f` returns `Some((current, last))` in the type of `page`, or `None`. `last` is a page number, so a zero-based list of five pages has `last = 4`. No item count is needed. | When the bounds are missing or the current number has reached or passed the last. |
 | `by_link()` | The same call, sent to the URL of `Link: <…>; rel="next"` (RFC 8288). | When the response has no such link. A `Link` field that cannot be parsed is a Mismatch, not the end. Only the syntax of a field is checked: its target is parsed the way `reqwest` parses a URL. |
 | `by_next_url(f)` | The same call, sent to the URL that `f` reads from the page. | When `f` returns `None`. |
 
-Six methods of `Paging` add what the author knows about the API. Each returns the `Paging`, so they chain, in any order, and none needs an import:
+Seven methods of `Paging` add what the author knows about the API. Each returns the `Paging`, so they chain, in any order, and none needs an import:
 
 | Method | What it means |
 |---|---|
@@ -120,6 +123,7 @@ Six methods of `Paging` add what the author knows about the API. Each returns th
 | `.only_when_set(input)` | When the call that fetched a page did not set `input`, that page is the last, and nothing else is read: a caller who does not set it gets one page. |
 | `.or_when_set(input, other)` | When the caller set `input`, the pager `other` moves instead: for an API that pages in both directions, with one input for each (`starting_after` and `ending_before`). After each page, a call that sets two distinct inputs given to `or_when_set` is a Mismatch; of two `or_when_set` given one input, the first written moves. When `other` is a `Paging` with methods of its own, it decides by the same order on its own, inside the move: the outer gate and statements run before the selected move, and the outer short-page rule runs afterward if no statement spoke. An outer "no more" ends the list without reading the inner statements. An inner "no more" under an outer "more" leaves no next call (a Mismatch). |
 | `.map_next(\|next, page\| …)` | Changes the next call before it is sent: a second marker that comes in a pair, or an input that the API refuses beside a cursor, cleared with its setter (`next.resource_version(None)`). |
+| `.try_map_next(\|next, page\| …)` | Changes the next call or returns a `Fail`. The edit receives the endpoint's decoded page value. Use `mismatch("…")` when a value needed to edit the call is missing. If an edit fails, later edits are skipped. The caller gets the page, then the error. |
 
 A function of your own becomes a `Paging` with `Paging::from_fn(…)`, and any pager with `Paging::from_pager(…)` ([a pager of your own](#a-pager-of-your-own)). `.into_fn()` turns a `Paging` back into a closure ([where a pager that is not a closure can be written](#where-a-pager-that-is-not-a-closure-can-be-written)).
 
@@ -129,12 +133,12 @@ For each page, a `Paging` decides in this order, **whatever the order in which i
 
 0. **The call.** The call that fetched the page is checked at each decision, before the gate. If it sets the inputs of two `or_when_set`, the pages end with a Mismatch after that page, whatever the page says: after the first page when the caller set both inputs, after a later page when a move itself sets a second input.
 1. **The gate.** If one input given to `only_when_set` is not set on the call that fetched the page, this page is the last. Nothing else is read.
-2. **What the page states.** Every statement (`has_more`, and the total of `by_offset_total`) is read, once, in the order written, whatever the others say. If one cannot be read (a total that is not a number of items), its failure is the result. Otherwise, if one says "no more" and another "more", the pages end with a Mismatch. If all say "no more", this page is the last.
+2. **What the page states.** Every statement (`has_more`, the total of `by_offset_total`, or the bounds of `by_page_bounds`) is read, once, in the order written, whatever the others say. If one cannot be read (a total that is not a number of items), its failure is the result. Otherwise, if one says "no more" and another "more", the pages end with a Mismatch. If all say "no more", this page is the last.
 3. **The move.** The next call is computed: by the pager of the `or_when_set` whose input the call set, or else by the pager that the `Paging` was made from. Its failure (a `Link` field that cannot be parsed, a pager of your own that fails) is the result, also on a short page. A cursor chosen by `or_when_set` goes on past an empty page below a total, when it finds a next call. If a statement said "more" and there is no next call, the pages end with a Mismatch.
 4. **With no statement at all,** a short-page rule (`stop_on_short_page`, `stop_on_short_page_of`, and the `count` of `by_offset_limit`) ends the list on a short page, after the move; otherwise the move decides, and no next call is the end. A statement always has authority over a short-page rule.
-5. **The edits** of `map_next` are applied to the next call, in the order in which they were written.
+5. **The edits** of `map_next` and `try_map_next` run as one list, in the order written, only when there is a next call. The first failure skips the remaining edits.
 
-So `.has_more(…).only_when_set(page)` and `.only_when_set(page).has_more(…)` are the same pager, and so is any other order of the methods: a program that writes descriptions may emit them in the order of its template. **The order written still matters inside three steps:** the edits of `map_next` run one after the other, as written; of two `or_when_set` given one input, the first written moves; and the statements are read in the order written, which two statements that share state of their own can see. The promise of order covers statements that read only the page.
+So `.has_more(…).only_when_set(page)` and `.only_when_set(page).has_more(…)` are the same pager, and so is any other order of the methods: a program that writes descriptions may emit them in the order of its template. **The order written still matters inside three steps:** the edits of both methods run one after the other, as written; of two `or_when_set` given one input, the first written moves; and the statements are read in the order written, which two statements that share state of their own can see. The promise of order covers statements that read only the page.
 
 Then the rules that hold for every pager, written or shipped: the next request may not repeat the one just sent (a Mismatch; only the one just sent: a list that alternates between two requests is not seen). The two requests are compared as they were built, after `edit_request` and before any middleware, with what a secret wrote in them left out; an `edit_request` that changes the URL loses what says where a secret was written in it, and the URL is then compared as it is. Nor may it go to another origin (a Build error) ([what holds for every page](#what-holds-for-every-page)).
 
@@ -142,7 +146,7 @@ Then the rules that hold for every pager, written or shipped: the next request m
 
 **A page that says that more items follow, and gives no next page, ends the list with an error, never in silence.** `has_more` returns `true` and the cursor is missing; the offset is below the total and the page is empty: the caller receives the page that arrived, then a Mismatch whose `reason()` is `the page says that more items follow, and gives no next page`. Two statements that disagree end it the same way (`the page's statements disagree on whether more items follow`). Without a statement, there is nothing to contradict: the move decides, and no next call is the end.
 
-**`stop_on_short_page` is the one place where Concord ends a list on your word alone.** It is for an API whose pages state nothing, and that promises full pages until the last one: a page with fewer items than the size asked for is then the last, and Concord does not ask for one more empty page. `default` is your copy of the server's default page size, for a caller who sets no `count`. **If the server lowers that default, the list ends early, in silence:** a page of 10, where you wrote 20, looks short. If it raises it, the rule no longer ends anything early, and the list ends as the pager alone ends it: for `by_offset`, with one empty request more. A caller who sets `count` does not depend on the default, but a server that sends fewer items than the `count` asked for (its maximum is lower) ends the list there as well. When the page states something (`has_more`, a total), the statement decides, and the short-page rule is not read.
+**`stop_on_short_page` is the one place where Concord ends a list on your word alone.** It is for an API whose pages state nothing, and that promises full pages until the last one: a page with fewer items than the size asked for is then the last, and Concord does not ask for one more empty page. `default` is your copy of the server's default page size, for a caller who sets no `count`. **If the server lowers that default, the list ends early, in silence:** a page of 10, where you wrote 20, looks short. If it raises it, the rule no longer ends anything early, and the list ends as the pager alone ends it: for `by_offset`, with one empty request more. A caller who sets `count` does not depend on the default, but a server that sends fewer items than the `count` asked for (its maximum is lower) ends the list there as well. When the page states something (`has_more`, a total, or bounds), the statement decides, and the short-page rule is not read.
 
 ## Shared pagination, written once as a part
 

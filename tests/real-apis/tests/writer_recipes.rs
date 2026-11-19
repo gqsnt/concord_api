@@ -345,3 +345,47 @@ async fn c8_6_redirect_uses_a_second_credential_free_description_after_an_allowl
     assert_eq!(error.tries(), 0);
     assert_eq!(script.requests().len(), 2);
 }
+
+#[tokio::test(start_paused = true)]
+async fn drive_session_urls_keep_their_query_and_call_error_type() {
+    use concord::error::Kind;
+    use concord::transfer::TransferError;
+    use real_apis::drive::{send_chunk, DriveSessions};
+    use std::error::Error as _;
+
+    let script = Script::new();
+    script.answer(308).read_upload();
+    script.answer(404).read_upload();
+    script.answer(503).read_upload();
+    let sessions = DriveSessions::new().with_transport(script.clone());
+    let url = "https://www.googleapis.com/upload/drive/v3/files?upload_id=a%2fb&x=1&x=2";
+    let body = || concord::Body::new("abc", "application/octet-stream");
+
+    let error = send_chunk(&sessions, "/relative", "bytes 0-2/6", body())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), Kind::Build);
+    assert!(matches!(
+        error.source().unwrap().downcast_ref(),
+        Some(TransferError::NotAbsolute)
+    ));
+    assert!(script.requests().is_empty());
+
+    assert!(!send_chunk(&sessions, url, "bytes 0-2/6", body())
+        .await
+        .unwrap());
+    for status in [404, 503] {
+        let error = send_chunk(&sessions, url, "bytes 0-2/6", body())
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), Kind::Refused);
+        assert!(error.is_status(status));
+    }
+    let requests = script.requests();
+    assert_eq!(requests.len(), 3);
+    for request in requests {
+        assert_eq!(request.url().as_str(), url);
+        assert_eq!(request.header("content-range"), Some("bytes 0-2/6"));
+        assert!(request.header("authorization").is_none());
+    }
+}

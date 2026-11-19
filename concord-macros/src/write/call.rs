@@ -748,6 +748,11 @@ impl Writer<'_> {
             }
 
             #[doc(hidden)]
+            impl<E: Endpoint> ::concord::page::NamedCall for Call<E> {
+                const ENDPOINT: &'static ::core::primitive::str = E::NAME;
+            }
+
+            #[doc(hidden)]
             impl<E: Endpoint> ::concord::__private::Call for Call<E> {
                 fn request(&self) -> Result<::concord::reqwest::Request> { self.__build_request(false) }
                 fn prepare(self) -> Result<::concord::__private::Prepared<E::Value, __Problem>> { self.__prepare_inner() }

@@ -1,0 +1,11 @@
+/// Sends bytes to an established Drive resumable upload session.
+    pub client DriveSessions {
+        base "https://www.googleapis.com";
+
+        /// Returns whether Drive completed the upload.
+        PUT chunk(content_range: String, bytes: concord::Body) -> bool {
+            headers { "content-range" = content_range; }
+            body bytes;
+            status { 308 => false, 2xx => true }
+        }
+    }

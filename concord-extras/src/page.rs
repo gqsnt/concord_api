@@ -1,4 +1,4 @@
-//! Seven pagers, and what they combine with. Each returns a [`Paging`]: a pager, which
+//! The shipped pagers and what they combine with. Each returns a [`Paging`]: a pager, which
 //! `paginate` takes as it is, with methods for what the page states.
 //!
 //! In a `paginate` statement, an input of the endpoint names its slot on the call
@@ -7,14 +7,14 @@
 //!
 //! A [`Paging`] decides in one fixed order, whatever the order in which its methods are written:
 //! the gate ([`only_when_set`](Paging::only_when_set)), what the page states
-//! ([`has_more`](Paging::has_more), [`by_offset_total`]), the move (with
+//! ([`has_more`](Paging::has_more), [`by_offset_total`], [`by_page_bounds`]), the move (with
 //! [`or_when_set`](Paging::or_when_set)), the short-page rule
 //! ([`stop_on_short_page`](Paging::stop_on_short_page)) when nothing is stated, and the edits
-//! ([`map_next`](Paging::map_next)):
+//! ([`map_next`](Paging::map_next), [`try_map_next`](Paging::try_map_next)):
 //! `paginate by_cursor(after, |page| page.next.clone()).has_more(|page| page.has_more);`.
 
 mod paging;
-pub use paging::{by_offset_total, Paging};
+pub use paging::{by_offset_total, by_page_bounds, Paging};
 
 use concord_core::error::{mismatch, Fail};
 use concord_core::page::{Call, IntoItems, Slot};
@@ -153,14 +153,21 @@ where
             Some(at) => (*at).try_into().ok(),
             None => first,
         };
-        let next = at
-            .and_then(|at: u64| at.checked_add(1))
-            .and_then(|next| S::Value::try_from(next).ok());
-        match next {
-            Some(next) => Ok(Some(page.set(call, next))),
-            None => Err(mismatch("the page number cannot grow any further")),
-        }
+        advance_page(page, call, at).map(Some)
     })
+}
+
+fn advance_page<C, S>(page: S, call: C, at: Option<u64>) -> Result<C, Fail<C::Problem>>
+where
+    C: Call,
+    S: Slot<C>,
+    S::Value: TryFrom<u64>,
+{
+    let next = at
+        .and_then(|at| at.checked_add(1))
+        .and_then(|next| S::Value::try_from(next).ok())
+        .ok_or_else(|| mismatch("the page number cannot grow any further"))?;
+    Ok(page.set(call, next))
 }
 
 /// `paginate by_cursor(after, Page::next);`: the input takes what your function finds in the

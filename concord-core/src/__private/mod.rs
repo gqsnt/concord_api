@@ -19,7 +19,10 @@ pub use answer::{
     reader, reader_for_problem, reader_for_response, refused, refused_plain, CheckedReader,
     PlainRefusal, ProblemRefusal, Refusal,
 };
-pub use build::{build_error, evaluate_body, evaluate_entry, prepare_call, Draft, Piece, Written};
+pub use build::{
+    build_error, evaluate_body, evaluate_entry, prepare_call, transfer_url_error, Draft, Piece,
+    Written,
+};
 pub use call::{
     prepare_conditional, Call, ConditionalAccess, ConditionalCall, Prepared, RequestSecrets,
 };

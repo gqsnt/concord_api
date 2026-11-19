@@ -806,3 +806,111 @@ async fn c11_12_drop_releases_body_and_cancels_retry_wait() {
     assert_attempts(&script, &[1, 1]);
     assert_eq!(script.unused(), 0);
 }
+
+concord::api! {
+    client Storage {
+        base "https://storage.test";
+        problem StorageProblem read concord::Json;
+        scope objects {
+            GET get() -> String { read concord::Text; }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct StorageProblem {}
+
+#[test]
+fn c11_11_at_call_keeps_the_generated_name_and_the_validator_source() {
+    use concord::transfer::at_call;
+
+    let script = Script::new();
+    let storage = Storage::new().with_transport(script.clone());
+    let long = format!("ftp://user@storage.test/#{}", "x".repeat(65_535));
+    for (url, expected) in [
+        (long.as_str(), "UrlTooLong"),
+        ("relative?token=PRIVATE", "NotAbsolute"),
+        ("ftp://user@storage.test/p#PRIVATE", "ForbiddenUrlPart"),
+        ("ftp://storage.test/p?token=PRIVATE", "UnsupportedScheme"),
+        ("https://[invalid]/PRIVATE", "InvalidUrl"),
+        ("https://UPPER.test/p?token=PRIVATE", "ChangedUrl"),
+        ("https://sto`rage.test/PRIVATE", "InvalidUri"),
+    ] {
+        let call = storage.objects().get();
+        let legacy = at(call.clone(), url).unwrap_err();
+        let error: storage::Error = at_call(call, url).unwrap_err();
+        assert_eq!(error.kind(), Kind::Build);
+        assert_eq!(error.endpoint(), "storage.objects.get");
+        assert_eq!(error.tries(), 0);
+        assert!(!error.request_not_sent());
+        assert!(error.status().is_none());
+        assert!(error.headers().is_none());
+        assert!(error.problem().is_none());
+        assert!(error.body().is_none());
+        assert_eq!(
+            error.to_string(),
+            "build error: the transfer URL could not be used, in storage.objects.get"
+        );
+        let source = error
+            .source()
+            .unwrap()
+            .downcast_ref::<TransferError>()
+            .unwrap();
+        assert_eq!(reason(source), expected);
+        assert_eq!(reason(&legacy), expected);
+        assert_eq!(
+            source.source().map(ToString::to_string),
+            legacy.source().map(ToString::to_string)
+        );
+        assert!(!format!("{error} {error:?} {}", error.details()).contains("PRIVATE"));
+    }
+    assert_attempts(&script, &[]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_11_at_call_keeps_the_query_and_leaves_the_origin_check_to_the_call() {
+    use concord::transfer::at_call;
+
+    let script = Script::new();
+    script.answer(200).body("ok");
+    let uploads = uploads(&script);
+    let error: uploads::Error = at_call(uploads.fetch(), "https://elsewhere.test/")
+        .unwrap()
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), Kind::Build);
+    assert!(error
+        .to_string()
+        .contains("the URL leaves the origin of the call"));
+    assert_attempts(&script, &[]);
+
+    async fn fetch(call: uploads::Call<uploads::Fetch>) -> uploads::Result<String> {
+        at_call(call, SIGNED)?.await
+    }
+    assert_eq!(fetch(uploads.fetch()).await.unwrap(), "ok");
+    assert_eq!(script.requests().first().unwrap().url().as_str(), SIGNED);
+}
+
+#[test]
+fn c11_11_handwritten_calls_keep_at_and_generated_calls_supply_their_name() {
+    use concord::page::{Call, NamedCall};
+
+    #[derive(Clone)]
+    struct Handwritten(String);
+
+    impl Call for Handwritten {
+        type Value = ();
+        type Problem = ();
+
+        fn at_url(self, url: &str) -> Self {
+            Self(url.to_owned())
+        }
+    }
+
+    fn name<C: NamedCall>(_: &C) -> &'static str {
+        C::ENDPOINT
+    }
+
+    assert_eq!(at(Handwritten(String::new()), SIGNED).unwrap().0, SIGNED);
+    assert_eq!(name(&Storage::new().objects().get()), "storage.objects.get");
+}

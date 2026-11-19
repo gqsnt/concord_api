@@ -168,6 +168,20 @@
     "client": "Chat"
   },
   {
+    "page": "docs/guide/responses-and-errors.md",
+    "block": 18,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_002.rs",
+    "client": "Messages"
+  },
+  {
+    "page": "docs/guide/responses-and-errors.md",
+    "block": 19,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_responses-and-errors_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_responses-and-errors_003.rs",
+    "client": "Files"
+  },
+  {
     "page": "docs/guide/retries.md",
     "block": 3,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_retries_001.api",
@@ -215,6 +229,13 @@
     "fixture": "tests/real-apis/fixtures/descriptions/examples_drive_001.api",
     "compiled": "tests/real-apis/src/drive/description.rs",
     "client": "Drive"
+  },
+  {
+    "page": "docs/examples/drive.md",
+    "block": 4,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_drive_002.api",
+    "compiled": "tests/real-apis/src/drive/description_002.rs",
+    "client": "DriveSessions"
   },
   {
     "page": "docs/examples/elasticsearch.md",

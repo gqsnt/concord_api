@@ -1,5 +1,5 @@
-use concord::page::Slot;
-use concord::{reqwest, Answer, Fail};
+use concord::page::{Paging, Slot};
+use concord::{reqwest, Fail};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -41,30 +41,29 @@ pub fn document_404<T: DeserializeOwned>(body: Value) -> Result<T, Fail<EsProble
 /// shards did not respond, ends pagination with a Mismatch: going on would skip documents. So does
 /// a last hit with no sort values, or with those the call just sent: the id of a point in time
 /// changes from page to page, so the request would differ and fetch the same hits again.
-pub fn pit_after<C, P, A>(pit: P, after: A)
-    -> impl Fn(C, &Answer<SearchPage>) -> Result<Option<C>, Fail<EsProblem>> + Send + 'static
+pub fn pit_after<C, P, A>(pit: P, after: A) -> Paging<C>
 where
     C: concord::page::Call<Value = SearchPage, Problem = EsProblem>,
     P: Slot<C, Value = Pit>,
     A: Slot<C, Value = Vec<Value>>,
 {
-    move |call, answer| {
+    Paging::<C>::from_fn(|call, answer| {
         let page = answer.value();
         if page.timed_out || page.shards.failed != 0 {
             return Err(concord::mismatch("a page with missing results"));
         }
-        let Some(last) = page.hits.hits.last() else { return Ok(None) };
-        if last.sort.is_empty() {
-            return Err(concord::mismatch("a last hit with no sort values"));
-        }
-        if after.get(&call) == Some(&last.sort) {
+        Ok((!page.hits.hits.is_empty()).then_some(call))
+    }).try_map_next(move |call, page| {
+        let sort = page.hits.hits.last().map(|hit| &hit.sort).filter(|sort| !sort.is_empty())
+            .ok_or_else(|| concord::mismatch("a last hit with no sort values"))?;
+        if after.get(&call) == Some(sort) {
             return Err(concord::mismatch("the last hit repeats the request's sort values"));
         }
         let id = page.pit_id.clone().ok_or_else(|| concord::mismatch("no pit_id"))?;
         let keep_alive = pit.get(&call).map(|old| old.keep_alive.clone()).unwrap_or_default();
         let call = pit.set(call, Pit { id, keep_alive });
-        Ok(Some(after.set(call, last.sort.clone())))
-    }
+        Ok(after.set(call, sort.clone()))
+    })
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]

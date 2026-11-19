@@ -1,7 +1,7 @@
 # Concord public surface v2 (x86_64-unknown-linux-gnu)
 # All features: public signatures and hidden fingerprints.
 
-# concord: 374 hidden items
+# concord: 375 hidden items
 # hidden concord 007056c809f102eb17b4ba049a6c28c5
 # hidden concord 008a6fbf9c8a5d42a6704afebd428cdb
 # hidden concord 01162974251b6d9686a57e6655dc381c
@@ -23,6 +23,7 @@
 # hidden concord 0c724cfd0030f676771e0078194c0407
 # hidden concord 0c8147bd39364b56dba4fe0c3642e19c
 # hidden concord 0cee05aa74ce334f110c14795a9591e9
+# hidden concord 0d204eece76fa2c91c7905986e680402
 # hidden concord 0d3af280b983252aef35e9fb7ff746e3
 # hidden concord 0e0a24478b0d4fa3ad8f73b645ee21b3
 # hidden concord 0ebcdc2a2a86f2cc594bd30ea1576337
@@ -1496,6 +1497,7 @@ concord::by_next_url	fn by_next_url<C, F, U>(next: F) -> concord_extras::page::p
 concord::by_offset	fn by_offset<C, S>(start: S) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [from concord_extras::page::by_offset]
 concord::by_offset_limit	fn by_offset_limit<C, S, K>(start: S, limit: K) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, K: concord_core::page::Slot<C>, <K as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryInto<usize>, <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [from concord_extras::page::by_offset_limit]
 concord::by_page	fn by_page<C, S>(page: S, first: <S as concord_core::page::Slot>::Value) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [from concord_extras::page::by_page]
+concord::by_page_bounds	fn by_page_bounds<C, S, F>(page: S, bounds: F) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::cmp::Ord + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, F: core::ops::function::Fn(&<C as concord_core::page::Call>::Value) -> core::option::Option<(<S as concord_core::page::Slot>::Value, <S as concord_core::page::Slot>::Value)> + core::marker::Send + 'static [from concord_extras::page::paging::by_page_bounds]
 concord::bytes	pub use bytes
 concord::error	pub mod error
 concord::error::CarriesProblem	impl<S: concord_core::error::CarriesProblem + ?core::marker::Sized> concord_core::error::CarriesProblem for alloc::boxed::Box<S> { type Problem = <S as concord_core::error::CarriesProblem>::Problem }
@@ -1872,6 +1874,9 @@ concord::page::Items	impl<T> core::borrow::BorrowMut<T> for concord_core::page::
 concord::page::Items	impl<T> core::convert::From<T> for concord_core::page::Items<I, E> [blanket for T]
 concord::page::Items	struct Items<I, E = ()> {..} [from concord_core::page::Items]
 concord::page::Items::try_next	fn try_next(self: &mut Self) -> impl core::future::future::Future<Output = core::result::Result<core::option::Option<I>, concord_core::error::Error<E>>> + core::marker::Send + '_ [impl<I: core::marker::Send, E: core::marker::Send> concord_core::page::Items<I, E>]
+concord::page::NamedCall	trait NamedCall: concord_core::page::Call [from concord_core::page::NamedCall]
+concord::page::NamedCall	unsealed
+concord::page::NamedCall::ENDPOINT	const ENDPOINT: &'static str [required]
 concord::page::Pager	impl<C, F, N> concord_core::page::Pager<C> for F where C: concord_core::page::Call, F: core::ops::function::FnMut(C, &concord_core::answer::Answer<<C as concord_core::page::Call>::Value>) -> N + core::marker::Send + 'static, N: concord_core::page::IntoNext<C>
 concord::page::Pager	impl<C: concord_core::page::Call> concord_core::page::Pager<C> for alloc::boxed::Box<dyn concord_core::page::Pager<C>>
 concord::page::Pager	trait Pager<C: concord_core::page::Call>: core::marker::Send + 'static [dyn compatible] [from concord_core::page::Pager]
@@ -1919,6 +1924,7 @@ concord::page::Paging::only_when_set	fn only_when_set<S: concord_core::page::Slo
 concord::page::Paging::or_when_set	fn or_when_set<S: concord_core::page::Slot<C>, P: concord_core::page::Pager<C>>(self: Self, input: S, other: P) -> concord_extras::page::paging::Paging<C> [impl<C: concord_core::page::Call> concord_extras::page::paging::Paging<C>]
 concord::page::Paging::stop_on_short_page	fn stop_on_short_page<K>(self: Self, count: K, default: <K as concord_core::page::Slot>::Value) -> concord_extras::page::paging::Paging<C> where K: concord_core::page::Slot<C>, <K as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryInto<usize> + core::marker::Send + 'static, <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [impl<C: concord_core::page::Call> concord_extras::page::paging::Paging<C>]
 concord::page::Paging::stop_on_short_page_of	fn stop_on_short_page_of(self: Self, size: usize) -> concord_extras::page::paging::Paging<C> where <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [impl<C: concord_core::page::Call> concord_extras::page::paging::Paging<C>]
+concord::page::Paging::try_map_next	fn try_map_next<F>(self: Self, edit: F) -> concord_extras::page::paging::Paging<C> where F: core::ops::function::FnMut(C, &<C as concord_core::page::Call>::Value) -> core::result::Result<C, concord_core::error::Fail<<C as concord_core::page::Call>::Problem>> + core::marker::Send + 'static [impl<C: concord_core::page::Call> concord_extras::page::paging::Paging<C>]
 concord::page::Slot	trait Slot<C>: core::marker::Copy + core::marker::Send + core::marker::Sync + 'static [from concord_core::page::Slot]
 concord::page::Slot	unsealed
 concord::page::Slot::Value	type Value [required]
@@ -1932,6 +1938,7 @@ concord::page::by_offset	fn by_offset<C, S>(start: S) -> concord_extras::page::p
 concord::page::by_offset_limit	fn by_offset_limit<C, S, K>(start: S, limit: K) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, K: concord_core::page::Slot<C>, <K as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryInto<usize>, <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [from concord_extras::page::by_offset_limit]
 concord::page::by_offset_total	fn by_offset_total<C, S, F, T>(start: S, total: F) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, F: core::ops::function::FnMut(&<C as concord_core::page::Call>::Value) -> T + core::marker::Send + 'static, T: core::convert::TryInto<u64>, <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [from concord_extras::page::paging::by_offset_total]
 concord::page::by_page	fn by_page<C, S>(page: S, first: <S as concord_core::page::Slot>::Value) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, <C as concord_core::page::Call>::Value: concord_core::page::IntoItems [from concord_extras::page::by_page]
+concord::page::by_page_bounds	fn by_page_bounds<C, S, F>(page: S, bounds: F) -> concord_extras::page::paging::Paging<C> where C: concord_core::page::Call, S: concord_core::page::Slot<C>, <S as concord_core::page::Slot>::Value: core::marker::Copy + core::cmp::Ord + core::convert::TryFrom<u64> + core::convert::TryInto<u64>, F: core::ops::function::Fn(&<C as concord_core::page::Call>::Value) -> core::option::Option<(<S as concord_core::page::Slot>::Value, <S as concord_core::page::Slot>::Value)> + core::marker::Send + 'static [from concord_extras::page::paging::by_page_bounds]
 concord::page::fragmentless	fn fragmentless(url: &str) -> &str [from concord_core::page::fragmentless]
 concord::read	pub mod read
 concord::read::Binary	const Binary: concord_extras::read::Binary [from concord_extras::read::Binary]
@@ -2609,6 +2616,7 @@ concord::transfer::TransferError::NotAbsolute	variant NotAbsolute
 concord::transfer::TransferError::UnsupportedScheme	variant UnsupportedScheme
 concord::transfer::TransferError::UrlTooLong	variant UrlTooLong
 concord::transfer::at	fn at<C: concord_core::page::Call>(call: C, url: &str) -> core::result::Result<C, concord_extras::transfer::TransferError>
+concord::transfer::at_call	fn at_call<C: concord_core::page::NamedCall>(call: C, url: &str) -> core::result::Result<C, concord_core::error::Error<<C as concord_core::page::Call>::Problem>>
 concord::transport	pub mod transport
 concord::transport::Fake	impl<F> concord_core::transport::Transport for concord_core::transport::Fake<F> where F: core::ops::function::Fn(&reqwest::async_impl::request::Request) -> core::result::Result<reqwest::async_impl::response::Response, concord_core::transport::TransportError> + core::marker::Send + core::marker::Sync + 'static
 concord::transport::Fake	impl<F> core::fmt::Debug for concord_core::transport::Fake<F>
@@ -3241,6 +3249,7 @@ concord::by_next_url
 concord::by_offset
 concord::by_offset_limit
 concord::by_page
+concord::by_page_bounds
 concord::bytes
 concord::error
 concord::error::CarriesProblem
@@ -3309,6 +3318,8 @@ concord::page::IntoNext
 concord::page::IntoNext::into_next
 concord::page::Items
 concord::page::Items::try_next
+concord::page::NamedCall
+concord::page::NamedCall::ENDPOINT
 concord::page::Pager
 concord::page::Pager::next_call
 concord::page::Pages
@@ -3324,6 +3335,7 @@ concord::page::Paging::only_when_set
 concord::page::Paging::or_when_set
 concord::page::Paging::stop_on_short_page
 concord::page::Paging::stop_on_short_page_of
+concord::page::Paging::try_map_next
 concord::page::Slot
 concord::page::Slot::Value
 concord::page::Slot::get
@@ -3336,6 +3348,7 @@ concord::page::by_offset
 concord::page::by_offset_limit
 concord::page::by_offset_total
 concord::page::by_page
+concord::page::by_page_bounds
 concord::page::fragmentless
 concord::read
 concord::read::Binary
@@ -3485,6 +3498,7 @@ concord::transfer::TransferError::NotAbsolute
 concord::transfer::TransferError::UnsupportedScheme
 concord::transfer::TransferError::UrlTooLong
 concord::transfer::at
+concord::transfer::at_call
 concord::transport
 concord::transport::Fake
 concord::transport::Http

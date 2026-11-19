@@ -4,7 +4,7 @@
 
 This page is for a Rust developer who calls the Google Drive API. It gives a client with 6 endpoints that you can copy, and shows an upload of metadata and content in one `multipart/related` request, Google's own convention, and a list paginated by a token.
 
-Here is Google Drive as Concord sees it. There is one host, `www.googleapis.com`: the metadata of files is under `/drive/v3`, and uploads go to `/upload/drive/v3`. Authentication is an OAuth 2.0 access token, sent as `authorization: Bearer …`; obtaining it is the application's work (see [A token that is renewed](../guide/credentials.md#a-token-that-is-renewed)). An upload of type `multipart` sends the metadata of the file (JSON) and its content in one request, for a file of 5 MB or less; a larger file needs a resumable upload, a protocol of several requests that this page does not show. A list is paginated by `pageToken` and `nextPageToken`. Google rejects a request with an error status and `{"error": {"code", "message", "errors"}}`, read into `DriveProblem`. Google's own reference is [developers.google.com/drive/api](https://developers.google.com/drive/api). `(unsure)` marks a detail about Drive that has not been checked.
+Here is Google Drive as Concord sees it. There is one host, `www.googleapis.com`: the metadata of files is under `/drive/v3`, and uploads go to `/upload/drive/v3`. Authentication is an OAuth 2.0 access token, sent as `authorization: Bearer …`; obtaining it is the application's work (see [A token that is renewed](../guide/credentials.md#a-token-that-is-renewed)). An upload of type `multipart` sends the metadata of the file (JSON) and its content in one request, for a file of 5 MB or less; a larger file needs a resumable upload, a protocol of several requests. The example below sends one chunk to an established session. A list is paginated by `pageToken` and `nextPageToken`. Google rejects a request with an error status and `{"error": {"code", "message", "errors"}}`, read into `DriveProblem`. Google's own reference is [developers.google.com/drive/api](https://developers.google.com/drive/api). `(unsure)` marks a detail about Drive that has not been checked.
 
 ## The description
 
@@ -181,12 +181,49 @@ pub async fn rename_and_delete(drive: &Drive, file_id: &str) -> drive::Result<()
 }
 ```
 
+## Send a chunk to a resumable session
+
+After starting a resumable upload, send chunks to the session URL that Drive returned. Use a
+separate description based on the Drive origin. The session URL carries the session identity,
+so the second client does not carry the API client's authorization header or middleware.
+
+`transfer::at_call` checks the returned URL and uses the same error type as sending the chunk.
+A bad URL gives a Build error with a `TransferError` source. The call still checks the origin
+before sending. This function reports whether Drive finished the upload. After a `308`, a full
+resumable uploader reads the acknowledged range before deciding which bytes to send next.
+
+```rust
+concord::api! {
+    /// Sends bytes to an established Drive resumable upload session.
+    pub client DriveSessions {
+        base "https://www.googleapis.com";
+
+        /// Returns whether Drive completed the upload.
+        PUT chunk(content_range: String, bytes: concord::Body) -> bool {
+            headers { "content-range" = content_range; }
+            body bytes;
+            status { 308 => false, 2xx => true }
+        }
+    }
+}
+
+/// Sends one chunk to the returned session URL.
+pub async fn send_chunk(
+    sessions: &DriveSessions,
+    session_url: &str,
+    content_range: &str,
+    bytes: concord::Body,
+) -> drive_sessions::Result<bool> {
+    concord::transfer::at_call(sessions.chunk(content_range, bytes), session_url)?.await
+}
+```
+
 ## What does not fit well, and the workaround
 
 | Drive wants | What to write |
 |---|---|
 | Metadata and content in one request, as `multipart/related`. | `concord::multipart_related`, called by a function of yours (`related`) that names the parts and their headers. |
-| A file larger than 5 MB: a resumable upload, a session over several requests. | Your own function around the calls: one that starts the session and returns its URL, then the chunks sent to that URL (see [When Concord does not cover what you need](../guide/extending.md)). |
+| A file larger than 5 MB: a resumable upload, a session over several requests. | Your own function around the calls: one that starts the session and returns its URL, then [the chunks sent to that URL](#send-a-chunk-to-a-resumable-session). |
 | A Google document (Docs, Sheets), which has no bytes to download. | `files/{id}/export` with a `mimeType`: another endpoint, on the same pattern as `download`. |
 | `fields`, which removes fields from the response. The return type is fixed. | Ask for every field that the type requires, as `pdfs` does; for any other shape, `send_raw()`. |
 | The access token, which expires after about an hour (unsure). | A renewed credential, `concord::auth::Renewed`, as middleware on the client (see [A token that is renewed](../guide/credentials.md#a-token-that-is-renewed)). |

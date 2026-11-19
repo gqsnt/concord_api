@@ -1,6 +1,6 @@
 use concord::http::{HeaderName, HeaderValue};
-use concord::page::Slot;
-use concord::{reqwest, Answer, Fail};
+use concord::page::{Paging, Slot};
+use concord::reqwest;
 use serde::Deserialize;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -66,25 +66,20 @@ impl BucketsPage {
     }
 }
 
-/// The uploads in progress move by two markers together: a truncated page that lacks either
-/// one is a Mismatch.
-pub fn uploads_after<C, K, U>(key: K, upload: U)
-    -> impl Fn(C, &Answer<UploadsPage>) -> Result<Option<C>, Fail<S3Problem>> + Send + 'static
+/// A truncated upload page needs a key marker. An absent upload ID is sent as an empty marker.
+pub fn uploads_after<C, K, U>(key: K, upload: U) -> Paging<C>
 where
     C: concord::page::Call<Value = UploadsPage, Problem = S3Problem>,
     K: Slot<C, Value = String>,
     U: Slot<C, Value = String>,
 {
-    move |call, answer| {
-        let page = answer.value();
-        if !page.is_truncated {
-            return Ok(None);
-        }
-        let missing = || concord::mismatch("a truncated page with no next marker");
-        let next_key = page.next_key_marker.clone().ok_or_else(missing)?;
-        let next_upload = page.next_upload_id_marker.clone().ok_or_else(missing)?;
-        Ok(Some(upload.set(key.set(call, next_key), next_upload)))
-    }
+    Paging::<C>::from_fn(|call, answer| answer.value().is_truncated.then_some(call))
+        .try_map_next(move |call, page| {
+            let next_key = page.next_key_marker.clone()
+                .ok_or_else(|| concord::mismatch("a truncated page with no next marker"))?;
+            let next_upload = page.next_upload_id_marker.clone().unwrap_or_default();
+            Ok(upload.set(key.set(call, next_key), next_upload))
+        })
 }
 
 /// The caller's own metadata (`x-amz-meta-*`), for `.edit_request(…)`: the description names

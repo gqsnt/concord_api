@@ -1,4 +1,4 @@
-//! Calls to a URL that the API returned, such as an upload URL: [`at`].
+//! Calls to a URL that the API returned, such as an upload URL: [`at`] and [`at_call`].
 //!
 //! Describe the upload host separately, with its own base and without the API's
 //! credentials or middleware. [`at`] checks the URL text as it was returned, then calls
@@ -69,7 +69,8 @@
 //! module implements no upload-session protocol, no reconnection and no resumption of
 //! downloads.
 
-use concord_core::page::Call;
+use concord_core::page::{Call, NamedCall};
+use concord_core::Error;
 use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
@@ -81,9 +82,8 @@ use std::sync::Arc;
 /// from `at` are returned at once, before there is a call error; an origin that does
 /// not match arrives instead as the engine's `concord::Error`, when the call is sent.
 ///
-/// Handle the `Result` of [`at`] directly: `at` never puts this error inside a
-/// `concord::Error`. An error of the generated call, later, follows the core's rules
-/// for sources. See [`at`] for the two-line form that handles both error types.
+/// [`at`] returns this error directly. [`at_call`] keeps it as the source of the generated
+/// client's Build error, so one function can use `?` for URL checks and call failures.
 ///
 /// Checks run in this order: the byte bound; the literal authority form; written
 /// user information and fragments; URL parsing; the scheme and parsed authority;
@@ -282,4 +282,31 @@ pub fn at<C: Call>(call: C, url: &str) -> Result<C, TransferError> {
         return Err(TransferError::ChangedUrl);
     }
     Ok(call.at_url(url))
+}
+
+/// Checks a returned URL as [`at`] does, using the client's error type for a refusal.
+///
+/// The error is Build, with the [`NamedCall`]'s endpoint, zero attempts, no response and a
+/// [`TransferError`] as its source. The call still checks the origin when building the request.
+/// Use a separate description without the API's credentials or middleware.
+///
+/// ```no_run
+/// use concord::Body;
+///
+/// concord::api! {
+///     client Uploads {
+///         base "https://uploads.example.test";
+///         PUT put(bytes: Body) { body bytes; }
+///     }
+/// }
+///
+/// async fn upload(uploads: &Uploads, url: &str, bytes: Body) -> uploads::Result<()> {
+///     concord::transfer::at_call(uploads.put(bytes), url)?.await
+/// }
+/// ```
+#[must_use = "send the validated call to perform the transfer"]
+pub fn at_call<C: NamedCall>(call: C, url: &str) -> Result<C, Error<C::Problem>> {
+    at(call, url).map_err(|source| {
+        concord_core::__private::transfer_url_error(C::ENDPOINT, Box::new(source))
+    })
 }

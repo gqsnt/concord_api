@@ -5,6 +5,8 @@ use concord_core::error::{mismatch, Fail};
 use concord_core::page::{Call, InputId, IntoItems, IntoNext, Pager, Slot};
 use concord_core::Answer;
 
+use super::advance_page;
+
 /// The text of the Mismatch when a page says that more items follow and nothing moves.
 const MORE_WITHOUT_NEXT: &str = "the page says that more items follow, and gives no next page";
 /// The text of the Mismatch when two statements of one page disagree.
@@ -19,15 +21,22 @@ const OFFSET: &str = "the offset cannot grow any further";
 type Gate<C> = Box<dyn Fn(&C) -> bool + Send>;
 /// The input that a slot names on this call, when that input is set: both read together.
 type Chooser<C> = Box<dyn Fn(&C) -> Option<InputId> + Send>;
-type Statement<C> =
-    Box<dyn FnMut(&C, &<C as Call>::Value) -> Result<bool, Fail<<C as Call>::Problem>> + Send>;
+// The bounds statement passes the reported number to this decision's default move.
+type Statement<C> = Box<
+    dyn FnMut(&C, &<C as Call>::Value, &mut Option<u64>) -> Result<bool, Fail<<C as Call>::Problem>>
+        + Send,
+>;
+type Next<C> = Result<Option<C>, Fail<<C as Call>::Problem>>;
 type Move<C> = Box<dyn Pager<C>>;
+type DefaultMove<C> = Box<dyn FnMut(C, &Answer<<C as Call>::Value>, Option<u64>) -> Next<C> + Send>;
 /// A short-page rule reads only a size from the call (a `Copy` value), never the call itself.
 type Short<C> = Box<dyn Fn(&C) -> Option<usize> + Send>;
-type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
+type Edit<C> =
+    Box<dyn FnMut(C, &<C as Call>::Value) -> Result<C, Fail<<C as Call>::Problem>> + Send>;
 
-/// A pager with what the page states about it. The seven shipped pagers return one,
-/// [`by_offset_total`] included, and [`Paging::from_fn`] makes one of your own function. It is a [`Pager`], so `paginate` takes it as it is; its methods need no import.
+/// A pager with what the page states about it. The shipped pagers return one, and
+/// [`Paging::from_fn`] makes one from a function of your own. It is a [`Pager`], so
+/// `paginate` takes it as it is; its methods need no import.
 ///
 /// For each page, a `Paging` decides **in this order, whatever the order in which its methods
 /// were written**:
@@ -41,8 +50,9 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 ///    input's `input()`, and two inputs that share storage or take no room are two.
 /// 1. **The gate.** If one input given to [`only_when_set`](Paging::only_when_set) is not set on
 ///    the call that fetched the page, this page is the last. Nothing else is read.
-/// 2. **What the page states.** Every statement ([`has_more`](Paging::has_more), and the total of
-///    [`by_offset_total`]) is read, once, in the order written, whatever the others say. If one
+/// 2. **What the page states.** Every statement ([`has_more`](Paging::has_more), the total of
+///    [`by_offset_total`], or the bounds of [`by_page_bounds`]) is read, once, in the order
+///    written, whatever the others say. If one
 ///    cannot be read (a total that is not a number of items), its failure is the result. Otherwise,
 ///    if one says "no more" and another "more", the pages end with a Mismatch
 ///    (`the page's statements disagree on whether more items follow`). If all say "no more", this
@@ -59,8 +69,10 @@ type Edit<C> = Box<dyn FnMut(C, &<C as Call>::Value) -> C + Send>;
 ///    [`by_offset_limit`](super::by_offset_limit)) ends the list on a short page, after the move;
 ///    otherwise the move decides, and no next call is the end. A statement always has authority
 ///    over the short-page rule.
-/// 5. **The edits** of [`map_next`](Paging::map_next) are applied to the next call, in the order
-///    they were written. The order written also counts inside two other steps: the statements
+/// 5. **The edits** of [`map_next`](Paging::map_next) and [`try_map_next`](Paging::try_map_next)
+///    are applied to the surviving next call, in the order they were written. The first failure
+///    ends the decision without running any later edits. The order written also counts inside
+///    two other steps: the statements
 ///    are read in that order (step 2), and of two `or_when_set` given one input, the first
 ///    written moves (step 0).
 ///
@@ -141,7 +153,7 @@ struct Parts<C: Call> {
     statements: Vec<Statement<C>>,
     /// 3. The moves chosen by an input, then the move otherwise.
     or_when_set: Vec<(Chooser<C>, Move<C>)>,
-    moves: Move<C>,
+    moves: DefaultMove<C>,
     /// 4. The short-page rules, read only when no statement spoke: each gives a size, and the
     ///    page is counted once, after the move.
     stop_on_short_page: Vec<Short<C>>,
@@ -210,13 +222,20 @@ impl<C: Call> Paging<C> {
     ///     }
     /// }
     /// ```
-    pub fn from_pager<P: Pager<C>>(pager: P) -> Paging<C> {
+    pub fn from_pager<P: Pager<C>>(mut pager: P) -> Paging<C> {
+        Self::from_move(move |call, page, _| pager.next_call(call, page))
+    }
+
+    fn from_move<F>(moves: F) -> Paging<C>
+    where
+        F: FnMut(C, &Answer<C::Value>, Option<u64>) -> Next<C> + Send + 'static,
+    {
         Paging {
             parts: std::sync::Mutex::new(Parts {
                 only_when_set: Vec::new(),
                 statements: Vec::new(),
                 or_when_set: Vec::new(),
-                moves: Box::new(pager),
+                moves: Box::new(moves),
                 stop_on_short_page: Vec::new(),
                 count: None,
                 map_next: Vec::new(),
@@ -362,7 +381,7 @@ impl<C: Call> Paging<C> {
     {
         self.parts()
             .statements
-            .push(Box::new(move |_, value| Ok(more(value))));
+            .push(Box::new(move |_, value, _| Ok(more(value))));
         self
     }
 
@@ -583,9 +602,45 @@ impl<C: Call> Paging<C> {
     ///     }
     /// }
     /// ```
-    pub fn map_next<F>(mut self, edit: F) -> Paging<C>
+    pub fn map_next<F>(self, mut edit: F) -> Paging<C>
     where
         F: FnMut(C, &C::Value) -> C + Send + 'static,
+    {
+        self.try_map_next(move |call, value| Ok(edit(call, value)))
+    }
+
+    /// Edits the next call, or ends the pages with a failure.
+    ///
+    /// Edits from this method and [`map_next`](Self::map_next) run in written order, only after
+    /// a next call survives the decision. The first failure stops the remaining edits. The caller
+    /// gets the page that arrived, then the failure with that response's head and attempt count.
+    ///
+    /// ```
+    /// use concord::{by_cursor, mismatch, Json};
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Page { key: Option<String>, version: Option<String> }
+    ///
+    /// concord::api! {
+    ///     client Store {
+    ///         base "https://store.example.test";
+    ///         read Json;
+    ///         GET versions(key?: String, version?: String) -> Page {
+    ///             query { key; version; }
+    ///             paginate by_cursor(key, |page| page.key.clone())
+    ///                 .try_map_next(|next, page| {
+    ///                     let version = page.version.clone()
+    ///                         .ok_or_else(|| mismatch("the next version is missing"))?;
+    ///                     Ok(next.version(version))
+    ///                 });
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn try_map_next<F>(mut self, edit: F) -> Paging<C>
+    where
+        F: FnMut(C, &C::Value) -> Result<C, Fail<C::Problem>> + Send + 'static,
     {
         self.parts().map_next.push(Box::new(edit));
         self
@@ -641,10 +696,11 @@ impl<C: Call> Pager<C> for Paging<C> {
         }
         // 2. What the page states: every statement is read, once, in the order written; the
         // first that cannot be read is the result, then a disagreement.
+        let mut reported_page = None;
         let read: Vec<_> = parts
             .statements
             .iter_mut()
-            .map(|statement| statement(&call, page.value()))
+            .map(|statement| statement(&call, page.value(), &mut reported_page))
             .collect();
         let mut said = Vec::with_capacity(read.len());
         for more in read {
@@ -673,7 +729,7 @@ impl<C: Call> Pager<C> for Paging<C> {
         let alternative = chosen.and_then(|(index, _)| parts.or_when_set.get_mut(index));
         let next = match alternative {
             Some((_, other)) => other.next_call(call, page)?,
-            None => parts.moves.next_call(call, page)?,
+            None => (parts.moves)(call, page, reported_page)?,
         };
         // 4. With no statement, a short page ends the list: the page is counted after the move.
         if let (Some(size), Some(count)) = (size, parts.count) {
@@ -689,7 +745,7 @@ impl<C: Call> Pager<C> for Paging<C> {
         };
         // 5. The edits, in the order written.
         for edit in &mut parts.map_next {
-            next = edit(next, page.value());
+            next = edit(next, page.value())?;
         }
         Ok(Some(next))
     }
@@ -752,17 +808,92 @@ where
     C::Value: IntoItems,
 {
     let mut paging = super::by_offset(start);
-    paging.parts().statements.push(Box::new(move |call, value| {
-        // An offset that is not set is zero.
-        let at: u64 = match start.get(call) {
-            Some(at) => (*at).try_into().map_err(|_| mismatch(super::UNREADABLE))?,
-            None => 0,
-        };
-        let count = u64::try_from(value.count()).map_err(|_| mismatch(OFFSET))?;
-        let reached = at.checked_add(count).ok_or_else(|| mismatch(OFFSET))?;
-        let total: u64 = total(value).try_into().map_err(|_| mismatch(TOTAL))?;
-        Ok(reached < total)
-    }));
+    paging
+        .parts()
+        .statements
+        .push(Box::new(move |call, value, _| {
+            // An offset that is not set is zero.
+            let at: u64 = match start.get(call) {
+                Some(at) => (*at).try_into().map_err(|_| mismatch(super::UNREADABLE))?,
+                None => 0,
+            };
+            let count = u64::try_from(value.count()).map_err(|_| mismatch(OFFSET))?;
+            let reached = at.checked_add(count).ok_or_else(|| mismatch(OFFSET))?;
+            let total: u64 = total(value).try_into().map_err(|_| mismatch(TOTAL))?;
+            Ok(reached < total)
+        }));
+    paging
+}
+
+/// `paginate by_page_bounds(page, |p| p.bounds);`: the page reports its number and the last
+/// number. The bounds are read once as a statement, before the choice of next call. Missing
+/// bounds or a current number at or above the last end the list. Otherwise the default move
+/// advances the reported number by one, even if the server answered with a different number
+/// from the one requested. If the number cannot be read as a `u64` or its successor cannot
+/// be held, the default move returns a Mismatch.
+///
+/// The page need not implement [`IntoItems`]. The caller can use `.pages()` on an envelope
+/// containing several lists.
+///
+/// ```
+/// use concord::{by_page_bounds, Json};
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct Search { bounds: Option<(u32, u32)>, files: Vec<String>, messages: Vec<String> }
+///
+/// concord::api! {
+///     client SearchApi {
+///         base "https://search.example.test";
+///         read Json;
+///         GET search(query: String, page?: u32) -> Search {
+///             query { query; page; }
+///             paginate by_page_bounds(page, |value| value.bounds);
+///         }
+///     }
+/// }
+///
+/// let _pages = SearchApi::new().search("report").pages();
+/// ```
+///
+/// Flattening the pages into items still requires [`IntoItems`].
+///
+/// ```compile_fail,E0277
+/// # use concord::{by_page_bounds, Json};
+/// # #[derive(serde::Deserialize)]
+/// # struct Search { bounds: Option<(u32, u32)>, files: Vec<String>, messages: Vec<String> }
+/// # concord::api! {
+/// #     client SearchApi {
+/// #         base "https://search.example.test";
+/// #         read Json;
+/// #         GET search(page?: u32) -> Search {
+/// #             query { page; }
+/// #             paginate by_page_bounds(page, |value| value.bounds);
+/// #         }
+/// #     }
+/// # }
+/// let _items = SearchApi::new().search().pages().items();
+/// ```
+pub fn by_page_bounds<C, S, F>(page: S, bounds: F) -> Paging<C>
+where
+    C: Call,
+    S: Slot<C>,
+    // PANIC-SAFETY: The plus signs join trait bounds. The page advance uses checked addition.
+    S::Value: Copy + Ord + TryFrom<u64> + TryInto<u64>,
+    F: Fn(&C::Value) -> Option<(S::Value, S::Value)> + Send + 'static,
+{
+    let mut paging =
+        Paging::from_move(move |call, _, reported| advance_page(page, call, reported).map(Some));
+    paging
+        .parts()
+        .statements
+        .push(Box::new(move |_, value, reported| match bounds(value) {
+            Some((current, last)) if current < last => {
+                *reported = current.try_into().ok();
+                Ok(true)
+            }
+            _ => Ok(false),
+        }));
     paging
 }
 
@@ -793,7 +924,7 @@ mod tests {
             let seen = Arc::new(AtomicUsize::new(0));
             for problem in [!reverse, reverse] {
                 let visits = seen.clone();
-                pager.parts().statements.push(Box::new(move |_, _| {
+                pager.parts().statements.push(Box::new(move |_, _, _| {
                     visits.fetch_add(1, SeqCst);
                     if problem {
                         Err(Fail::from(7))
@@ -828,7 +959,7 @@ mod tests {
                 false
             });
         // a statement that cannot be read, written after the two that disagree
-        pager.parts().statements.push(Box::new(move |_, _| {
+        pager.parts().statements.push(Box::new(move |_, _, _| {
             failing.fetch_add(1, SeqCst);
             Err(Fail::from(7))
         }));
