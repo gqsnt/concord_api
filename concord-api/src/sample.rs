@@ -52,8 +52,8 @@
 //! | [`library::books::Delete`] | The type of the endpoint `delete`, which has no arrow. Awaiting its call returns a result with `()` on success. |
 //! | [`library::Error`], [`library::Result`], [`library::Retry`] | The aliases: `concord::Error<String>`, a `Result` of it, and `concord::Retry<String>`. |
 //!
-//! The aliases show a hidden trait, `<() as __Types>::__Problem`, which stands for the `problem`
-//! type, here `String`. Names that begin with `__` belong to Concord.
+//! The aliases show the declared `problem` type, here `String`, through the hidden `ClientProblem`
+//! trait. Concord reserves no prefix for Rust items or trait methods in the surrounding module.
 
 use crate::{by_page, Json, Secret, Text};
 
