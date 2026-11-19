@@ -11,7 +11,15 @@ description = "Concord's writers, bounded readers, pagers, credential renewal, s
 readme = "README.md"
 keywords = ["http", "json", "pagination", "multipart", "client"]
 categories = ["web-programming::http-client"]
-include = ["/src/**", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
+include = [
+    "/src/**",
+    "/tests/paging_requests.rs",
+    "/tests/support/paging_requests.rs",
+    "/tests/fixtures/paging_requests.http",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE*",
+]
 autobenches = false # The opt-in tools/measure package owns the allocator harness.
 
 # docs.rs builds the pages with every feature on, and `--cfg docsrs` marks each item with the feature it needs.
