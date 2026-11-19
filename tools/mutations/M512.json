@@ -1,0 +1,9 @@
+{
+  "id": "M512",
+  "area": "by_page_bounds",
+  "contract": "C8.6",
+  "description": "Read the reported page bounds twice.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "match bounds(value) {",
+  "replace": "match { let _ = bounds(value); bounds(value) } {"
+}

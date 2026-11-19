@@ -1,0 +1,12 @@
+{
+  "id": "M505",
+  "area": "macro-hygiene",
+  "contract": "C10.1",
+  "description": "Expose the generated problem type alias to a glob import of the client module.",
+  "file": "concord-macros/src/write/mod.rs",
+  "find": "                type __Problem = <Call<::concord::__private::ClientKey>",
+  "replace": "                #[doc(hidden)] pub(super) type __Problem = <Call<::concord::__private::ClientKey>",
+  "checks": [
+    "macro-compiler"
+  ]
+}

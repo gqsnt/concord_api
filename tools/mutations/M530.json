@@ -1,0 +1,9 @@
+{
+  "id": "M530",
+  "area": "optional-body",
+  "contract": "C2.9",
+  "description": "Discard a present body returned by an optional writer.",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "        self.map(IntoBody::into_body).transpose()",
+  "replace": "        self.map(IntoBody::into_body).transpose().map(|_| None)"
+}

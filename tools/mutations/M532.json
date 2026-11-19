@@ -1,0 +1,9 @@
+{
+  "id": "M532",
+  "area": "optional-body",
+  "contract": "C2.9",
+  "description": "Turn an optional writer failure into an omitted body.",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "        self.map_err(Into::into)?.into_whole_body()",
+  "replace": "        self.ok().map(WholeBody::into_whole_body).unwrap_or(Ok(None))"
+}

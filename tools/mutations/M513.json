@@ -1,0 +1,9 @@
+{
+  "id": "M513",
+  "area": "by_page_bounds",
+  "contract": "C8.6",
+  "description": "Advance the requested number when it differs from the reported one.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        Paging::from_move(move |call, _, reported| advance_page(page, call, reported).map(Some));",
+  "replace": "        Paging::from_move(move |call, _, reported| {\n            let requested = page.get(&call).and_then(|at| (*at).try_into().ok());\n            advance_page(page, call, requested.or(reported)).map(Some)\n        });"
+}

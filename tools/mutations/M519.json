@@ -1,0 +1,9 @@
+{
+  "id": "M519",
+  "area": "transfer",
+  "contract": "C11.11",
+  "description": "Count transfer URL validation as a send attempt.",
+  "file": "concord-core/src/error.rs",
+  "find": "let mut error = Self::build(endpoint, BuildFailure::TransferUrl);",
+  "replace": "let mut error = Self::new(Kind::Build, endpoint, 1, Note::Build(BuildFailure::TransferUrl));"
+}

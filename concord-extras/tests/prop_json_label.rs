@@ -147,3 +147,19 @@ fn c5_2_a_content_type_without_a_slash_is_not_json() {
         assert_eq!(read.is_ok(), label == "application/json", "{label}");
     }
 }
+
+#[tokio::test]
+async fn c5_11_a_json_suffix_does_not_make_an_invalid_type_token_valid() {
+    let mut response = Response::new(reqwest::Body::from("[1]"));
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("app lication/problem+json"),
+    );
+    let read: Result<Vec<u8>, Error> = read_body(
+        &Json.strict(),
+        reqwest::Response::from(response),
+        &TryInfo::new("props.label", 1),
+    )
+    .await;
+    assert_eq!(read.unwrap_err().kind(), Kind::Mismatch);
+}

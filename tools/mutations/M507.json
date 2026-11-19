@@ -1,0 +1,9 @@
+{
+  "id": "M507",
+  "area": "map_next",
+  "contract": "C8.6",
+  "description": "Run later edits even after the first edit fails.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        for edit in &mut parts.map_next {\n            next = edit(next, page.value())?;\n        }\n        Ok(Some(next))",
+  "replace": "        let mut failure = None;\n        for edit in &mut parts.map_next {\n            match edit(next.clone(), page.value()) {\n                Ok(edited) => next = edited,\n                Err(error) => { failure.get_or_insert(error); }\n            }\n        }\n        failure.map_or(Ok(Some(next)), Err)"
+}

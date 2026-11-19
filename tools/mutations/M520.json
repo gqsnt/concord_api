@@ -1,0 +1,9 @@
+{
+  "id": "M520",
+  "area": "transfer",
+  "contract": "C11.11",
+  "description": "Drop the original transfer URL validation error.",
+  "file": "concord-core/src/error.rs",
+  "find": "        let mut error = Self::build(endpoint, BuildFailure::TransferUrl);\n        error.inner.source = Some(source);\n        error",
+  "replace": "        drop(source);\n        Self::build(endpoint, BuildFailure::TransferUrl)"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M510",
+  "area": "map_next",
+  "contract": "C8.6",
+  "description": "Return the pager failure before the page that arrived.",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "                    return Poll::Ready(Some(Ok(answer.into_value())));",
+  "replace": "                    self.state = match std::mem::replace(&mut self.state, State::Over) {\n                        State::Failed(error) => return Poll::Ready(Some(Err(error))),\n                        state => state,\n                    };\n                    return Poll::Ready(Some(Ok(answer.into_value())));"
+}

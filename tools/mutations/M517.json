@@ -1,0 +1,9 @@
+{
+  "id": "M517",
+  "area": "by_page_bounds",
+  "contract": "C8.6",
+  "description": "Clamp the page advance when the successor exceeds u64.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        Paging::from_move(move |call, _, reported| advance_page(page, call, reported).map(Some));",
+  "replace": "        Paging::from_move(move |call, _, reported| {\n            advance_page(page, call, reported.map(|at| at.min(u64::MAX - 1))).map(Some)\n        });"
+}
