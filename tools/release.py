@@ -7,7 +7,7 @@ import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STEPS = (
-    "gate", "docs-audit", "doc-examples", "call-doc-search", "call-editor",
+    "surface", "gate", "docs-audit", "doc-examples", "call-doc-search", "call-editor",
     "panics", "package", "features-all", "mutants",
 )
 
@@ -17,7 +17,9 @@ def main(argv=None):
     parser.parse_args(argv)
     for step in STEPS:
         command = ["just", step]
-        if step == "mutants":
+        if step == "surface":
+            command.append("--release")
+        elif step == "mutants":
             command += ["--jobs", "1"]
         detail = ""
         try:

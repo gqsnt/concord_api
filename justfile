@@ -88,6 +88,11 @@ features-all:
 docs-audit:
     @python3 -B tools/docs.py
 
+# Compare the public API with the release snapshot; --update rewrites it.
+[no-exit-message]
+surface *args:
+    @python3 -B tools/surface.py {{args}}
+
 # Check whole documentation descriptions against their pages and compile them.
 [no-exit-message]
 doc-examples:
@@ -108,7 +113,7 @@ call-editor:
 package:
     @python3 -B tools/package.py
 
-# Run gate, documentation and editor checks, safety, packaging, feature isolation, and mutations.
+# Run the surface check, gate, documentation, packaging, and other release checks.
 [no-exit-message]
 release:
     @python3 -B tools/release.py
