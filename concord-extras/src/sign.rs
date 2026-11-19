@@ -1515,3 +1515,7 @@ mod tests {
         assert_eq!(hash.finalize(), Sha256::digest(&bytes));
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/paging_requests.rs"]
+mod paging_requests;

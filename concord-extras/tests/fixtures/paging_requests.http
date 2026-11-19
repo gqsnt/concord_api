@@ -1,0 +1,169 @@
+=== offsets ===
+POST https://pages.test/api/offsets
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/offsets?start=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== limited ===
+POST https://pages.test/api/limited?count=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/limited?start=2&count=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== totals ===
+POST https://pages.test/api/totals
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/totals?start=2
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== numbered ===
+POST https://pages.test/api/numbered
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/numbered?number=4
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== cursors ===
+POST https://pages.test/api/cursors
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/api/cursors?after=a%2Bb%20%2F
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== linked ===
+POST https://pages.test/api/linked
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/wire%2fnext?b=%2f&&b=a+b
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== announced ===
+POST https://pages.test/api/announced
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/from-body?
+content-type: application/octet-stream
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== signed-empty ===
+POST https://pages.test/api/signed?mode=fixed&token=A
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=4eec5f7a591ef7d46f23d03d397366d4498eee5185b117b6e064f387bf9c7c92
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/slice?&token=B%2Bz
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=a4ca7477c69ba1b66ba5cc8c97433d6063ec58bd6f814b0587da198a20915aa1
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+=== signed-pairs ===
+POST https://pages.test/api/signed?mode=fixed&token=A
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=4eec5f7a591ef7d46f23d03d397366d4498eee5185b117b6e064f387bf9c7c92
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
+POST https://pages.test/slice?x=%2f&&x=a+b&token=B%2Bz
+authorization: AWS4-HMAC-SHA256 Credential=EXAMPLE/20150830/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-mode, Signature=3b06e98f5cd91ca93e58bad0ad44939e736322f62bfd0a44650614e7de0b4567
+content-type: application/octet-stream
+host: pages.test
+x-amz-content-sha256: abcf20893dfedc0c73584465a77cf51d409f4aa8a9bf50ecd908121b5d235e07
+x-amz-date: 20150830T123600Z
+x-mode: one
+x-mode: two
+
+7 bytes
+one
+é
