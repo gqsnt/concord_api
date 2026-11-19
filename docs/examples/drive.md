@@ -183,14 +183,9 @@ pub async fn rename_and_delete(drive: &Drive, file_id: &str) -> drive::Result<()
 
 ## Send a chunk to a resumable session
 
-After starting a resumable upload, send chunks to the session URL that Drive returned. Use a
-separate description based on the Drive origin. The session URL carries the session identity,
-so the second client does not carry the API client's authorization header or middleware.
+After starting a resumable upload, send chunks to the session URL that Drive returned. Use a separate description based on the Drive origin. The session URL carries the session identity, so the second client does not carry the API client's authorization header or middleware.
 
-`transfer::at_call` checks the returned URL and uses the same error type as sending the chunk.
-A bad URL gives a Build error with a `TransferError` source. The call still checks the origin
-before sending. This function reports whether Drive finished the upload. After a `308`, a full
-resumable uploader reads the acknowledged range before deciding which bytes to send next.
+`transfer::at_call` checks the returned URL and uses the same error type as sending the chunk. A bad URL gives a Build error with a `TransferError` source. The call still checks the origin before sending. This function reports whether Drive finished the upload. After a `308`, a full resumable uploader reads the acknowledged range before deciding which bytes to send next.
 
 ```rust
 concord::api! {

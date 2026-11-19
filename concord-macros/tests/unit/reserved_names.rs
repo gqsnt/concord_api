@@ -525,7 +525,7 @@ fn render(reservations: &[Reservation]) -> String {
     format!(
         r#"{{
   "schema": 1,
-  "about": "The names that a description of an API may use, for programs that write descriptions: their spelling, the names reserved in each position, and the collisions between names. These rules apply to names in the description. Concord reserves no prefix for Rust items or trait methods in the surrounding module. Every other rule of a description is in docs/reference/rules.md, and every message in docs/reference/messages.md. docs/reference/rules.md explains each key. Concord's tests write this file from the macro's own tables and check every example against the macro.",
+  "about": "The names that a description of an API may use, for programs that write descriptions: their spelling, the names reserved in each position, and the collisions between names. These rules apply to names in the description. In the module that holds the description, declare no constant, static or unit struct whose name begins with `__`. Other items and trait methods may use such names. Every other rule of a description is in docs/reference/rules.md, and every message in docs/reference/messages.md. docs/reference/rules.md explains each key. Concord's tests write this file from the macro's own tables and check every example against the macro.",
   "readers": "A reader must stop, not guess, when schema is a version that it does not know, or when it meets a key, a kind of match or a collision id that it does not know: each is a rule that the reader cannot apply. Later releases may add keys and collisions; a change in the meaning of a key changes schema.",
   "positions": {{
 {positions}
