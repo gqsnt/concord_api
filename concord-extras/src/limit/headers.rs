@@ -546,17 +546,37 @@ mod calendar {
     use concord_core::Headers;
     use proptest::{prelude::*, test_runner::TestRunner};
 
+    fn epoch(nanos: i128) -> SystemTime {
+        let magnitude = nanos.unsigned_abs();
+        let distance = Duration::new(
+            u64::try_from(magnitude / 1_000_000_000).unwrap(),
+            u32::try_from(magnitude % 1_000_000_000).unwrap(),
+        );
+        if nanos < 0 {
+            UNIX_EPOCH.checked_sub(distance).unwrap()
+        } else {
+            UNIX_EPOCH.checked_add(distance).unwrap()
+        }
+    }
+
     #[test]
     fn c11_5_both_http_date_readers_use_the_supplied_century() {
-        let data = include_str!("../../../tests/conformance/tests/fixtures/calendar.tsv");
-        for row in data.lines().filter(|row| row.starts_with("clock\t")) {
+        let data = include_str!("calendar.tsv");
+        for row in data.lines().filter(|row| !row.starts_with('#')) {
             let columns: Vec<_> = row.split('\t').collect();
-            let [_, text, _, now, expected] = columns.as_slice() else {
+            let [text, now, expected] = columns.as_slice() else {
                 panic!("invalid calendar row: {row}");
             };
-            let clock = at_nanos(now.parse().unwrap()).unwrap();
-            let instant = (*expected != "-")
-                .then(|| at_nanos(expected.parse::<i128>().unwrap() * 1_000_000_000).unwrap());
+            let clock = epoch(now.parse().unwrap());
+            let instant = (*expected != "-").then(|| {
+                epoch(
+                    expected
+                        .parse::<i128>()
+                        .unwrap()
+                        .checked_mul(1_000_000_000)
+                        .unwrap(),
+                )
+            });
             assert_eq!(http_date(text, clock), instant, "{row}");
             let mut head = concord_core::http::HeaderMap::new();
             head.insert("retry-after", text.parse().unwrap());

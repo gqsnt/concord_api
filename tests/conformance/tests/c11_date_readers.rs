@@ -155,7 +155,6 @@ async fn c11_5_the_reader_of_date_agrees_with_the_reader_of_retry_after() {
                     parse(result).map(|nanos| Duration::from_nanos(nanos.try_into().unwrap()));
                 assert_eq!(got, expected, "{}", context());
             }
-            "clock" => {} // Fixed wall clocks are checked next to the readers.
             _ => panic!("unknown calendar case: {row}"),
         }
     }

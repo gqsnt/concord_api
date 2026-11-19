@@ -1,7 +1,6 @@
 # Each row is tab separated. \t represents a tab in header text. A dash means absent.
 # http:  Date text | padded byte length | reset giving a 2 s wait (dash: local fallback) | Retry-After Unix seconds
 # reset: RFC 3339 text | padded byte length | server Date | expected wait in nanoseconds | optional Retry-After seconds
-# clock: RFC 850 text | - | fixed local clock in Unix nanoseconds | expected Unix seconds
 http	Sun, 06 Nov 1994 08:49:37 GMT	-	1994-11-06T08:49:39Z	784111777
 http	Sunday, 06-Nov-94 08:49:37 GMT	-	1994-11-06T08:49:39Z	784111777
 http	Sun Nov  6 08:49:37 1994	-	1994-11-06T08:49:39Z	784111777
@@ -83,6 +82,7 @@ http	Sun, 06 Nov 1994 08:49:37 GMT,	-	-	-
 http	Sun, 29 Feb 2004 01:02:03 GMT	4095	2004-02-29T01:02:05Z	1078016523
 http	Sun, 29 Feb 2004 01:02:03 GMT	4096	2004-02-29T01:02:05Z	1078016523
 http	Sun, 29 Feb 2004 01:02:03 GMT	4097	-	1078016523
+http	Sun, 29 Feb 2004 06:15:17 GMT	4097	-	1078035317
 reset	2024-08-20T18:37:24Z	-	Tue, 20 Aug 2024 18:37:24 GMT	0
 reset	2024-08-20t18:37:24z	-	Tue, 20 Aug 2024 18:37:24 GMT	0
 reset	2024-08-20 18:37:24Z	-	Tue, 20 Aug 2024 18:37:24 GMT	0
@@ -154,12 +154,3 @@ reset	2030-01-01T00:00:00-00:30	-	Tue, 01 Jan 2030 00:00:00 GMT	1800000000000
 reset	2030-01-01T00:00:00-99:59	-	Tue, 01 Jan 2030 00:00:00 GMT	-
 reset	9999-12-31T23:59:59-23:59	-	Fri, 31 Dec 9999 23:59:59 GMT	86340000000000
 reset	9999-12-31T23:59:60Z	-	Fri, 31 Dec 9999 23:59:59 GMT	-
-clock	Wednesday, 01-Jan-76 00:00:00 GMT	-	1767225600000000000	3345062400
-clock	Thursday, 01-Jan-76 00:00:00 GMT	-	1767225600000000000	-
-clock	Thursday, 01-Jan-76 00:00:01 GMT	-	1767225600000000000	189302401
-clock	Wednesday, 01-Jan-76 00:00:01 GMT	-	1767225600000000000	-
-clock	Wednesday, 01-Jan-20 00:00:00 GMT	-	-500000000	-
-clock	Thursday, 01-Jan-20 00:00:00 GMT	-	-500000000	-1577923200
-clock	Friday, 01-Jan-49 00:00:00 GMT	-	-62150000000000000000	-
-clock	Wednesday, 01-Jan-10 00:00:00 GMT	-	3786912000000000000	4417977600
-clock	Sat Jan  1 00:00:00 2000	-	0	946684800
