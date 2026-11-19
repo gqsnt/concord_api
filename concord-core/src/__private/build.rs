@@ -648,7 +648,8 @@ type BuildSource = Box<dyn std::error::Error + Send + Sync>;
 /// would compete with `&Body` when Rust infers the target of a borrow.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a body",
-    note = "a body expression returns a `concord::Body`, a `&Body`, an optional body, or a `Result` of one of these"
+    note = "a body expression returns a `concord::Body`, a `&Body`, an optional body, or a `Result` of one of these",
+    note = "for a borrowed optional body, write `body payload.as_ref();` to pass an `Option<&concord::Body>`"
 )]
 pub trait WholeBody<K> {
     /// Returns the body, its absence, or the writer's error.
