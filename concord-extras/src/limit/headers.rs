@@ -539,3 +539,58 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod calendar {
+    use super::*;
+    use concord_core::Headers;
+    use proptest::{prelude::*, test_runner::TestRunner};
+
+    #[test]
+    fn c11_5_both_http_date_readers_use_the_supplied_century() {
+        let data = include_str!("../../../tests/conformance/tests/fixtures/calendar.tsv");
+        for row in data.lines().filter(|row| row.starts_with("clock\t")) {
+            let columns: Vec<_> = row.split('\t').collect();
+            let [_, text, _, now, expected] = columns.as_slice() else {
+                panic!("invalid calendar row: {row}");
+            };
+            let clock = at_nanos(now.parse().unwrap()).unwrap();
+            let instant = (*expected != "-")
+                .then(|| at_nanos(expected.parse::<i128>().unwrap() * 1_000_000_000).unwrap());
+            assert_eq!(http_date(text, clock), instant, "{row}");
+            let mut head = concord_core::http::HeaderMap::new();
+            head.insert("retry-after", text.parse().unwrap());
+            let wait = instant.map(|date| date.duration_since(clock).unwrap_or_default());
+            assert_eq!(Headers::from(head).retry_after_at(clock), wait, "{row}");
+        }
+    }
+
+    #[test]
+    fn c11_5_http_date_allows_a_space_padded_asctime_day() {
+        let mut runner = TestRunner::new(ProptestConfig {
+            cases: 128,
+            failure_persistence: None,
+            ..ProptestConfig::default()
+        });
+        let cases = (1..=9u64, 0..16usize, 0..16usize);
+        let result = runner.run(&cases, |(day, leading, trailing)| {
+            let weekdays = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
+            let weekday = weekdays[((day - 1) % 7) as usize];
+            let date = format!(
+                "{}{weekday} Jan {:2} 00:00:00 2000{}",
+                " ".repeat(leading),
+                day,
+                "\t".repeat(trailing)
+            );
+            let wait = Duration::from_secs(946_684_800 + (day - 1) * 86_400);
+            let mut head = concord_core::http::HeaderMap::new();
+            head.insert("retry-after", date.parse().unwrap());
+            prop_assert_eq!(Headers::from(head).retry_after_at(UNIX_EPOCH), Some(wait));
+            prop_assert_eq!(http_date(&date, UNIX_EPOCH), Some(UNIX_EPOCH + wait));
+            Ok(())
+        });
+        if let Err(failure) = result {
+            panic!("{failure}");
+        }
+    }
+}

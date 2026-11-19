@@ -18,96 +18,6 @@ concord::api! {
     }
 }
 
-/// What both readers make of a date.
-#[derive(Clone, Copy)]
-enum Outcome {
-    /// Both accept it: the reset written two seconds after it, and its instant in Unix seconds.
-    Accepted(&'static str, i64),
-    /// Both refuse it.
-    Refused,
-}
-use Outcome::{Accepted, Refused};
-
-const TABLE: &[(&str, Outcome)] = &[
-    // The three forms.
-    (
-        "Sun, 06 Nov 1994 08:49:37 GMT",
-        Accepted("1994-11-06T08:49:39Z", 784_111_777),
-    ),
-    (
-        "Sunday, 06-Nov-94 08:49:37 GMT",
-        Accepted("1994-11-06T08:49:39Z", 784_111_777),
-    ),
-    (
-        "Sun Nov  6 08:49:37 1994",
-        Accepted("1994-11-06T08:49:39Z", 784_111_777),
-    ),
-    (
-        "Fri Dec 31 23:59:59 1999",
-        Accepted("2000-01-01T00:00:01Z", 946_684_799),
-    ),
-    // Two-digit years, by the fifty-year rule: one behind and one ahead of this year.
-    (
-        "Friday, 31-Dec-99 23:59:59 GMT",
-        Accepted("2000-01-01T00:00:01Z", 946_684_799),
-    ),
-    (
-        "Tuesday, 01-Jan-30 00:00:00 GMT",
-        Accepted("2030-01-01T00:00:02Z", 1_893_456_000),
-    ),
-    // A leap second is the next second. The grammar allows it on any day at 23:59:60,
-    // also on a day when UTC had none (29 June 2015).
-    (
-        "Sat, 31 Dec 2016 23:59:60 GMT",
-        Accepted("2017-01-01T00:00:02Z", 1_483_228_800),
-    ),
-    (
-        "Fri, 30 Dec 2016 23:59:60 GMT",
-        Accepted("2016-12-31T00:00:02Z", 1_483_142_400),
-    ),
-    (
-        "Mon, 29 Jun 2015 23:59:60 GMT",
-        Accepted("2015-06-30T00:00:02Z", 1_435_622_400),
-    ),
-    // Years 1 and 9999, before 1970, and in the future.
-    (
-        "Mon, 01 Jan 0001 00:00:00 GMT",
-        Accepted("0001-01-01T00:00:02Z", -62_135_596_800),
-    ),
-    (
-        "Fri, 31 Dec 9999 23:59:57 GMT",
-        Accepted("9999-12-31T23:59:59Z", 253_402_300_797),
-    ),
-    (
-        "Wed, 31 Dec 1969 23:59:57 GMT",
-        Accepted("1969-12-31T23:59:59Z", -3),
-    ),
-    (
-        "Fri, 01 Jan 2100 00:00:00 GMT",
-        Accepted("2100-01-01T00:00:02Z", 4_102_444_800),
-    ),
-    // A wrong weekday, in each form.
-    ("Mon, 06 Nov 1994 08:49:37 GMT", Refused),
-    ("Saturday, 31-Dec-99 23:59:59 GMT", Refused),
-    ("Mon Nov  6 08:49:37 1994", Refused),
-    // Shapes that are not an HTTP date.
-    ("Sun, 06 Nov 1994 08:49:37 UTC", Refused),
-    ("Sun, 6 Nov 1994 08:49:37 GMT", Refused),
-    ("Sun, 06 nov 1994 08:49:37 GMT", Refused),
-    ("Sun, 06 Nov 94 08:49:37 GMT", Refused),
-    ("Sun Nov 6 08:49:37 1994", Refused),
-    ("Sun, 06-Nov-94 08:49:37 GMT", Refused),
-    ("Sunday, 06-Nov-1994 08:49:37 GMT", Refused),
-    ("Sun, 06 Nov 1994 08:49:37 GMT x", Refused),
-    ("yesterday", Refused),
-    // Dates and times that do not exist.
-    ("Sat, 01 Jan 0000 00:00:00 GMT", Refused),
-    ("Sun, 29 Feb 2026 00:00:00 GMT", Refused),
-    ("Sun, 06 Nov 1994 24:00:00 GMT", Refused),
-    ("Sun, 06 Nov 1994 08:60:00 GMT", Refused),
-    ("Sat, 31 Dec 2016 23:58:60 GMT", Refused),
-];
-
 fn now_seconds() -> i64 {
     i64::try_from(
         SystemTime::now()
@@ -184,46 +94,69 @@ async fn c11_5_the_reader_of_date_agrees_with_the_reader_of_retry_after() {
             Read { core, limit }
         }
     };
-    for (date, outcome) in TABLE {
-        let local_reset = rfc3339(now_seconds() + AHEAD);
-        match *outcome {
-            Accepted(reset, instant) => {
-                let got = read((*date).to_owned(), reset.to_owned()).await;
-                assert!(got.core.is_some(), "the core refused {date:?}");
-                assert_eq!(
-                    got.limit,
-                    Some(Duration::from_secs(2)),
-                    "the limit read {date:?}"
-                );
-                // A date in the future: the core's wait reaches the same instant.
-                let ahead = instant - now_seconds();
-                let wait = got.core.unwrap();
-                if ahead > 10 {
-                    let wait = i64::try_from(wait.as_secs()).unwrap();
-                    assert!(
-                        (ahead - 5..=ahead).contains(&wait),
-                        "{date:?}: {wait} against {ahead}"
-                    );
+    for (index, row) in include_str!("fixtures/calendar.tsv").lines().enumerate() {
+        if row.starts_with('#') {
+            continue;
+        }
+        let mut columns = row.split('\t');
+        let kind = columns.next().unwrap();
+        let mut text = columns.next().unwrap().replace("\\t", "\t");
+        let pad = columns.next().unwrap();
+        if pad != "-" {
+            let length = pad.parse::<usize>().unwrap();
+            text.push_str(&" ".repeat(length - text.len()));
+        }
+        let context = || format!("row {}: {:?}", index + 1, text.get(..text.len().min(60)));
+        let argument = columns.next().unwrap();
+        let result = columns.next().unwrap();
+        let parse = |text: &str| (text != "-").then(|| text.parse::<i64>().unwrap());
+        match kind {
+            "http" => {
+                let reset = if argument == "-" {
+                    rfc3339(now_seconds() + AHEAD)
                 } else {
-                    assert_eq!(wait, Duration::ZERO, "{date:?}");
+                    argument.to_owned()
+                };
+                let got = read(text.clone(), reset).await;
+                match parse(result) {
+                    Some(instant) => {
+                        let ahead = instant - now_seconds();
+                        let wait = got.core.unwrap_or_else(|| panic!("{}", context()));
+                        if ahead > 10 {
+                            let wait = i64::try_from(wait.as_secs()).unwrap();
+                            assert!((ahead - 5..=ahead).contains(&wait), "{}", context());
+                        } else {
+                            assert_eq!(wait, Duration::ZERO, "{}", context());
+                        }
+                    }
+                    None => assert_eq!(got.core, None, "{}", context()),
+                }
+                if argument == "-" {
+                    assert!(fell_back(&got), "{}: {:?}", context(), got.limit);
+                } else {
+                    assert_eq!(got.limit, Some(Duration::from_secs(2)), "{}", context());
                 }
             }
-            Refused => {
-                let got = read((*date).to_owned(), local_reset).await;
-                assert_eq!(got.core, None, "the core accepted {date:?}");
-                assert!(
-                    fell_back(&got),
-                    "the limit accepted {date:?}: {:?}",
-                    got.limit
-                );
+            "reset" => {
+                script.answer(429).header("retry-after", &text);
+                let got = core.search().await.unwrap_err().retry_after();
+                let expected = columns
+                    .next()
+                    .map(|seconds| Duration::from_secs(seconds.parse().unwrap()));
+                assert_eq!(got, expected, "{}", context());
+
+                script
+                    .answer(200)
+                    .header("date", argument)
+                    .header("x-reset", &text);
+                extras.search().await.unwrap();
+                let got = seen.lock().unwrap().last().copied().flatten();
+                let expected =
+                    parse(result).map(|nanos| Duration::from_nanos(nanos.try_into().unwrap()));
+                assert_eq!(got, expected, "{}", context());
             }
+            "clock" => {} // Fixed wall clocks are checked next to the readers.
+            _ => panic!("unknown calendar case: {row}"),
         }
     }
-    // The one difference, ruled: the limit reads no `Date` over 4,096 bytes; the core reads a
-    // `Retry-After` of any length.
-    let long = format!("Sun, 06 Nov 1994 08:49:37 GMT{}", " ".repeat(4097 - 29));
-    let got = read(long, rfc3339(now_seconds() + AHEAD)).await;
-    assert_eq!(got.core, Some(Duration::ZERO));
-    assert!(fell_back(&got), "{:?}", got.limit);
-    assert_eq!(TABLE.len(), 30);
 }
