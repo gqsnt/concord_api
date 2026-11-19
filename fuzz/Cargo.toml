@@ -1,0 +1,105 @@
+# Fuzz targets for the readers of response data, run with `cargo fuzz` (see README.md).
+# This folder is its own workspace: the library's workspace and its checks never build it.
+[package]
+name = "concord-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+concord-core = { path = "../concord-core" }
+concord-extras = { path = "../concord-extras", features = ["json", "limit"] }
+serde_json = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+tokio = { version = "1", features = ["rt", "time"] }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "sse"
+path = "fuzz_targets/sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_lines"
+path = "fuzz_targets/json_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "link"
+path = "fuzz_targets/link.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "next_url"
+path = "fuzz_targets/next_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "retry_after"
+path = "fuzz_targets/retry_after.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "date"
+path = "fuzz_targets/date.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rfc3339"
+path = "fuzz_targets/rfc3339.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "counts"
+path = "fuzz_targets/counts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "remaining"
+path = "fuzz_targets/remaining.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content_length"
+path = "fuzz_targets/content_length.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_label"
+path = "fuzz_targets/json_label.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "transfer_at"
+path = "fuzz_targets/transfer_at.rs"
+test = false
+doc = false
+bench = false

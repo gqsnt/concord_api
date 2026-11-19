@@ -24,6 +24,26 @@ impl Call for Upload {
     }
 }
 
+/// Everything an error can print: fixed words, and no part of the URL.
+const WORDS: [&str; 7] = [
+    "transfer URL could not be parsed",
+    "transfer URL is not an HTTP URI",
+    "transfer URL must have an absolute authority",
+    "transfer URL must use HTTP or HTTPS",
+    "transfer URL must omit user information and fragments",
+    "transfer URL spelling would change",
+    "transfer URL exceeds 65,534 bytes",
+];
+const NAMES: [&str; 7] = [
+    "InvalidUrl",
+    "InvalidUri",
+    "NotAbsolute",
+    "UnsupportedScheme",
+    "ForbiddenUrlPart",
+    "ChangedUrl",
+    "UrlTooLong",
+];
+
 /// Everything an error prints, its causes included.
 fn printed(error: &(dyn std::error::Error + 'static)) -> String {
     let mut text = format!("{error} {error:?}");
@@ -68,8 +88,12 @@ fn check(url: &str) -> Result<bool, TestCaseError> {
             Ok(true)
         }
         Err(error) => {
-            // The error never holds the URL.
-            if url.len() >= 12 {
+            // The error never holds the URL: its words and its name are fixed, and its
+            // cause, a parser's, does not print the text either.
+            prop_assert!(WORDS.contains(&error.to_string().as_str()), "{}", error);
+            let name = format!("{error:?}");
+            prop_assert!(NAMES.contains(&name.as_str()), "{}", name);
+            if url.len() >= 12 && !WORDS.iter().any(|words| words.contains(url)) {
                 prop_assert!(!printed(&error).contains(url));
             }
             Ok(false)
