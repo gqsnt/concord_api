@@ -686,7 +686,9 @@ assert_eq!(answer.headers().get("etag"), Some("\"v1\""));
 
 **Names that begin with `__` are reserved for Concord.** The generated code uses them for its own
 methods, fields and types. In a module that contains `concord::api!`, do not declare any
-item whose name begins with `__`.
+item whose name begins with `__`, and bring no trait into scope whose method begins with `__`:
+the generated code calls `__adapt` and `__push` by method syntax there, so a trait that gives
+either name to every type changes what is sent.
 
 **Names that you may not use.** Every name of an input, a scope, an endpoint or a part
 is lower snake case: a letter `a`–`z` first, then `a`–`z`, `0`–`9` and `_`, with no `__`
