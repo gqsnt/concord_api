@@ -1,0 +1,36 @@
+# Link fields: what `by_link` gives (`next=` the URL, `none`, or `mismatch`), then each field.
+next=/2	</2>; rel=next
+next=/2	</1>; rel=prev, </2>; rel="prev next"
+none	</2>; rel=next; anchor="/x"
+none	</2>; anchor="/x"; rel=next
+next=/a,b;c	</a,b;c>; rel=next
+next=/2	</1>; title="a, b; rel=next", </2>; REL=NEXT
+none	</1>; title="rel=next"
+next=/1	</1>; rel=next; rel=prev
+none	</1>; rel=prev; rel=next
+none	</1>; rel="next\tprev"
+next=/1	</1>; rel="a\\ next"
+next=/1	</1> ; rel = "next"
+next=/1	\t</1>\t;\trel=next\t,
+next=/q?x=1	</q?x=1#frag>; rel=next
+next=	<>; rel=next
+next=/a|b	</a|b>; rel=next
+next=/\xc3\xa9	</\xc3\xa9>; rel=next
+next=/1	</1>; title="\xff\\\xfe"; rel=next
+none	 , ,
+next=/2	</1>; rel=prev	</2>; rel=next
+next=/1	</1>; rel=next	</2>; rel=next
+# A field that cannot be read is a Mismatch, even after a next link.
+mismatch	</2>; rel=next	<bad
+mismatch	</1>; rel=next, <open
+mismatch	</1>; rel="next
+mismatch	</1>; rel=
+mismatch	</1>;
+mismatch	</1>; =x
+mismatch	</1>x; rel=next
+mismatch	/1>; rel=next
+mismatch	</a b>; rel=next
+mismatch	</\xff>; rel=next
+mismatch	</1>; rel="next"junk
+mismatch	</1>; rel="next\\
+mismatch	</1>; ti tle=x; rel=next

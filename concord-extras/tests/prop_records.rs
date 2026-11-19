@@ -1,6 +1,6 @@
 //! C11.8 and C11.9: the readers of records against a model of their contracts, for every
 //! input and every way of cutting it into chunks, with the work and the memory they spend.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use concord_core::bytes::Bytes;
 use concord_core::read::{Incoming, Reader};
@@ -16,6 +16,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
 use std::time::Duration;
+
+#[path = "corpus/read.rs"]
+mod corpus;
 
 /// Chunks alive at once: each chunk the body makes is counted until the reader drops it.
 #[derive(Clone, Default)]
@@ -623,4 +626,67 @@ fn c11_8_a_line_that_never_ends_stops_at_the_bound_and_reads_no_further() {
     assert_eq!(ends.len(), 1);
     assert_eq!(end_of(ends[0].as_ref().unwrap_err()), End::TooLarge(1024));
     assert_eq!(pulled.load(Ordering::SeqCst), 1024 / piece.len() + 1);
+}
+
+/// Whole, one byte at a time, and cut in two at every byte.
+fn every_cut(input: &[u8]) -> Vec<Vec<usize>> {
+    let mut cuts = vec![Vec::new(), vec![1; input.len()]];
+    cuts.extend((0..=input.len()).map(|at| vec![at]));
+    cuts
+}
+
+/// `N end`: the number of records, and how the stream ends.
+fn expectation(field: &[u8]) -> (usize, End) {
+    let (count, end) = corpus::text(field).split_once(' ').unwrap();
+    let end = match end.split_once('@') {
+        None if end == "clean" => End::Clean,
+        None => End::TooLarge(usize::MAX),
+        Some(("utf8", n)) => End::Utf8(n.parse().unwrap()),
+        Some((_, n)) => End::Decode(Some(n.parse().unwrap()), 0, 0),
+    };
+    (count.parse().unwrap(), end)
+}
+fn same_end(actual: &End, expected: &End, max: usize) -> bool {
+    match (actual, expected) {
+        (End::TooLarge(limit), End::TooLarge(_)) => *limit == max,
+        (End::Decode(record, ..), End::Decode(expected, ..)) => record == expected,
+        (actual, expected) => actual == expected,
+    }
+}
+
+#[test]
+fn c11_9_the_sse_corpus_reads_as_written_wherever_it_is_cut() {
+    for (line, fields) in corpus::cases(include_str!("corpus/sse.txt")) {
+        let max: usize = corpus::text(&fields[0]).parse().unwrap();
+        let (count, end) = expectation(&fields[1]);
+        let input = &fields[2];
+        let (events, model_end, _) = sse_model(input, max);
+        assert_eq!(events.len(), count, "line {line}");
+        assert!(
+            same_end(&model_end, &end, max),
+            "line {line}: {model_end:?}"
+        );
+        for sizes in every_cut(input) {
+            check_sse(input, &sizes, max).unwrap_or_else(|e| panic!("line {line}: {e}"));
+        }
+    }
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn c11_9_the_json_lines_corpus_reads_as_written_wherever_it_is_cut() {
+    for (line, fields) in corpus::cases(include_str!("corpus/json_lines.txt")) {
+        let max: usize = corpus::text(&fields[0]).parse().unwrap();
+        let (count, end) = expectation(&fields[1]);
+        let input = &fields[2];
+        let (records, model_end, _) = json_lines_model(input, max);
+        assert_eq!(records.len(), count, "line {line}");
+        assert!(
+            same_end(&model_end, &end, max),
+            "line {line}: {model_end:?}"
+        );
+        for sizes in every_cut(input) {
+            check_json_lines(input, &sizes, max).unwrap_or_else(|e| panic!("line {line}: {e}"));
+        }
+    }
 }

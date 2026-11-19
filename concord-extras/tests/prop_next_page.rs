@@ -14,6 +14,9 @@ use concord_core::{
 use concord_extras::page::{by_link, by_next_url};
 use proptest::prelude::*;
 
+#[path = "corpus/read.rs"]
+mod corpus;
+
 #[derive(Clone, Debug, Default, PartialEq)]
 struct NextCall(Option<String>);
 impl Call for NextCall {
@@ -492,4 +495,35 @@ fn c8_6_a_link_field_of_ten_thousand_entries_is_read_whole() {
     let mut fields: Vec<Vec<u8>> = items.iter().map(|item| item.clone().into_bytes()).collect();
     fields.push(last.as_bytes().to_vec());
     assert_eq!(follow(&fields), Ok(Some("/v1/items?page=2".to_owned())));
+}
+
+#[test]
+fn c8_6_the_link_corpus_reads_as_written() {
+    for (line, fields) in corpus::cases(include_str!("corpus/link.txt")) {
+        let expected = match corpus::text(&fields[0]) {
+            "none" => Ok(None),
+            "mismatch" => Err(MISMATCH.to_owned()),
+            next => Ok(Some(next.strip_prefix("next=").unwrap().to_owned())),
+        };
+        assert_eq!(follow(&fields[1..]), expected, "line {line}");
+    }
+}
+
+#[test]
+/// Also proves C8.2.
+fn c8_6_the_next_url_corpus_is_sent_as_written() {
+    for (line, fields) in corpus::cases(include_str!("corpus/next_url.txt")) {
+        let next = corpus::text(&fields[1]).to_owned();
+        let secret = fields.get(2).map(|field| corpus::text(field));
+        let answer = Answer::new(StatusCode::OK, HeaderMap::new().into(), next);
+        let call = by_next_url(|text: &String| Some(text.clone()))
+            .next_call(NextCall::default(), &answer)
+            .unwrap()
+            .unwrap();
+        let sent = build(&call.0.unwrap(), secret);
+        match corpus::text(&fields[0]) {
+            "build" => assert_eq!(sent.unwrap_err().kind(), Kind::Build, "line {line}"),
+            url => assert_eq!(sent.unwrap().as_str(), url, "line {line}"),
+        }
+    }
 }

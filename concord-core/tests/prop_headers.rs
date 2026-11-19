@@ -16,6 +16,9 @@ use concord_core::{
 use proptest::prelude::*;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[path = "corpus/read.rs"]
+mod corpus;
+
 /// A number of seconds or bytes as C4.3 and C5.4 read it: ASCII digits only.
 fn digits_model(text: &str) -> Option<Result<u64, ()>> {
     (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
@@ -272,5 +275,43 @@ fn c4_3_a_retry_after_of_twenty_digits_is_the_longest_wait_and_no_retry() {
         assert_eq!(decision.header_wait, Some(Duration::from_secs(expected)));
         // Longer than the ceiling of 60 seconds: no further attempt.
         assert_eq!(decision.wait.is_none(), expected > 60);
+    }
+}
+
+#[test]
+fn c5_4_the_corpus_of_numbers_reads_as_written() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    for (line, fields) in corpus::cases(include_str!("corpus/numbers.txt")) {
+        let (secs, len) = corpus::text(&fields[0]).split_once(' ').unwrap();
+        let value = HeaderValue::from_bytes(&fields[1]).unwrap();
+        let mut map = HeaderMap::new();
+        map.insert("retry-after", value.clone());
+        let headers = Headers::from(map);
+        let read = headers.retry_after_at(UNIX_EPOCH);
+        assert_eq!(decide(&headers, UNIX_EPOCH), read, "line {line}");
+        match secs.strip_prefix("secs=").unwrap() {
+            "none" => assert_eq!(read, None, "line {line}"),
+            n => assert_eq!(
+                read,
+                Some(Duration::from_secs(n.parse().unwrap())),
+                "line {line}"
+            ),
+        }
+        match len.strip_prefix("len=").unwrap() {
+            "none" => assert!(read_empty(&value, 0, &rt).is_ok(), "line {line}"),
+            "0" => assert!(read_empty(&value, 0, &rt).is_ok(), "line {line}"),
+            n => {
+                let n: u64 = n.parse().unwrap();
+                let under = usize::try_from(n - 1).unwrap();
+                assert_eq!(
+                    read_empty(&value, under, &rt).unwrap_err().kind(),
+                    Kind::Mismatch,
+                    "line {line}"
+                );
+            }
+        }
     }
 }

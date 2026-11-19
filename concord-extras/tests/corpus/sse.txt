@@ -1,0 +1,42 @@
+# Server-sent events: the bound, what the stream gives (events, then how it ends), the body.
+# An end is `clean`, `too-large`, or `utf8@N` with the position of the event block.
+# Each body is also read cut at every byte, and checked against the model of the contract.
+16	1 clean	\xef\xbb\xbfdata: a\n\n
+# A part of a BOM is ordinary input, and is not UTF-8.
+16	0 utf8@1	\xef\xbbdata: a\n\n
+2	0 too-large	\xef\xbb
+0	0 clean	\xef\xbb\xbf
+0	0 clean	
+0	0 too-large	x
+0	0 clean	\n\r\n\r
+# LF, CRLF and a lone CR, and a CRLF whose LF is the next line end only once.
+16	2 clean	data: a\r\rdata: b\r\n\r\n
+16	1 clean	data: a\r\n\n
+16	1 clean	data: a\n\r\n
+16	1 clean	data: a\r\n\r\n\r\n
+# A data field with no value, or no colon, still dispatches.
+16	1 clean	data\n\n
+16	1 clean	data:\n\n
+16	0 clean	event: x\n\n
+16	1 clean	event: x\n\ndata: y\n\n
+16	0 clean	: comment\n\n
+32	1 clean	id: a\0b\ndata: y\n\n
+64	1 clean	retry: 18446744073709551616\ndata: y\n\n
+64	1 clean	retry: 18446744073709551615\ndata: y\n\n
+64	1 clean	retry: 0000000000000000000000000000000000001500\ndata: y\n\n
+64	1 clean	retry: +5\nretry: -5\nretry: 5 \ndata: y\n\n
+# An event that the body ends without a blank line is dropped; its last line is still read.
+16	0 clean	data: a
+16	0 clean	data: a\n
+16	0 utf8@1	data: \xff
+# The bound: each line that is not blank, plus one byte for its end, comments included.
+8	1 clean	data: a\n\n
+7	0 too-large	data: a\n\n
+12	1 clean	: x\ndata: a\n\n
+11	0 too-large	: x\ndata: a\n\n
+7	0 too-large	data: a
+8	2 clean	data: a\n\ndata: b\n\n
+# Event blocks are counted from one, blocks that dispatch nothing included.
+16	1 utf8@4	data: a\n\n\n\ndata: \xff\n\n
+16	0 utf8@1	\xc3\n
+16	1 clean	data: \xc3\xa9\xe2\x82\xac\n\n

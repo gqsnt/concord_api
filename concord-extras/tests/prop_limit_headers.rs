@@ -12,6 +12,9 @@ use proptest::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[path = "corpus/read.rs"]
+mod corpus;
+
 fn sec(n: u64) -> Duration {
     Duration::from_secs(n)
 }
@@ -861,5 +864,143 @@ proptest! {
             None => Vec::new(),
         });
         prop_assert_eq!(read, made);
+    }
+}
+
+/// What `Date` makes of a reset one second after `at`, within the year 9999, or a thousand
+/// seconds after this clock.
+fn date_reader(text: &[u8], at: Option<i64>, rt: &tokio::runtime::Runtime) -> Option<Duration> {
+    let mut headers = HeaderMap::new();
+    header(&mut headers, "date", text);
+    seen(rt, headers, move |seen| {
+        let reset = at.map_or_else(
+            || (nanos_of(seen.now()).div_euclid(1_000_000_000) + 1000) * 1_000_000_000,
+            |at| i128::from((at + 1).min(LAST)) * 1_000_000_000,
+        );
+        seen.until_rfc3339(&rfc3339_text(reset))
+    })
+}
+/// What `Retry-After` makes of the text, from this clock and from the second before `at`.
+fn retry_after(text: &[u8], at: Option<i64>) -> (Option<Duration>, Option<Duration>) {
+    let Ok(value) = HeaderValue::from_bytes(text) else {
+        return (None, None);
+    };
+    let mut map = HeaderMap::new();
+    map.insert("retry-after", value);
+    let headers = Headers::from(map);
+    let before = system((i128::from(at.unwrap_or(FIRST + 1)) - 1) * 1_000_000_000);
+    (
+        headers.retry_after_at(SystemTime::now()),
+        headers.retry_after_at(before),
+    )
+}
+
+#[test]
+/// Also proves C4.3.
+fn c11_5_the_http_date_corpus_reads_alike_in_both_readers() {
+    let rt = runtime();
+    for (line, fields) in corpus::cases(include_str!("corpus/http_date.txt")) {
+        let at: Option<i64> = corpus::text(&fields[0])
+            .strip_prefix("at=")
+            .map(|at| at.parse().unwrap());
+        let (from_now, from_before) = retry_after(&fields[1], at);
+        let until = date_reader(&fields[1], at, &rt);
+        if let Some(at) = at {
+            assert!(from_now.is_some(), "line {line}");
+            assert_eq!(from_before, Some(sec(1)), "line {line}");
+            // Counted from the date: one second, or none past the year 9999.
+            assert_eq!(
+                until,
+                Some(sec(((at + 1).min(LAST) - at).max(0) as u64)),
+                "line {line}"
+            );
+        } else {
+            assert_eq!((from_now, from_before), (None, None), "line {line}");
+            // Counted from this clock: a thousand seconds, less the time it took.
+            let until = until.unwrap();
+            assert!(
+                until <= sec(1000) && until > sec(990),
+                "line {line}: {until:?}"
+            );
+        }
+        assert_eq!(
+            http_date_model(corpus::text(&fields[1]), SystemTime::now()),
+            at,
+            "line {line}"
+        );
+    }
+}
+
+#[test]
+fn c11_5_a_date_of_4097_bytes_is_read_by_retry_after_and_not_by_date() {
+    let rt = runtime();
+    let date = "Sun, 06 Nov 1994 08:49:37 GMT";
+    for (width, read_by_date) in [(4096, true), (4097, false)] {
+        let text = format!("{date}{}", " ".repeat(width - date.len()));
+        assert_eq!(text.len(), width);
+        let (_, from_before) = retry_after(text.as_bytes(), Some(784_111_777));
+        assert_eq!(from_before, Some(sec(1)));
+        // Read, the reset is a second after the date; not read, it is long past on this clock.
+        let until = date_reader(text.as_bytes(), Some(784_111_777), &rt);
+        assert_eq!(
+            until,
+            Some(if read_by_date { sec(1) } else { Duration::ZERO })
+        );
+    }
+}
+
+#[test]
+fn c11_5_the_rfc3339_corpus_reads_as_written() {
+    let rt = runtime();
+    for (line, fields) in corpus::cases(include_str!("corpus/rfc3339.txt")) {
+        let expected: Option<i128> = corpus::text(&fields[0]).strip_prefix("at=").map(|at| {
+            let (seconds, nanos) = at.split_once('.').unwrap();
+            let seconds: i128 = seconds.parse().unwrap();
+            seconds * 1_000_000_000 + nanos.parse::<i128>().unwrap() * seconds.signum().max(1)
+        });
+        // Ninety seconds before the reset, as an HTTP date can write it.
+        let base = expected.map_or(1_893_456_000, |at| {
+            (at.div_euclid(1_000_000_000) as i64 - 90).max(FIRST)
+        });
+        let mut headers = HeaderMap::new();
+        header(
+            &mut headers,
+            "date",
+            http_text(base, 0, 0, false).as_bytes(),
+        );
+        header(&mut headers, "x-reset", &fields[1]);
+        let until = seen(&rt, headers, |seen| {
+            seen.until_rfc3339(seen.header("x-reset").unwrap())
+        });
+        assert_eq!(
+            until,
+            expected.map(|at| duration(at - i128::from(base) * 1_000_000_000)),
+            "line {line}"
+        );
+        assert_eq!(
+            expected,
+            rfc3339_model(corpus::text(&fields[1])),
+            "line {line}"
+        );
+    }
+}
+
+#[test]
+fn c11_5_the_counts_corpus_reads_as_written() {
+    let rt = runtime();
+    for (line, fields) in corpus::cases(include_str!("corpus/counts.txt")) {
+        let expected: usize = corpus::text(&fields[0]).parse().unwrap();
+        let mut headers = HeaderMap::new();
+        header(&mut headers, "x-limit", &fields[1]);
+        header(&mut headers, "x-count", &fields[2]);
+        let learned = seen(&rt, headers, |seen| {
+            counts("x-limit", "x-count")(seen).len()
+        });
+        assert_eq!(learned, expected, "line {line}");
+        assert_eq!(
+            counts_model(corpus::text(&fields[1]), corpus::text(&fields[2])).len(),
+            expected,
+            "line {line}"
+        );
     }
 }

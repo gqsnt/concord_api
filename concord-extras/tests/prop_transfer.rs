@@ -1,5 +1,5 @@
 //! C11.11: `transfer::at` accepts only a URL that is sent as it is written, for every text.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use concord_core::{
     __private::{Core, Draft, Options, Piece},
@@ -10,6 +10,9 @@ use concord_core::{
 use concord_extras::transfer::at;
 use proptest::prelude::*;
 use std::error::Error as _;
+
+#[path = "corpus/read.rs"]
+mod corpus;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Upload(Option<String>);
@@ -220,4 +223,20 @@ fn c11_11_the_byte_bound_is_65_534_bytes() {
     let wide = format!("{}a", "é".repeat(32_767));
     assert_eq!(wide.len(), 65_535);
     assert!(at(Upload::default(), &wide).unwrap_err().source().is_none());
+}
+
+#[test]
+fn c11_11_the_transfer_corpus_reads_as_written() {
+    for (line, fields) in corpus::cases(include_str!("corpus/transfer.txt")) {
+        let url = std::str::from_utf8(&fields[1]).unwrap();
+        let accepted = check(url).unwrap_or_else(|e| panic!("line {line}: {e}"));
+        match corpus::text(&fields[0]) {
+            "ok" => assert!(accepted, "line {line}"),
+            words => assert_eq!(
+                at(Upload::default(), url).unwrap_err().to_string(),
+                words,
+                "line {line}"
+            ),
+        }
+    }
 }
