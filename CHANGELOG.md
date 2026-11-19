@@ -45,7 +45,7 @@ Upgrading from 5.0.0-rc.1: the changes that stop a program from compiling come f
 
 ### Fixed
 
-- **Generated code keeps the names of your module out of its own.** It no longer calls methods of the core by method syntax in your scope, so a trait of yours with a method of the same name can no longer change a request or break the client, and a client named `Diagnostic` compiles.
+- **Generated code takes fewer names from your module.** A client named `Diagnostic` compiles. The status of an arm, an optional input and the `Debug` text of a client or a handle are read through full paths (`StatusCode::as_u16`, `Option::as_ref`, `DebugStruct`), not by method syntax in your scope. Generated code still calls some methods by method syntax where the description is written: `__adapt` on every value and `__push` on each entry of a body, and other calls inside the items that it generates (on a call's options, on the formatter of a call's `Debug`). Names that begin with `__` are Concord's: a trait in scope there that gives `__adapt` or `__push` to every type changes what is sent.
 
 ### Documentation
 
