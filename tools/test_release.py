@@ -16,7 +16,7 @@ class Release(unittest.TestCase):
         with patch.object(release.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run, redirect_stdout(output):
             self.assertEqual(release.main([]), 0)
         self.assertEqual([call.args[0] for call in run.call_args_list], [
-            ["just", "gate"], ["just", "docs-audit"], ["just", "doc-examples"],
+            ["just", "surface", "--release"], ["just", "gate"], ["just", "docs-audit"], ["just", "doc-examples"],
             ["just", "call-doc-search"], ["just", "call-editor"],
             ["just", "panics"], ["just", "package"],
             ["just", "features-all"], ["just", "mutants", "--jobs", "1"],
@@ -47,6 +47,7 @@ class Release(unittest.TestCase):
             self.assertEqual(release.main([]), 0)
             self.assertEqual(os.environ["CONCORD_SKIP_SOCKETS"], "1")
         commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(commands[0], ["just", "surface", "--release"])
         self.assertEqual(commands[-1], ["just", "mutants", "--jobs", "1"])
         self.assertTrue(all(call.kwargs == {"cwd": release.REPO_ROOT, "check": False}
                             for call in run.call_args_list))
@@ -58,7 +59,7 @@ class Release(unittest.TestCase):
                 with patch.object(release.subprocess, "run", side_effect=error) as run, redirect_stdout(output):
                     self.assertEqual(release.main([]), code)
                 run.assert_called_once()
-                self.assertEqual(output.getvalue().splitlines()[-1], "RELEASE: FAILED at gate")
+                self.assertEqual(output.getvalue().splitlines()[-1], "RELEASE: FAILED at surface")
 
 
 if __name__ == "__main__":

@@ -41,7 +41,8 @@ Where local sockets cannot be opened, `CONCORD_SKIP_SOCKETS=1 just gate` skips t
 
 | Command | What it does |
 |---|---|
-| `just release` | Everything a release needs, in order: `gate`, `docs-audit`, `doc-examples`, `call-doc-search`, `call-editor`, `panics`, `package`, `features-all`, `mutants`. The call probes need Node, `rust-analyzer`, and `rust-src`. |
+| `just release` | Everything a release needs, in order: `surface`, `gate`, `docs-audit`, `doc-examples`, `call-doc-search`, `call-editor`, `panics`, `package`, `features-all`, `mutants`. The call probes need Node, `rust-analyzer`, and `rust-src`. |
+| `just surface` | Compares all-feature public signatures and default-feature public paths for `concord-api` and `concord-testkit` with the checked-in snapshot. |
 | `just mutants` | Puts known bugs into the engine, one at a time, and checks that a test catches each one. |
 | `just package` | Checks each published crate as a user receives it: what its package contains, and that it builds on its own, outside this workspace. |
 | `just features-all` | Checks every subset of the features of `concord-api`, on stable and on 1.96. |
@@ -51,6 +52,30 @@ Where local sockets cannot be opened, `CONCORD_SKIP_SOCKETS=1 just gate` skips t
 | `just bench` | Opt-in measurements: the time and the allocations of a call. |
 
 The tests of the tools themselves have no recipe; run them by hand: `python3 -B -m unittest discover -s tools`.
+
+## Changing the public API
+
+`just surface` needs an installed Rust nightly toolchain with rustdoc JSON
+format 61 (the 2026-10-13 nightly) and the `x86_64-unknown-linux-gnu` target.
+It runs offline and uses the installed `nightly` toolchain by default. If the
+JSON format differs, install the nightly named in the diagnostic and select
+it with `CONCORD_SURFACE_TOOLCHAIN`. The other release steps continue to use
+their usual toolchains.
+
+Run `just surface` before refreshing the snapshot. When it reports public changes,
+name each reported Rust path in inline code under `## Unreleased` in
+[CHANGELOG.md](CHANGELOG.md), for example `concord_testkit::script::Request::url`.
+Include each public alias the check reports. For changes to an implementation,
+use the path shown in the diff. An Unreleased entry covers later changes to
+the same path in that release, so inspect the diff printed by `just surface`
+and the snapshot diff before committing. `just surface --update` refreshes
+the snapshot once the public entries are present. Hidden changes require only
+a snapshot refresh. `just release` requires an exact match via
+`just surface --release`.
+
+The snapshot covers feature gating that changes which public paths are
+available with default features. Other feature combinations, `Send` inferred
+from an `async` function body, and the `api!` grammar are outside its scope.
 
 ## The layout
 
