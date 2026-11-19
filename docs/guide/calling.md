@@ -87,6 +87,8 @@ let billing = Billing::new().with_transport(http.clone());
 let other   = Other::new(token).with_transport(http);          // two clients share one engine
 ```
 
+With the `http2` feature (on by default), use `concord::Http::with(|b| b.http2_prior_knowledge())` only for a server that speaks HTTP/2 without TLS, and leave the builder's default protocol selection in place for public HTTPS APIs.
+
 Concord applies its defaults before your closure, and "no redirects" and "no resends of `reqwest`'s own" after it, so nothing in the closure can make this client follow a redirect or turn those resends on.
 
 **A `reqwest::Client` that you bring** is used as it is, and you are responsible for what it does on its own, such as following redirects or keeping cookies. Promise [G3](promises.md#three-promises) is stated for a client that follows no redirects. [The timeouts](#timeouts) are Concord's own, and apply with any client.
