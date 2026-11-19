@@ -145,7 +145,11 @@ pub struct Link {
     cut: AtomicBool,
     written: AtomicU64,
     wakers: Mutex<Vec<Waker>>,
+    log: Mutex<Vec<u8>>,
 }
+
+/// How many of the first bytes that a connection writes [`Link::log`] keeps.
+const LOGGED: usize = 64 * 1024;
 
 impl Link {
     /// Cuts the connection: every later read and write of its socket fails, so hyper drops it
@@ -158,6 +162,20 @@ impl Link {
     /// The bytes written to the socket so far.
     pub fn written(&self) -> u64 {
         self.written.load(Ordering::SeqCst)
+    }
+
+    /// The first 64 KiB that the server wrote to the socket, as they were written.
+    pub fn log(&self) -> Vec<u8> {
+        self.log.lock().unwrap().clone()
+    }
+
+    fn wrote(&self, bytes: &[u8]) {
+        let mut log = self.log.lock().unwrap();
+        let room = LOGGED.saturating_sub(log.len()).min(bytes.len());
+        log.extend_from_slice(&bytes[..room]);
+        drop(log);
+        self.written.fetch_add(bytes.len() as u64, Ordering::SeqCst);
+        self.wake();
     }
 
     fn is_cut(&self) -> bool {
@@ -240,8 +258,7 @@ impl AsyncWrite for Conn {
         }
         let written = Pin::new(&mut self.tcp).poll_write(cx, buf);
         if let Poll::Ready(Ok(n)) = written {
-            self.link.written.fetch_add(n as u64, Ordering::SeqCst);
-            self.link.wake();
+            self.link.wrote(&buf[..n]);
         }
         written
     }
@@ -256,8 +273,12 @@ impl AsyncWrite for Conn {
         }
         let written = Pin::new(&mut self.tcp).poll_write_vectored(cx, bufs);
         if let Poll::Ready(Ok(n)) = written {
-            self.link.written.fetch_add(n as u64, Ordering::SeqCst);
-            self.link.wake();
+            let mut left = n;
+            for buf in bufs {
+                let part = left.min(buf.len());
+                self.link.wrote(&buf[..part]);
+                left -= part;
+            }
         }
         written
     }
@@ -282,6 +303,7 @@ impl AsyncWrite for Conn {
 pub struct Listening {
     tcp: TcpListener,
     accepted: u64,
+    links: Arc<Mutex<Vec<Arc<Link>>>>,
 }
 
 impl Listener for Listening {
@@ -299,6 +321,7 @@ impl Listener for Listening {
                     id: self.accepted,
                     ..Link::default()
                 });
+                self.links.lock().unwrap().push(link.clone());
                 let peer = Peer {
                     addr,
                     link: link.clone(),
@@ -321,6 +344,8 @@ pub struct Server {
     addr: SocketAddr,
     /// What reached it.
     pub seen: Seen,
+    /// Every connection that it accepted, in order.
+    pub links: Arc<Mutex<Vec<Arc<Link>>>>,
     stop: Option<oneshot::Sender<()>>,
     done: Option<tokio::task::JoinHandle<()>>,
 }
@@ -328,12 +353,24 @@ pub struct Server {
 impl Server {
     /// Starts `router` on a port of its own. Every request is recorded before its route runs.
     pub async fn start(router: Router) -> Server {
-        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = tcp.local_addr().unwrap();
+        let any = SocketAddr::from(([127, 0, 0, 1], 0));
+        Server::start_at(any, router).await.unwrap()
+    }
+
+    /// Starts `router` at this address: the port of a server that has stopped, for one that
+    /// counts what reaches it after the first.
+    pub async fn start_at(addr: SocketAddr, router: Router) -> io::Result<Server> {
+        let tcp = TcpListener::bind(addr).await?;
+        let addr = tcp.local_addr()?;
         let seen = Seen::default();
         let router = router.layer(axum::middleware::from_fn_with_state(seen.clone(), record));
         let (stop, stopped) = oneshot::channel::<()>();
-        let listening = Listening { tcp, accepted: 0 };
+        let links: Arc<Mutex<Vec<Arc<Link>>>> = Arc::default();
+        let listening = Listening {
+            tcp,
+            accepted: 0,
+            links: links.clone(),
+        };
         let done = tokio::spawn(async move {
             axum::serve(
                 listening,
@@ -345,12 +382,18 @@ impl Server {
             .await
             .unwrap();
         });
-        Server {
+        Ok(Server {
             addr,
             seen,
+            links,
             stop: Some(stop),
             done: Some(done),
-        }
+        })
+    }
+
+    /// Its address.
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
     }
 
     /// `http://127.0.0.1:<port>`, for `with_base`.
@@ -656,5 +699,77 @@ pub async fn on_paused_clock<T: Send + 'static>(
 pub async fn settle() {
     for _ in 0..16 {
         tokio::task::yield_now().await;
+    }
+}
+
+/// A middleware of the caller's that counts the bytes of each response body as Concord's
+/// reader takes them from the transport: a test can wait until a piece has reached the reader,
+/// as an observed event. It rebuilds the response from its parts, so the response loses its URL:
+/// it is for tests that follow no page.
+#[derive(Clone)]
+pub struct Tap(watch::Sender<u64>);
+
+impl Default for Tap {
+    fn default() -> Self {
+        Tap(watch::channel(0).0)
+    }
+}
+
+impl Tap {
+    /// The body bytes that the reader has taken so far.
+    pub fn taken(&self) -> u64 {
+        *self.0.borrow()
+    }
+
+    /// Waits until the reader has taken more than `bytes`.
+    pub async fn taken_after(&self, bytes: u64) {
+        self.0
+            .subscribe()
+            .wait_for(|taken| *taken > bytes)
+            .await
+            .unwrap();
+    }
+}
+
+impl Middleware for Tap {
+    async fn handle(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+        next: concord::Next<'_>,
+    ) -> Result<reqwest::Response, TransportError> {
+        let response = next.send(request, info).await?;
+        let mut head = concord::http::Response::new(());
+        *head.status_mut() = response.status();
+        *head.version_mut() = response.version();
+        *head.headers_mut() = response.headers().clone();
+        let counted = Counted {
+            body: Box::pin(response.bytes_stream()),
+            taken: self.0.clone(),
+        };
+        let (head, ()) = head.into_parts();
+        Ok(reqwest::Response::from(
+            concord::http::Response::from_parts(head, reqwest::Body::wrap_stream(counted)),
+        ))
+    }
+}
+
+type Pieces = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>;
+
+struct Counted {
+    body: Pieces,
+    taken: watch::Sender<u64>,
+}
+
+impl Stream for Counted {
+    type Item = Result<Bytes, reqwest::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let next = self.body.as_mut().poll_next(cx);
+        if let Poll::Ready(Some(Ok(piece))) = &next {
+            let len = piece.len() as u64;
+            self.taken.send_modify(|taken| *taken += len);
+        }
+        next
     }
 }

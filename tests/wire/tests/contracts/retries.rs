@@ -272,9 +272,12 @@ async fn dropped_then_answered(wire: Wire) {
         .item("lamp".to_owned());
     let value = on_paused_clock(&probe, STEP, MOST, call.into_future()).await;
 
-    // Connect is in the standard table, and a GET may be repeated.
+    // Connect is in the standard table, and a GET may be repeated. The engine sent it again:
+    // two requests on the wire, and two attempts handed to the middleware, the count that
+    // `tries()` reports (C4.4). A resend below the engine would be one attempt.
     assert_eq!(value.unwrap(), "second");
     assert_eq!(server.seen.len(), 2);
+    assert_eq!(probe.seen().sent.len(), 2);
     let connections: Vec<u64> = server
         .seen
         .all()

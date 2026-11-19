@@ -1,6 +1,6 @@
 # tests/: the crates that test Concord
 
-This page is for anyone who changes Concord: it explains what the five crates here are, and why most of them come in pairs. None of them is ever published.
+This page is for anyone who changes Concord: it explains what the six crates here are, and why most of them come in pairs. None of them is ever published.
 
 | Crate | What it contains |
 |---|---|
@@ -9,6 +9,7 @@ This page is for anyone who changes Concord: it explains what the five crates he
 | [`conformance`](conformance) | The tests of [the contracts](../docs/reference/contracts.md), on the hand-written clients. |
 | [`conformance-gen`](conformance-gen) | The same test files, on the macro's clients. |
 | [`real-apis`](real-apis) | The descriptions of [the real APIs](../docs/examples/README.md), compiled. No request is sent. |
+| [`wire`](wire) | Generated clients against a local axum server, over HTTP/1.1 and HTTP/2 without TLS: retries, redirects, compression, bodies, records, pages and limits, as a real server stack frames them. Each test opens a socket on `127.0.0.1`. |
 
 **Why the crates come in pairs.** The hand-written clients define what the macro must generate, in code that a person can read and step through, and the macro's clients must behave the same way. So each test is written once, in `tour/tests` or `conformance/tests`, and the `-gen` crate includes the same file with `#[path = …]`: one test, run on both. A test in `tour-gen` also checks that the descriptions on both sides are identical.
 

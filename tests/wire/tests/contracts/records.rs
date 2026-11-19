@@ -3,7 +3,7 @@
 //! each read raw and mapped with `try_map` under both endings, and cut by the server before
 //! the last record, cleanly or by breaking the body.
 
-use crate::server::{settle, Feed, Feeder, Frozen, Server, Wire};
+use crate::server::{Feed, Feeder, Frozen, Server, Tap, Wire};
 use axum::extract::State;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
@@ -140,9 +140,11 @@ async fn raw_events(wire: Wire) {
     let _clock = Frozen::hold();
     let streams = Streams::default();
     let server = live_server(&streams).await;
+    let tap = Tap::default();
     let live = Live::new()
         .with_transport(wire.http())
         .with_base(server.url())
+        .with_middleware(tap.clone())
         .with_idle_timeout(Duration::from_millis(1500));
 
     let mut feeder = streams.events();
@@ -162,11 +164,12 @@ async fn raw_events(wire: Wire) {
 
     // Four seconds with no event, longer than the idle timeout of 1.5 seconds: a keep-alive
     // comment each second is a sign of life (C11.10), and no record (C11.9).
+    // Each step waits until the comment has reached the reader, which restarts its idle timer.
     for _ in 0..4 {
-        let polls = feeder.polls();
+        let (polls, taken) = (feeder.polls(), tap.taken());
         tokio::time::advance(KEEP_ALIVE).await;
         feeder.polled_after(polls).await;
-        settle().await;
+        tap.taken_after(taken).await;
     }
     feeder.send(Event::default().comment("a comment of the server's own"));
     feeder.send(Event::default().event("update").data("b\nc"));
