@@ -638,6 +638,9 @@ fn c11_13_typed_records_follow_their_framing_and_ending() {
         any::<bool>(),
     );
     let runtime = runtime();
+    runtime
+        .block_on(check_scheduling(Format::Lines, Scheduling::Deadline))
+        .unwrap();
     let result = runner.run(
         &cases,
         |((format, bytes), cuts, tail, scheduling, retry)| {

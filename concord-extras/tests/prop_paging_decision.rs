@@ -637,6 +637,8 @@ async fn check_walk(walk: Walk) -> TestCaseResult {
         (got, want) => prop_assert!(false, "got {:?}, expected {:?}", got, want),
     }
     prop_assert_eq!(pages.try_next().await.unwrap(), None);
+    let recorded = observed.lock().unwrap();
+    prop_assert_eq!(recorded.as_slice(), successors.as_slice());
     let sent: Vec<_> = script
         .requests()
         .iter()
@@ -669,8 +671,39 @@ fn sheet() -> impl Strategy<Value = Sheet> {
         })
 }
 
-fn walks() -> impl Strategy<Value = Walk> {
+fn closed_gate_walk(start: i16, count: i16, sheet: Sheet) -> Walk {
     use Field::{Count, Gate, Start};
+    Walk {
+        base: Move::Offset,
+        rules: vec![
+            Rule::Choose(Start, false, None),
+            Rule::Gate(Gate),
+            Rule::Choose(Count, true, None),
+        ],
+        call: Request {
+            inputs: [Some(start), Some(count), None],
+            ..Request::default()
+        },
+        sheets: vec![sheet],
+    }
+}
+
+fn changing_slot_walk(cursor: i16, mut first: Sheet, second: Sheet) -> Walk {
+    use Field::{Count, Start};
+    first.cursor = Some(cursor);
+    Walk {
+        base: Move::Cursor,
+        rules: vec![Rule::Choose(Start, false, None), Rule::Switch(Start, Count)],
+        call: Request {
+            inputs: [Some(0), Some(cursor + 1), None],
+            ..Request::default()
+        },
+        sheets: vec![first, second],
+    }
+}
+
+fn walks() -> impl Strategy<Value = Walk> {
+    use Field::Start;
     let any_walk = (
         prop_oneof![
             Just(Move::Offset),
@@ -701,32 +734,11 @@ fn walks() -> impl Strategy<Value = Walk> {
             sheets: vec![sheet],
         });
 
-    let closed_gate = (any::<i16>(), any::<i16>(), sheet()).prop_map(|(a, b, sheet)| Walk {
-        base: Move::Offset,
-        rules: vec![
-            Rule::Choose(Start, false, None),
-            Rule::Gate(Gate),
-            Rule::Choose(Count, true, None),
-        ],
-        call: Request {
-            inputs: [Some(a), Some(b), None],
-            ..Request::default()
-        },
-        sheets: vec![sheet],
-    });
+    let closed_gate = (any::<i16>(), any::<i16>(), sheet())
+        .prop_map(|(start, count, sheet)| closed_gate_walk(start, count, sheet));
 
-    let changing_slot = (0..4i16, sheet(), sheet()).prop_map(|(cursor, mut first, second)| {
-        first.cursor = Some(cursor);
-        Walk {
-            base: Move::Cursor,
-            rules: vec![Rule::Choose(Start, false, None), Rule::Switch(Start, Count)],
-            call: Request {
-                inputs: [Some(0), Some(cursor + 1), None],
-                ..Request::default()
-            },
-            sheets: vec![first, second],
-        }
-    });
+    let changing_slot = (0..4i16, sheet(), sheet())
+        .prop_map(|(cursor, first, second)| changing_slot_walk(cursor, first, second));
 
     let counted = (0..5usize, sheet()).prop_map(|(size, mut sheet)| {
         sheet.cursor = Some(1);
@@ -760,6 +772,19 @@ fn c8_6_one_page_follows_the_decision_order() {
         .enable_time()
         .start_paused(true)
         .build()
+        .unwrap();
+    let empty = Sheet {
+        items: 0,
+        says: [false; 2],
+        total: 0,
+        cursor: None,
+        link: Link::Missing,
+    };
+    runtime
+        .block_on(check_walk(closed_gate_walk(0, 0, empty.clone())))
+        .unwrap();
+    runtime
+        .block_on(check_walk(changing_slot_walk(0, empty.clone(), empty)))
         .unwrap();
     if let Err(failure) = runner.run(&walks(), |walk| runtime.block_on(check_walk(walk))) {
         panic!("{failure}");
