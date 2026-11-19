@@ -1,0 +1,9 @@
+{
+  "id": "M527",
+  "area": "optional-body",
+  "contract": "C2.9",
+  "description": "Send an empty body when the writer omits the body.",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "        self.map(IntoBody::into_body).transpose()",
+  "replace": "        self.map(IntoBody::into_body).transpose().map(|body| body.or_else(|| Some(Body::from(\"\"))))"
+}

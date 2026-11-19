@@ -141,3 +141,38 @@ async fn c8_6_an_edit_can_return_a_decoder_failure() {
     assert_eq!(pages.try_next().await.unwrap(), None);
     assert_eq!(script.requests().len(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn c8_6_a_failed_edit_never_runs_the_following_edit() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static LATER_EDIT_RAN: AtomicBool = AtomicBool::new(false);
+
+    concord::api! {
+        client EditProbe {
+            base "https://lists.test";
+            read Json;
+            GET list(page?: u32) -> Vec<u32> {
+                query { page; }
+                paginate by_cursor(page, |_| Some(2))
+                    .try_map_next(|_, _| Err(mismatch("the next call is invalid")))
+                    .map_next(|next, _| {
+                        LATER_EDIT_RAN.store(true, Ordering::Relaxed);
+                        next
+                    });
+            }
+        }
+    }
+
+    let script = Script::new();
+    script.answer(200).body("[1]");
+    let mut pages = EditProbe::new()
+        .with_transport(script.clone())
+        .list()
+        .pages();
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![1]));
+    let error = pages.try_next().await.unwrap_err();
+    assert_eq!(error.reason(), Some("the next call is invalid"));
+    assert!(!LATER_EDIT_RAN.load(Ordering::Relaxed));
+    assert_eq!(script.requests().len(), 1);
+}

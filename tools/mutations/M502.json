@@ -1,0 +1,9 @@
+{
+  "id": "M502",
+  "area": "macro-hygiene",
+  "contract": "C10.1",
+  "description": "Let a trait in the author's scope intercept a whole-body expression.",
+  "file": "concord-macros/src/write/request.rs",
+  "find": "::concord::__private::Draft::whole_body(&mut __draft, __body);",
+  "replace": "__draft.whole_body(__body);"
+}

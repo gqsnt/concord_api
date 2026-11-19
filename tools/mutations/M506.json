@@ -1,0 +1,9 @@
+{
+  "id": "M506",
+  "area": "map_next",
+  "contract": "C8.6",
+  "description": "Run infallible edits before earlier fallible edits.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        self.try_map_next(move |call, value| Ok(edit(call, value)))",
+  "replace": "        let mut paging = self;\n        paging.parts().map_next.insert(0, Box::new(move |call, value| Ok(edit(call, value))));\n        paging"
+}

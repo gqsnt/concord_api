@@ -1,0 +1,9 @@
+{
+  "id": "M529",
+  "area": "optional-body",
+  "contract": "C2.9",
+  "description": "Drop an explicit content type when the writer omits the body.",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "            if name == http::header::CONTENT_TYPE {\n                if values.is_empty() {",
+  "replace": "            if name == http::header::CONTENT_TYPE {\n                if matches!(&body, Ok(None)) {\n                    continue;\n                }\n                if values.is_empty() {"
+}

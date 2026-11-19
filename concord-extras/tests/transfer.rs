@@ -279,6 +279,16 @@ fn c11_11_every_rewriting_class_is_refused_without_sending() {
 }
 
 #[test]
+fn c11_11_scheme_separators_after_fragment_markers_or_backslashes_are_not_absolute() {
+    for url in [
+        "#next=https://storage.test/p",
+        r"folder\name://storage.test/p",
+    ] {
+        refused(url, "NotAbsolute");
+    }
+}
+
+#[test]
 fn c11_11_documented_precedence_selects_one_reachable_variant() {
     // Every variant is reachable. Inputs with several refusal reasons pin the
     // first failing check, so callers can distinguish the documented cases.

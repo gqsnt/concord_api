@@ -1,0 +1,12 @@
+{
+  "id": "M500",
+  "area": "macro-hygiene",
+  "contract": "C10.1",
+  "description": "Let a trait in the author's scope replace request placement through method lookup.",
+  "file": "concord-macros/src/write/request.rs",
+  "find": "    let value = emit_at!(span => ::concord::__private::AdaptPlacement::adapt_placement(#value));",
+  "replace": "    let value = emit_at!(span => {\n        trait __Placement<'__a, M>: ::concord::__private::AdaptPlacement<'__a, M> {\n            fn __adapt(&'__a self) -> Self::Adapted {\n                ::concord::__private::AdaptPlacement::adapt_placement(self)\n            }\n        }\n        impl<'__a, M, T: ?::core::marker::Sized + ::concord::__private::AdaptPlacement<'__a, M>>\n            __Placement<'__a, M> for T {}\n        (#value).__adapt()\n    });",
+  "checks": [
+    "macro-compiler"
+  ]
+}

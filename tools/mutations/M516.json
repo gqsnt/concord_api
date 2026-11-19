@@ -1,0 +1,9 @@
+{
+  "id": "M516",
+  "area": "by_page_bounds",
+  "contract": "C8.6",
+  "description": "Restart from zero when the reported page number cannot be read as a u64.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        Paging::from_move(move |call, _, reported| advance_page(page, call, reported).map(Some));",
+  "replace": "        Paging::from_move(move |call, _, reported| advance_page(page, call, reported.or(Some(0))).map(Some));"
+}

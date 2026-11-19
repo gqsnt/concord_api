@@ -199,3 +199,45 @@ async fn c8_6_gates_precede_bounds_and_an_unchanged_clamped_request_cannot_repea
     assert!(pages.try_next().await.unwrap().is_none());
     assert_eq!(script.requests().len(), 2);
 }
+
+#[tokio::test(start_paused = true)]
+async fn c8_6_a_reported_page_at_u64_max_cannot_advance() {
+    #[derive(Debug, Deserialize)]
+    struct WideBounds {
+        bounds: Option<(u128, u128)>,
+    }
+
+    concord::api! {
+        client WideLists {
+            base "https://lists.test";
+            read Json;
+            GET list(page?: u128) -> WideBounds {
+                query { page; }
+                paginate by_page_bounds(page, |value| value.bounds);
+            }
+        }
+    }
+
+    let current = u128::from(u64::MAX);
+    let last = current + 1;
+    let script = Script::new();
+    script
+        .answer(200)
+        .body(format!(r#"{{"bounds":[{current},{last}]}}"#));
+    let mut pages = WideLists::new()
+        .with_transport(script.clone())
+        .list()
+        .pages();
+    assert_eq!(
+        pages.try_next().await.unwrap().unwrap().bounds,
+        Some((current, last))
+    );
+    let error = pages.try_next().await.unwrap_err();
+    assert_eq!(error.kind(), concord::error::Kind::Mismatch);
+    assert_eq!(
+        error.reason(),
+        Some("the page number cannot grow any further")
+    );
+    assert!(pages.try_next().await.unwrap().is_none());
+    assert_eq!(script.requests().len(), 1);
+}

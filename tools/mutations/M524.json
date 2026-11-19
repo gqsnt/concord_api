@@ -1,0 +1,9 @@
+{
+  "id": "M524",
+  "area": "transfer",
+  "contract": "C11.11",
+  "description": "Treat a scheme separator after a backslash as an authority marker.",
+  "file": "concord-extras/src/transfer.rs",
+  "find": "scheme.contains(['/', '?', '#', '\\\\'])",
+  "replace": "scheme.contains(['/', '?', '#'])"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M533",
+  "area": "optional-body",
+  "contract": "C3.2",
+  "description": "Add a body to a bodyless request on retry.",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "            copy.as_ref().and_then(reqwest::Request::try_clone)",
+  "replace": "            copy.as_ref().and_then(reqwest::Request::try_clone).map(|mut request| {\n                if request.body().is_none() {\n                    *request.body_mut() = Some(reqwest::Body::from(\"\"));\n                }\n                request\n            })"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M508",
+  "area": "map_next",
+  "contract": "C8.6",
+  "description": "Run edits before a short page ends the list.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        if let (Some(size), Some(count)) = (size, parts.count) {\n            if count(page.value()) < size {\n                return Ok(None);\n            }\n        }\n        let Some(mut next) = next else {\n            return match stated {\n                Some(true) => Err(mismatch(MORE_WITHOUT_NEXT)),\n                _ => Ok(None),\n            };\n        };\n        // 5. The edits, in the order written.\n        for edit in &mut parts.map_next {\n            next = edit(next, page.value())?;\n        }\n",
+  "replace": "        let Some(mut next) = next else {\n            return match stated {\n                Some(true) => Err(mismatch(MORE_WITHOUT_NEXT)),\n                _ => Ok(None),\n            };\n        };\n        // 5. The edits, in the order written.\n        for edit in &mut parts.map_next {\n            next = edit(next, page.value())?;\n        }\n        if let (Some(size), Some(count)) = (size, parts.count) {\n            if count(page.value()) < size {\n                return Ok(None);\n            }\n        }\n"
+}

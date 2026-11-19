@@ -1,0 +1,9 @@
+{
+  "id": "M511",
+  "area": "map_next",
+  "contract": "C8.6",
+  "description": "Lose a pager failure after delivering the page that arrived.",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "                State::Failed(error) => return Poll::Ready(Some(Err(error))),",
+  "replace": "                State::Failed(_error) => return Poll::Ready(None),"
+}

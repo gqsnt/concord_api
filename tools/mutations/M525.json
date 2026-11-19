@@ -1,0 +1,9 @@
+{
+  "id": "M525",
+  "area": "strict-json",
+  "contract": "C5.11",
+  "description": "Accept characters outside a token in the type of a JSON media type.",
+  "file": "concord-extras/src/json_decode.rs",
+  "find": "    token(top)\n        && token(sub)",
+  "replace": "    !top.is_empty()\n        && token(sub)"
+}

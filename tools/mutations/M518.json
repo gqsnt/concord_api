@@ -1,0 +1,9 @@
+{
+  "id": "M518",
+  "area": "named-call",
+  "contract": "C11.11",
+  "description": "Give every generated call the same endpoint name.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "const ENDPOINT: &'static ::core::primitive::str = E::NAME;",
+  "replace": "const ENDPOINT: &'static ::core::primitive::str = \"transfer\";"
+}

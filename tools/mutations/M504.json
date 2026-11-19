@@ -1,0 +1,12 @@
+{
+  "id": "M504",
+  "area": "macro-hygiene",
+  "contract": "C10.1",
+  "description": "Resolve the generated stream problem check beside the author's traits.",
+  "file": "concord-macros/src/write/call.rs",
+  "find": "                fn check() {\n                    use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};\n                    #check_call\n                }\n            }\n            };",
+  "replace": "            }\n            #[allow(dead_code, clippy::needless_borrow)]\n            fn check() {\n                use #check::{Declared, Witness};\n                use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};\n                #check_call\n            }\n            };",
+  "checks": [
+    "macro-compiler"
+  ]
+}

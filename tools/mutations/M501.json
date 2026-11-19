@@ -1,0 +1,12 @@
+{
+  "id": "M501",
+  "area": "macro-hygiene",
+  "contract": "C10.1",
+  "description": "Let a trait in the author's scope intercept a body entry.",
+  "file": "concord-macros/src/write/request.rs",
+  "find": "::concord::body::Entries::__push(&mut __entries, #key, #value);",
+  "replace": "__entries.__push(#key, #value);",
+  "checks": [
+    "macro-compiler"
+  ]
+}

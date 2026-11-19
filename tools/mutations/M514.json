@@ -1,0 +1,9 @@
+{
+  "id": "M514",
+  "area": "by_page_bounds",
+  "contract": "C8.6",
+  "description": "Fetch an extra page when the current and last numbers match.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "Some((current, last)) if current < last",
+  "replace": "Some((current, last)) if current <= last"
+}

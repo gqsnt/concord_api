@@ -1,0 +1,9 @@
+{
+  "id": "M531",
+  "area": "optional-body",
+  "contract": "C2.9",
+  "description": "Make the type of a borrowed body ambiguous.",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "impl<B: WholeBody<OptionalBody>, E: Into<BuildSource>> WholeBody<OptionalBody> for Result<B, E> {",
+  "replace": "impl WholeBody<OptionalBody> for &Option<Body> {\n    fn into_whole_body(self) -> Result<Option<Body>, BuildSource> {\n        self.as_ref().into_whole_body()\n    }\n}\n\nimpl<B: WholeBody<OptionalBody>, E: Into<BuildSource>> WholeBody<OptionalBody> for Result<B, E> {"
+}

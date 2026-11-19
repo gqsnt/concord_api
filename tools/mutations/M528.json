@@ -1,0 +1,9 @@
+{
+  "id": "M528",
+  "area": "optional-body",
+  "contract": "C2.9",
+  "description": "Infer a JSON content type when an optional writer omits the body.",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "        self.body = writer.into_whole_body().transpose();",
+  "replace": "        self.body = writer.into_whole_body().transpose();\n        if self.body.is_none()\n            && !self.headers.iter().any(|header| header.key.eq_ignore_ascii_case(\"content-type\"))\n        {\n            self.header(\"content-type\", &[Piece::Lit(\"application/json\")]);\n        }"
+}

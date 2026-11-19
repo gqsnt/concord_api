@@ -1,0 +1,9 @@
+{
+  "id": "M509",
+  "area": "map_next",
+  "contract": "C8.6",
+  "description": "Run edits on the current call when the pager has no successor.",
+  "file": "concord-extras/src/page/paging.rs",
+  "find": "        let next = match alternative {\n            Some((_, other)) => other.next_call(call, page)?,\n            None => (parts.moves)(call, page, reported_page)?,\n        };\n",
+  "replace": "        let current = (!parts.map_next.is_empty()).then(|| call.clone());\n        let next = match alternative {\n            Some((_, other)) => other.next_call(call, page)?,\n            None => (parts.moves)(call, page, reported_page)?,\n        };\n        if let (None, Some(mut current)) = (&next, current) {\n            for edit in &mut parts.map_next {\n                current = edit(current, page.value())?;\n            }\n        }\n"
+}
