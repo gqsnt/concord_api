@@ -23,9 +23,25 @@ available, leave the variable unset so every case and mutation runs.
 - `features.py`: check the feature flags passed to reqwest individually and together, and check detached crates on stable and Rust 1.96.
 - `panics.py`: inventory panic-prone production operations and check their local safety reasons.
 - `docs.py`: check public API documentation and rendered facade pages.
+- `surface.py`: generate and compare `public-surface.txt` from nightly rustdoc JSON.
 - `bench.py` and `measure/`: run benchmarks and report timing and allocation comparisons; `just bench --expansion [FILE]` measures macro expansion and writes `target/expansion-measurement.json`.
-- `release.py`: run the gate, `docs-audit`, `doc-examples`, `call-doc-search`, `call-editor`, safety, packaging, feature isolation, and mutation checks in order.
+- `release.py`: run `surface`, the gate, `docs-audit`, `doc-examples`, `call-doc-search`, `call-editor`, safety, packaging, feature isolation, and mutation checks in order.
 - `NO-TEST.md`: explain contracts checked by the compiler or by tests carrying other numbers; `just matrix --strict` requires a test or a reason.
-- `test_gate_matrix.py`, `test_links.py`, `test_panics.py`, `test_features.py`, `test_doc_examples.py`, `test_public_surface.py`, `test_extensions.py`, and `test_release.py`: Python regressions; run `python3 -B -m unittest discover -s tools`.
+- `test_gate_matrix.py`, `test_links.py`, `test_panics.py`, `test_features.py`, `test_doc_examples.py`, `test_public_surface.py`, `test_surface.py`, `test_extensions.py`, and `test_release.py`: Python regressions; run `python3 -B -m unittest discover -s tools`.
 
 `just docs-audit` checks public documentation and its rendered API. `just doc-examples` compiles every whole documentation description and checks its page text. `just call-doc-search` queries the rustdoc index with Node. `just call-editor` checks completion and hover with `rust-analyzer` and `rust-src`. All four run in `just release`. Timing measurements stay opt-in because they depend on the machine.
+
+`just surface` uses rustdoc JSON format 61 and the
+`x86_64-unknown-linux-gnu` target. The snapshot records public paths and
+signatures, including re-exports, trait implementations and bounds. It records
+third-party re-exports such as `concord::reqwest` at the re-export itself.
+Paths under `__private` and items marked `#[doc(hidden)]` contribute to the
+hidden counts. Their path fingerprints let the check count additions and
+removals. Rustdoc JSON is built offline in
+`target/surface-snapshot/rustdoc` and is separate from the HTML built by
+`just doc`.
+
+Name changed public paths in inline code under `## Unreleased` in the changelog.
+Run `just surface` to verify the entries, then run `just surface --update` to
+refresh the snapshot. Hidden changes require only a snapshot refresh with
+`just surface --update`. See [Changing the public API](../CONTRIBUTING.md#changing-the-public-api).

@@ -7,7 +7,7 @@ import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STEPS = (
-    "gate", "docs-audit", "doc-examples", "call-doc-search", "call-editor",
+    "surface", "gate", "docs-audit", "doc-examples", "call-doc-search", "call-editor",
     "panics", "package", "features-all", "mutants",
 )
 
