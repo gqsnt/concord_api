@@ -40,6 +40,14 @@ fn number_text() -> impl Strategy<Value = String> {
     )
         .prop_map(|(before, number, after)| format!("{before}{number}{after}"))
 }
+/// The same, and signed numbers written alone, which Rust's own parser would take.
+fn length_text() -> impl Strategy<Value = String> {
+    prop_oneof![
+        3 => number_text(),
+        1 => (prop::sample::select(vec!["+", "-", "+0", "++"]), "[0-9]{1,20}")
+            .prop_map(|(sign, digits)| format!("{sign}{digits}")),
+    ]
+}
 
 /// Texts near the HTTP-date grammar: the three forms, a leap second, and their near misses.
 fn date_text() -> impl Strategy<Value = String> {
@@ -103,7 +111,7 @@ proptest! {
 
     #[test]
     fn c4_3_retry_after_in_seconds_reads_as_the_grammar_says_in_both_readers(
-        text in prop_oneof![3 => number_text(), 2 => date_text()],
+        text in prop_oneof![3 => length_text(), 2 => date_text()],
         now in prop_oneof![Just(0u64), 0u64..4_000_000_000],
     ) {
         let now = UNIX_EPOCH + Duration::from_secs(now);
@@ -170,7 +178,7 @@ proptest! {
 
     #[test]
     fn c5_4_the_announced_size_is_the_content_length_as_the_grammar_reads_it(
-        text in number_text(), hint in prop::option::of(0usize..4),
+        text in length_text(), hint in prop::option::of(0usize..4),
     ) {
         let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
         let value = HeaderValue::from_bytes(text.as_bytes()).unwrap();
@@ -203,8 +211,16 @@ proptest! {
 
     #[test]
     fn c2_12_a_written_content_length_must_be_the_length_of_the_body(
-        text in number_text().prop_filter("a header value", |text| text.is_ascii()),
-        length in prop_oneof![0usize..3, Just(5), Just(1000)],
+        (text, length) in prop_oneof![0usize..3, Just(5), Just(1000)].prop_flat_map(|length| (
+            prop_oneof![
+                1 => length_text().prop_filter("a header value", |text| text.is_ascii()),
+                // The body's own length, written in every way.
+                1 => (prop::sample::select(vec!["", "", "+", "-", "0", "00", " ", "\t"]),
+                      prop::sample::select(vec!["", "", " ", "\t", ".0", "+"]))
+                    .prop_map(move |(before, after)| format!("{before}{length}{after}")),
+            ],
+            Just(length),
+        )),
     ) {
         let mut draft = Draft::new(Method::POST);
         draft.base(&[Piece::Lit("https://example.test/")]);

@@ -354,6 +354,37 @@ proptest! {
     }
 }
 
+proptest! {
+    #![proptest_config(ProptestConfig { failure_persistence: None, ..ProptestConfig::default() })]
+
+    #[test]
+    fn c4_3_an_rfc_850_year_reads_by_the_fifty_year_rule_on_any_clock(
+        clock in (FIRST + 86_400)..(LAST - 101 * 31_622_400), nanos in prop_oneof![Just(0u32), 0u32..1_000_000_000],
+        near in prop_oneof![3 => -1i64..=1, 1 => -3_200_000_000i64..3_200_000_000],
+    ) {
+        // The date fifty calendar years after the clock, at the clock's time of day, and
+        // the seconds around it: the last that keeps its century, and the first that does not.
+        let (y, mo, d, h, mi, sec_) = calendar(clock);
+        let day = d.min(month_days(y + 50, mo));
+        let edge = days_from_civil(y + 50, mo, day) * 86_400 + h * 3600 + mi * 60 + sec_;
+        let at = edge + near;
+        let text = http_text(at, 1, 0, false);
+        let now = system(i128::from(clock) * 1_000_000_000 + i128::from(nanos));
+        let model = http_date_model(&text, now);
+        let mut map = HeaderMap::new();
+        map.insert("retry-after", HeaderValue::from_str(&text).unwrap());
+        let headers = Headers::from(map);
+        prop_assert_eq!(
+            headers.retry_after_at(now),
+            model.map(|date| duration(i128::from(date) * 1_000_000_000 - nanos_of(now))),
+            "{:?} at {}", text, clock
+        );
+        if let Some(date) = model {
+            prop_assert_eq!(headers.retry_after_at(system((i128::from(date) - 1) * 1_000_000_000)), Some(sec(1)));
+        }
+    }
+}
+
 // ---- RFC 3339, as C11.5 and `Seen::until_rfc3339` read it. ----
 
 /// A date-time in UTC, written with `Z`.
@@ -657,6 +688,12 @@ fn count_lists() -> impl Strategy<Value = (String, String)> {
                 counts.rotate_left(turn);
                 (limits.join(","), counts.join(", "))
             }),
+        // Periods that may repeat, the same in both lists.
+        proptest::collection::vec((1u64..4, 1u64..9, 0u64..9), 1..5).prop_map(|windows| {
+            let limits: Vec<String> = windows.iter().map(|(p, c, _)| format!("{c}:{p}")).collect();
+            let counts: Vec<String> = windows.iter().map(|(p, _, u)| format!("{u}:{p}")).collect();
+            (limits.join(","), counts.join(","))
+        }),
     ]
 }
 
