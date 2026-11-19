@@ -11,6 +11,7 @@ use concord::read::{
     Incoming, JsonLine, JsonLines, Reader, RecordFail, RecordStream, Sse, SseEvent, Step,
 };
 use concord::Error;
+use concord_testkit::Script;
 use futures_util::{FutureExt, StreamExt};
 use proptest::prelude::*;
 use proptest::test_runner::{TestCaseResult, TestRunner};
@@ -67,12 +68,13 @@ fn map(
     decode: impl FnOnce() -> Result<String, concord::read::RecordError>,
 ) -> Mapped {
     Ok(match item.text.as_str() {
-        "skip" => Step::Skip,
+        text if text.trim_end_matches(' ') == "skip" => Step::Skip,
         "last" => Step::Last(item),
         "end" => Step::End,
         "refuse" => return Err(RecordFail::problem(PROBLEM.into())),
         "reject" => return Err(RecordFail::mismatch(REASON)),
         "foreign" => return Err(unrelated_failure()),
+        "no-place" => return Err(decode_without_coordinates()),
         "panic" => panic!("mapper panicked"),
         _ => {
             if item.text.starts_with(['"', '[', '!']) {
@@ -91,6 +93,21 @@ fn unrelated_failure() -> RecordFail<String> {
         .unwrap()
         .unwrap();
     other.try_next().now_or_never().unwrap().unwrap_err().into()
+}
+
+fn decode_without_coordinates() -> RecordFail<String> {
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(tag = "kind")]
+    enum Tagged {
+        Number {
+            #[serde(rename = "value")]
+            _value: u32,
+        },
+    }
+    SseEvent::new(r#"{"kind":"Number","value":"wrong type"}"#)
+        .json::<Tagged>()
+        .unwrap_err()
+        .into()
 }
 
 fn line(record: JsonLine) -> Mapped {
@@ -117,6 +134,8 @@ concord::api! {
         GET lines_last() -> Records { read JsonLines::new(BOUND).try_map(line).until_last_record(); }
         GET events() -> Records { read Sse::new(BOUND).try_map(event).until_end_of_body(); }
         GET events_last() -> Records { read Sse::new(BOUND).try_map(event).until_last_record(); }
+        GET zero() -> Records { read JsonLines::new(0).try_map(line).until_end_of_body(); }
+        GET one_byte() -> Records { read JsonLines::new(1).try_map(line).until_end_of_body(); }
         GET peer();
     }
 }
@@ -145,12 +164,13 @@ enum Pull {
 
 fn dispatch(mut item: Item, number: usize, eof: bool, pulls: &mut Vec<Pull>) -> bool {
     let pull = match item.text.as_str() {
-        "skip" => return false,
+        text if text.trim_end_matches(' ') == "skip" => return false,
         "last" => Pull::Value(item, true),
         "end" => Pull::End,
         "refuse" => Pull::Error(Fault::Refused),
         "reject" => Pull::Error(Fault::Rejected(number)),
         "foreign" => Pull::Error(Fault::Foreign(number)),
+        "no-place" => Pull::Error(Fault::Decode(number, 0, 0)),
         "panic" => Pull::Panic,
         _ => {
             if item.text.starts_with(['"', '[', '!']) {
@@ -273,6 +293,7 @@ fn check_error(
     fault: Fault,
     endpoint: &str,
     headers: &HeaderMap,
+    attempts: u32,
 ) -> TestCaseResult {
     let (kind, note, class) = match fault {
         Fault::Size(n) => (
@@ -318,12 +339,15 @@ fn check_error(
         Kind::Refused => "refused: status 200".into(),
         _ => format!("transport error: {note}"),
     };
-    let message = format!("{headline}, in {endpoint}");
+    let mut message = format!("{headline}, in {endpoint}");
+    if attempts > 1 {
+        message.push_str(&format!(", after {attempts} attempts"));
+    }
     prop_assert_eq!(got.kind(), kind);
     prop_assert_eq!(got.class(), class);
     prop_assert_eq!(got.to_string(), message.as_str());
     prop_assert_eq!(got.endpoint(), endpoint);
-    prop_assert_eq!(got.tries(), 1);
+    prop_assert_eq!(got.tries(), attempts);
     prop_assert!(got.is_status(200));
     prop_assert_eq!(got.headers().unwrap().as_map(), headers);
     prop_assert!(got.body().is_none() && got.kept().is_none());
@@ -343,7 +367,7 @@ fn check_error(
     if let Some(problem) = problem {
         details.push_str(&format!("\nproblem: {problem:?}"));
     }
-    if let Fault::Decode(_, line, column) = fault {
+    if let Fault::Decode(_, line @ 1.., column) = fault {
         details.push_str(&format!("\nreader: line {line}, column {column}"));
     }
     if kind == Kind::Mismatch {
@@ -361,12 +385,38 @@ impl Drop for Release {
     }
 }
 
+async fn open(
+    client: &Feed,
+    format: Format,
+    require_last: bool,
+    timeout: Duration,
+) -> (Records, &'static str) {
+    let idle = Duration::from_secs(2);
+    macro_rules! open {
+        ($method:ident) => {
+            client
+                .$method()
+                .with_timeout(timeout)
+                .with_idle_timeout(idle)
+                .await
+                .unwrap()
+        };
+    }
+    match (format, require_last) {
+        (Format::Lines, false) => (open!(lines), "feed.lines"),
+        (Format::Lines, true) => (open!(lines_last), "feed.lines_last"),
+        (Format::Events, false) => (open!(events), "feed.events"),
+        (Format::Events, true) => (open!(events_last), "feed.events_last"),
+    }
+}
+
 async fn check(
     format: Format,
     bytes: &[u8],
     cuts: &[usize],
     tail: Tail,
     require_last: bool,
+    retry: bool,
 ) -> TestCaseResult {
     let mut start = 0;
     let chunks: Vec<_> = cuts
@@ -409,9 +459,12 @@ async fn check(
     let reply = Mutex::new(Some(reply));
     let sends = Arc::new(AtomicUsize::new(0));
     let sent = sends.clone();
+    let attempts = if retry { 2 } else { 1 };
     let client = Feed::new()
         .with_transport(concord::fake(move |_| {
-            sent.fetch_add(1, SeqCst);
+            if sent.fetch_add(1, SeqCst) == 0 && retry {
+                return Ok(concord::reply(503, ""));
+            }
             Ok(reply
                 .lock()
                 .unwrap()
@@ -426,23 +479,7 @@ async fn check(
     } else {
         30
     });
-    let idle = Duration::from_secs(2);
-    macro_rules! open {
-        ($method:ident) => {
-            client
-                .$method()
-                .with_timeout(timeout)
-                .with_idle_timeout(idle)
-                .await
-                .unwrap()
-        };
-    }
-    let (mut stream, endpoint) = match (format, require_last) {
-        (Format::Lines, false) => (open!(lines), "feed.lines"),
-        (Format::Lines, true) => (open!(lines_last), "feed.lines_last"),
-        (Format::Events, false) => (open!(events), "feed.events"),
-        (Format::Events, true) => (open!(events_last), "feed.events_last"),
-    };
+    let (mut stream, endpoint) = open(&client, format, require_last, timeout).await;
     let mut peer = std::pin::pin!(client
         .peer()
         .with_timeout(Duration::from_secs(60))
@@ -465,7 +502,7 @@ async fn check(
                 true
             }
             Pull::Error(fault) => {
-                check_error(got.unwrap().unwrap_err(), fault, endpoint, &head)?;
+                check_error(got.unwrap().unwrap_err(), fault, endpoint, &head, attempts)?;
                 true
             }
             Pull::Panic => {
@@ -478,7 +515,7 @@ async fn check(
             is_released,
             "body release at the wrong pull"
         );
-        prop_assert_eq!(sends.load(SeqCst), 1);
+        prop_assert_eq!(sends.load(SeqCst), attempts as usize);
     }
     prop_assert_eq!(reached_cut.load(SeqCst), should_reach_cut);
     prop_assert_eq!(stream.status().as_u16(), 200);
@@ -487,7 +524,7 @@ async fn check(
         peer.as_mut().now_or_never().is_some_and(|r| r.is_ok()),
         "body permit is still held"
     );
-    prop_assert_eq!(sends.load(SeqCst), 2);
+    prop_assert_eq!(sends.load(SeqCst), attempts as usize + 1);
     prop_assert_eq!(stream.try_next().await.unwrap(), None);
     prop_assert!(stream.next().await.is_none());
     Ok(())
@@ -512,6 +549,7 @@ const TEXT: &[&[u8]] = &[
     b"[",
     b"\"decoded\"",
     b"foreign",
+    b"no-place",
     "é".as_bytes(),
     b"\xff",
     b"ordinary",
@@ -596,19 +634,25 @@ fn c11_13_typed_records_follow_their_framing_and_ending() {
         prop::collection::vec(0..128usize, 0..12),
         prop_oneof![4 => Just(Tail::Eof), 1 => Just(Tail::Cut), 1 => Just(Tail::Short),
             1 => Just(Tail::Idle), 1 => Just(Tail::Deadline)],
+        scheduling(),
+        any::<bool>(),
     );
     let runtime = runtime();
-    let result = runner.run(&cases, |((format, bytes), cuts, tail)| {
-        let mut cuts: Vec<_> = cuts
-            .into_iter()
-            .map(|cut| cut % (bytes.len() + 1))
-            .collect();
-        cuts.sort_unstable();
-        for require_last in [false, true] {
-            runtime.block_on(check(format, &bytes, &cuts, tail, require_last))?;
-        }
-        Ok(())
-    });
+    let result = runner.run(
+        &cases,
+        |((format, bytes), cuts, tail, scheduling, retry)| {
+            let mut cuts: Vec<_> = cuts
+                .into_iter()
+                .map(|cut| cut % (bytes.len() + 1))
+                .collect();
+            cuts.sort_unstable();
+            for require_last in [false, true] {
+                let retry = retry && !matches!(tail, Tail::Deadline);
+                runtime.block_on(check(format, &bytes, &cuts, tail, require_last, retry))?;
+            }
+            runtime.block_on(check_scheduling(format, scheduling))
+        },
+    );
     if let Err(failure) = result {
         panic!("{failure}");
     }
@@ -623,7 +667,7 @@ fn c11_13_each_ending_survives_every_two_chunk_split() -> TestCaseResult {
     ] {
         for (ending, tail) in [
             ("", Tail::Eof), ("last", Tail::Cut), ("end", Tail::Cut), ("refuse", Tail::Eof),
-            ("reject", Tail::Eof), ("foreign", Tail::Eof), ("!", Tail::Eof), ("panic", Tail::Eof),
+            ("reject", Tail::Eof), ("foreign", Tail::Eof), ("no-place", Tail::Eof), ("!", Tail::Eof), ("panic", Tail::Eof),
             ("oversize oversize oversize oversize oversize", Tail::Eof), ("invalid", Tail::Eof),
             ("", Tail::Cut), ("", Tail::Short), ("", Tail::Idle), ("", Tail::Deadline),
         ] {
@@ -637,10 +681,184 @@ fn c11_13_each_ending_survives_every_two_chunk_split() -> TestCaseResult {
             }
             for split in 0..=bytes.len() {
                 for require_last in [false, true] {
-                    runtime.block_on(check(format, &bytes, &[split], tail, require_last))?;
+                    runtime.block_on(check(format, &bytes, &[split], tail, require_last, ending == "no-place"))?;
                 }
             }
         }
     }
     Ok(())
+}
+
+fn record(format: Format, text: &str) -> Vec<u8> {
+    match format {
+        Format::Lines => format!("{text}\n").into_bytes(),
+        Format::Events => format!("data: {text}\n\n").into_bytes(),
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Scheduling {
+    Bytes(usize),
+    Chunks(usize),
+    Deadline,
+    Cancel(usize),
+}
+
+fn scheduling() -> impl Strategy<Value = Scheduling> {
+    prop_oneof![
+        (16_383..=16_385usize).prop_map(Scheduling::Bytes),
+        (63..=65usize).prop_map(Scheduling::Chunks),
+        Just(Scheduling::Deadline),
+        (1..16usize).prop_map(Scheduling::Cancel),
+    ]
+}
+
+async fn check_scheduling(format: Format, schedule: Scheduling) -> TestCaseResult {
+    let script = Script::new();
+    let timeout = Duration::from_secs(1);
+    let client = Feed::new().with_transport(script.clone());
+    let marker = record(format, "\"é\"");
+    let skip = record(format, "skip");
+    let first_poll_ready = match schedule {
+        Scheduling::Bytes(bytes) => {
+            let skips = (bytes - marker.len()) / skip.len();
+            let remainder = (bytes - marker.len()) % skip.len();
+            let mut wire = skip.repeat(skips - 1);
+            wire.extend(record(format, &format!("skip{}", " ".repeat(remainder))));
+            wire.extend(marker);
+            script.answer(200).body(wire);
+            bytes <= 16_384
+        }
+        Scheduling::Chunks(chunks) => {
+            let mut answer = script.answer(200);
+            for _ in 1..chunks {
+                answer = answer.body(skip.clone());
+            }
+            answer.body(marker);
+            chunks <= 64
+        }
+        Scheduling::Deadline => {
+            script.answer(200).body(skip.repeat(8_000));
+            let (mut records, endpoint) = open(&client, format, false, timeout).await;
+            prop_assert!(records.next().now_or_never().is_none());
+            tokio::time::advance(timeout).await;
+            let result = records.next().now_or_never();
+            prop_assert!(
+                matches!(&result, Some(Some(Err(_)))),
+                "deadline did not end a ready body"
+            );
+            let error = result.unwrap().unwrap().unwrap_err();
+            check_error(error, Fault::Deadline, endpoint, &HeaderMap::new(), 1)?;
+            prop_assert!(records.try_next().await.unwrap().is_none());
+            return Ok(());
+        }
+        Scheduling::Cancel(cut) => {
+            let split = 1 + cut % (marker.len() - 1);
+            let (before, after) = marker.split_at(split);
+            let mut first = skip;
+            first.extend_from_slice(before);
+            script
+                .answer(200)
+                .body(first)
+                .pause(Duration::from_secs(3))
+                .body(after.to_vec());
+            let (mut records, _) = open(&client, format, false, Duration::from_secs(10)).await;
+            prop_assert!(records.try_next().now_or_never().is_none());
+            // The dropped pull stops the idle clock, even though it consumed part of the record.
+            tokio::time::advance(Duration::from_secs(3)).await;
+            check_marker(&mut records, format).await?;
+            prop_assert_eq!(script.requests().len(), 1);
+            return Ok(());
+        }
+    };
+    let (mut records, _) = open(&client, format, false, timeout).await;
+    let result = records.next().now_or_never();
+    prop_assert_eq!(result.is_some(), first_poll_ready);
+    if let Some(item) = result {
+        prop_assert_eq!(item.unwrap().unwrap().text, "é");
+        prop_assert!(records.try_next().await.unwrap().is_none());
+    } else {
+        check_marker(&mut records, format).await?;
+    }
+    Ok(())
+}
+
+async fn check_marker(records: &mut Records, format: Format) -> TestCaseResult {
+    let pulls = expected(format, &record(format, "\"é\""), Tail::Eof, false);
+    let [Pull::Value(item, _), Pull::End] = pulls.as_slice() else {
+        panic!("expected one item");
+    };
+    let got = records.try_next().await.unwrap();
+    prop_assert_eq!(got.as_ref(), Some(item));
+    prop_assert!(records.try_next().await.unwrap().is_none());
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_10_final_frame_releases_the_place_before_buffered_records_are_read() {
+    for format in [Format::Lines, Format::Events] {
+        let script = Script::new();
+        let body: Vec<u8> = ["one", "two", "three"]
+            .into_iter()
+            .flat_map(|text| record(format, text))
+            .collect();
+        script.answer(200).body(body);
+        script.answer(204);
+        let client = Feed::new()
+            .with_transport(script.clone())
+            .with_middleware(Limit::new().max_in_flight(1));
+        let (mut records, _) = open(&client, format, false, Duration::from_secs(10)).await;
+        let mut peer = std::pin::pin!(client.peer().into_future());
+        assert!(peer.as_mut().now_or_never().is_none());
+        assert_eq!(records.try_next().await.unwrap().unwrap().text, "one");
+        assert!(
+            peer.as_mut()
+                .now_or_never()
+                .is_some_and(|answer| answer.is_ok()),
+            "the peer is still waiting after the final body frame"
+        );
+        assert_eq!(script.requests().len(), 2);
+        for text in ["two", "three"] {
+            assert_eq!(records.try_next().await.unwrap().unwrap().text, text);
+        }
+        assert!(records.try_next().await.unwrap().is_none());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c11_8_zero_bound_admits_only_the_empty_crlf_record() {
+    for (limit, wire) in [(0, "\r"), (1, "x\r\n")] {
+        let mut raw: RecordStream<()> = JsonLines::new(limit)
+            .read(Incoming::new(concord::reply(200, wire)))
+            .await
+            .unwrap();
+        assert!(matches!(
+            raw.try_next().await,
+            Err(concord::read::RecordError::TooLarge { limit: actual, .. }) if actual == limit
+        ));
+    }
+    let script = Script::new();
+    script.answer(200).body("\r").body("\n");
+    script.answer(200).body("\r");
+    script.answer(200).body("x\r").body("\n");
+    script.answer(200).body("x\n");
+    let client = Feed::new().with_transport(script);
+    let mut empty = client.zero().await.unwrap();
+    assert_eq!(empty.try_next().await.unwrap(), Some(Item::line("")));
+    assert!(empty.try_next().await.unwrap().is_none());
+    let mut cr = client.zero().await.unwrap();
+    let mut nonempty = client.one_byte().await.unwrap();
+    for (stream, endpoint) in [(&mut cr, "feed.zero"), (&mut nonempty, "feed.one_byte")] {
+        check_error(
+            stream.try_next().await.unwrap_err(),
+            Fault::Size(1),
+            endpoint,
+            &HeaderMap::new(),
+            1,
+        )
+        .unwrap();
+        assert!(stream.try_next().await.unwrap().is_none());
+    }
+    let mut fits = client.one_byte().await.unwrap();
+    assert_eq!(fits.try_next().await.unwrap(), Some(Item::line("x")));
 }
