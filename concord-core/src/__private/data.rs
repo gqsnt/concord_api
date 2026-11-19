@@ -53,3 +53,32 @@ impl<C, const N: usize, Key> Clone for InputSlot<C, N, Key> {
         *self
     }
 }
+
+/// The marker for the client-wide types used by generated calls.
+/// Each client's own `Call<ClientKey>` is a distinct type.
+#[derive(Debug)]
+pub struct ClientKey;
+
+/// The author-declared problem carried by this client.
+pub trait ClientProblem {
+    /// The problem type shared by every endpoint of the client.
+    type Problem: Send + Sync + 'static;
+}
+
+/// A type stored by a client, scope, or call.
+pub trait StoredType<const N: usize> {
+    /// The owned type at this storage position.
+    type Value: Clone + Send + Sync + 'static;
+}
+
+/// A type named by an endpoint declaration. The call state checks its own bounds.
+pub trait EndpointType<const N: usize> {
+    /// An input type or the generated endpoint marker.
+    type Value;
+}
+
+/// The borrowed view of a client or scope passed to authored expressions.
+pub trait OwnerView<const N: usize> {
+    /// The generated view, tied to the lifetime of the handle's stored inputs.
+    type View<'a>;
+}

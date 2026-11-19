@@ -21,12 +21,11 @@ impl Writer<'_> {
                 node.node.name.span(),
             );
             let supers = (1..depth).map(|_| ident("super")).collect::<Vec<_>>();
-            let parent_id = ident(&format!("__Node{parent}"));
-            let parent_ty = emit!(<() as #(#supers::)* __Types>::#parent_id);
+            let key = emit!(#(#supers::)* Call<::concord::__private::ClientKey>);
+            let parent_ty = self.node_type(parent, key.clone());
             let fields = node.inputs.iter().map(|input| {
                 let field = &input.input.name;
-                let id = self.input_id(input);
-                let ty = stored(input.input, emit!(<() as #(#supers::)* __Types>::#id));
+                let ty = stored(input.input, self.input_type_at(input, key.clone()));
                 emit!(#field_vis #field: #ty,)
             });
             if matches!(node.node.kind, NodeKind::Endpoint(_)) {
@@ -46,26 +45,7 @@ impl Writer<'_> {
                 #children
             }
         });
-        let slots = (parent == 0).then(|| {
-            let has_slots = self.nodes.iter().any(|node| {
-                !node.inputs.is_empty()
-                    && self
-                        .endpoints
-                        .get(&(node.node as *const Node))
-                        .is_some_and(|endpoint| endpoint.pager.is_some())
-            });
-            if has_slots {
-                // All paged endpoints with inputs may be disabled by `cfg`.
-                emit!(
-                    #[allow(dead_code)]
-                    #[doc(hidden)]
-                    pub(super) struct __PagingKey;
-                )
-            } else {
-                TokenStream::new()
-            }
-        });
-        emit!(#(#children)* #slots)
+        emit!(#(#children)*)
     }
 
     pub(super) fn implementation(&self, index: usize) -> TokenStream {
@@ -73,7 +53,7 @@ impl Writer<'_> {
             self.internal(self.client_span, "an implementation has no node");
             return TokenStream::new();
         };
-        let ty = &node.implementation;
+        let ty = &node.path;
         let cfg = &node.cfg;
         if matches!(node.node.kind, NodeKind::Endpoint(_)) {
             return self.endpoint_methods(index);
@@ -152,12 +132,15 @@ impl Writer<'_> {
                 };
                 let construct = if endpoint {
                     let root = &self.root;
-                    let data = self.data_path(child_index);
                     let state = if self.tuple_data(child_index) {
                         let inputs = child.inputs.iter().map(value);
                         emit!(::concord::__private::CallData::new(::core::clone::Clone::clone(self), (#(#inputs,)*)))
                     } else {
-                        emit!(#data { __parent: ::core::clone::Clone::clone(self), #(#fields,)* })
+                        let ty = self.data_type(child_index);
+                        emit!({
+                            type __State = #ty;
+                            __State { __parent: ::core::clone::Clone::clone(self), #(#fields,)* }
+                        })
                     };
                     emit!(#root::Call::__new(#state))
                 } else {
@@ -179,7 +162,8 @@ impl Writer<'_> {
             TokenStream::new()
         };
         let methods = emit!(#client #setters #children);
-        let methods = (!methods.is_empty()).then(|| emit!(#(#cfg)* impl #ty { #methods }));
+        let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
+        let methods = (!methods.is_empty()).then(|| emit!(#(#cfg)* #allow impl #ty { #methods }));
         let debug_name = if index == 0 {
             name::type_name(&node.node.name.to_string())
         } else {
@@ -190,11 +174,9 @@ impl Writer<'_> {
                 .collect::<Vec<_>>()
                 .join("::")
         };
-        let root = &self.root;
         let clone_fields = node.inputs.iter().map(|input| {
             let field = &input.input.name;
-            let clone = self.clone_id(input);
-            emit!(#field: <() as #root::__Types>::#clone(&self.#field),)
+            emit!(#field: ::core::clone::Clone::clone(&self.#field),)
         });
         let clone_state = if index == 0 {
             emit!(__core: ::core::clone::Clone::clone(&self.__core),)
@@ -210,7 +192,7 @@ impl Writer<'_> {
             #(#cfg)* #allow impl ::core::clone::Clone for #ty {
                 fn clone(&self) -> Self { Self { #clone_state #(#clone_fields)* } }
             }
-            #(#cfg)* impl ::core::fmt::Debug for #ty {
+            #(#cfg)* #allow impl ::core::fmt::Debug for #ty {
                 fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                     ::core::fmt::DebugStruct::finish_non_exhaustive(&mut ::core::fmt::Formatter::debug_struct(__f, #debug_name))
                 }

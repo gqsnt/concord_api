@@ -1,12 +1,9 @@
-error[E0599]: the method `__adapt` exists for reference `&concord::__private::ValueRef<&NotSer>`, but its trait bounds were not satisfied
+error[E0277]: `&NotSer` cannot be written as a request value
  --> tests/compiler-errors/spans/06_hole.rs:3:6
   |
 3 | path "{value}";
-  |      ^^^^^^^^^ method cannot be called on `&concord::__private::ValueRef<&NotSer>` due to unsatisfied trait bounds
+  |      ^^^^^^^^^ this value cannot be written
   |
-  = note: the following trait bounds were not satisfied:
-          `&NotSer: concord::__private::SecretInput`
-          which is required by `&concord::__private::ValueRef<&NotSer>: concord::__private::AdaptValue`
-          `&NotSer: serde_core::ser::Serialize`
-          which is required by `&&concord::__private::ValueRef<&NotSer>: concord::__private::AdaptValue`
+  = help: the trait `concord::__private::AdaptPlacement<'_, _>` is not implemented for `&NotSer`
+  = note: request values must implement `serde::Serialize` or be a supported form of `concord::Secret`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -17,3 +17,35 @@ pub fn rows(_: TokenStream) -> TokenStream {
     type_tokens.push('>');
     type_tokens.parse().unwrap_or_default()
 }
+
+/// Expands to the first group on the first use of a key and alternates thereafter.
+///
+/// Write `alternate!(key (u8) (u16))` in a type position, or give it two expressions.
+#[proc_macro]
+pub fn alternate(input: TokenStream) -> TokenStream {
+    use proc_macro::TokenTree::{Group, Ident};
+    use std::{collections::HashMap, sync::Mutex};
+
+    static COUNTS: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+    let mut tokens = input.into_iter();
+    let (Some(Ident(key)), Some(Group(first)), Some(Group(second)), None) =
+        (tokens.next(), tokens.next(), tokens.next(), tokens.next())
+    else {
+        return "compile_error!(\"expected a key and two parenthesized alternatives\")"
+            .parse()
+            .unwrap_or_default();
+    };
+    let Ok(mut counts) = COUNTS.lock() else {
+        return TokenStream::new();
+    };
+    let next = counts
+        .get_or_insert_with(HashMap::new)
+        .entry(key.to_string())
+        .or_default();
+    *next = !*next;
+    if *next {
+        first.stream()
+    } else {
+        second.stream()
+    }
+}

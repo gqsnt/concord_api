@@ -639,13 +639,17 @@ pub fn transfer_url_error<P>(
 type BuildSource = Box<dyn std::error::Error + Send + Sync>;
 
 /// Evaluate an entry in a `Result` context and attach its wire key to any error.
+/// The success wrapper keeps the generated `?` from inferring a bare value's
+/// type through never-type fallback while rustc recovers from an invalid entry.
 #[inline]
 pub fn evaluate_entry<T, P>(
     endpoint: &'static str,
     key: &'static str,
     make: impl FnOnce() -> Result<T, BuildSource>,
-) -> Result<T, Error<P>> {
-    make().map_err(|source| Draft::entry_error(endpoint, key, source))
+) -> Result<super::ValueRef<T>, Error<P>> {
+    make()
+        .map(super::ValueRef)
+        .map_err(|source| Draft::entry_error(endpoint, key, source))
 }
 
 /// Evaluate a body expression in a `Result` context.

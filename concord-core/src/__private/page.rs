@@ -55,6 +55,16 @@ where
     pages(first, make())
 }
 
+/// Give a literal pager closure its call and page types before moving the call.
+pub fn make_pager<C, N, F>(_: &C, make: impl FnOnce() -> F) -> F
+where
+    C: crate::page::Call,
+    N: IntoNext<C>,
+    F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
+{
+    make()
+}
+
 /// `paginate` with an expression certain to need no inference: it may be any [`Pager`]. Every
 /// other form goes through [`pages_with_pager`] or [`pages_inferred`], whose `FnMut` bound infers
 /// a closure.

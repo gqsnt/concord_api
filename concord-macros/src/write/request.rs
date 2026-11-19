@@ -11,7 +11,8 @@ fn reference(reference: &Reference) -> TokenStream {
 }
 
 fn adapt(value: TokenStream, gate: Option<&str>, span: Span) -> TokenStream {
-    let value = emit_at!(span => (#value).__adapt());
+    let value = located(value, span);
+    let value = emit_at!(span => ::concord::__private::AdaptPlacement::adapt_placement(#value));
     if let Some(gate) = gate {
         let gate = ident(gate);
         emit_at!(span => ::concord::__private::#gate(#value))
@@ -21,11 +22,7 @@ fn adapt(value: TokenStream, gate: Option<&str>, span: Span) -> TokenStream {
 }
 
 fn adapted(value: TokenStream, gate: Option<&str>, span: Span) -> TokenStream {
-    adapt(
-        emit_at!(span => &::concord::__private::ValueRef(#value)),
-        gate,
-        span,
-    )
+    adapt(emit_at!(span => &#value), gate, span)
 }
 
 fn pieces(template: &Template) -> TokenStream {
@@ -202,7 +199,7 @@ impl Writer<'_> {
         let headers = self.entries(index, &endpoint.headers, "header");
         let body = self.request_body(index, endpoint);
         emit! {
-            fn __build_draft(__value: &Self::Data<()>) -> #root::Result<::concord::__private::Draft> {
+            fn __build_draft(__value: &Self::Data) -> #root::Result<::concord::__private::Draft> {
                 let mut __draft = #draft;
                 #base #paths #query #headers #body
                 ::core::result::Result::Ok(__draft)
@@ -334,12 +331,10 @@ impl Writer<'_> {
                 first.line.origin.span,
             );
             let mut values = Values::default();
-            let mut holders = TokenStream::new();
             for entry in group {
                 if matches!(entry.line.value.kind, EntryKind::Remove(_)) {
                     continue;
                 }
-                let name = ident(&format!("__BodyValue{next}"));
                 let raw = ident(&format!("__BodyExpression{next}"));
                 next += 1;
                 let (value, span, template) = match &entry.line.value.kind {
@@ -362,25 +357,26 @@ impl Writer<'_> {
                     EntryKind::Remove(_) => continue,
                 };
                 let value = if template {
-                    value
+                    emit!(::concord::__private::ValueRef(#value))
                 } else {
-                    emit!(::concord::__private::evaluate_body(#endpoint_name, || ::core::result::Result::Ok({ #value }))?)
+                    emit!(::core::result::Result::map(
+                        ::concord::__private::evaluate_body(#endpoint_name, || ::core::result::Result::Ok({ #value })),
+                        ::concord::__private::ValueRef,
+                    )?)
                 };
                 values.bind(raw.clone(), value);
-                holders.extend(emit!(let #name = ::concord::__private::ValueRef(#raw);));
                 let key = flat::key(entry.line.value, false);
-                let value = adapt(emit!(&#name), None, span);
-                writes.extend(emit!(__entries.__push(#key, #value);));
+                let value = adapt(emit!(&#raw.0), None, span);
+                writes
+                    .extend(emit!(::concord::body::Entries::__push(&mut __entries, #key, #value);));
             }
             setup.extend(values.block(bindings));
-            setup.extend(holders);
         }
         emit!({
-            fn __body_function(__entries: ::concord::body::Entries<'_>) -> impl ::concord::body::IntoBody { #function(__entries) }
             #setup
             let mut __entries = ::concord::body::Entries::new();
             #writes
-            ::concord::__private::Draft::body(&mut __draft, __body_function(__entries));
+            ::concord::__private::Draft::body(&mut __draft, #function(__entries));
         })
     }
 
@@ -458,7 +454,7 @@ impl Writer<'_> {
                 ..
             } => {
                 values.bind(raw.clone(), emit!(::concord::__private::evaluate_entry(#endpoint_name, #key, || ::core::result::Result::Ok({ #expr }))?));
-                (key.clone(), emit!(&#raw), expr.span())
+                (key.clone(), emit!(&#raw.0), expr.span())
             }
             _ => return None,
         };
@@ -489,13 +485,12 @@ impl Writer<'_> {
                         }
                         TemplatePiece::Hole { reference: r, .. } => {
                             let reference = reference(r);
-                            let holder = ident(&format!("__Entry{index}Hole{i}"));
                             let converted = ident(&format!("__Entry{index}Adapted{i}"));
                             let raw = ident(&format!("__Entry{index}Expression{i}"));
                             values.bind(raw.clone(), reference);
                             let error_name = flat::reference_text(r);
-                            let adapt = adapt(emit!(&#holder), gate, r.span);
-                            setup.extend(emit!(let #holder = ::concord::__private::ValueRef(#raw); let #converted = #adapt;));
+                            let adapt = adapt(emit!(&#raw), gate, r.span);
+                            setup.extend(emit!(let #converted = #adapt;));
                             pieces.push(
                                 emit!(::concord::__private::Piece::Val(#error_name, &#converted)),
                             );

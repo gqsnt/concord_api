@@ -10,6 +10,20 @@
 use crate::error::CarriesProblem;
 use std::marker::PhantomData;
 
+/// The type read when a successful response is wrapped by the endpoint.
+pub trait WrappedOutput {
+    /// The value that goes inside the wrapper.
+    type Inner;
+}
+
+impl<T> WrappedOutput for Option<T> {
+    type Inner = T;
+}
+
+impl<T, E> WrappedOutput for Result<T, E> {
+    type Inner = T;
+}
+
 /// The declared type of an endpoint, as a value with no data, for the check.
 pub struct Output<T: ?Sized>(PhantomData<fn() -> Box<T>>);
 
