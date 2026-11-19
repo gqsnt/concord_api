@@ -738,9 +738,7 @@ def default_workspace():
     WORK.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="defaults-", dir=WORK) as directory:
         workspace = Path(directory) / "source"
-        shutil.copytree(ROOT, workspace, ignore=shutil.ignore_patterns(
-            ".git", ".agents", ".aws", ".codex", "target", "__pycache__"
-        ))
+        shutil.copytree(ROOT, workspace, ignore=shutil.ignore_patterns(".git", "target"))
         facade = workspace / "concord-api/src/lib.rs"
         text = facade.read_text(encoding="utf-8")
         sample = "#[cfg(doc)]\npub mod sample;"
