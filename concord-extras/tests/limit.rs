@@ -899,38 +899,25 @@ async fn c11_7_a_body_error_releases_permit_even_when_the_body_reports_no_end() 
 
 #[tokio::test(start_paused = true)]
 async fn c11_5_a_header_over_4096_bytes_teaches_nothing() {
-    // `0` units left, after spaces that the reader trims: 4,096 bytes are read, 4,097 are not.
-    for (padding, waits) in [(4095, true), (4096, false)] {
+    // Both units of a ten-second window used, after spaces that the reader trims: a header of
+    // 4,096 bytes is read, one of 4,097 is not. The window has no date, so only Tokio's clock
+    // counts.
+    for (padding, wait) in [(4092, sec(10)), (4093, Duration::ZERO)] {
         let script = Script::new();
-        let reset = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            + 10;
-        let left = format!("{}0", " ".repeat(padding));
+        let used = format!("{}2:10", " ".repeat(padding));
         script
             .answer(200)
-            .header("x-limit", "2")
-            .header("x-left", &left)
-            .header("x-reset", &reset.to_string());
+            .header("x-limit", "2:10")
+            .header("x-count", &used);
         script.answer(200);
-        let limit = Limit::new().bucket(
-            Bucket::new(|_| Some("points".into())).learn(remaining("x-limit", "x-left", "x-reset")),
-        );
+        let limit = Limit::new()
+            .bucket(Bucket::new(|_| Some("points".into())).learn(counts("x-limit", "x-count")));
         let start = Instant::now();
         for _ in 0..2 {
             call(&limit, &script, "a").await.unwrap();
         }
         let elapsed = script.requests()[1].at() - start;
-        if waits {
-            assert!(
-                elapsed >= sec(9) && elapsed <= sec(10),
-                "{} bytes: {elapsed:?}",
-                left.len()
-            );
-        } else {
-            assert_eq!(elapsed, Duration::ZERO, "{} bytes", left.len());
-        }
+        assert_eq!(elapsed, wait, "{} bytes", used.len());
     }
 }
 
