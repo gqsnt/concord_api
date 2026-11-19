@@ -13,7 +13,7 @@ One target for each reader of response data, each driven only through the public
 | `rfc3339` | `Seen::until_rfc3339` |
 | `counts` | `concord::limit::counts` |
 | `remaining` | `concord::limit::remaining` and `remaining_rfc3339` |
-| `content_length` | `Content-Length` as the size that a response announces |
+| `content_length` | `Content-Length` as the size that a response announces, on a body of up to 255 bytes |
 | `json_label` | the content type that `Json.strict()` accepts |
 | `transfer_at` | `transfer::at` |
 
@@ -38,6 +38,14 @@ Then, from the root of the repository:
 cargo +nightly fuzz list
 cargo +nightly fuzz run sse
 cargo +nightly fuzz run link -- -max_total_time=600
+```
+
+`fuzz/seeds/<target>` holds a few inputs to start from, for the targets whose grammar is
+large (`link`, `sse`, `json_lines`, `date`, `rfc3339`, `retry_after`, `content_length`),
+made from the corpus of the tests. Give it after the corpus that `cargo fuzz` writes to:
+
+```sh
+cargo +nightly fuzz run link fuzz/corpus/link fuzz/seeds/link
 ```
 
 `cargo fuzz` keeps what it finds under `fuzz/corpus/<target>` and `fuzz/artifacts/<target>`,
