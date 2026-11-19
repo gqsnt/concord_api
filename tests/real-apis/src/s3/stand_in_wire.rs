@@ -12,8 +12,3 @@ impl<T: serde::de::DeserializeOwned + Send> concord::Reader<T> for Xml {
 pub fn xml<T: serde::Serialize>(value: &T) -> Result<concord::Body, concord::body::WriteError> {
     concord::json(value)
 }
-pub fn create_bucket_body(
-    value: &Option<CreateBucketConfiguration>,
-) -> Result<concord::Body, concord::body::WriteError> {
-    concord::json(value)
-}

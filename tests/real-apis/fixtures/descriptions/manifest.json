@@ -22,14 +22,14 @@
   },
   {
     "page": "docs/guide/bodies.md",
-    "block": 7,
+    "block": 8,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_bodies_001.api",
     "compiled": "tests/real-apis/src/guide/guide_bodies_001.rs",
     "client": "Store"
   },
   {
     "page": "docs/guide/bodies.md",
-    "block": 8,
+    "block": 9,
     "fixture": "tests/real-apis/fixtures/descriptions/guide_bodies_002.api",
     "compiled": "tests/real-apis/src/guide/guide_bodies_002.rs",
     "client": "Logs"

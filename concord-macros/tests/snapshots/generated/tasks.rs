@@ -1036,7 +1036,7 @@ const _: () = {
                     <Self as tasks::Endpoint>::NAME,
                     || ::core::result::Result::Ok({ json(task) }),
                 )?;
-                ::concord::__private::Draft::body(&mut __draft, __body);
+                ::concord::__private::Draft::whole_body(&mut __draft, __body);
             }
             ::core::result::Result::Ok(__draft)
         }

@@ -269,9 +269,13 @@ impl Draft {
             true,
         );
     }
-    /// `body <expression>;`
+    /// Store a present body's writer result.
     pub fn body(&mut self, body: impl IntoBody) {
         self.body = Some(body.into_body());
+    }
+    /// Store the whole writer result, leaving an omitted body out of the draft.
+    pub fn whole_body<K>(&mut self, writer: impl WholeBody<K>) {
+        self.body = writer.into_whole_body().transpose();
     }
     /// Inspect the finished request, refusing a one-shot body without touching it.
     pub fn finish<P>(
@@ -637,6 +641,49 @@ pub fn transfer_url_error<P>(
 
 /// The error type of an authored request expression.
 type BuildSource = Box<dyn std::error::Error + Send + Sync>;
+
+/// Converts the result of a generated body statement. Separate modes let an
+/// opaque `impl IntoBody` use its existing bound.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a body",
+    note = "a body expression returns a `concord::Body`, a `&Body`, an optional body, or a `Result` of one of these"
+)]
+pub trait WholeBody<K> {
+    /// Returns the body, its absence, or the writer's error.
+    fn into_whole_body(self) -> Result<Option<Body>, BuildSource>;
+}
+
+/// Selects a writer that supplies a body.
+#[derive(Debug)]
+pub enum PresentBody {}
+
+/// Selects a writer that can omit the body.
+#[derive(Debug)]
+pub enum OptionalBody {}
+
+impl<B: IntoBody> WholeBody<PresentBody> for B {
+    fn into_whole_body(self) -> Result<Option<Body>, BuildSource> {
+        self.into_body().map(Some)
+    }
+}
+
+impl<B: IntoBody> WholeBody<OptionalBody> for Option<B> {
+    fn into_whole_body(self) -> Result<Option<Body>, BuildSource> {
+        self.map(IntoBody::into_body).transpose()
+    }
+}
+
+impl WholeBody<OptionalBody> for &Option<Body> {
+    fn into_whole_body(self) -> Result<Option<Body>, BuildSource> {
+        self.as_ref().into_whole_body()
+    }
+}
+
+impl<B: WholeBody<OptionalBody>, E: Into<BuildSource>> WholeBody<OptionalBody> for Result<B, E> {
+    fn into_whole_body(self) -> Result<Option<Body>, BuildSource> {
+        self.map_err(Into::into)?.into_whole_body()
+    }
+}
 
 /// Evaluate an entry in a `Result` context and attach its wire key to any error.
 /// The success wrapper keeps the generated `?` from inferring a bare value's

@@ -58,7 +58,7 @@ concord::api! {
             HEAD head();
             /// In `us-east-1`, no configuration; anywhere else, its `LocationConstraint`.
             PUT create(configuration?: CreateBucketConfiguration) {
-                body create_bucket_body(configuration);
+                body configuration.as_ref().map(xml).transpose();
                 idempotent false;
             }
             DELETE delete();

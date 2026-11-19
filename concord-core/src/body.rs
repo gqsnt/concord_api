@@ -498,18 +498,19 @@ impl From<&Body> for Body {
     }
 }
 
-/// What the expression of a `body` statement may return.
+/// Converts a writer's result into a present request body.
 ///
 /// A [`Body`], a `&Body`, or a `Result` of one of these with any error that converts into
 /// `Box<dyn Error + Send + Sync>`: an `Err` is a Build error, nothing is sent, and the error of your writer becomes the `source()` of that
 /// error. A body writer is a function that returns a [`Body`]: `concord`'s `json` and `form`
 /// are two, and your own writer is used in the same way.
+/// A `body` statement can also use an optional writer result to omit the body.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a body",
     note = "a body expression returns a `concord::Body` or a `Result` of one, as `json(x)`, `form(x)` or your own function do"
 )]
 pub trait IntoBody: sealed::Sealed {
-    /// Returns the body, or the reason there is none.
+    /// Returns the body or its writer's error.
     fn into_body(self) -> Result<Body, Box<dyn std::error::Error + Send + Sync>>;
 }
 

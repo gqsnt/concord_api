@@ -34,6 +34,7 @@ Upgrading from 5.0.0-rc.1: the changes that stop a program from compiling come f
 
 ### Added
 
+- **An optional whole request body.** A body writer can return `Option<B>` or `Result<Option<B>, E>`. `None` omits the body and its inferred content type. Explicit headers keep their usual rules. [Send a body](docs/guide/bodies.md#a-body-that-is-sent).
 - **An edit of the next call can fail.** `concord::page::Paging::try_map_next` adds an edit that returns a `Fail` when the next call cannot be made. It runs in written order with `map_next`, which keeps its signature and behavior. The caller gets the page that arrived, then the error ([pages](docs/guide/pages.md#the-shipped-pagers)).
 - **Page numbers reported by the server.** `concord::by_page_bounds`, also available as `concord::page::by_page_bounds`, follows the current and last page numbers that the server reports. It needs no `IntoItems` ([pages](docs/guide/pages.md#the-line-to-write)).
 - **The endpoint name on a call.** Every generated call implements `concord::page::NamedCall`. Its `concord::page::NamedCall::ENDPOINT` is the same name as the generated endpoint's `Endpoint::NAME`.

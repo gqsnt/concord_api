@@ -11,6 +11,37 @@ mod s3;
 use s3::ObjectStore;
 
 #[tokio::test(start_paused = true)]
+async fn s3_create_bucket_omits_body_until_configuration_is_set() {
+    let origin: Base = "https://bucket.s3.amazonaws.com".parse().unwrap();
+    let script = Script::new();
+    script.answer(200);
+    script.answer(200);
+    let bucket = ObjectStore::new(
+        "us-east-1",
+        Credentials::new("ACCESS", "secret"),
+        vec![origin.clone()],
+    )
+    .with_transport(script.clone())
+    .bucket(origin);
+    bucket.create().await.unwrap();
+    bucket
+        .create()
+        .configuration(s3::CreateBucketConfiguration {})
+        .await
+        .unwrap();
+
+    let requests = script.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].body(), None);
+    assert_eq!(requests[0].header("content-type"), None);
+    assert_eq!(
+        requests[1].body(),
+        Some(&b"<CreateBucketConfiguration/>"[..])
+    );
+    assert_eq!(requests[1].header("content-type"), Some("application/xml"));
+}
+
+#[tokio::test(start_paused = true)]
 async fn c12_9_s3_signs_two_bucket_hosts_and_the_global_endpoint_for_their_regions() {
     let first: Base = "https://first.s3.eu-west-1.amazonaws.com".parse().unwrap();
     let second: Base = "https://s3.eu-west-1.amazonaws.com/second".parse().unwrap();

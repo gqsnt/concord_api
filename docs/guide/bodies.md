@@ -6,7 +6,7 @@ This page shows how the description builds the body of a request: the two forms 
 
 ## A body that is sent
 
-The `body` statement has two forms. In `body <expression>;`, the expression is ordinary Rust in which the inputs are variables, and it evaluates to a `concord::Body`. The other form, `body json { … }`, builds the body from entries, for a body that consists of the endpoint's inputs.
+The `body` statement has two forms. In `body <expression>;`, the expression is ordinary Rust in which the inputs are variables, and it can produce a `concord::Body`, a borrowed body, or an optional body. A writer can return a `Result` of any of these. The other form, `body json { … }`, builds the body from entries, for a body that consists of the endpoint's inputs.
 
 | Written | Sent as |
 |---|---|
@@ -28,6 +28,16 @@ pub fn xml<T: Serialize>(value: &T) -> Result<concord::Body, quick_xml::SeError>
 
 A custom writer that combines bodies has three more tools: `Body::concat(parts)` returns one body made of several, in order; `body.as_bytes()` returns the bytes of a body held in memory; and `body.into_stream()` turns any body into a stream. A one-shot stream inside a combined body is taken along with the whole body when the request is built for sending, so a stream that was already sent is a Build error before anything is sent ([contracts](../reference/contracts.md) C2.15).
 
+**Omit the whole body.** A writer result of `Option<B>` or `Result<Option<B>, E>` can leave the body out. Here `B` is any writer result accepted for a present body. An optional `Body` input can also be used directly with `body payload;` for `payload?: Body`. To write a literal omission, use `body None::<concord::Body>;`.
+
+```rust
+PUT optional_json(value?: Option<u32>) {
+    body value.as_ref().map(concord::json).transpose();
+}
+```
+
+With the setter unset, `request()` shows neither a body nor an inferred `Content-Type`. An explicit `content-type` entry still follows the rules of `headers`. Calling `.value(None::<u32>)` sends the JSON value `null`, and `.value(Some(7))` sends `7`. Both carry the JSON content type. Empty bytes from a writer are also a present body.
+
 **A body made of entries.** In many APIs, the body of a `POST` consists of its inputs. The body is then written like a `query`:
 
 ```rust
@@ -48,7 +58,7 @@ POST send_message(chat_id: ChatId, text: String, ..formatted) -> Message {
 | A part | It may contain `body json { … }`. The node that names it then writes `body json { … }` too, or no body at all: the entries are merged, the parts' entries first, in the order in which the node names the parts, then the node's own. A different function, the other form of `body`, or a key written by two of them is rejected as "written twice". |
 | A `Secret` | It may be an entry, in the short form or as a value, and it is sent as its string: `body form { grant_type; client_id; client_secret; }` for a token endpoint. A struct that holds a `Secret` is still never serialized: `body json(task)` with a secret field does not compile. |
 
-**A `None` sends nothing**, in a body of entries just as in `query` and in `headers`. One level of `Option` means presence: the entry is there, or it is not. What is inside is serialized by the format, with `serde` ([rules](../reference/rules.md), rules 8 and 9).
+**A `None` leaves the entry out**, in a body of entries just as in `query` and in `headers`. One level of `Option` means presence: the entry is there, or it is not. What is inside is serialized by the format, with `serde` ([rules](../reference/rules.md), rules 8 and 9).
 
 | Written | What goes out |
 |---|---|
