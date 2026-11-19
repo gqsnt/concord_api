@@ -116,10 +116,7 @@ pub trait AdaptValue {
     /// Choose the writer without making a secret serializable.
     fn adapt(self) -> Self::Adapted;
 
-    /// The same as [`adapt`](AdaptValue::adapt), for generated code. Generated code calls a
-    /// method in the author's scope, where a trait of the author's with a method `adapt`
-    /// on every type could be chosen instead; no trait of the author's has a name that
-    /// starts with `__` (C1.16).
+    /// The same as [`adapt`](AdaptValue::adapt), for expansions using auto-reference.
     #[doc(hidden)]
     fn __adapt(self) -> Self::Adapted
     where
@@ -140,6 +137,40 @@ impl<'a, T: serde::Serialize> AdaptValue for &&'a ValueRef<T> {
     type Adapted = &'a T;
     fn adapt(self) -> Self::Adapted {
         &self.0
+    }
+}
+
+/// Selects a placement writer through a qualified call. Rust infers the mode
+/// from the bounds on the authored value.
+pub trait AdaptPlacement<Mode> {
+    /// The value accepted by the placement writer.
+    type Adapted: Value;
+
+    /// Selects the placement writer.
+    fn adapt_placement(self) -> Self::Adapted;
+}
+
+/// Selects the writer for secret values.
+#[derive(Debug)]
+pub enum SecretPlacement {}
+
+/// Selects the writer for serializable values.
+#[derive(Debug)]
+pub enum SerdePlacement {}
+
+impl<'a, T: SecretInput> AdaptPlacement<SecretPlacement> for &'a ValueRef<T> {
+    type Adapted = SecretValue<'a, T>;
+
+    fn adapt_placement(self) -> Self::Adapted {
+        AdaptValue::adapt(self)
+    }
+}
+
+impl<'a, T: serde::Serialize> AdaptPlacement<SerdePlacement> for &'a ValueRef<T> {
+    type Adapted = &'a T;
+
+    fn adapt_placement(self) -> Self::Adapted {
+        AdaptValue::adapt(&self)
     }
 }
 

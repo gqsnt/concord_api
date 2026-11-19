@@ -147,12 +147,10 @@ impl Surface {
             "Shapes" => "shapes",
             _ => root,
         };
-        let problem = self
-            .local_types
-            .get("__DeclaredProblem")
-            .or_else(|| self.problems.get(root))
-            .map_or("()", String::as_str);
+        let problem = self.problems.get(root).map_or("()", String::as_str);
+        let storage_problem = format!("{root}::__Problem");
         let text = canonical(tokens)
+            .replace(&storage_problem, problem)
             .replace("<Selfasconcord::page::Call>::Problem", problem)
             .replace("<()as__Types>::__Problem", problem)
             .replace("__Problem", problem)
@@ -163,6 +161,9 @@ impl Surface {
                 let name =
                     part.trim_end_matches(|c: char| !(c.is_ascii_alphanumeric() || c == '_'));
                 match self.local_types.get(name) {
+                    Some(ty) if ty == &storage_problem => {
+                        format!("{problem}{}", &part[name.len()..])
+                    }
                     Some(ty) => format!("{ty}{}", &part[name.len()..]),
                     None => part.to_owned(),
                 }
@@ -226,17 +227,34 @@ impl Surface {
 
 impl<'ast> Visit<'ast> for Surface {
     fn visit_file(&mut self, file: &'ast syn::File) {
-        // The client module and its authored type aliases are siblings in
-        // the expansion. Resolve the problem there before collecting its methods.
-        let enclosing = self.local_types.clone();
+        // The client module and its storage types are siblings in the expansion.
+        // Resolve the problem before comparing signatures from either scope.
         for item in &file.items {
-            if let syn::Item::Const(item) = item {
-                if let syn::Expr::Block(block) = &*item.expr {
-                    for statement in &block.block.stmts {
-                        if let syn::Stmt::Item(syn::Item::Type(alias)) = statement {
-                            if alias.ident == "__DeclaredProblem" {
-                                self.local_types
-                                    .insert(alias.ident.to_string(), canonical(&alias.ty));
+            let syn::Item::Const(item) = item else {
+                continue;
+            };
+            let syn::Expr::Block(block) = item.expr.as_ref() else {
+                continue;
+            };
+            for statement in &block.block.stmts {
+                let syn::Stmt::Item(syn::Item::Impl(item)) = statement else {
+                    continue;
+                };
+                let Some((_, path, _)) = &item.trait_ else {
+                    continue;
+                };
+                let mut segments = path.segments.iter();
+                let (Some(client), Some(types), None) =
+                    (segments.next(), segments.next(), segments.next())
+                else {
+                    continue;
+                };
+                if types.ident == "__Types" {
+                    for item in &item.items {
+                        if let syn::ImplItem::Type(ty) = item {
+                            if ty.ident == "__Problem" {
+                                self.problems
+                                    .insert(client.ident.to_string(), canonical(&ty.ty));
                             }
                         }
                     }
@@ -244,7 +262,6 @@ impl<'ast> Visit<'ast> for Surface {
             }
         }
         visit::visit_file(self, file);
-        self.local_types = enclosing;
     }
 
     fn visit_item_const(&mut self, item: &'ast syn::ItemConst) {
@@ -273,10 +290,9 @@ impl<'ast> Visit<'ast> for Surface {
             for item in items {
                 if let syn::Item::Type(alias) = item {
                     if alias.ident == "__Problem" {
-                        self.problems.insert(
-                            self.prefix.join("::"),
-                            canonical(&alias.ty).replace("super::", ""),
-                        );
+                        self.problems
+                            .entry(self.prefix.join("::"))
+                            .or_insert_with(|| canonical(&alias.ty).replace("super::", ""));
                     }
                     if alias.ident == "__Sending" || alias.ident == "__Pages" {
                         self.future_aliases.insert(
@@ -364,8 +380,12 @@ impl<'ast> Visit<'ast> for Surface {
 
     fn visit_item_type(&mut self, item: &'ast syn::ItemType) {
         if item.ident.to_string().starts_with("__Impl") {
-            self.aliases
-                .insert(item.ident.to_string(), canonical(&item.ty));
+            let ty = canonical(&item.ty);
+            let target = match ty.strip_prefix("self::") {
+                Some(path) => self.qualified(&path),
+                None => ty,
+            };
+            self.aliases.insert(self.qualified(&item.ident), target);
         }
         if public(&item.vis, &item.ident) {
             let (name, generics, ty) = (&item.ident, &item.generics, &item.ty);

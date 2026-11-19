@@ -372,20 +372,26 @@ def rustdoc_signature(page, method):
     return display(header)
 
 
-def call_page_violations(path, problem=None):
+def call_page_violations(path, problem=None, *, macro_problem=False):
     page = path.read_text()
     signatures = [display(content) for _, content in CODE_HEADERS.findall(page)]
     retry = rustdoc_signature(page, "with_retry")
     assert retry in signatures and any("fn send(" in sig for sig in signatures), path
+
+    def resolved(signature):
+        if macro_problem:
+            return signature.replace("<() as __Types>::__Problem", problem)
+        return signature
+
     problems = [
         f"{path.parent.name}: {signature}"
         for signature in signatures
-        if PRIVATE_NAME.search(signature) or SELF_PROJECTION.search(signature)
+        if PRIVATE_NAME.search(resolved(signature)) or SELF_PROJECTION.search(signature)
     ]
     if problem:
         for method in ("with_retry", "send", "send_if_none_match"):
             signature = rustdoc_signature(page, method)
-            if not re.search(rf"\b{problem}\b", signature):
+            if not re.search(rf"\b{problem}\b", resolved(signature)):
                 problems.append(f"{path.parent.name}: missing problem type {problem} in {signature}")
     return problems
 
@@ -558,7 +564,7 @@ def check_search():
                             ("riot", "RiotProblem"), ("shapes", "ShapesProblem")]:
         violations.extend(call_page_violations(DOC / "tour_gen" / client / "struct.Call.html", problem))
     named = DOC / "call_docs_api/names/named"
-    violations.extend(call_page_violations(named / "struct.Call.html", "E"))
+    violations.extend(call_page_violations(named / "struct.Call.html", "E", macro_problem=True))
     violations.extend(call_page_violations(
         DOC / "call_docs_api/direct_name/named/struct.Call.html", "E"
     ))

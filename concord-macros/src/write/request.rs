@@ -11,7 +11,7 @@ fn reference(reference: &Reference) -> TokenStream {
 }
 
 fn adapt(value: TokenStream, gate: Option<&str>, span: Span) -> TokenStream {
-    let value = emit_at!(span => (#value).__adapt());
+    let value = emit_at!(span => ::concord::__private::AdaptPlacement::adapt_placement(#value));
     if let Some(gate) = gate {
         let gate = ident(gate);
         emit_at!(span => ::concord::__private::#gate(#value))
@@ -370,17 +370,17 @@ impl Writer<'_> {
                 holders.extend(emit!(let #name = ::concord::__private::ValueRef(#raw);));
                 let key = flat::key(entry.line.value, false);
                 let value = adapt(emit!(&#name), None, span);
-                writes.extend(emit!(__entries.__push(#key, #value);));
+                writes
+                    .extend(emit!(::concord::body::Entries::__push(&mut __entries, #key, #value);));
             }
             setup.extend(values.block(bindings));
             setup.extend(holders);
         }
         emit!({
-            fn __body_function(__entries: ::concord::body::Entries<'_>) -> impl ::concord::body::IntoBody { #function(__entries) }
             #setup
             let mut __entries = ::concord::body::Entries::new();
             #writes
-            ::concord::__private::Draft::body(&mut __draft, __body_function(__entries));
+            ::concord::__private::Draft::body(&mut __draft, #function(__entries));
         })
     }
 

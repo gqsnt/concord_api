@@ -9,9 +9,12 @@ error[E0716]: temporary value dropped while borrowed
   |          returning this value requires that borrow lasts for `'static`
   |          value captured here
   |
-note: requirement that the value outlives `'static` introduced here
- --> tests/compiler-errors/spans/22_pager_borrow.rs:3:10
+note: requirements that the value outlives `'static` introduced here
+ --> $WORKSPACE/concord-core/src/__private/page.rs
   |
-3 | paginate move |_call, _page| { let _=client.root.len(); None::<c::Call<c::Get>> };
-  |          ^^^^
+  | pub fn make_pager<C, N, F>(_: &C, make: impl FnOnce() -> F) -> F
+  |                                                          ^
+...
+  |     F: FnMut(C, &Answer<C::Value>) -> N + Send + 'static,
+  |                                                  ^^^^^^^
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

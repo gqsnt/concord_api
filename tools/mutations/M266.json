@@ -4,7 +4,7 @@
   "contract": "C1.6, C1.11, C1.12",
   "description": "Print the authored problem type inside the call's generic scope even when it references E.",
   "file": "concord-macros/src/write/call.rs",
-  "find": "                problem_alias.to_token_stream()\n            } else {\n                ty.to_token_stream()",
+  "find": "                emit!(#alias)\n            } else {\n                ty.to_token_stream()",
   "replace": "                ty.to_token_stream()\n            } else {\n                ty.to_token_stream()",
   "checks": [
     "macro-compiler"

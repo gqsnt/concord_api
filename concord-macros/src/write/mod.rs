@@ -231,8 +231,9 @@ impl<'a> Writer<'a> {
                 .and_then(|i| self.nodes.get(i))
                 .is_some_and(|n| n.deprecated);
         let implementation = if deprecated {
+            let root = &self.root;
             let alias = ident(&format!("__Impl{index}"));
-            emit!(#alias)
+            emit!(#root::#alias)
         } else {
             path.clone()
         };
@@ -347,12 +348,9 @@ impl<'a> Writer<'a> {
         emit!(<() as #root::__Types>::#id)
     }
 
-    fn problem_alias(&self) -> Ident {
-        let mut alias = ident("__DeclaredProblem");
-        if let Some(ty) = self.problem_type() {
-            alias.set_span(alias.span().located_at(ty.span()));
-        }
-        alias
+    fn problem_alias(&self) -> TokenStream {
+        let root = &self.root;
+        self.at_problem(emit!(#root::__Problem))
     }
 
     fn problem_span(&self) -> Span {
@@ -446,6 +444,7 @@ impl<'a> Writer<'a> {
         base: TokenStream,
         slots: bool,
     ) -> TokenStream {
+        let root = &self.root;
         let owners = origin.owners.iter().map(|owner| {
             let Some(owner_index) = self.index(owner.node) else {
                 return TokenStream::new();
@@ -466,9 +465,9 @@ impl<'a> Writer<'a> {
             // if the author's module has a constant, a static or a unit struct of it.
             let shadow = emit!(#[allow(unused_imports)] use ::core::mem::drop as #binding;);
             if owner.inputs.is_empty() {
-                emit!(#shadow let #binding = #view;)
+                emit!(#shadow let #binding = #root::#view;)
             } else {
-                emit!(#shadow let #binding = #view { #(#fields),* };)
+                emit!(#shadow let #binding = #root::#view { #(#fields),* };)
             }
         });
         let locals = origin.locals.iter().map(|input| {
@@ -595,26 +594,17 @@ impl<'a> Writer<'a> {
                 .deprecated
                 .then(|| emit!(#[allow(deprecated, unused_attributes, useless_deprecated)]));
             let span = input.input.ty.span();
-            let value = id.as_ref().map(|id| Ident::new(&id.to_string(), span));
+            let value = &input.input.ty;
             emit_at!(span=> #attrs #allow type #id = #value;)
-        });
-        let input_aliases = all_inputs.iter().map(|(n, input)| {
-            let id = self.input_id(input);
-            let ty = &input.input.ty;
-            let attrs = n.input_type_attrs();
-            emit!(#attrs type #id = #ty;)
         });
         let problem = self
             .problem_type()
-            .map(|ty| emit!(#ty))
-            .unwrap_or_else(|| emit!(()));
+            .map_or_else(|| emit!(()), ToTokens::to_token_stream);
         let problem_span = self.problem_span();
         let problem_bound = quote::quote_spanned!(problem_span=>
             type __Problem: ::core::marker::Send + ::core::marker::Sync + 'static;
         );
-        let problem_alias = self.problem_alias();
-        let problem_use = located(emit!(#problem_alias), problem_span);
-        let problem_impl = emit_at!(problem_span=> type __Problem = #problem_use;);
+        let problem_impl = emit_at!(problem_span=> type __Problem = #problem;);
         let fields = client.inputs.iter().map(|input| {
             let field = &input.input.name;
             let ty = stored(input.input, self.input_type(input));
@@ -634,13 +624,14 @@ impl<'a> Writer<'a> {
                 let cfg = &node.cfg;
                 let fields = node.inputs.iter().map(|input| {
                     let name = &input.input.name;
-                    let ty = stored(input.input, self.input_id(input).to_token_stream());
-                    emit!(#name: &'__a #ty)
+                    let id = self.input_id(input);
+                    let ty = stored(input.input, emit!(<() as __Types>::#id));
+                    emit!(pub(super) #name: &'__a #ty)
                 });
                 if node.inputs.is_empty() {
-                    emit!(#(#cfg)* struct #view;)
+                    emit!(#(#cfg)* #[doc(hidden)] pub(super) struct #view;)
                 } else {
-                    emit!(#(#cfg)* struct #view<'__a> { #(#fields),* })
+                    emit!(#(#cfg)* #[doc(hidden)] pub(super) struct #view<'__a> { #(#fields),* })
                 }
             });
         let implementations = self
@@ -648,12 +639,23 @@ impl<'a> Writer<'a> {
             .iter()
             .enumerate()
             .map(|(index, _)| self.implementation(index));
-        let aliases = self.nodes.iter().filter(|n| n.deprecated).map(|node| {
-            let alias = &node.implementation;
-            let path = &node.path;
-            let cfg = &node.cfg;
-            emit!(#(#cfg)* #[allow(deprecated)] type #alias = #path;)
-        });
+        let aliases = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.deprecated)
+            .map(|(index, node)| {
+                let alias = ident(&format!("__Impl{index}"));
+                let cfg = &node.cfg;
+                let path = if node.parent.is_none() {
+                    emit!(<() as __Types>::__Node0)
+                } else {
+                    let modules = node.modules.iter().skip(1);
+                    let ty = ident(&name::type_name(&node.node.name.to_string()));
+                    emit!(self::#(#modules::)* #ty)
+                };
+                emit!(#(#cfg)* #[allow(deprecated)] #[doc(hidden)] pub(super) type #alias = #path;)
+            });
         let data_aliases = self
             .nodes
             .iter()
@@ -661,9 +663,10 @@ impl<'a> Writer<'a> {
             .filter(|(_, node)| node.deprecated && matches!(node.node.kind, NodeKind::Endpoint(_)))
             .map(|(index, node)| {
                 let alias = ident(&format!("__DataImpl{index}"));
-                let path = self.raw_data_path(index);
+                let data = ident(&format!("__Data{index}"));
+                let modules = node.modules.iter().skip(1);
                 let cfg = &node.cfg;
-                emit!(#(#cfg)* #[allow(deprecated)] type #alias<__T = ()> = #path<__T>;)
+                emit!(#(#cfg)* #[allow(deprecated)] #[doc(hidden)] pub(super) type #alias<__T = ()> = self::#(#modules::)* #data<__T>;)
             });
         let client_doc = self.client_doc();
         let module_doc = format!("Calls and results for [`{client_name}`].");
@@ -690,6 +693,12 @@ impl<'a> Writer<'a> {
                 .as_ref()
                 .map_or(String::new(), |p| format!("<{p}>"))
         );
+        // rustc may infer a diverging type for a sibling while it recovers from
+        // the description's primary error. Keep that inference lint out of the
+        // recovered shell so the primary diagnostics stay readable.
+        // PANIC-SAFETY: This only silences a type-inference lint on invalid input.
+        let recovering = (!self.refused.is_empty())
+            .then(|| emit!(#[allow(dependency_on_unit_never_type_fallback)]));
         emit! {
             #(#attrs)* #client_doc
             #vis struct #client_name {
@@ -711,24 +720,23 @@ impl<'a> Writer<'a> {
                 #module_vis type Result<T> = ::core::result::Result<T, Error>;
                 #[doc = #retry_doc]
                 #module_vis type Retry = #retry_type;
-                type __Problem = <() as __Types>::__Problem;
+                #[doc(hidden)] pub(super) type __Problem = <() as __Types>::__Problem;
+                #(#aliases)*
+                #(#data_aliases)*
+                #(#views)*
                 #call_declarations
                 #call_implementations
                 #tree
             }
             #(#cfg)*
+            #recovering
             #[allow(unused_variables, unused_mut, unused_braces, dead_code, clippy::redundant_closure_call)]
             const _: () = {
-                #[allow(unused_imports)] use ::concord::__private::AdaptValue as _;
-                type #problem_alias = #problem;
-                #(#input_aliases)*
                 impl #root::__Types for () { #(#node_type_impls)* #(#associated_impl)* #problem_impl }
                 #send_methods
-                #(#aliases)*
-                #(#data_aliases)*
-                #(#views)*
                 #(#implementations)*
             };
+
         }
     }
 }

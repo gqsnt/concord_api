@@ -279,7 +279,7 @@ fn c1_16_no_empty_impl_is_written() {
             ),
             (
                 "",
-                "#[allow(deprecated)]impl::core::marker::Unpinfor__Impl6{}",
+                "#[allow(deprecated)]impl::core::marker::Unpinforminimal::__Impl6{}",
             ),
         ]
         .map(|(module, block)| (module.to_owned(), block.to_owned())),

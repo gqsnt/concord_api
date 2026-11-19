@@ -52,7 +52,10 @@ pub mod tasks {
     pub type Result<T> = ::core::result::Result<T, Error>;
     ///The retry policy for this client: [`concord::Retry`].
     pub type Retry = ::concord::Retry;
-    type __Problem = <() as __Types>::__Problem;
+    #[doc(hidden)]
+    pub(super) type __Problem = <() as __Types>::__Problem;
+    #[doc(hidden)]
+    pub(super) struct __View0;
     mod __sealed {
         pub trait Sealed {}
     }
@@ -129,7 +132,7 @@ pub mod tasks {
     }
     impl<__E: __Pager> __PagesFor<__E> for ::concord::call::Paged {
         fn __pages(__call: Call<__E>, _: ()) -> ::concord::Pages<__E::Value, __Problem> {
-            __E::__pages(__call)
+            <__E as __Pager>::__pages(__call)
         }
     }
     /// A call to the endpoint named by its type argument.
@@ -155,10 +158,16 @@ pub mod tasks {
             &self,
             formatter: &mut ::core::fmt::Formatter<'_>,
         ) -> ::core::fmt::Result {
-            formatter
-                .debug_struct(E::__DEBUG)
-                .field("endpoint", &E::NAME)
-                .finish_non_exhaustive()
+            let mut debug = ::core::fmt::Formatter::debug_struct(
+                formatter,
+                <E as Endpoint>::__DEBUG,
+            );
+            ::core::fmt::DebugStruct::field(
+                &mut debug,
+                "endpoint",
+                &<E as Endpoint>::NAME,
+            );
+            ::core::fmt::DebugStruct::finish_non_exhaustive(&mut debug)
         }
     }
     impl<E: Endpoint> Call<E> {
@@ -178,39 +187,47 @@ pub mod tasks {
             &mut self.__data
         }
         fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
-            E::__build_draft(&self.__data)?
-                .finish_request(E::__core(&self.__data), &self.__options, E::NAME, take)
+            ::concord::__private::Draft::finish_request(
+                <E as Endpoint>::__build_draft(&self.__data)?,
+                <E as Endpoint>::__core(&self.__data),
+                &self.__options,
+                <E as Endpoint>::NAME,
+                take,
+            )
         }
         fn __prepare_inner(
             mut self,
         ) -> Result<::concord::__private::Prepared<E::Value, __Problem>> {
             let run = ::concord::__private::Run::start(
-                E::__core(&self.__data),
+                <E as Endpoint>::__core(&self.__data),
                 &self.__options,
-                E::NAME,
+                <E as Endpoint>::NAME,
             );
-            let idempotent = E::__settings(&self.__data, &mut self.__options);
-            let draft = E::__build_draft(&self.__data)?;
+            let idempotent = <E as Endpoint>::__settings(
+                &self.__data,
+                &mut self.__options,
+            );
+            let draft = <E as Endpoint>::__build_draft(&self.__data)?;
             ::concord::__private::prepare_call(
                 draft,
                 run,
-                ::core::clone::Clone::clone(E::__core(&self.__data)),
+                ::core::clone::Clone::clone(<E as Endpoint>::__core(&self.__data)),
                 ::core::clone::Clone::clone(&self.__options),
                 idempotent,
                 self,
                 |call, response, info| async move {
-                    E::__read_answer(&call.__data, response, info).await
+                    <E as Endpoint>::__read_answer(&call.__data, response, info).await
                 },
             )
         }
         /// The retry policy for this call. Accepts a [`concord::Retry`].
         pub fn with_retry(mut self, retry: self::Retry) -> Self {
-            self.__options.with_retry(retry);
+            ::concord::__private::Options::with_retry(&mut self.__options, retry);
             self
         }
         /// The longest the whole call may take, retries and reading included. No limit by default. Accepts a [`std::time::Duration`].
         pub fn with_timeout(mut self, timeout: ::std::time::Duration) -> Self {
-            self.__options.with_timeout(timeout);
+            ::concord::__private::Options::with_timeout(&mut self.__options, timeout);
             self
         }
         /// The longest the transport or a body read may be silent. Accepts a [`std::time::Duration`].
@@ -218,7 +235,10 @@ pub mod tasks {
         /// The endpoint's `idle_timeout` still runs once for every send, before
         /// `idempotent` and request construction, even when this call sets the length.
         pub fn with_idle_timeout(mut self, timeout: ::std::time::Duration) -> Self {
-            self.__options.with_idle_timeout(timeout);
+            ::concord::__private::Options::with_idle_timeout(
+                &mut self.__options,
+                timeout,
+            );
             self
         }
         /// Read a response that you obtained yourself using this endpoint's reader and status rules. No retry, call timeout, or idle timeout is started; pages are not advanced, and errors report zero attempts.
@@ -229,20 +249,22 @@ pub mod tasks {
             Output = Result<E::Value>,
         > + ::core::marker::Send + '_ {
             async move {
-                E::__read_answer(
-                        &self.__data,
-                        response,
-                        ::concord::transport::TryInfo::new(E::NAME, 0),
-                    )
-                    .await
-                    .map(::concord::Answer::into_value)
+                ::core::result::Result::map(
+                    <E as Endpoint>::__read_answer(
+                            &self.__data,
+                            response,
+                            ::concord::transport::TryInfo::new(<E as Endpoint>::NAME, 0),
+                        )
+                        .await,
+                    ::concord::Answer::into_value,
+                )
             }
         }
         /// The [`reqwest::Request`](https://docs.rs/reqwest/0.13.5/reqwest/struct.Request.html) that this call would send.
         /// The call can still be sent. This is the request before any middleware (such as a signer).
         /// Refuses a one-shot body without taking it; a wholly repeatable body stays unopened. The call timeout does not start, and neither the endpoint's `idle_timeout` nor its `idempotent` runs.
         pub fn request(&self) -> Result<::concord::reqwest::Request> {
-            self.__build_request(false)
+            Self::__build_request(self, false)
         }
         /// The [`reqwest::Request`](https://docs.rs/reqwest/0.13.5/reqwest/struct.Request.html) that this call would send, and the call is used up.
         ///
@@ -252,7 +274,7 @@ pub mod tasks {
         /// The call timeout does not start, and neither `idle_timeout` nor `idempotent`
         /// from the endpoint runs.
         pub fn into_request(self) -> Result<::concord::reqwest::Request> {
-            self.__build_request(true)
+            Self::__build_request(&self, true)
         }
         /// Change the built request before it enters the middleware chain.
         ///
@@ -271,7 +293,7 @@ pub mod tasks {
                 &mut ::concord::reqwest::Request,
             ) + ::core::marker::Send + ::core::marker::Sync + 'static,
         ) -> Self {
-            self.__options.edit_request(edit);
+            ::concord::__private::Options::edit_request(&mut self.__options, edit);
             self
         }
     }
@@ -285,7 +307,7 @@ pub mod tasks {
             _: ::concord::__private::ConditionalAccess<Self>,
             etag: &::core::primitive::str,
         ) {
-            self.__options.if_none_match(etag);
+            ::concord::__private::Options::if_none_match(&mut self.__options, etag);
         }
     }
     #[doc(hidden)]
@@ -293,20 +315,23 @@ pub mod tasks {
         type Value = E::Value;
         type Problem = __Problem;
         fn at_url(mut self, url: &::core::primitive::str) -> Self {
-            self.__options.at_url(::concord::__private::without_fragment(url));
+            ::concord::__private::Options::at_url(
+                &mut self.__options,
+                ::concord::__private::without_fragment(url),
+            );
             self
         }
     }
     #[doc(hidden)]
     impl<E: Endpoint> ::concord::__private::Call for Call<E> {
         fn request(&self) -> Result<::concord::reqwest::Request> {
-            self.__build_request(false)
+            Self::__build_request(self, false)
         }
         fn prepare(self) -> Result<::concord::__private::Prepared<E::Value, __Problem>> {
-            self.__prepare_inner()
+            Self::__prepare_inner(self)
         }
         fn answered_from(mut self, url: ::concord::reqwest::Url) -> Self {
-            self.__options.answered_from(url);
+            ::concord::__private::Options::answered_from(&mut self.__options, url);
             self
         }
         fn edit_request(
@@ -450,22 +475,14 @@ pub mod tasks {
     clippy::redundant_closure_call
 )]
 const _: () = {
-    #[allow(unused_imports)]
-    use ::concord::__private::AdaptValue as _;
-    type __DeclaredProblem = ();
-    type __Input0 = bool;
-    type __Input1 = Vec<String>;
-    type __Input2 = NewTask;
-    type __Input3 = u64;
-    type __Input4 = u64;
     impl tasks::__Types for () {
         type __Node0 = Tasks;
-        type __Input0 = __Input0;
-        type __Input1 = __Input1;
-        type __Input2 = __Input2;
-        type __Input3 = __Input3;
-        type __Input4 = __Input4;
-        type __Problem = __DeclaredProblem;
+        type __Input0 = bool;
+        type __Input1 = Vec<String>;
+        type __Input2 = NewTask;
+        type __Input3 = u64;
+        type __Input4 = u64;
+        type __Problem = ();
     }
     const _: () = {
         #[allow(unused_imports)]
@@ -481,7 +498,7 @@ const _: () = {
             ) -> tasks::Result<
                 ::concord::__private::Prepared<
                     ::core::option::Option<E::Value>,
-                    __DeclaredProblem,
+                    tasks::__Problem,
                 >,
             > {
                 ::concord::__private::prepare_conditional(self, etag)
@@ -510,7 +527,10 @@ const _: () = {
                     etag,
                 );
                 ::concord::Sending::new(async move {
-                    self.__prepare_if_none_match(&etag)?.send().await
+                    ::concord::__private::Prepared::send(
+                            Self::__prepare_if_none_match(self, &etag)?,
+                        )
+                        .await
                 })
             }
         }
@@ -555,7 +575,10 @@ const _: () = {
             /// Polling elsewhere panics with Tokio's own message. Building a client or call needs no runtime.
             pub fn send_raw(self) -> ::concord::Sending<::concord::reqwest::Response> {
                 ::concord::Sending::new(async move {
-                    <Self as ::concord::__private::Call>::prepare(self)?.send_raw().await
+                    ::concord::__private::Prepared::send_raw(
+                            <Self as ::concord::__private::Call>::prepare(self)?,
+                        )
+                        .await
                 })
             }
         }
@@ -574,16 +597,12 @@ const _: () = {
     where
         E::Paging: ::concord::call::AwaitWithoutPaginate,
     {
-        type Output = ::core::result::Result<
-            E::Value,
-            ::concord::Error<__DeclaredProblem>,
-        >;
+        type Output = ::core::result::Result<E::Value, ::concord::Error<()>>;
         type IntoFuture = ::concord::Sending<E::Value>;
         fn into_future(self) -> Self::IntoFuture {
             tasks::Call::<E>::send(self)
         }
     }
-    struct __View0;
     impl Tasks {
         /// Create a client with the default transport and settings.
         #[allow(clippy::new_without_default)]
@@ -782,7 +801,9 @@ const _: () = {
             mut __call: tasks::Call<tasks::List>,
             done: impl ::concord::arg::Arg<::core::option::Option<bool>>,
         ) -> tasks::Call<tasks::List> {
-            (*__call.__data_mut()).__inputs.0 = ::concord::arg::Arg::into_input(done);
+            (*tasks::Call::__data_mut(&mut __call)).__inputs.0 = ::concord::arg::Arg::into_input(
+                done,
+            );
             __call
         }
         /// Option `tags` of `list`.
@@ -798,7 +819,9 @@ const _: () = {
             mut __call: tasks::Call<tasks::List>,
             tags: impl ::concord::arg::Arg<::core::option::Option<Vec<String>>>,
         ) -> tasks::Call<tasks::List> {
-            (*__call.__data_mut()).__inputs.1 = ::concord::arg::Arg::into_input(tags);
+            (*tasks::Call::__data_mut(&mut __call)).__inputs.1 = ::concord::arg::Arg::into_input(
+                tags,
+            );
             __call
         }
     }
@@ -834,7 +857,7 @@ const _: () = {
     const _: () = {
         impl __check_problem_1::Declared for __check_problem_1::Witness {
             type Value = <tasks::List as tasks::Endpoint>::Value;
-            type Problem = __DeclaredProblem;
+            type Problem = tasks::__Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_1 {
@@ -861,7 +884,7 @@ const _: () = {
         const __DEBUG: &'static ::core::primitive::str = "List";
         fn __core(
             __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<__DeclaredProblem> {
+        ) -> &::concord::__private::Core<tasks::__Problem> {
             &__value.__parent.__core
         }
         fn __build_draft(
@@ -876,13 +899,17 @@ const _: () = {
                     &mut __draft,
                     "done",
                     "done",
-                    (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                    ::concord::__private::AdaptPlacement::adapt_placement(
+                        &::concord::__private::ValueRef(&__value.__inputs.0),
+                    ),
                 );
                 ::concord::__private::Draft::query_value(
                     &mut __draft,
                     "tags",
                     "tags",
-                    (&::concord::__private::ValueRef(&__value.__inputs.1)).__adapt(),
+                    ::concord::__private::AdaptPlacement::adapt_placement(
+                        &::concord::__private::ValueRef(&__value.__inputs.1),
+                    ),
                 );
             }
             ::core::result::Result::Ok(__draft)
@@ -900,7 +927,7 @@ const _: () = {
                 move || {
                     #[allow(unused_imports)]
                     use ::core::mem::drop as client;
-                    let client = __View0;
+                    let client = tasks::__View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -914,7 +941,7 @@ const _: () = {
     const _: () = {
         impl __check_problem_2::Declared for __check_problem_2::Witness {
             type Value = <tasks::Create as tasks::Endpoint>::Value;
-            type Problem = __DeclaredProblem;
+            type Problem = tasks::__Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_2 {
@@ -941,7 +968,7 @@ const _: () = {
         const __DEBUG: &'static ::core::primitive::str = "Create";
         fn __core(
             __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<__DeclaredProblem> {
+        ) -> &::concord::__private::Core<tasks::__Problem> {
             &__value.__parent.__core
         }
         fn __build_draft(
@@ -954,7 +981,7 @@ const _: () = {
             {
                 #[allow(unused_imports)]
                 use ::core::mem::drop as client;
-                let client = __View0;
+                let client = tasks::__View0;
                 let task = &__value.__inputs.0;
                 let __body = ::concord::__private::evaluate_body(
                     <Self as tasks::Endpoint>::NAME,
@@ -977,7 +1004,7 @@ const _: () = {
                 move || {
                     #[allow(unused_imports)]
                     use ::core::mem::drop as client;
-                    let client = __View0;
+                    let client = tasks::__View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -991,7 +1018,7 @@ const _: () = {
     const _: () = {
         impl __check_problem_3::Declared for __check_problem_3::Witness {
             type Value = <tasks::Get as tasks::Endpoint>::Value;
-            type Problem = __DeclaredProblem;
+            type Problem = tasks::__Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_3 {
@@ -1018,7 +1045,7 @@ const _: () = {
         const __DEBUG: &'static ::core::primitive::str = "Get";
         fn __core(
             __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<__DeclaredProblem> {
+        ) -> &::concord::__private::Core<tasks::__Problem> {
             &__value.__parent.__core
         }
         fn __build_draft(
@@ -1031,7 +1058,9 @@ const _: () = {
             ::concord::__private::Draft::segment_value(
                 &mut __draft,
                 "id",
-                (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                ::concord::__private::AdaptPlacement::adapt_placement(
+                    &::concord::__private::ValueRef(&__value.__inputs.0),
+                ),
                 false,
             );
             ::core::result::Result::Ok(__draft)
@@ -1049,7 +1078,7 @@ const _: () = {
                 move || {
                     #[allow(unused_imports)]
                     use ::core::mem::drop as client;
-                    let client = __View0;
+                    let client = tasks::__View0;
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -1063,7 +1092,7 @@ const _: () = {
     const _: () = {
         impl __check_problem_4::Declared for __check_problem_4::Witness {
             type Value = <tasks::Delete as tasks::Endpoint>::Value;
-            type Problem = __DeclaredProblem;
+            type Problem = tasks::__Problem;
         }
         #[allow(dead_code, clippy::needless_borrow)]
         mod __check_problem_4 {
@@ -1090,7 +1119,7 @@ const _: () = {
         const __DEBUG: &'static ::core::primitive::str = "Delete";
         fn __core(
             __value: &Self::Data<()>,
-        ) -> &::concord::__private::Core<__DeclaredProblem> {
+        ) -> &::concord::__private::Core<tasks::__Problem> {
             &__value.__parent.__core
         }
         fn __build_draft(
@@ -1103,7 +1132,9 @@ const _: () = {
             ::concord::__private::Draft::segment_value(
                 &mut __draft,
                 "id",
-                (&::concord::__private::ValueRef(&__value.__inputs.0)).__adapt(),
+                ::concord::__private::AdaptPlacement::adapt_placement(
+                    &::concord::__private::ValueRef(&__value.__inputs.0),
+                ),
                 false,
             );
             ::core::result::Result::Ok(__draft)

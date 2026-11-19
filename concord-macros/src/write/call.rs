@@ -2,34 +2,16 @@
 use super::*;
 use syn::visit::{self, Visit};
 
-fn wrapped_value(mut ty: &mut syn::Type) -> Option<&mut syn::Type> {
-    while let syn::Type::Paren(paren) = ty {
-        ty = &mut paren.elem;
-    }
-    let syn::Type::Path(path) = ty else {
-        return None;
-    };
-    let syn::PathArguments::AngleBracketed(args) = &mut path.path.segments.last_mut()?.arguments
-    else {
-        return None;
-    };
-    match args.args.first_mut()? {
-        syn::GenericArgument::Type(ty) => Some(ty),
-        _ => None,
-    }
-}
-
 fn may_reference_signature_name(tokens: TokenStream) -> bool {
-    tokens.into_iter().any(|token| match token {
+    type_has_token(tokens, &|token| match token {
         proc_macro2::TokenTree::Ident(ident) => {
             matches!(
                 ident.to_string().trim_start_matches("r#"),
                 "E" | "retry" | "etag"
             )
         }
-        proc_macro2::TokenTree::Group(group) => may_reference_signature_name(group.stream()),
         proc_macro2::TokenTree::Punct(punct) => punct.as_char() == '!',
-        proc_macro2::TokenTree::Literal(_) => false,
+        _ => false,
     })
 }
 
@@ -44,6 +26,10 @@ fn problem_needs_alias(ty: &syn::Type) -> bool {
 
         fn visit_expr(&mut self, expr: &'ast syn::Expr) {
             self.0 |= may_reference_signature_name(expr.to_token_stream());
+        }
+
+        fn visit_attribute(&mut self, _: &'ast syn::Attribute) {
+            self.0 = true;
         }
 
         fn visit_macro(&mut self, _: &'ast syn::Macro) {
@@ -73,6 +59,16 @@ fn problem_needs_alias(ty: &syn::Type) -> bool {
     let mut references = ReferencesSignatureName::default();
     references.visit_type(ty);
     references.0
+}
+
+fn type_has_token(tokens: TokenStream, matches: &impl Fn(&proc_macro2::TokenTree) -> bool) -> bool {
+    tokens.into_iter().any(|token| {
+        matches(&token)
+            || match token {
+                proc_macro2::TokenTree::Group(group) => type_has_token(group.stream(), matches),
+                _ => false,
+            }
+    })
 }
 
 /// Whether `paginate` may take the expression as any `Pager`. The rule, word for word:
@@ -204,8 +200,9 @@ impl<'ast> Visit<'ast> for Uncertain {
 impl Writer<'_> {
     pub(super) fn data_path(&self, index: usize) -> TokenStream {
         if self.nodes.get(index).is_some_and(|n| n.deprecated) {
+            let root = &self.root;
             let alias = ident(&format!("__DataImpl{index}"));
-            return emit!(#alias);
+            return emit!(#root::#alias);
         }
         self.raw_data_path(index)
     }
@@ -352,7 +349,7 @@ impl Writer<'_> {
             }
             impl<__E: __Pager> __PagesFor<__E> for ::concord::call::Paged {
                 fn __pages(__call: Call<__E>, _: ()) -> ::concord::Pages<__E::Value, __Problem> {
-                    __E::__pages(__call)
+                    <__E as __Pager>::__pages(__call)
                 }
             }
 
@@ -375,7 +372,7 @@ impl Writer<'_> {
         let must_use = docs::call_must_use(endpoint.is_some_and(|ep| ep.pager.is_some()));
         let setters: Vec<_> = node.inputs.iter().filter(|input| input.input.optional.is_some()).map(|input| {
             let name = &input.input.name;
-            let field = self.input_field(index, input, emit!((*__call.__data_mut())));
+            let field = self.input_field(index, input, emit!((*#root::Call::__data_mut(&mut __call))));
             let stored = stored(input.input, input.input.ty.to_token_stream());
             let named_doc = endpoint.map(|ep| self.endpoint_setter_doc(ep, input.input, node.modules.len()));
             let editor_doc = endpoint.map(|ep| self.endpoint_setter_doc(ep, input.input, 0));
@@ -431,30 +428,15 @@ impl Writer<'_> {
         let impl_attrs = node.endpoint_impl_attrs();
         let data = self.data_path(index);
         let marker = &node.implementation;
-        let (output, read_type, read_alias) = match endpoint.node.output.as_ref() {
-            Some(output) if endpoint.wrapper.is_some() => {
-                let mut output = output.ty.clone();
-                let Some(value) = wrapped_value(&mut output) else {
-                    self.internal(
-                        node.node.name.span(),
-                        "a wrapped response has no value type",
-                    );
-                    return TokenStream::new();
-                };
-                // The reader and the wrapper use the same authored type from this scope.
-                let mut alias = ident(&format!("__Read{index}"));
-                alias.set_span(alias.span().located_at(value.span()));
-                let authored = &*value;
-                let declaration = emit!(#(#cfg)* type #alias = #authored;);
-                *value = syn::parse_quote!(#alias);
-                (output.into_token_stream(), emit!(#alias), declaration)
-            }
-            Some(output) => (
-                output.ty.to_token_stream(),
-                emit!(Self::Value),
-                TokenStream::new(),
-            ),
-            None => (emit!(()), emit!(Self::Value), TokenStream::new()),
+        let output = endpoint
+            .node
+            .output
+            .as_ref()
+            .map_or_else(|| emit!(()), |output| output.ty.to_token_stream());
+        let read_type = if endpoint.wrapper.is_some() {
+            emit!(<Self::Value as ::concord::__private::WrappedOutput>::Inner)
+        } else {
+            emit!(Self::Value)
         };
         // The check of the declared type against the client's problem type, for every endpoint:
         // a function that is never called, in a module of its own, where none of the author's
@@ -468,6 +450,8 @@ impl Writer<'_> {
             .as_ref()
             .map_or_else(|| node.node.name.span(), |written| written.ty.span());
         let problem_alias = self.problem_alias();
+        // This one method call needs auto-reference dispatch. The module imports only
+        // Concord's two candidate traits and inherits no traits from the author.
         let check_call = emit_at!(declared=>
             (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
                 .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
@@ -543,7 +527,7 @@ impl Writer<'_> {
             let bindings = self.bindings_at(
                 &pager.origin,
                 index,
-                emit!((*__owners.__data())),
+                emit!((*#root::Call::__data(&__owners))),
                 true,
                 expression.span(),
             );
@@ -564,13 +548,7 @@ impl Writer<'_> {
                 )
             } else if matches!(unwrapped, syn::Expr::Closure(_)) {
                 emit_at!(expression.span()=>
-                    fn __pager<__C, __N, __F>(_: &__C, __make: impl ::core::ops::FnOnce() -> __F) -> __F
-                    where __C: ::concord::page::Call,
-                        __N: ::concord::page::IntoNext<__C>,
-                        __F: ::core::ops::FnMut(__C, &::concord::Answer<__C::Value>) -> __N
-                            + ::core::marker::Send + 'static,
-                    { __make() }
-                    let __pager = __pager(&__call, || { #bindings #expression });
+                    let __pager = ::concord::__private::make_pager(&__call, || { #bindings #expression });
                     ::concord::__private::pages_with_pager(__call, || __pager)
                 )
             } else if closure_in_value_position(expression) {
@@ -594,9 +572,9 @@ impl Writer<'_> {
         let slots = endpoint.pager.as_ref().map(|_| {
             let slots = node.inputs.iter().map(|input| {
                 let slot = self.slot_type(index, input);
-                let get_field = self.input_field(index, input, emit!((*__call.__data())));
-                let set_field = self.input_field(index, input, emit!((*__call.__data_mut())));
-                let input_type = self.input_id(input);
+                let get_field = self.input_field(index, input, emit!((*#root::Call::__data(__call))));
+                let set_field = self.input_field(index, input, emit!((*#root::Call::__data_mut(&mut __call))));
+                let input_type = self.input_type(input);
                 let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
                 let get = if input.input.optional.is_some() { emit!(::core::option::Option::as_ref(&#get_field)) } else { emit!(::core::option::Option::Some(&#get_field)) };
                 let set = if input.input.optional.is_some() { emit!(::core::option::Option::Some(__value)) } else { emit!(__value) };
@@ -611,7 +589,6 @@ impl Writer<'_> {
             emit!(#(#slots)*)
         });
         emit! {
-            #read_alias
             #problem_check
             #impl_attrs impl #root::Endpoint for #marker {
                 type Data<__T: #root::__Types> = #data<__T>;
@@ -641,7 +618,7 @@ impl Writer<'_> {
             emit! {
                 #[doc(hidden)]
                 pub(super) fn __with_retry(mut self, retry: Retry) -> Self {
-                    self.__options.with_retry(retry);
+                    ::concord::__private::Options::with_retry(&mut self.__options, retry);
                     self
                 }
             }
@@ -649,7 +626,7 @@ impl Writer<'_> {
             emit_at!(self.client_span=>
                 #retry_doc
                 pub fn with_retry(mut self, retry: self::Retry) -> Self {
-                    self.__options.with_retry(retry);
+                    ::concord::__private::Options::with_retry(&mut self.__options, retry);
                     self
                 }
             )
@@ -657,7 +634,7 @@ impl Writer<'_> {
         let timeout = emit_at!(self.client_span=>
             #timeout_doc
             pub fn with_timeout(mut self, timeout: ::std::time::Duration) -> Self {
-                self.__options.with_timeout(timeout);
+                ::concord::__private::Options::with_timeout(&mut self.__options, timeout);
                 self
             }
         );
@@ -673,7 +650,9 @@ impl Writer<'_> {
             }
             impl<E: Endpoint> ::core::fmt::Debug for Call<E> {
                 fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    formatter.debug_struct(E::__DEBUG).field("endpoint", &E::NAME).finish_non_exhaustive()
+                    let mut debug = ::core::fmt::Formatter::debug_struct(formatter, <E as Endpoint>::__DEBUG);
+                    ::core::fmt::DebugStruct::field(&mut debug, "endpoint", &<E as Endpoint>::NAME);
+                    ::core::fmt::DebugStruct::finish_non_exhaustive(&mut debug)
                 }
             }
             impl<E: Endpoint> Call<E> {
@@ -687,17 +666,20 @@ impl Writer<'_> {
                 pub(super) fn __data_mut(&mut self) -> &mut E::Data<()> { &mut self.__data }
 
                 fn __build_request(&self, take: bool) -> Result<::concord::reqwest::Request> {
-                    E::__build_draft(&self.__data)?.finish_request(E::__core(&self.__data), &self.__options, E::NAME, take)
+                    ::concord::__private::Draft::finish_request(
+                        <E as Endpoint>::__build_draft(&self.__data)?,
+                        <E as Endpoint>::__core(&self.__data), &self.__options, <E as Endpoint>::NAME, take,
+                    )
                 }
 
                 fn __prepare_inner(mut self) -> Result<::concord::__private::Prepared<E::Value, __Problem>> {
-                    let run = ::concord::__private::Run::start(E::__core(&self.__data), &self.__options, E::NAME);
-                    let idempotent = E::__settings(&self.__data, &mut self.__options);
-                    let draft = E::__build_draft(&self.__data)?;
+                    let run = ::concord::__private::Run::start(<E as Endpoint>::__core(&self.__data), &self.__options, <E as Endpoint>::NAME);
+                    let idempotent = <E as Endpoint>::__settings(&self.__data, &mut self.__options);
+                    let draft = <E as Endpoint>::__build_draft(&self.__data)?;
                     #prepare_call(
-                        draft, run, ::core::clone::Clone::clone(E::__core(&self.__data)),
+                        draft, run, ::core::clone::Clone::clone(<E as Endpoint>::__core(&self.__data)),
                         ::core::clone::Clone::clone(&self.__options), idempotent, self,
-                        |call, response, info| async move { E::__read_answer(&call.__data, response, info).await },
+                        |call, response, info| async move { <E as Endpoint>::__read_answer(&call.__data, response, info).await },
                     )
                 }
 
@@ -706,27 +688,29 @@ impl Writer<'_> {
 
                 #idle_doc
                 pub fn with_idle_timeout(mut self, timeout: ::std::time::Duration) -> Self {
-                    self.__options.with_idle_timeout(timeout); self
+                    ::concord::__private::Options::with_idle_timeout(&mut self.__options, timeout); self
                 }
 
                 #read_doc
                 pub fn read_response(&self, response: ::concord::reqwest::Response)
                     -> impl ::core::future::Future<Output = Result<E::Value>> + ::core::marker::Send + '_ {
                     async move {
-                        E::__read_answer(&self.__data, response, ::concord::transport::TryInfo::new(E::NAME, 0))
-                            .await.map(::concord::Answer::into_value)
+                        ::core::result::Result::map(
+                            <E as Endpoint>::__read_answer(&self.__data, response, ::concord::transport::TryInfo::new(<E as Endpoint>::NAME, 0)).await,
+                            ::concord::Answer::into_value,
+                        )
                     }
                 }
 
                 #request_doc
-                pub fn request(&self) -> Result<::concord::reqwest::Request> { self.__build_request(false) }
+                pub fn request(&self) -> Result<::concord::reqwest::Request> { Self::__build_request(self, false) }
 
                 #into_request_doc
-                pub fn into_request(self) -> Result<::concord::reqwest::Request> { self.__build_request(true) }
+                pub fn into_request(self) -> Result<::concord::reqwest::Request> { Self::__build_request(&self, true) }
 
                 #edit_doc
                 pub fn edit_request(mut self, edit: impl ::core::ops::Fn(&mut ::concord::reqwest::Request) + ::core::marker::Send + ::core::marker::Sync + 'static) -> Self {
-                    self.__options.edit_request(edit); self
+                    ::concord::__private::Options::edit_request(&mut self.__options, edit); self
                 }
             }
 
@@ -734,7 +718,7 @@ impl Writer<'_> {
             impl<E: Endpoint> ::concord::__private::ConditionalCall for Call<E>
             where E::Conditional: ::concord::call::IsGetOrHead {
                 fn set_if_none_match(&mut self, _: ::concord::__private::ConditionalAccess<Self>, etag: &::core::primitive::str) {
-                    self.__options.if_none_match(etag);
+                    ::concord::__private::Options::if_none_match(&mut self.__options, etag);
                 }
             }
 
@@ -743,15 +727,15 @@ impl Writer<'_> {
                 type Value = E::Value;
                 type Problem = #page_problem;
                 fn at_url(mut self, url: &::core::primitive::str) -> Self {
-                    self.__options.at_url(::concord::__private::without_fragment(url)); self
+                    ::concord::__private::Options::at_url(&mut self.__options, ::concord::__private::without_fragment(url)); self
                 }
             }
 
             #[doc(hidden)]
             impl<E: Endpoint> ::concord::__private::Call for Call<E> {
-                fn request(&self) -> Result<::concord::reqwest::Request> { self.__build_request(false) }
-                fn prepare(self) -> Result<::concord::__private::Prepared<E::Value, __Problem>> { self.__prepare_inner() }
-                fn answered_from(mut self, url: ::concord::reqwest::Url) -> Self { self.__options.answered_from(url); self }
+                fn request(&self) -> Result<::concord::reqwest::Request> { Self::__build_request(self, false) }
+                fn prepare(self) -> Result<::concord::__private::Prepared<E::Value, __Problem>> { Self::__prepare_inner(self) }
+                fn answered_from(mut self, url: ::concord::reqwest::Url) -> Self { ::concord::__private::Options::answered_from(&mut self.__options, url); self }
                 fn edit_request(self, edit: impl ::core::ops::Fn(&mut ::concord::reqwest::Request) + ::core::marker::Send + ::core::marker::Sync + 'static) -> Self { Self::edit_request(self, edit) }
             }
         }
@@ -760,15 +744,36 @@ impl Writer<'_> {
     pub(super) fn send_methods(&self) -> TokenStream {
         let root = &self.root;
         let problem_alias = self.problem_alias();
+        let mut declaration = TokenStream::new();
         let shown_problem = self.problem_type().map(|ty| {
             if problem_needs_alias(ty) {
-                problem_alias.to_token_stream()
+                // Put the alias in the send methods' own block. An opaque macro
+                // may expand to the alias name, so resolve it outside this block.
+                let mut name = "__DeclaredProblem".to_owned();
+                let authored = ty.to_token_stream();
+                let expands = type_has_token(authored.clone(), &|token| {
+                    matches!(token, proc_macro2::TokenTree::Punct(p) if matches!(p.as_char(), '!' | '#'))
+                });
+                let target = if expands {
+                    problem_alias.clone()
+                } else {
+                    while type_has_token(authored.clone(), &|token| {
+                        matches!(token, proc_macro2::TokenTree::Ident(id)
+                            if id.to_string().trim_start_matches("r#") == name)
+                    }) {
+                        name.push('_');
+                    }
+                    authored
+                };
+                let alias = ident(&name);
+                declaration = emit!(type #alias = #target;);
+                emit!(#alias)
             } else {
                 ty.to_token_stream()
             }
         });
         let problem = shown_problem.as_ref().map(|ty| emit!(, #ty));
-        let future_problem = shown_problem.as_ref().map(|_| emit!(, #problem_alias));
+        let signature_problem = shown_problem.clone().unwrap_or_else(|| emit!(()));
         let output_doc = format!(
             "Awaiting an unpaged call gives [`{}::Result<E::Value>`]({}::Result).",
             root, root
@@ -778,8 +783,8 @@ impl Writer<'_> {
         let send_raw_doc = call_docs::send_raw();
         let conditional_doc = call_docs::send_if_none_match();
         let pages_doc = call_docs::pages();
-        let send_prepared = self.at_problem(emit!(send));
-        let send_raw_prepared = self.at_problem(emit!(send_raw));
+        let send_prepared = self.at_problem(emit!(::concord::__private::Prepared::send));
+        let send_raw_prepared = self.at_problem(emit!(::concord::__private::Prepared::send_raw));
         // A function item in scope lets the argument bind even if the author
         // has declared a constant with the same name.
         let retry_binding = shown_problem.as_ref().map(|_| {
@@ -793,7 +798,7 @@ impl Writer<'_> {
             emit_at!(self.client_span=>
                 #retry_doc
                 pub fn with_retry(self, retry: ::concord::Retry<#ty>) -> Self {
-                    self.__with_retry(retry)
+                    Self::__with_retry(self, retry)
                 }
             )
         });
@@ -819,7 +824,7 @@ impl Writer<'_> {
                 pub fn send_if_none_match(self, etag: &::core::primitive::str)
                     -> ::concord::Sending<::concord::Answer<::core::option::Option<E::Value>> #problem> {
                     let etag = <::core::primitive::str as ::std::borrow::ToOwned>::to_owned(etag);
-                    ::concord::Sending::new(async move { self.__prepare_if_none_match(&etag)?.#send_prepared().await })
+                    ::concord::Sending::new(async move { #send_prepared(Self::__prepare_if_none_match(self, &etag)?).await })
                 }
         );
         let conditional_impl = quote::quote_spanned!(span=>
@@ -835,12 +840,12 @@ impl Writer<'_> {
             #[doc = #output_doc]
             impl<E: #root::Endpoint> ::core::future::IntoFuture for #root::Call<E>
             where E::Paging: ::concord::call::AwaitWithoutPaginate {
-                type Output = ::core::result::Result<E::Value, ::concord::Error<#problem_alias>>;
-                type IntoFuture = ::concord::Sending<E::Value #future_problem>;
+                type Output = ::core::result::Result<E::Value, ::concord::Error<#signature_problem>>;
+                type IntoFuture = ::concord::Sending<E::Value #problem>;
                 fn into_future(self) -> Self::IntoFuture { #root::Call::<E>::send(self) }
             }
         };
-        emit! {
+        let methods = emit! {
             const _: () = {
             #retry_binding
             #[allow(unused_imports)]
@@ -861,7 +866,7 @@ impl Writer<'_> {
 
                 #send_raw_doc
                 pub fn send_raw(self) -> ::concord::Sending<::concord::reqwest::Response #problem> {
-                    ::concord::Sending::new(async move { <Self as ::concord::__private::Call>::prepare(self)?.#send_raw_prepared().await })
+                    ::concord::Sending::new(async move { #send_raw_prepared(<Self as ::concord::__private::Call>::prepare(self)?).await })
                 }
 
                 #retry
@@ -870,6 +875,11 @@ impl Writer<'_> {
             #pages_impl
             };
             #into_future
+        };
+        if declaration.is_empty() {
+            methods
+        } else {
+            emit!(const _: () = { #declaration #methods };)
         }
     }
 }

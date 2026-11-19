@@ -25,17 +25,18 @@ pub use call::{
 };
 pub use client::{Core, Options};
 pub use data::{CallData, InputSlot};
-pub use output::{OrdinaryOutput, Output, SameProblem, TypedStream};
+pub use output::{OrdinaryOutput, Output, SameProblem, TypedStream, WrappedOutput};
 #[cfg(test)]
 use page::same_page_request;
 pub use page::{
-    pages, pages_inferred, pages_of_pager, pages_with_pager, without_fragment, InferredPager,
-    SecretUrl,
+    make_pager, pages, pages_inferred, pages_of_pager, pages_with_pager, without_fragment,
+    InferredPager, SecretUrl,
 };
 pub use run::Run;
 pub use value::{
-    idempotent, inherited, inherited_path, AdaptValue, BodySecretValue, BoolInput, Idempotent,
-    InheritAcrossBase, InheritPathAcrossBase, SecretInput, SecretValue, Value, ValueRef,
+    idempotent, inherited, inherited_path, AdaptPlacement, AdaptValue, BodySecretValue, BoolInput,
+    Idempotent, InheritAcrossBase, InheritPathAcrossBase, SecretInput, SecretValue, Value,
+    ValueRef,
 };
 
 pub use crate::retry::{again, Outcome};

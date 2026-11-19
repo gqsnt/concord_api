@@ -3,3 +3,20 @@ error[E0425]: cannot find value `key` in this scope
   |
 1 | ...ey; } POST get() { body concord::json { "endpoint"=key.len().to_string(); } } } }
   |                                                       ^^^ not found in this scope
+
+error: this function depends on never type fallback being `()`
+ --> tests/compiler-errors/expressions/body_entry.rs:1:1
+  |
+1 | concord::api! { client Leak(key:String) { base "https://api.example.com"; headers { "client"=key; } POST get() { body concord::json { "endpoint"=key.len().to_string(); } } } }
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: specify the types explicitly
+note: in edition 2024, the requirement `&concord::__private::ValueRef<!>: concord::__private::AdaptPlacement<_>` will fail
+ --> tests/compiler-errors/expressions/body_entry.rs:1:1
+  |
+1 | concord::api! { client Leak(key:String) { base "https://api.example.com"; headers { "client"=key; } POST get() { body concord::json { "endpoint"=key.len().to_string(); } } } }
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in Rust 2024 and in a future release in all editions!
+  = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/never-type-fallback.html>
+  = note: `#[deny(dependency_on_unit_never_type_fallback)]` (part of `#[deny(rust_2024_compatibility)]`) on by default
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -196,7 +196,9 @@ concord = {{ package = "concord-api", path = {:?} }}
                 .map(|(header, _)| plain_text(&format!("<h4{header}")))
                 .ok_or_else(|| format!("missing signature for {method}"))?;
             let expected: String = text.split_whitespace().collect();
-            assert!(signature.contains(&expected), "{method}: {signature}");
+            // The macro's type resolves outside the alias's lexical scope.
+            let resolved = signature.replace("<()as__Types>::__Problem", "String");
+            assert!(resolved.contains(&expected), "{method}: {signature}");
         }
         Ok(())
     }
