@@ -1,0 +1,21 @@
+# Next URLs: the URL the builder sends, or `build` for a Build error; the URL that the page
+# gave; and the secret of the call's `token` query entry, when it has one. The call builds
+# `https://example.test/v1/items?page=1`.
+https://example.test/slice?	/slice?
+https://example.test/slice?&&	/slice?&&
+https://example.test/slice	/slice
+https://example.test/next?q=1	../next?q=1#ignored
+https://example.test/v1/items?page=1	
+https://example.test/v1/items?page=1	#only
+https://example.test/v1/items?only	?only
+build	https://other.test/x
+build	http://example.test/x
+build	https://example.test:8443/x
+build	http://[bad
+https://example.test/x	HTTPS://EXAMPLE.test:443/x
+https://example.test/next?public=keep+raw&token=S	/next?token=one&to%6ben=two&public=keep+raw#fragment	S
+https://example.test/next?&&token=S	/next?&token=&	S
+https://example.test/next?TOKEN=kept&token%3D=kept&token=S	/next?TOKEN=kept&token%3D=kept	S
+https://example.test/next?token=S	/next	S
+https://example.test/sl%20ice?a=%zz	/sl ice?a=%zz
+https://example.test/next?token=a%20b%26c%3Dd%2F%C3%A9	/next?token=one	a b&c=d/é

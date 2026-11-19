@@ -1,0 +1,37 @@
+# HTTP dates, read alike by `Retry-After` (the core) and `Date` (a limit): `at=` the seconds
+# from 1970, or `none`, then the text, then the clock that a two-digit year is read on
+# (`clock=` seconds from 1970; 2030 when there is none).
+at=784111777	Sun, 06 Nov 1994 08:49:37 GMT
+at=784111777	Sunday, 06-Nov-94 08:49:37 GMT	clock=1893456000
+at=3345062400	Wednesday, 01-Jan-76 00:00:00 GMT	clock=1767225600
+at=189302401	Thursday, 01-Jan-76 00:00:01 GMT	clock=1767225600
+at=784111777	Sun Nov  6 08:49:37 1994
+at=784111777	Sun Nov 06 08:49:37 1994
+at=784111777	 \tSun, 06 Nov 1994 08:49:37 GMT\t 
+# 23:59:60 is the next second, on any day; the weekday is the written date's.
+at=1483228800	Sat, 31 Dec 2016 23:59:60 GMT
+at=784166400	Sun, 06 Nov 1994 23:59:60 GMT
+none	Mon, 06 Nov 1994 23:59:60 GMT
+at=253402300800	Fri, 31 Dec 9999 23:59:60 GMT
+at=253402300799	Fri, 31 Dec 9999 23:59:59 GMT
+at=-62135596800	Mon, 01 Jan 0001 00:00:00 GMT
+none	Sat, 01 Jan 0000 00:00:00 GMT
+at=1709164800	Thu, 29 Feb 2024 00:00:00 GMT
+none	Wed, 29 Feb 2023 00:00:00 GMT
+none	Mon, 06 Nov 1994 08:49:37 GMT
+none	Sun, 06 Nov 1994 08:49:37 UTC
+none	Sun, 06 nov 1994 08:49:37 GMT
+none	sun, 06 Nov 1994 08:49:37 GMT
+none	Sun, 6 Nov 1994 08:49:37 GMT
+none	Sun Nov 6 08:49:37 1994
+none	Sun Nov  6 8:49:37 1994
+none	Sun, 06 Nov 1994 08:49:60 GMT
+none	Sun, 06 Nov 1994 24:00:00 GMT
+none	Sun, 06 Nov 1994 08:49:37 GMT junk
+none	Sun,  06 Nov 1994 08:49:37 GMT
+none	Sun, 06-Nov-94 08:49:37 GMT
+none	Sunday, 06 Nov 1994 08:49:37 GMT
+none	Sunday, 06-Nov-1994 08:49:37 GMT
+none	
+none	yesterday
+none	Sun, 06 Nov 1994 08:49:37 GMT, Sun, 06 Nov 1994 08:49:37 GMT

@@ -1,0 +1,23 @@
+# `Retry-After` in seconds and `Content-Length`: what each reads (`secs=` and `len=` a number,
+# or `none`), then the header.
+secs=0 len=0	0
+secs=7 len=7	007
+secs=120 len=120	120
+# Twenty digits: too many seconds for `u64`, as long a wait as can be written; not a length.
+secs=18446744073709551615 len=none	99999999999999999999
+secs=18446744073709551615 len=none	18446744073709551616
+secs=18446744073709551615 len=18446744073709551615	18446744073709551615
+secs=1 len=1	0000000000000000000000000000000000000001
+# Spaces and tabs around seconds are trimmed; around a length, they make it no length.
+secs=5 len=none	 5\t
+secs=5 len=none	5 
+secs=none len=none	+5
+secs=none len=none	-1
+secs=none len=none	-0
+secs=none len=none	1.5
+secs=none len=none	5 s
+secs=none len=none	1 2
+secs=none len=none	5,5
+secs=none len=none	0x10
+secs=none len=none	
+secs=none len=none	\xd9\xa1

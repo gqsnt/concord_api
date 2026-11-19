@@ -64,7 +64,20 @@ impl std::fmt::Debug for Failure {
 
 pub(super) fn is_json(label: Option<&str>) -> bool {
     let kind = label.unwrap_or("").split(';').next().unwrap_or("").trim();
-    kind.eq_ignore_ascii_case("application/json") || kind.to_ascii_lowercase().ends_with("+json")
+    // A media type is `type "/" subtype`, each a token (RFC 9110, section 8.3.1).
+    let token = |text: &str| {
+        !text.is_empty()
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+    };
+    let Some((top, sub)) = kind.split_once('/') else {
+        return false;
+    };
+    token(top)
+        && token(sub)
+        && (kind.eq_ignore_ascii_case("application/json")
+            || sub.to_ascii_lowercase().ends_with("+json"))
 }
 
 pub(super) fn decode<T: de::DeserializeOwned>(

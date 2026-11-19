@@ -1,0 +1,21 @@
+# JSON lines: the bound, what the stream gives (records, then how it ends), the body.
+# An end is `clean`, `too-large`, `utf8@N` or `decode@N`, N the one-based line.
+0	0 decode@1	\n
+0	0 decode@1	\r\n
+# A last line of one CR, without LF, counts its byte.
+0	0 too-large	\r
+1	0 decode@1	\r
+0	0 too-large	\r\r\n
+1	0 too-large	1\r\n
+2	1 clean	1\r\n
+16	0 decode@1	\xef\xbb\xbf1\n
+16	2 clean	1\n2
+16	1 clean	1\n
+16	0 clean	
+16	1 utf8@2	1\n\xff\n
+16	1 decode@2	1\n\n2\n
+3	2 clean	123\n456
+2	0 too-large	123
+16	0 decode@1	1 2\n
+16	1 clean	  "a"\t\r\n
+16	0 decode@1	1\r2\n

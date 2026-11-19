@@ -119,6 +119,9 @@ pub enum TransferError {
     /// The text lacks a literal `://` followed by a nonempty authority, or the
     /// parsed HTTP(S) URL lacks a host or cannot serve as a base.
     ///
+    /// A `://` that comes after a `/`, `?`, `#` or backslash does not follow the scheme,
+    /// so it starts no authority (`//host`): `/x://example`, a relative reference, and
+    /// `urn:example:x?q=https://u.test/p`, which has no authority, are refused alike.
     /// This covers empty and relative input, `mailto:user@example.test`, missing
     /// slashes (`https:storage.test/p`, `https:/storage.test/p`), extra slashes
     /// before the host (`https:///storage.test/p`), and a backslash in place of
@@ -242,7 +245,11 @@ pub fn at<C: Call>(call: C, url: &str) -> Result<C, TransferError> {
     if url.len() > 65_534 {
         return Err(TransferError::UrlTooLong);
     }
-    let (_, rest) = url.split_once("://").ok_or(TransferError::NotAbsolute)?;
+    let (scheme, rest) = url.split_once("://").ok_or(TransferError::NotAbsolute)?;
+    // A `://` after a `/`, `?`, `#` or backslash does not follow the scheme: it starts no authority.
+    if scheme.contains(['/', '?', '#', '\\']) {
+        return Err(TransferError::NotAbsolute);
+    }
     let authority = rest.split(['/', '?', '#', '\\']).next().unwrap_or_default();
     if authority.is_empty() {
         return Err(TransferError::NotAbsolute);
