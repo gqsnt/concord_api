@@ -18,7 +18,7 @@ mod rotating {
 #[test]
 fn c1_20_the_blocks_of_the_new_example_pages_are_compiled_word_for_word() {
     let package = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for api in ["anthropic", "drive"] {
+    for (api, expected_blocks) in [("anthropic", 3), ("drive", 4)] {
         let page =
             fs::read_to_string(package.join(format!("../../docs/examples/{api}.md"))).unwrap();
         let mut blocks = 0;
@@ -36,7 +36,7 @@ fn c1_20_the_blocks_of_the_new_example_pages_are_compiled_word_for_word() {
             blocks += 1;
         }
         assert_eq!(
-            blocks, 3,
+            blocks, expected_blocks,
             "{api}: a description, the Rust beside it, the calls"
         );
     }

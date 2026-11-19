@@ -232,3 +232,43 @@ async fn s3_a_part_without_a_size_or_a_number_is_read() {
         assert_eq!(script.requests().len(), 2, "{part}");
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn s3_uploads_send_an_empty_secondary_marker_and_require_the_key_marker() {
+    let script = Script::new();
+    script.answer(200).body(
+        "<ListMultipartUploadsResult><IsTruncated>true</IsTruncated>         <NextKeyMarker>folder%2F</NextKeyMarker>         <CommonPrefixes><Prefix>folder%2F</Prefix></CommonPrefixes>         </ListMultipartUploadsResult>",
+    );
+    script.answer(200).body(
+        "<ListMultipartUploadsResult><IsTruncated>true</IsTruncated>\
+         <NextKeyMarker>next%2F</NextKeyMarker>\
+         <Upload><Key>folder%2Fx</Key><UploadId>u</UploadId></Upload>\
+         <CommonPrefixes><Prefix>next%2F</Prefix></CommonPrefixes>\
+         </ListMultipartUploadsResult>",
+    );
+    script.answer(200).body(
+        "<ListMultipartUploadsResult><IsTruncated>true</IsTruncated></ListMultipartUploadsResult>",
+    );
+    let (uploads, bucket) = store(&script);
+    let mut pages = uploads
+        .bucket(bucket)
+        .list_multipart_uploads()
+        .upload_id_marker("old")
+        .pages();
+    assert!(pages.try_next().await.unwrap().is_some());
+    assert!(pages.try_next().await.unwrap().is_some());
+    assert!(pages.try_next().await.unwrap().is_some());
+    let error = pages.try_next().await.unwrap_err();
+    assert_eq!(error.reason(), Some("a truncated page with no next marker"));
+    assert!(pages.try_next().await.unwrap().is_none());
+    let requests = script.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[1].url().query(),
+        Some("uploads=&encoding-type=url&key-marker=folder%2F&upload-id-marker=")
+    );
+    assert_eq!(
+        requests[2].url().query(),
+        Some("uploads=&encoding-type=url&key-marker=next%2F&upload-id-marker=")
+    );
+}

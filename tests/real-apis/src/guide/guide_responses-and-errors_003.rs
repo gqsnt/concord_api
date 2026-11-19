@@ -1,0 +1,9 @@
+concord::api! {
+client Files {
+        base "https://files.example.test";
+        GET upload_ticket() -> UploadTicket {
+            read Binary;
+            status { 2xx { body } => check_ticket(body)? }
+        }
+    }
+}

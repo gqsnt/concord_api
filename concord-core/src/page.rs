@@ -312,6 +312,23 @@ pub trait Call: Clone + Send + Sync + 'static {
     fn at_url(self, url: &str) -> Self;
 }
 
+/// A call that supplies its endpoint's name, as every generated call does.
+///
+/// The name is the one reported by errors and transport information for this call.
+///
+/// ```
+/// # use concord_core as concord;
+/// use concord::page::NamedCall;
+///
+/// fn endpoint<C: NamedCall>(_: &C) -> &'static str {
+///     C::ENDPOINT
+/// }
+/// ```
+pub trait NamedCall: Call {
+    /// The client, scopes and endpoint joined with dots, such as `files.objects.get`.
+    const ENDPOINT: &'static str;
+}
+
 /// The slot of one input on a call.
 ///
 /// In a `paginate` statement, an input of the endpoint names its slot, not its value:

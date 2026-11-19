@@ -627,6 +627,14 @@ pub fn build_error<P>(
     Error::build_source(endpoint, source)
 }
 
+/// A returned URL refused by the transfer helper, with the original failure as `source()`.
+pub fn transfer_url_error<P>(
+    endpoint: &'static str,
+    source: Box<dyn std::error::Error + Send + Sync>,
+) -> Error<P> {
+    Error::transfer_url(endpoint, source)
+}
+
 /// The error type of an authored request expression.
 type BuildSource = Box<dyn std::error::Error + Send + Sync>;
 

@@ -194,6 +194,22 @@ mod guide_responses_and_errors_001 {
     }
 }
 #[doc(hidden)]
+mod guide_responses_and_errors_002 {
+    use super::support::*;
+    include!("guide_responses-and-errors_002.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Messages>()
+    }
+}
+#[doc(hidden)]
+mod guide_responses_and_errors_003 {
+    use super::support::*;
+    include!("guide_responses-and-errors_003.rs");
+    pub(super) fn compiled() -> &'static str {
+        ::std::any::type_name::<Files>()
+    }
+}
+#[doc(hidden)]
 mod guide_retries_001 {
     use super::support::*;
     include!("guide_retries_001.rs");
@@ -234,7 +250,7 @@ mod guide_tour_003 {
     }
 }
 /// The concrete client types emitted by every documented description.
-pub fn compiled_descriptions() -> [&'static str; 41] {
+pub fn compiled_descriptions() -> [&'static str; 44] {
     [
         readme_001::compiled(),
         readme_002::compiled(),
@@ -260,6 +276,8 @@ pub fn compiled_descriptions() -> [&'static str; 41] {
         guide_recipes_005::compiled(),
         guide_recipes_006::compiled(),
         guide_responses_and_errors_001::compiled(),
+        guide_responses_and_errors_002::compiled(),
+        guide_responses_and_errors_003::compiled(),
         guide_retries_001::compiled(),
         guide_testing_001::compiled(),
         guide_tour_001::compiled(),
@@ -267,6 +285,7 @@ pub fn compiled_descriptions() -> [&'static str; 41] {
         guide_tour_003::compiled(),
         ::std::any::type_name::<crate::anthropic::Anthropic>(),
         ::std::any::type_name::<crate::drive::Drive>(),
+        ::std::any::type_name::<crate::drive::DriveSessions>(),
         ::std::any::type_name::<crate::elasticsearch::Elasticsearch>(),
         ::std::any::type_name::<crate::github::Github>(),
         ::std::any::type_name::<crate::github::GithubLogin>(),

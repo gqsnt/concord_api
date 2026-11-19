@@ -28,6 +28,7 @@ pub(crate) enum BuildFailure {
     Base,
     ReplacementBase,
     NextUrl,
+    TransferUrl,
     Host(&'static str),
     Path(&'static str),
     Shape {
@@ -125,6 +126,7 @@ impl Note {
                 BuildFailure::NextUrl => {
                     f.write_str("the URL passed to at_url could not be parsed")
                 }
+                BuildFailure::TransferUrl => f.write_str("the transfer URL could not be used"),
                 BuildFailure::Base => f.write_str("the base is not a usable URL"),
                 BuildFailure::ReplacementBase => {
                     f.write_str("the base is not a usable URL (with_base)")
@@ -447,6 +449,13 @@ impl<E> Error<E> {
     /// The shared default HTTP client could not be constructed.
     pub(crate) fn http(endpoint: &'static str, source: Source) -> Self {
         let mut error = Self::build(endpoint, BuildFailure::Http);
+        error.inner.source = Some(source);
+        error
+    }
+
+    /// A returned URL was refused before the call was built or sent.
+    pub(crate) fn transfer_url(endpoint: &'static str, source: Source) -> Self {
+        let mut error = Self::build(endpoint, BuildFailure::TransferUrl);
         error.inner.source = Some(source);
         error
     }

@@ -170,7 +170,7 @@ pub use concord_extras::body::{multipart, Multipart, MultipartError};
 #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 pub use concord_extras::body::{multipart_mixed, multipart_related, MimeWriteError};
 pub use concord_extras::page::{
-    by_cursor, by_link, by_next_url, by_offset, by_offset_limit, by_page,
+    by_cursor, by_link, by_next_url, by_offset, by_offset_limit, by_page, by_page_bounds,
 };
 #[cfg(feature = "json")]
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]

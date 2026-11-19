@@ -15,11 +15,16 @@ fn es(script: &Script) -> Elasticsearch {
 }
 
 fn hits(pit: &str, sort: Option<serde_json::Value>) -> String {
+    hits_with_state(Some(pit), sort, false)
+}
+
+fn hits_with_state(pit: Option<&str>, sort: Option<serde_json::Value>, timed_out: bool) -> String {
     let hit = match sort {
         Some(sort) => json!({ "_id": "first", "sort": sort }),
         None => json!({ "_id": "first" }),
     };
-    json!({ "timed_out": false, "_shards": { "failed": 0 }, "pit_id": pit, "hits": { "hits": [hit] } })
+    let hits = if timed_out { vec![] } else { vec![hit] };
+    json!({ "timed_out": timed_out, "_shards": { "failed": 0 }, "pit_id": pit, "hits": { "hits": hits } })
         .to_string()
 }
 
@@ -55,5 +60,25 @@ async fn elasticsearch_a_point_in_time_that_does_not_move_is_a_mismatch() {
             (Kind::Mismatch, Some(reason))
         );
         assert_eq!(script.requests().len(), 1, "{reason}");
+    }
+
+    for (body, reason) in [
+        (
+            hits_with_state(Some("p2"), None, true),
+            "a page with missing results",
+        ),
+        (hits_with_state(None, Some(json!([7])), false), "no pit_id"),
+    ] {
+        let script = Script::new();
+        script.answer(200).body(body);
+        let pit = Pit {
+            id: "p1".into(),
+            keep_alive: "5m".into(),
+        };
+        let mut pages = es(&script).search_pit(json!({}), pit).pages();
+        assert!(pages.try_next().await.unwrap().is_some());
+        assert_eq!(pages.try_next().await.unwrap_err().reason(), Some(reason));
+        assert!(pages.try_next().await.unwrap().is_none());
+        assert_eq!(script.requests().len(), 1);
     }
 }

@@ -431,6 +431,109 @@ For `{"ok": true, "id": "C1", "name": 5}`, the call fails with `mismatch: status
 
 Every endpoint below still returns its own type. An arm on the client that binds a body applies to every endpoint below, which has two consequences. **An endpoint with no return type then does not compile,** because the arm would read a body into nothing. Give it a return type (`-> Ignored`, your own type that accepts any body), or remove the arm (`remove 2xx`). **An endpoint whose return type is an `Option` or a `Result` does not compile either,** because under the arm a `null` in the body would silently become a `None`. Such an endpoint writes the arm itself (`override 2xx { body } => Some(unpack(body))`), or removes it. An endpoint below that handles a `200` in its own way writes `override 200 { … } => …`. The arm does not apply to a `HEAD`, which has no body: a `HEAD` under this client behaves like any other `HEAD`. An error reported inside the `200` is a Refused error with `problem()` set, like any other error response. (An API that sends an error *together with* a result of another shape needs your own `Deserialize` implementation that looks at `problem` first: with the simple `Reply<T>` above, such a body does not decode at all, and the call is a Mismatch.)
 
+## A failure that is not the API's
+
+A helper can fail after the call has returned. For example, the caller may already have taken
+`message_start` from a typed stream. Give the helper its own error for that case, and use `From`
+so that `?` carries an actual stream error through unchanged.
+
+If a response is missing a value the endpoint promises, check it in the status arm. An upload
+ticket missing its URL or file id is a Mismatch. The call's error keeps the endpoint, status,
+headers and attempts, and the upload helper receives the error before it can send the file.
+
+```rust
+use concord::read::{RecordFail, RecordStream, Sse, SseEvent, Step};
+use concord::{mismatch, Binary, Fail, Json};
+use serde::Deserialize;
+
+/// The two events needed to tell whether the caller consumed the start.
+#[derive(Debug, PartialEq)]
+pub enum MessageEvent {
+    /// The start of a message.
+    Start,
+    /// The last event of a message.
+    Stop,
+}
+
+/// Reads a message event and identifies the final one.
+pub fn message_event(event: SseEvent) -> Result<Step<MessageEvent>, RecordFail<()>> {
+    match event.event.as_str() {
+        "message_start" => Ok(Step::Next(MessageEvent::Start)),
+        "message_stop" => Ok(Step::Last(MessageEvent::Stop)),
+        _ => Err(RecordFail::mismatch("unexpected message event")),
+    }
+}
+
+concord::api! {
+    client Messages {
+        base "https://messages.example.test";
+        GET stream() -> RecordStream<MessageEvent, messages::Error> {
+            read Sse::new(8192).try_map(message_event).until_last_record();
+        }
+    }
+}
+
+#[derive(Debug)]
+enum FinishError {
+    Stream(messages::Error),
+    StartAlreadyConsumed,
+}
+
+impl From<messages::Error> for FinishError {
+    fn from(error: messages::Error) -> Self {
+        Self::Stream(error)
+    }
+}
+
+async fn finish(
+    mut events: RecordStream<MessageEvent, messages::Error>,
+) -> Result<(), FinishError> {
+    let mut started = false;
+    while let Some(event) = events.try_next().await? {
+        started |= event == MessageEvent::Start;
+    }
+    if started {
+        Ok(())
+    } else {
+        Err(FinishError::StartAlreadyConsumed)
+    }
+}
+
+#[derive(Deserialize)]
+struct Ticket {
+    upload_url: Option<String>,
+    file_id: Option<String>,
+}
+
+/// A complete ticket to send a file.
+#[derive(Debug)]
+pub struct UploadTicket {
+    /// Where the bytes go.
+    pub url: String,
+    /// The ID to pass when completing the upload.
+    pub id: String,
+}
+
+/// Decodes a ticket and checks the two fields that the next step needs.
+pub fn check_ticket(body: concord::bytes::Bytes) -> Result<UploadTicket, Fail<()>> {
+    let ticket: Ticket = Json::decode(&body).map_err(Fail::from_read)?;
+    match (ticket.upload_url, ticket.file_id) {
+        (Some(url), Some(id)) => Ok(UploadTicket { url, id }),
+        _ => Err(mismatch("the upload ticket is missing its URL or file id")),
+    }
+}
+
+concord::api! {
+    client Files {
+        base "https://files.example.test";
+        GET upload_ticket() -> UploadTicket {
+            read Binary;
+            status { 2xx { body } => check_ticket(body)? }
+        }
+    }
+}
+```
+
 ## What an error keeps of a body
 
 Everything an error keeps from a response is bounded. It keeps at most 64 KiB of the body, in a buffer of its own, so a 200 MB error page does not stay in memory. It keeps at most 1 KiB of a reader's own message, available through `details()`. `e.retry_after()` returns the wait that was requested: the `Retry-After` of the response or the wait from a `when` rule, whichever is longer ([the standard policy](retries.md#the-standard-policy)). `kept()` says in what state the body was kept: whole, truncated at 64 KiB, or interrupted while it was read; it is `None` when no byte of a body was kept (for example, when the announced size was over the limit). `details()` describes the state in words: `body (complete, 18 bytes)`, `body (cut at 64 KiB)`, `body (interrupted, 120 bytes)`. `problem()` is decoded only from a whole body. An arm that ends with `?` produces an error with the typed problem and no bytes, because the body was already read into a value. An arm that decodes a body itself and returns `Fail::from_read(…)` keeps the decoder's input, at most 64 KiB, which `details()` names `decoder input (…)`.

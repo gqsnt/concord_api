@@ -208,3 +208,9 @@ impl<T: Send> concord::page::IntoItems for Numbered<T> {
         self.rows.len()
     }
 }
+
+// The descriptions and the test use the types and functions printed by the guide.
+#[path = "../../fixtures/recipes/failure.rs"]
+mod failure;
+pub use concord::read::{RecordStream, Sse};
+pub use failure::{check_ticket, message_event, MessageEvent, UploadTicket};

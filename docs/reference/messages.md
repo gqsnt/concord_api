@@ -588,6 +588,7 @@ One pattern, in Rust's own style: `<kind>: <fixed words>, in <endpoint>[, after 
 | A body that is a one-shot stream, sent a second time: through a clone of the call, or by the next page of a paginated call; also inside a body made of bodies, before anything goes out | `build error: the one-shot body stream cannot be used in this request, in files.upload` |
 | A URL longer than 65,534 bytes, which the HTTP layer cannot hold: before any middleware sees the request, zero attempts | `build error: the URL is too long to be sent, in tasks.get` |
 | A URL at another origin: a page that leaves the origin of the first request of its `.pages()`, or a URL passed to `at_url` that leaves the origin that the call builds | `build error: the URL leaves the origin of the call, in tasks.list` |
+| A URL refused by `transfer::at_call`. The original `TransferError` is its source. | `build error: the transfer URL could not be used, in files.upload` |
 | A next URL, passed to `at_url`, that does not parse | `build error: the URL passed to at_url could not be parsed, in tasks.list` |
 | A `content-length` written by the description that is not the length of a body in memory; for a `Body::repeatable`, a `content-length` that is not a number, or two that differ, before the body is opened | `build error: the content-length does not match the body length, in files.upload` |
 | An edit (`edit_request`) that reads or removes the repeatable body's placeholder, or replaces it with a detected different kind of body; no attempt is made. Wrappers and look-alikes cannot always be detected; if building succeeds, the declared repeatable body is sent | `build error: an edit replaced or removed a repeatable body, in files.upload` |
@@ -660,7 +661,7 @@ The name in a Build error is `input <name>`: the input for a placeholder and for
 | The call sets the inputs of two `or_when_set` | `the call chooses two moves: it sets two inputs that each choose one` |
 | An offset of the call (`by_offset`, `by_offset_limit`, `by_offset_total`) that cannot be read as an unsigned number of items (a negative one), also on a short or an empty page | `the offset of the call is not a number of items` |
 | A valid offset whose next one overflows or cannot be held by the type of the input; `by_offset_limit` ends quietly instead when the page is shorter than its `count` | `the offset cannot grow any further` |
-| A page number (`by_page`) that cannot grow | `the page number cannot grow any further` |
+| A page number (`by_page` or `by_page_bounds`) that cannot grow | `the page number cannot grow any further` |
 | A `Link` field that cannot be parsed (`by_link`) | `the Link field could not be read` |
 
 **When the content type was not the reader's.** When a reader reports that the content type of the response was not its own, the three texts of a body that could not be read end with ` (unexpected content type)`: `mismatch: status 200, items[3].kind could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body could not be decoded (unexpected content type), in tasks.list`, `mismatch: status 200, the body is empty (unexpected content type), in tasks.get`. An empty body gets it only when the response had a `Content-Type`.
@@ -772,7 +773,7 @@ The multipart boundary scanner returns an `io::Error` with the text `multipart b
 | A JSON line, or the data of an event given to `SseEvent::json`, does not decode as the type. The fields hold the line and the column, never the record | `record does not decode as the requested type` |
 
 
-**A URL that the API returned**, `concord::transfer::TransferError`, returned by `concord::transfer::at` before anything is sent:
+**A URL that the API returned**, `concord::transfer::TransferError`, returned directly by `concord::transfer::at` or as the source of the Build error from `concord::transfer::at_call`:
 
 | Failure | Printed text |
 |---|---|
