@@ -106,6 +106,7 @@ It prints `task 7 (Write the docs) is open`. Without `with_transport`, `Tasks::n
 - The language reference, with an example for each statement, is the [`concord::api!`](https://docs.rs/concord-api/latest/concord/macro.api.html) page on docs.rs. Until Concord is published, read [its source](concord-macros/src/reference.md).
 - [Real APIs](docs/examples/README.md) described in the language: GitHub, Stripe, Riot, Slack and more.
 - [Troubleshooting](docs/guide/troubleshooting.md): when a description does not compile, or a call fails.
+- [Compatibility](docs/guide/compatibility.md) explains what can change between Concord releases.
 - Examples to run, with no network: `cargo run -p concord-api --example bookshop` (also `quickstart`, `pages`, `errors`).
 
 Five crates share one version. You depend on `concord-api`, and on `concord-testkit` in your tests; the others come in as dependencies. See [the crates](docs/reference/crates.md) for what each one contains.
