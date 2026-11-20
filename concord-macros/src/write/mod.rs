@@ -9,6 +9,8 @@ use syn::spanned::Spanned;
 
 use crate::{ast::*, flat, name};
 
+const MAX_TUPLE_INPUTS: usize = 12;
+
 // Only syntax written here receives mixed-site hygiene. Interpolated author
 // expressions and promised bindings retain their original spans.
 macro_rules! emit {
@@ -64,6 +66,38 @@ fn stored(input: &Input, ty: TokenStream) -> TokenStream {
         emit!(::core::option::Option<#ty>)
     } else {
         ty
+    }
+}
+
+/// Plain paths, literals and calls can only use an owner through its bare name.
+/// Keep the full lexical environment for other forms, including macro invocations.
+fn without_owner(expr: &syn::Expr, owners: &[flat::Owner<'_>]) -> bool {
+    match expr {
+        syn::Expr::Path(path) => {
+            path.attrs.is_empty()
+                && path.qself.is_none()
+                && path
+                    .path
+                    .segments
+                    .iter()
+                    .all(|part| part.arguments.is_none())
+                && path.path.get_ident().is_none_or(|ident| {
+                    let name = ident.to_string();
+                    owners.iter().all(|owner| {
+                        name.trim_start_matches("r#")
+                            != flat::owner_name(owner.node).trim_start_matches("r#")
+                    })
+                })
+        }
+        syn::Expr::Call(call) => {
+            call.attrs.is_empty()
+                && without_owner(&call.func, owners)
+                && call.args.iter().all(|arg| without_owner(arg, owners))
+        }
+        syn::Expr::Lit(literal) => literal.attrs.is_empty(),
+        syn::Expr::Paren(paren) => paren.attrs.is_empty() && without_owner(&paren.expr, owners),
+        syn::Expr::Group(group) => group.attrs.is_empty() && without_owner(&group.expr, owners),
+        _ => false,
     }
 }
 
@@ -225,10 +259,12 @@ impl<'a> Writer<'a> {
             self.generated_names
                 .insert(name::type_name(&node.name.to_string()));
         }
-        for input in &inputs {
-            self.input_ids
-                .insert((input.owner, input.input), self.next_input);
-            self.next_input += 1;
+        if !matches!(node.kind, NodeKind::Endpoint(_)) {
+            for input in &inputs {
+                self.input_ids
+                    .insert((input.owner, input.input), self.next_input);
+                self.next_input += 1;
+            }
         }
         self.nodes.push(NodeInfo {
             node,
@@ -293,7 +329,7 @@ impl<'a> Writer<'a> {
 
     fn tuple_data(&self, index: usize) -> bool {
         self.nodes.get(index).is_some_and(|node| {
-            matches!(node.node.kind, NodeKind::Endpoint(_)) && node.inputs.len() <= 12
+            matches!(node.node.kind, NodeKind::Endpoint(_)) && node.inputs.len() <= MAX_TUPLE_INPUTS
         })
     }
 
@@ -314,16 +350,7 @@ impl<'a> Writer<'a> {
 
     fn input_type_at(&self, input: &flat::InputLine<'_>, key: TokenStream) -> TokenStream {
         let id = self.input_id(input);
-        let storage = Self::input_storage(input);
-        emit!(<#key as #storage<#id>>::Value)
-    }
-
-    fn input_storage(input: &flat::InputLine<'_>) -> TokenStream {
-        if matches!(input.owner.kind, NodeKind::Endpoint(_)) {
-            emit!(::concord::__private::EndpointType)
-        } else {
-            emit!(::concord::__private::StoredType)
-        }
+        emit!(<#key as ::concord::__private::StoredType<#id>>::Value)
     }
 
     fn input_type(&self, input: &flat::InputLine<'_>) -> TokenStream {
@@ -448,8 +475,50 @@ impl<'a> Writer<'a> {
         base: TokenStream,
         slots: bool,
     ) -> TokenStream {
+        self.bindings_at(origin, current, base, slots, None)
+    }
+
+    fn bindings_at(
+        &self,
+        origin: &flat::Origin<'_>,
+        current: usize,
+        base: TokenStream,
+        slots: bool,
+        span: impl Into<Option<Span>>,
+    ) -> TokenStream {
+        self.write_bindings(origin, current, base, slots, span.into(), &origin.owners)
+    }
+
+    fn expression_bindings(
+        &self,
+        origin: &flat::Origin<'_>,
+        current: usize,
+        expression: &syn::Expr,
+        span: Option<Span>,
+    ) -> TokenStream {
+        let owners = if without_owner(expression, &origin.owners) {
+            &[][..]
+        } else {
+            &origin.owners
+        };
+        self.write_bindings(origin, current, emit!(__value), false, span, owners)
+    }
+
+    fn write_bindings(
+        &self,
+        origin: &flat::Origin<'_>,
+        current: usize,
+        base: TokenStream,
+        slots: bool,
+        span: Option<Span>,
+        owners: &[flat::Owner<'_>],
+    ) -> TokenStream {
+        let at_expression = |tokens: TokenStream| match span {
+            Some(span) => located(tokens, span),
+            None => tokens,
+        };
         let key = self.client_key();
-        let owners = origin.owners.iter().map(|owner| {
+        let owners = owners.iter().map(|owner| {
             let Some(index) = self.node_indices.get(&(owner.node as *const Node)) else {
                 self.internal(owner.node.name.span(), "an owner has no view");
                 return TokenStream::new();
@@ -463,35 +532,29 @@ impl<'a> Writer<'a> {
                 let access = self.input_field(current, input, base.clone());
                 self.borrow_field(current, access, false)
             });
-            // The function import lets the binding shadow a constant or unit struct.
-            emit!(
+            // The import lets the binding shadow a constant or unit struct. Keep its
+            // span narrow so rustc's unused-import pass needn't read the whole description.
+            let shadow = emit_at!(owner.node.name.span()=>
                 #[allow(unused_imports)] use ::core::mem::drop as #binding;
+            );
+            let view = at_expression(emit!(
                 let #binding = <#key as ::concord::__private::OwnerView<#index>>::View::new((#(#fields,)*));
-            )
+            ));
+            emit!(#shadow #view)
         });
         let locals = origin.locals.iter().map(|input| {
             let field = &input.input.name;
-            if slots {
+            let binding = if slots {
                 let slot = self.slot_value(current, input);
                 emit!(let #field = #slot;)
             } else {
                 let access = self.input_field(current, input, base.clone());
                 let reference = self.borrow_field(current, access, false);
                 emit!(let #field = #reference;)
-            }
+            };
+            at_expression(binding)
         });
         emit!(#(#owners)* #(#locals)*)
-    }
-
-    fn bindings_at(
-        &self,
-        origin: &flat::Origin<'_>,
-        current: usize,
-        base: TokenStream,
-        slots: bool,
-        span: Span,
-    ) -> TokenStream {
-        located(self.bindings(origin, current, base, slots), span)
     }
 
     fn visibility(&self, depth: usize) -> TokenStream {
@@ -543,20 +606,23 @@ impl<'a> Writer<'a> {
         let vis = self.visibility;
         let module_vis = self.visibility(1);
         let key = self.client_key();
-        let stored_inputs = self.nodes.iter().flat_map(|node| {
-            let key = &key;
-            node.inputs.iter().map(move |input| {
-                let id = self.input_id(input);
+        let stored_inputs = self
+            .nodes
+            .iter()
+            .filter(|node| !matches!(node.node.kind, NodeKind::Endpoint(_)))
+            .flat_map(|node| {
+                let key = &key;
                 let cfg = &node.cfg;
-                let storage = Self::input_storage(input);
-                let ty = &input.input.ty;
-                emit_at!(ty.span()=>
-                    #(#cfg)* #[doc(hidden)] impl #storage<#id> for #key {
-                        type Value = #ty;
-                    }
-                )
-            })
-        });
+                node.inputs.iter().map(move |input| {
+                    let id = self.input_id(input);
+                    let ty = &input.input.ty;
+                    emit_at!(ty.span()=>
+                        #(#cfg)* #[doc(hidden)] impl ::concord::__private::StoredType<#id> for #key {
+                            type Value = #ty;
+                        }
+                    )
+                })
+            });
         let node_type_impls = self
             .nodes
             .iter()
@@ -627,10 +693,13 @@ impl<'a> Writer<'a> {
                     let position = syn::Index::from(index);
                     emit!(#field: __fields.#position,)
                 });
+                let shadow = emit_at!(node.node.name.span()=>
+                    #[allow(unused_imports)] use ::core::mem::drop as __fields;
+                );
                 emit!(#(#cfg)* const _: () = {
                     #[doc(hidden)]
                     pub struct __View #lifetime { #(pub #fields: #types,)* }
-                    #[allow(unused_imports)] use ::core::mem::drop as __fields;
+                    #shadow
                     impl #lifetime __View #lifetime {
                         #[doc(hidden)]
                         pub fn new(__fields: (#(#types,)*)) -> Self { Self { #(#fields_by_position)* } }

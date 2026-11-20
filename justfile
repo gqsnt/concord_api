@@ -78,6 +78,11 @@ mutants *args:
 bench *args:
     @python3 -B tools/bench.py {{args}}
 
+# Measure opt-in compile time, peak memory and expansion for generated clients.
+[no-exit-message]
+weight *args:
+    @python3 -B tools/weight.py {{args}}
+
 # Check panic-prone operations have local safety reasons.
 [no-exit-message]
 panics:

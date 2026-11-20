@@ -80,7 +80,7 @@ A description is written in some module of the author's, where the author's name
 | What is generated | Where | Why |
 |---|---|---|
 | The client type, the modules of the tree, the handle and endpoint types (their `struct` and `enum` lines), and `Call` and `Endpoint` in the client's module | In the module of the description, and in modules below it | So that `riot::matches::Ids` is a path. |
-| The types of inputs and parent handles, and the problem type | Implementations of hidden Concord traits for `Call<ClientKey>`, in the module of the description | The authored type resolves where it was written. Each client's `Call<ClientKey>` is distinct, including for a description inside a function. Generated fields reach the type through the trait's associated type. |
+| The types of inputs and parent handles, and the problem type | Implementations of hidden Concord traits for `Call<ClientKey>`, in the module of the description | The authored type resolves where it was written. Each client's `Call<ClientKey>` is distinct, including for a description inside a function. The endpoint's inputs share an implementation, with one associated type at each authored type's span. |
 | The `impl` blocks that use the author's Rust: the client and handle methods, both forms of an endpoint setter (including the associated function on the endpoint type, `Ids::count`), `__build_draft`, `__read_answer` and the pagers | In the module of the description, inside one `const _: () = { … };` | Every expression and every type of the author is copied there, and resolves as the author wrote it. The author's `use` lines are in scope. |
 | `with_timeout`, `with_idle_timeout`, `request`, `into_request`, `edit_request`, `read_response` and `with_retry` without a `problem` line. Also the trait implementations for `Clone`, `Debug` and `concord::page::Call`. | In the client's module | They use the call, its options and the client's aliases without naming the author's types there. |
 | `send`, `send_full`, `send_raw`, `send_if_none_match`, `pages`, `IntoFuture` and `with_retry` with a `problem` line | Inside the `const _: () = { … };` where the macro is invoked | The signatures use the authored problem type. If a name in a signature could take one of its names, the send methods use an alias scoped to their own block. |
@@ -97,7 +97,7 @@ Paths: a path into `concord` or `std` starts with `::`. A path to a generated it
 
 Rule 4 of [the rules](../reference/rules.md): a bare name is an input of the node that wrote the statement, and an input of a node above is named with its owner (`client.key`, `matches.route`).
 
-The macro does not rewrite expressions. **It binds names, and then copies the expression as it is.** Before an expression that a node `N` wrote, the generated code has one local for each owner in scope, and one for each input of `N`. Every one of them is a reference.
+The macro copies each expression as written. The generated code binds the inputs of the node that wrote it and makes the enclosing owners available as views. Each input binding is a reference. For `read`, a whole-body expression, or a status arm, the macro omits owner views when the expression consists of plain paths, literals, or calls of those forms and contains no bare owner name. Other forms, including a macro invocation or a field read, keep the full set of views.
 
 ```rust
 // For an entry written by the client and inherited by matches.ids.
@@ -117,7 +117,7 @@ The macro does not rewrite expressions. **It binds names, and then copies the ex
 
 (The paths into `::concord::__private` are shortened here.)
 
-**An owner is a view.** The macro generates one hidden struct per client or scope. Its fields borrow the inputs of that level. A level with no inputs has an empty view. The generated code finds the view through the level's position in the tree, starting with 0 for the client. So `client.key` is a `&Secret`, exactly as the bare `key` is in the client's own lines. With a plain borrow of the handle in its place, `basic(client.key, )` would require another borrow.
+**An owner is a view.** The macro generates one hidden struct per client or scope. Its fields borrow the inputs of that level. A level with no inputs has an empty view. The generated code finds the view through the level's position in the tree, starting with 0 for the client. So `client.key` is a `&Secret`, exactly as the bare `key` is in the client's own lines. With a plain borrow of the handle in its place, `basic(client.key, )` would require another borrow. A function import lets the generated binding shadow a constant or unit struct. Its span covers the owner's name so the compiler's unused-import check need only examine that part of the source.
 
 **Every value goes through one adapter.** The macro calls `::concord::__private::AdaptPlacement::adapt_placement` with a reference to the value. Rust infers the writer from the value's type. The helper passes a serializable value to Serde and marks a secret value as sensitive.
 
@@ -149,6 +149,8 @@ The macro does not rewrite expressions. **It binds names, and then copies the ex
 | `paginate` | The expression, with each input bound as its slot ([the table above](#the-authors-names-in-the-authors-rust)), in a closure run once, at `.pages()`, and handed to one of four entries, chosen by the form of the expression alone (no name is interpreted). **An expression certain to need no inference** goes to `pages_of_pager`, whose bound is `Pager<C>`. The rule, word for word as `certain_pager` states it in `concord-macros/src/write/call.rs`: "The pager path is taken only when the expression is certain to need no inference: after removing parentheses, it is a path, a call or a method call; or a plain block, an `if`/`else` or a `match` whose every value position is such a form again; and nowhere in the whole expression is there a closure literal or a macro invocation in a value position, a `return`, a `break` with a value, a loop, a label, or a `#[cfg]` or `#[cfg_attr]` attribute; and, at any depth (nested closures, `async` blocks and blocks included), no attribute of any kind, no macro invocation of any kind (also in a pattern or a type) and no item. Everything else takes the path of earlier releases, unchanged. No name is interpreted." The `return`s, `?`s, loops and labels of a nested closure or `async` block are its own. What [C8.6](../reference/contracts.md#c8-secrets-and-pages) promises an author is the form of this rule that can be read without the visitor. **A closure at the top** goes through a small generated function whose `FnMut` bound infers its parameters, then `pages_with_pager`, as in earlier releases. **A closure at another value position** (a tail of a block, a branch, an arm) goes to `pages_with_pager`, whose `FnMut` bound infers it. **Anything else** goes to `pages_inferred`: the same `FnMut` bound, through the hidden trait `InferredPager`, which only words the error for a value that is not a closure. |
 | `idle_timeout` | A closure that is not `async` and returns a `std::time::Duration`, run once per send, before anything else. |
 | `middleware` | The expression, in `new`, where only the client's required inputs are bound (an optional input is set after `new`). The macro rejects an optional input of the client there ([message 40](../reference/messages.md)); a name that does not exist gets `rustc`'s error. |
+
+An arm that takes `body` runs the reader before entering the block that binds the arm's names.
 
 **`return` in a closure.** In `read { … }`, `idempotent { … }` and a pager, the macro applies its helper (`reader`, `idempotent`) to what the closure returns, outside it: so `return v` makes `v` the value of that expression. In a status arm and in the expression of `body`, the closure returns a `Result`: so `return` returns the same kind of value that `?` would.
 
@@ -226,6 +228,7 @@ Measured through the macro itself, with Rust 1.99, offline, with four jobs and t
 | 500 endpoints | 3.67 s | 0.39 GiB |
 
 - **Wide inputs share their bindings.** The facts of one origin share one set of bindings, so an entry does not repeat the bindings of every input.
+- **Endpoint input types share an implementation.** Endpoints with more than sixteen inputs use successive groups of up to sixteen, keeping each associated type at the original span for diagnostics. Up to twelve stored types form a tuple in the call's state. Wider calls keep named fields.
 
 The measurements above cover descriptions of up to 500 endpoints.
 

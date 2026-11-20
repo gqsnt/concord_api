@@ -158,6 +158,53 @@ fn c1_12_slots_use_the_client_without_exporting_a_key() {
 }
 
 #[test]
+fn simple_readers_and_bodies_skip_owner_views() {
+    let file: syn::File = syn::parse2(crate::expand(
+        r#"pub client Sample(reader: concord::Json) {
+            base "https://sample.test";
+            scope zone(key: u16) {
+                POST stock(payload: u16) -> u16 {
+                    body concord::json(payload);
+                    read concord::Json;
+                }
+                POST custom() -> u16 {
+                    body concord::json(zone.key);
+                    read r#client.reader;
+                }
+            }
+        }"#
+        .parse()
+        .unwrap(),
+    ))
+    .unwrap();
+    for (endpoint, expected) in [("Stock", 0), ("Custom", 2)] {
+        let methods = impls(&file)
+            .into_iter()
+            .find(|(_, block)| {
+                compact(&block.self_ty) == format!("sample::zone::{endpoint}")
+                    && block
+                        .trait_
+                        .as_ref()
+                        .is_some_and(|(_, path, _)| compact(path) == "sample::Endpoint")
+            })
+            .unwrap()
+            .1;
+        for name in ["__build_draft", "__read_answer"] {
+            let method = methods.items.iter().find_map(|item| match item {
+                syn::ImplItem::Fn(method) if method.sig.ident == name => Some(method),
+                _ => None,
+            });
+            let body = compact(&method.unwrap().block);
+            assert_eq!(
+                body.matches("::concord::__private::OwnerView<").count(),
+                expected,
+                "{endpoint}::{name}"
+            );
+        }
+    }
+}
+
+#[test]
 fn c1_16_missing_problem_reader_is_an_internal_error_without_a_format_fallback() {
     let mut parsed=crate::parse::parse("client Broken { base \"https://broken.test\"; read CustomReader; problem u32; GET get(); }".parse().unwrap());
     let client = parsed.client.as_ref().unwrap();

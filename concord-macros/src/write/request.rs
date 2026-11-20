@@ -293,8 +293,8 @@ impl Writer<'_> {
         let endpoint_name = self.endpoint_name();
         match &endpoint.body {
             Some(flat::BodyLine::Expression(line)) => {
-                let bindings = self.bindings(&line.origin, index, emit!(__value), false);
                 let expression = line.value;
+                let bindings = self.expression_bindings(&line.origin, index, expression, None);
                 let place = emit_at!(expression.span() => ::concord::__private::Draft::whole_body(&mut __draft, __body););
                 emit!({
                     #bindings

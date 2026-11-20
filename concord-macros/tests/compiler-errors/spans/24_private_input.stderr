@@ -1,0 +1,21 @@
+error[E0446]: private type `Private` in public interface
+ --> tests/compiler-errors/spans/24_private_input.rs:7:37
+  |
+2 | struct Private;
+  | -------------- `Private` declared as private
+...
+7 |         GET narrow(id: u64, hidden: Private) {
+  |                                     ^^^^^^^ can't leak private type
+  |
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0446]: private type `Private` in public interface
+  --> tests/compiler-errors/spans/24_private_input.rs:14:21
+   |
+ 2 | struct Private;
+   | -------------- `Private` declared as private
+...
+14 |             hidden: Private,
+   |                     ^^^^^^^ can't leak private type
+   |
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

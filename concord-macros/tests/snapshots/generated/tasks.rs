@@ -436,34 +436,9 @@ pub mod tasks {
 )]
 const _: () = {
     #[doc(hidden)]
-    impl ::concord::__private::StoredType<5usize>
+    impl ::concord::__private::StoredType<0usize>
     for tasks::Call<::concord::__private::ClientKey> {
         type Value = Tasks;
-    }
-    #[doc(hidden)]
-    impl ::concord::__private::EndpointType<0usize>
-    for tasks::Call<::concord::__private::ClientKey> {
-        type Value = bool;
-    }
-    #[doc(hidden)]
-    impl ::concord::__private::EndpointType<1usize>
-    for tasks::Call<::concord::__private::ClientKey> {
-        type Value = Vec<String>;
-    }
-    #[doc(hidden)]
-    impl ::concord::__private::EndpointType<2usize>
-    for tasks::Call<::concord::__private::ClientKey> {
-        type Value = NewTask;
-    }
-    #[doc(hidden)]
-    impl ::concord::__private::EndpointType<3usize>
-    for tasks::Call<::concord::__private::ClientKey> {
-        type Value = u64;
-    }
-    #[doc(hidden)]
-    impl ::concord::__private::EndpointType<4usize>
-    for tasks::Call<::concord::__private::ClientKey> {
-        type Value = u64;
     }
     const _: () = {
         #[doc(hidden)]
@@ -872,21 +847,27 @@ const _: () = {
             }
         }
     };
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointInputs2<1usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Input0 = bool;
+        type Input1 = Vec<String>;
+    }
     impl tasks::Endpoint for tasks::List {
         type Data = ::concord::__private::CallData<
             <tasks::Call<
                 ::concord::__private::ClientKey,
-            > as ::concord::__private::StoredType<5usize>>::Value,
+            > as ::concord::__private::StoredType<0usize>>::Value,
             (
                 ::core::option::Option<
                     <tasks::Call<
                         ::concord::__private::ClientKey,
-                    > as ::concord::__private::EndpointType<0usize>>::Value,
+                    > as ::concord::__private::EndpointInputs2<1usize>>::Input0,
                 >,
                 ::core::option::Option<
                     <tasks::Call<
                         ::concord::__private::ClientKey,
-                    > as ::concord::__private::EndpointType<1usize>>::Value,
+                    > as ::concord::__private::EndpointInputs2<1usize>>::Input1,
                 >,
             ),
             Self,
@@ -943,11 +924,6 @@ const _: () = {
                 __response,
                 __info,
                 move || {
-                    #[allow(unused_imports)]
-                    use ::core::mem::drop as client;
-                    let client = <tasks::Call<
-                        ::concord::__private::ClientKey,
-                    > as ::concord::__private::OwnerView<0usize>>::View::new(());
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -992,15 +968,20 @@ const _: () = {
             }
         }
     };
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointInputs1<2usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Input0 = NewTask;
+    }
     impl tasks::Endpoint for tasks::Create {
         type Data = ::concord::__private::CallData<
             <tasks::Call<
                 ::concord::__private::ClientKey,
-            > as ::concord::__private::StoredType<5usize>>::Value,
+            > as ::concord::__private::StoredType<0usize>>::Value,
             (
                 <tasks::Call<
                     ::concord::__private::ClientKey,
-                > as ::concord::__private::EndpointType<2usize>>::Value,
+                > as ::concord::__private::EndpointInputs1<2usize>>::Input0,
             ),
             Self,
         >;
@@ -1026,11 +1007,6 @@ const _: () = {
                 "https://tasks.example.com/api/tasks",
             );
             {
-                #[allow(unused_imports)]
-                use ::core::mem::drop as client;
-                let client = <tasks::Call<
-                    ::concord::__private::ClientKey,
-                > as ::concord::__private::OwnerView<0usize>>::View::new(());
                 let task = &__value.__inputs.0;
                 let __body = ::concord::__private::evaluate_body(
                     <Self as tasks::Endpoint>::NAME,
@@ -1051,11 +1027,6 @@ const _: () = {
                 __response,
                 __info,
                 move || {
-                    #[allow(unused_imports)]
-                    use ::core::mem::drop as client;
-                    let client = <tasks::Call<
-                        ::concord::__private::ClientKey,
-                    > as ::concord::__private::OwnerView<0usize>>::View::new(());
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -1100,15 +1071,20 @@ const _: () = {
             }
         }
     };
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointInputs1<3usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Input0 = u64;
+    }
     impl tasks::Endpoint for tasks::Get {
         type Data = ::concord::__private::CallData<
             <tasks::Call<
                 ::concord::__private::ClientKey,
-            > as ::concord::__private::StoredType<5usize>>::Value,
+            > as ::concord::__private::StoredType<0usize>>::Value,
             (
                 <tasks::Call<
                     ::concord::__private::ClientKey,
-                > as ::concord::__private::EndpointType<3usize>>::Value,
+                > as ::concord::__private::EndpointInputs1<3usize>>::Input0,
             ),
             Self,
         >;
@@ -1154,11 +1130,6 @@ const _: () = {
                 __response,
                 __info,
                 move || {
-                    #[allow(unused_imports)]
-                    use ::core::mem::drop as client;
-                    let client = <tasks::Call<
-                        ::concord::__private::ClientKey,
-                    > as ::concord::__private::OwnerView<0usize>>::View::new(());
                     ::concord::__private::reader_for_response::<
                         Self::Value,
                         _,
@@ -1203,15 +1174,20 @@ const _: () = {
             }
         }
     };
+    #[doc(hidden)]
+    impl ::concord::__private::EndpointInputs1<4usize>
+    for tasks::Call<::concord::__private::ClientKey> {
+        type Input0 = u64;
+    }
     impl tasks::Endpoint for tasks::Delete {
         type Data = ::concord::__private::CallData<
             <tasks::Call<
                 ::concord::__private::ClientKey,
-            > as ::concord::__private::StoredType<5usize>>::Value,
+            > as ::concord::__private::StoredType<0usize>>::Value,
             (
                 <tasks::Call<
                     ::concord::__private::ClientKey,
-                > as ::concord::__private::EndpointType<4usize>>::Value,
+                > as ::concord::__private::EndpointInputs1<4usize>>::Input0,
             ),
             Self,
         >;

@@ -9,13 +9,8 @@ impl Writer<'_> {
         ty: TokenStream,
         check: &Ident,
     ) -> TokenStream {
-        let bindings = self.bindings_at(
-            &line.origin,
-            index,
-            emit!(__value),
-            false,
-            line.value.span(),
-        );
+        let bindings =
+            self.expression_bindings(&line.origin, index, line.value, Some(line.value.span()));
         let expression = line.value;
         let value = emit_at!(expression.span()=> (|| { #expression })());
         emit_at!(expression.span()=> {
@@ -156,13 +151,8 @@ impl Writer<'_> {
         } else {
             emit!(::concord::http::StatusCode::as_u16(&__status) == #code)
         };
-        let bindings = self.bindings_at(
-            &line.origin,
-            index,
-            emit!(__value),
-            false,
-            expression.span(),
-        );
+        let bindings =
+            self.expression_bindings(&line.origin, index, expression, Some(expression.span()));
         let problem = self.problem_alias().to_token_stream();
         let body = flat::body_field(line.value).and(endpoint.reader.as_ref()).map(|reader| {
             let inferred = emit_at!(expression.span()=> _);
@@ -216,7 +206,8 @@ impl Writer<'_> {
         let call = emit_at!(expression.span()=>
             ::concord::__private::arm(__arm(#(#args),*), __status, &__headers, &__info)?
         );
-        emit!(_ if #test => { #body #bindings #arm #call })
+        // An arm's imports would otherwise be in scope for the reader above it.
+        emit!(_ if #test => { #body { #bindings #arm #call } })
     }
 
     fn answer_simple(

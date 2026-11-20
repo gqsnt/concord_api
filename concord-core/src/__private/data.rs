@@ -71,10 +71,35 @@ pub trait StoredType<const N: usize> {
     type Value: Clone + Send + Sync + 'static;
 }
 
-/// A type named by an endpoint declaration. The call state checks its own bounds.
+/// A generated endpoint type reached through the client key.
 pub trait EndpointType<const N: usize> {
-    /// An input type or the generated endpoint marker.
+    /// The marker or named state of an endpoint.
     type Value;
+}
+
+macro_rules! endpoint_input_groups {
+    (($($input:ident),*); $group:ident: $next:ident $(, $rest:ident: $tail:ident)*) => {
+        /// Types authored together in an endpoint signature. Call storage checks their bounds.
+        pub trait $group<const N: usize, const GROUP: usize = 0> {
+            $(
+                /// The authored type at this position in the group.
+                type $input;
+            )*
+            /// The last authored type in the group.
+            type $next;
+        }
+        endpoint_input_groups!(($($input,)* $next); $($rest: $tail),*);
+    };
+    ($previous:tt;) => {};
+}
+
+endpoint_input_groups! {
+    (); EndpointInputs1: Input0, EndpointInputs2: Input1, EndpointInputs3: Input2,
+    EndpointInputs4: Input3, EndpointInputs5: Input4, EndpointInputs6: Input5,
+    EndpointInputs7: Input6, EndpointInputs8: Input7, EndpointInputs9: Input8,
+    EndpointInputs10: Input9, EndpointInputs11: Input10, EndpointInputs12: Input11,
+    EndpointInputs13: Input12, EndpointInputs14: Input13, EndpointInputs15: Input14,
+    EndpointInputs16: Input15
 }
 
 /// The borrowed view of a client or scope passed to authored expressions.

@@ -16,6 +16,7 @@ Upgrading from 5.0.0-rc.1: the changes that stop a program from compiling come f
 - **`concord::page::IntoNext` is implemented only by `Option<C>` and `Result<Option<C>, Fail<C::Problem>>`, for the call `C`.** An implementation of your own, such as `impl IntoNext<LocalCall> for Option<()>`, compiled before and now fails with E0277. A pager returns the next call itself: turn your own value into it inside the pager, and return `Option<C>` or `Result<Option<C>, Fail<_>>`.
 - **`concord::transfer::TransferError::EmptyQuery` is removed.** `transfer::at` accepts a URL whose query is a lone `?` or only `&`, and sends it as written, as `at_url` now does; a `match` arm that names the variant no longer compiles, and can be deleted.
 - **The test kit's `script::Cut` can no longer be written as a value**: only the script makes one. Code that finds it with `downcast_ref::<Cut>()` is unchanged. `script::UploadState` and `server::BodyState` are `#[non_exhaustive]`: a `match` on them needs a `_` arm.
+- **In a scope's status arm, an inherited body reader no longer sees the scope's generated names.** A closure parameter in such a reader named like a unit struct of your module, such as `|zone: &u8|` with a glob-imported `struct zone;`, used to compile because a generated import hid the struct; it now fails as plain Rust does (E0308, "`zone` is interpreted as a unit struct, not a new binding"). Rename the parameter.
 - **Error texts that changed.** A test that compares the text of these errors needs the new one:
   - `SignError` texts start in lower case and have no final period: `the request leaves the signing origin`, `the request body is a stream and cannot be hashed`, and the eight others ([the messages](docs/reference/messages.md)).
   - `LimitError::InvalidPolicy` prints `the limit policy is invalid` (was `limit policy is invalid; check its bounds, keys and windows`), and `LimitError::TooManyKeys` prints `limit keys exceed max_keys` (was `limit key bound reached; configure max_keys`).
@@ -51,9 +52,14 @@ Upgrading from 5.0.0-rc.1: the changes that stop a program from compiling come f
 
 ### Fixed
 
+- **A status arm runs the inherited body reader that you wrote.** Inside a scope, an arm written `=> { body }` read the body without calling a reader callback named like the scope; `=> body` and `=> { body }` now both call it.
 - **Generated requests keep their meaning in your module.** The macro uses qualified paths for request building, so a trait or item in the description's scope can no longer intercept those calls and change what is sent. Generated helpers stay out of glob imports from a client or scope module and cannot shadow the description's own names. A client named `Diagnostic` compiles. Use `use self::diagnostic::*;` or `use crate::diagnostic::*;` because `use diagnostic::*;` is ambiguous with the compiler's `diagnostic` tool module. The spelling rules for description names still exclude `__`. In the module that holds the description, declare no constant, static or unit struct whose name begins with `__`. Other items and trait methods may use such names. Compiler errors identify the missing bound when a body needs `IntoBody` or a request value needs `serde::Serialize` or a supported form of `Secret`. [Generated code](docs/reference/contracts.md#c10-the-generated-code-and-the-log).
 - **`concord::transfer::at` returns `TransferError::NotAbsolute`** when the first `://` comes after a `/`, `?`, `#` or backslash. This covers relative references such as `/x://example` and URLs without an authority such as `urn:example:x?q=https://u.test/p`.
 - **`concord::Json::strict` checks the type and subtype of the media type.** It accepts `application/json` and media types whose subtype ends in `+json`, with an HTTP token on each side of the slash. It rejects malformed labels such as `bogus+json` before reading the body. A failed decode with plain `Json` also reports those labels as unexpected.
+
+### Performance
+
+- **Large generated clients compile faster and with less memory.** On a synthetic client of 3,000 endpoints, a first `cargo check` takes about 30 seconds and 2.5 GiB of memory, against about 45 seconds and 7.6 GiB before; at 1,000 endpoints, about 8 seconds and under 1 GiB, against about 10 seconds and 1.2 GiB. The time now grows roughly in line with the number of endpoints.
 
 ### Documentation
 

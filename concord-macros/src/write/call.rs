@@ -2,6 +2,38 @@
 use super::*;
 use syn::visit::{self, Visit};
 
+// Match the largest EndpointInputs trait in the core. Each authored type gets
+// its own associated item and span so rustc can identify the type in an error.
+const INPUTS_PER_GROUP: usize = 16;
+
+fn endpoint_inputs(
+    index: usize,
+    node: &NodeInfo<'_>,
+    key: &TokenStream,
+) -> (Vec<TokenStream>, TokenStream) {
+    let cfg = &node.cfg;
+    let mut types = Vec::with_capacity(node.inputs.len());
+    let mut implementations = TokenStream::new();
+    for (group, inputs) in node.inputs.chunks(INPUTS_PER_GROUP).enumerate() {
+        let storage = ident(&format!("EndpointInputs{}", inputs.len()));
+        let group = (group != 0).then(|| emit!(, #group));
+        let storage = emit!(::concord::__private::#storage<#index #group>);
+        let items = inputs.iter().enumerate().map(|(position, input)| {
+            let ty = &input.input.ty;
+            let item = Ident::new(
+                &format!("Input{position}"),
+                Span::mixed_site().located_at(ty.span()),
+            );
+            types.push(emit!(<#key as #storage>::#item));
+            emit_at!(ty.span()=> type #item = #ty;)
+        });
+        implementations.extend(emit!(
+            #(#cfg)* #[doc(hidden)] impl #storage for #key { #(#items)* }
+        ));
+    }
+    (types, implementations)
+}
+
 fn may_reference_signature_name(tokens: TokenStream) -> bool {
     type_has_token(tokens, &|token| match token {
         proc_macro2::TokenTree::Ident(ident) => {
@@ -371,22 +403,27 @@ impl Writer<'_> {
         let cfg = &node.cfg;
         let impl_attrs = node.endpoint_impl_attrs();
         let marker = self.endpoint_marker(index, node);
-        let parent = self.node_type(node.parent.unwrap_or_default(), self.client_key());
+        let key = self.client_key();
+        let parent = self.node_type(node.parent.unwrap_or_default(), key.clone());
+        let data_span = match node.inputs.as_slice() {
+            [input] => input.input.ty.span(),
+            _ => node.node.name.span(),
+        };
+        let (inputs, input_storage) = endpoint_inputs(index, node, &key);
+        let input_fields = node.inputs.iter().zip(&inputs);
         let (state, storage) = if self.tuple_data(index) {
-            let types = node
-                .inputs
-                .iter()
-                .map(|input| stored(input.input, self.input_type(input)));
+            let types = input_fields
+                .clone()
+                .map(|(input, ty)| stored(input.input, ty.clone()));
             (
                 emit!(::concord::__private::CallData<#parent, (#(#types,)*), Self>),
                 TokenStream::new(),
             )
         } else {
-            let key = self.client_key();
             let id = self.node_id(self.nodes.len() + index);
-            let fields = node.inputs.iter().map(|input| {
+            let fields = input_fields.clone().map(|(input, ty)| {
                 let field = &input.input.name;
-                let ty = stored(input.input, self.input_type(input));
+                let ty = stored(input.input, ty.clone());
                 emit!(pub #field: #ty,)
             });
             let clones = node.inputs.iter().map(|input| {
@@ -411,10 +448,6 @@ impl Writer<'_> {
                 };
             );
             (self.data_type(index), storage)
-        };
-        let data_span = match node.inputs.as_slice() {
-            [input] => input.input.ty.span(),
-            _ => node.node.name.span(),
         };
         let data = emit_at!(data_span=> type Data = #state;);
         let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
@@ -563,15 +596,13 @@ impl Writer<'_> {
             )
         };
         let slots = endpoint.pager.as_ref().map(|_| {
-            let slots = node.inputs.iter().map(|input| {
+            let slots = input_fields.enumerate().map(|(position, (input, input_type))| {
                 let slot = self.slot_type(index, input);
                 let get_field = self.input_field(index, input, emit!((*#root::Call::__data(__call))));
                 let set_field = self.input_field(index, input, emit!((*#root::Call::__data_mut(&mut __call))));
-                let input_type = self.input_type(input);
                 let allow = node.deprecated.then(|| emit!(#[allow(deprecated)]));
                 let get = if input.input.optional.is_some() { emit!(::core::option::Option::as_ref(&#get_field)) } else { emit!(::core::option::Option::Some(&#get_field)) };
                 let set = if input.input.optional.is_some() { emit!(::core::option::Option::Some(__value)) } else { emit!(__value) };
-                let position = self.input_position(index, input).unwrap_or_default();
                 emit!(#impl_attrs #allow #[doc(hidden)] impl ::concord::page::Slot<#ty> for #slot {
                     type Value = #input_type;
                     fn get<'__a>(&self, __call: &'__a #ty) -> ::core::option::Option<&'__a Self::Value> { #get }
@@ -583,6 +614,7 @@ impl Writer<'_> {
         });
         emit! {
             #problem_check
+            #input_storage
             #storage
             #impl_attrs impl #root::Endpoint for #marker {
                 #data

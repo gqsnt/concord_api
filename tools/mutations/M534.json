@@ -1,0 +1,12 @@
+{
+  "id": "M534",
+  "area": "macro-hygiene",
+  "contract": "C1.16",
+  "description": "Omit owner views when a simple expression names an owner directly.",
+  "file": "concord-macros/src/write/mod.rs",
+  "find": "                && path.path.get_ident().is_none_or(|ident| {\n                    let name = ident.to_string();\n                    owners.iter().all(|owner| {\n                        name.trim_start_matches(\"r#\")\n                            != flat::owner_name(owner.node).trim_start_matches(\"r#\")\n                    })\n                })",
+  "replace": "                && true",
+  "checks": [
+    "macro-compiler"
+  ]
+}
