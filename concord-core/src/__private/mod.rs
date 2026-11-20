@@ -28,7 +28,11 @@ pub use call::{
 };
 pub use client::{Core, Options};
 pub use data::{
-    CallData, ClientKey, ClientProblem, EndpointType, InputSlot, OwnerView, StoredType,
+    CallData, ClientKey, ClientProblem, EndpointInputs1, EndpointInputs10, EndpointInputs11,
+    EndpointInputs12, EndpointInputs13, EndpointInputs14, EndpointInputs15, EndpointInputs16,
+    EndpointInputs2, EndpointInputs3, EndpointInputs4, EndpointInputs5, EndpointInputs6,
+    EndpointInputs7, EndpointInputs8, EndpointInputs9, EndpointType, InputSlot, OwnerView,
+    StoredType,
 };
 pub use output::{OrdinaryOutput, Output, SameProblem, TypedStream, WrappedOutput};
 #[cfg(test)]
