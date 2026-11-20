@@ -24,6 +24,8 @@ def environment(recipe):
     env["CARGO_NET_OFFLINE"] = "true"
     target = REPO_ROOT / "target"
     env["CARGO_TARGET_DIR"] = str(target / "msrv" if recipe == "msrv" else target)
+    if recipe == "msrv":
+        env["CONCORD_MSRV"] = "1"
     env.setdefault("PROPTEST_CASES", "256")
     if recipe == "doc":
         env["RUSTDOCFLAGS"] = "-D warnings"
@@ -66,19 +68,10 @@ def commands(recipe):
     if recipe == "doc":
         return [["cargo", "doc", "--offline", "--no-deps"] + full]
     if recipe == "msrv":
-        # These cases compare exact rustc diagnostics on stable. The compile-time message
-        # catalogue and the call-surface probes also run on the minimum Rust version.
-        stable_snapshots = [
-            "c1_11_c8_6_c8_8_calls_keep_their_endpoint_and_eligibility",
-            "c1_16_rust_bounds_point_at_author_tokens",
-            "c11_13_a_stream_of_another_problem_type_is_refused_at_the_declared_type",
-            "stable_rust_limits_have_compiler_diagnostics",
-        ]
         return [
             ["cargo", "+1.96", "check", "--offline", "--workspace"] + full,
             ["cargo", "+1.96", "test", "--offline", "-p", "concord-macros",
-             "--test", "compiler", "--test", "call_rules", "--test", "call_surface",
-             "--", *(arg for test in stable_snapshots for arg in ("--skip", test))],
+             "--test", "compiler", "--test", "call_rules", "--test", "call_surface"],
         ]
     if recipe == "features":
         with (REPO_ROOT / "concord-api" / "Cargo.toml").open("rb") as manifest:
