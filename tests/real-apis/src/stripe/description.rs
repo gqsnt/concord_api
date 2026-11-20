@@ -53,7 +53,8 @@ concord::api! {
             page?: String,
         ) {
             query { query; limit; page; }
-            paginate by_cursor(page, SearchResult::next_token);
+            paginate by_cursor(page, |page| page.next_page.clone())
+                .has_more(|page| page.has_more);
         }
 
         /// What a `GET` or a `DELETE` expands: in the query.

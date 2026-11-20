@@ -24,6 +24,8 @@ def environment(recipe):
     env["CARGO_NET_OFFLINE"] = "true"
     target = REPO_ROOT / "target"
     env["CARGO_TARGET_DIR"] = str(target / "msrv" if recipe == "msrv" else target)
+    if recipe == "msrv":
+        env["CONCORD_MSRV"] = "1"
     env.setdefault("PROPTEST_CASES", "256")
     if recipe == "doc":
         env["RUSTDOCFLAGS"] = "-D warnings"
@@ -66,7 +68,11 @@ def commands(recipe):
     if recipe == "doc":
         return [["cargo", "doc", "--offline", "--no-deps"] + full]
     if recipe == "msrv":
-        return [["cargo", "+1.96", "check", "--offline", "--workspace"] + full]
+        return [
+            ["cargo", "+1.96", "check", "--offline", "--workspace"] + full,
+            ["cargo", "+1.96", "test", "--offline", "-p", "concord-macros",
+             "--test", "compiler", "--test", "call_rules", "--test", "call_surface"],
+        ]
     if recipe == "features":
         with (REPO_ROOT / "concord-api" / "Cargo.toml").open("rb") as manifest:
             names = tomllib.load(manifest).get("features", {})

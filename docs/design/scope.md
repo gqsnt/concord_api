@@ -219,6 +219,8 @@ They **are** broken when the author adds or reorders a required input, changes a
 
 **For Concord itself.**
 
+The [compatibility guide](../guide/compatibility.md) describes what each kind of Concord release can change.
+
 | | |
 |---|---|
 | The methods of a call | An API option keeps its own name. The reserved names are exact names, per receiver: on a call, the methods that a call has (`send`, `request`, `edit_request`, `read_response`, `pages`, `at_url` and the others, plus the two that it has from Rust, `into_future` and `clone`). The whole table is [C1.6](../reference/contracts.md). One prefix is reserved for a name that becomes a method (an optional input, a child): `with_`. And the promise that goes with it: **Concord adds no name to a call, a handle or a client in a minor version, unless it starts with `with_`.** So an API may name its endpoints `send_message` and `send_photo`. A required input is an argument, and may have any name. |

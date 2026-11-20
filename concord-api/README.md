@@ -138,7 +138,7 @@ cargo run --example bookshop     # a whole client: pages, a creation, an upload,
 ```
 
 The reference of the whole language, with an example for each statement, is the rustdoc page
-of `concord::api!`. The module `concord::sample` shows the code that the macro generates, and the
+of `concord::api!`. With the `json` feature, the module `concord::sample` shows the code that the macro generates. The
 section "The boundaries", further down the front page of the crate documentation, lists the
 boundaries of a client (what is retried, the timeouts, a query). The crate documentation will be
 on docs.rs once Concord is published; until then, run `cargo doc -p concord-api --open`.

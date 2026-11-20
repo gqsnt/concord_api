@@ -148,7 +148,8 @@ fn c1_11_only_a_factory_returns_a_call() -> io::Result<()> {
         "construct_endpoint_type",
         "fn probe() { let _ = gate::Plain; }",
         "error[E0423]",
-        "enum named `Plain`",
+        // Both rustc wordings identify the endpoint type.
+        "`Plain`",
     )?;
     compiler.reject_in_both_contexts(
         "endpoint_type_as_parameter",

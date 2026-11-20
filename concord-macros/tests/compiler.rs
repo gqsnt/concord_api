@@ -1,5 +1,8 @@
 //! Compile accepted programs and verify macro and Rust diagnostics.
 
+#[path = "support/diagnostic_spans.rs"]
+mod diagnostic_spans;
+
 /// C1.18: each structural message uses the page's three lines and original token.
 #[test]
 fn c1_18_messages_15_through_20_on_stable() {
@@ -203,23 +206,25 @@ mod reader_note {
 /// C11.13: a declared type whose error names another problem type than the client's does not
 /// compile, however it is spelled; the check meets none of the author's names.
 #[test]
-fn c11_13_a_stream_of_another_problem_type_is_refused_at_the_declared_type() {
+fn c11_13_a_stream_of_another_problem_type_is_refused_at_the_declared_type() -> std::io::Result<()>
+{
     let t = trybuild::TestCases::new();
-    t.compile_fail("tests/compiler-errors/problem-type/*.rs");
+    diagnostic_spans::compile_fail(&t, "problem-type")?;
     t.pass("tests/accepted/problem_check_isolated.rs");
     t.pass("tests/accepted/check_names_modules.rs");
     t.pass("tests/accepted/check_names_witness.rs");
     t.pass("tests/accepted/check_names_self.rs");
+    Ok(())
 }
 
 #[test]
-fn c1_16_rust_bounds_point_at_author_tokens() {
-    trybuild::TestCases::new().compile_fail("tests/compiler-errors/spans/*.rs");
+fn c1_16_rust_bounds_point_at_author_tokens() -> std::io::Result<()> {
+    diagnostic_spans::compile_fail(&trybuild::TestCases::new(), "spans")
 }
 /// Rust reports constant-pattern conflicts and concrete trait-bound failures.
 #[test]
-fn stable_rust_limits_have_compiler_diagnostics() {
-    trybuild::TestCases::new().compile_fail("tests/compiler-errors/limits/*.rs");
+fn stable_rust_limits_have_compiler_diagnostics() -> std::io::Result<()> {
+    diagnostic_spans::compile_fail(&trybuild::TestCases::new(), "limits")
 }
 
 #[test]

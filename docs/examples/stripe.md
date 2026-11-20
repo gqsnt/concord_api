@@ -64,7 +64,8 @@ concord::api! {
             page?: String,
         ) {
             query { query; limit; page; }
-            paginate by_cursor(page, SearchResult::next_token);
+            paginate by_cursor(page, |page| page.next_page.clone())
+                .has_more(|page| page.has_more);
         }
 
         /// What a `GET` or a `DELETE` expands: in the query.
@@ -324,7 +325,7 @@ pub struct SearchResult<T> {
 }
 
 impl<T> SearchResult<T> {
-    /// For `by_cursor(page, …)`: the token of the next page, while Stripe says there is one.
+    /// The token to pass when requesting one more page by hand, while Stripe says there is one.
     pub fn next_token(&self) -> Option<String> {
         self.next_page.clone().filter(|_| self.has_more)
     }

@@ -38,7 +38,7 @@ wire:
 doc:
     @python3 -B tools/gate.py doc
 
-# Check the workspace on Rust 1.96.
+# Check the workspace and run the macro's compiler tests on Rust 1.96.
 [no-exit-message]
 msrv:
     @python3 -B tools/gate.py msrv
@@ -87,6 +87,11 @@ panics:
 [no-exit-message]
 features-all:
     @python3 -B tools/features.py
+
+# Check the lowest cached dependency resolution on a scratch copy. Nightly is required.
+[no-exit-message]
+minimal-versions *overrides:
+    @python3 -B tools/minimal_versions.py {{overrides}}
 
 # Check public documentation and the rendered facade API.
 [no-exit-message]

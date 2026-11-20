@@ -3,8 +3,39 @@
 
 use concord::error::Kind;
 use concord_testkit::Script;
+use real_apis::anthropic::Anthropic;
 use real_apis::elasticsearch::{Elasticsearch, Pit};
+use real_apis::stripe::Stripe;
 use serde_json::json;
+
+#[tokio::test(start_paused = true)]
+async fn stripe_search_with_more_and_no_next_page_is_a_mismatch() {
+    let script = Script::new();
+    script.answer(200).body(r#"{"data":[],"has_more":true}"#);
+    let stripe = Stripe::new("test-key").with_transport(script.clone());
+    let mut pages = stripe
+        .customers()
+        .search("email:'ada@example.test'")
+        .pages();
+
+    assert!(pages.try_next().await.unwrap().is_some());
+    let error = pages.try_next().await.unwrap_err();
+    assert_eq!(error.kind(), Kind::Mismatch);
+    assert_eq!(script.requests().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn anthropic_models_with_more_and_no_last_id_is_a_mismatch() {
+    let script = Script::new();
+    script.answer(200).body(r#"{"data":[],"has_more":true}"#);
+    let anthropic = Anthropic::new("test-key").with_transport(script.clone());
+    let mut pages = anthropic.models().pages();
+
+    assert!(pages.try_next().await.unwrap().is_some());
+    let error = pages.try_next().await.unwrap_err();
+    assert_eq!(error.kind(), Kind::Mismatch);
+    assert_eq!(script.requests().len(), 1);
+}
 
 fn es(script: &Script) -> Elasticsearch {
     Elasticsearch::new(
