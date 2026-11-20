@@ -150,6 +150,8 @@ The macro copies each expression as written. The generated code binds the inputs
 | `idle_timeout` | A closure that is not `async` and returns a `std::time::Duration`, run once per send, before anything else. |
 | `middleware` | The expression, in `new`, where only the client's required inputs are bound (an optional input is set after `new`). The macro rejects an optional input of the client there ([message 40](../reference/messages.md)); a name that does not exist gets `rustc`'s error. |
 
+An arm that takes `body` runs the reader before entering the block that binds the arm's names.
+
 **`return` in a closure.** In `read { … }`, `idempotent { … }` and a pager, the macro applies its helper (`reader`, `idempotent`) to what the closure returns, outside it: so `return v` makes `v` the value of that expression. In a status arm and in the expression of `body`, the closure returns a `Result`: so `return` returns the same kind of value that `?` would.
 
 **Two orders.** For each send (each page is one), `idle_timeout` runs first, then `idempotent`, then the request. The expressions of a request run by kind first (the base, the paths, the query, the headers, the body), and within a kind in tree order: the client first, and for a node the lines of its parts before its own. The entries go on the wire in the order in which each key was first written. The two orders differ after an `override` (it runs at the turn of the node that wrote it), so the generated code runs every expression of a kind first and writes its entries afterwards.

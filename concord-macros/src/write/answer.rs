@@ -206,7 +206,8 @@ impl Writer<'_> {
         let call = emit_at!(expression.span()=>
             ::concord::__private::arm(__arm(#(#args),*), __status, &__headers, &__info)?
         );
-        emit!(_ if #test => { #body #bindings #arm #call })
+        // An arm's imports would otherwise be in scope for the reader above it.
+        emit!(_ if #test => { #body { #bindings #arm #call } })
     }
 
     fn answer_simple(
