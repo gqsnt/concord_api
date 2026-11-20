@@ -57,6 +57,8 @@ Upgrading from 5.0.0-rc.1: the changes that stop a program from compiling come f
 
 ### Documentation
 
+- The documentation builds without default features. The generated-client sample is available with `json`.
+- The Stripe search and Anthropic models examples report a Mismatch if the server says there are more pages and supplies no next token. The pager inventories include `by_page_bounds` and `by_offset_total`.
 - The limits page states how a learned list is checked: it is used whole or not at all, and a capacity that it reports replaces a declared one only for a window of the same period. For an API whose periods depend on the key, such as Riot, declare no window and let the limit learn them ([what holds for every limit](docs/guide/limits.md#what-holds-for-every-limit)).
 - The troubleshooting page has a row for clippy's `result_large_err` on a function given to `try_map`, and `Fail::from_read` says that a header that does not parse is a `concord::mismatch("…")`.
 - The crates page lists every crate in Concord's public signatures, with the major version that the surface is tied to, and the settings that `concord::Http` inherits from `reqwest` ([what the public surface is tied to](docs/reference/crates.md#what-the-public-surface-is-tied-to)).

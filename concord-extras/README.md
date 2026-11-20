@@ -18,7 +18,7 @@ and `transfer::at_call` uses one to build an error in the destination client's e
 | MIME multipart bodies | `multipart_mixed(parts)`, `multipart_related(parts)` (feature `multipart`) |
 | JSON record bodies | `json_lines(records, max_bytes)` (feature `json`), with a bound on the complete body |
 | Readers | `Json`, `Text`, `Binary`, `Stream`; for records, `JsonLines` (feature `json`) and `Sse`, which return a `RecordStream` |
-| Pagers | `by_offset`, `by_offset_limit`, `by_page`, `by_cursor`, `by_link`, `by_next_url` |
+| Pagers | `by_offset`, `by_offset_limit`, `by_offset_total`, `by_page`, `by_page_bounds`, `by_cursor`, `by_link`, `by_next_url` |
 | A credential | `basic(user, password)`, which returns a `Secret` |
 | A token that is renewed | `auth::Renewed`, `auth::after_401` (feature `auth`) |
 | A refresh token that rotates | `auth::Rotating`, `auth::RotationDriver`, `auth::CredentialStore`, `auth::TokenPair` (feature `rotating`) |

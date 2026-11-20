@@ -78,7 +78,7 @@ pub fn streamed(event: SseEvent) -> Result<Step<Streamed>, RecordFail<ApiProblem
     })
 }
 
-/// A page of models. For `by_cursor(after_id, …)`: the last ID, while there are more.
+/// A page of models.
 #[derive(Debug, Deserialize)]
 pub struct ModelPage {
     pub data: Vec<ModelInfo>,
@@ -87,8 +87,9 @@ pub struct ModelPage {
 }
 
 impl ModelPage {
+    /// The last ID, used as the cursor for the next page.
     pub fn next(&self) -> Option<String> {
-        self.last_id.clone().filter(|_| self.has_more)
+        self.last_id.clone()
     }
 }
 

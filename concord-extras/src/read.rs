@@ -1,8 +1,8 @@
 //! Whole-body readers and bounded record readers, each implementing `concord_core::Reader`.
 //!
-//! [`JsonLines`] (feature `json`) reads JSON values separated by lines. [`Sse`]
-//! reads server-sent events. Both return a [`RecordStream`] after the response head;
-//! errors during the body are stream items. See their type examples for complete
+//! [`Sse`] reads server-sent events. With the `json` feature, `JsonLines` reads JSON
+//! values separated by lines. Both return a [`RecordStream`] after the response head.
+//! Errors during the body are stream items. Their type examples show complete
 //! descriptions and calls.
 
 mod records;

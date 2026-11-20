@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the four user crates with strict rustdoc and list name-only docs.
+"""Build published crates without defaults and audit the user crates with strict rustdoc.
 
 This inventory flags terse source comments for human review; compiler missing_docs and rustdoc
 check completeness and link resolution, including feature-gated items.
@@ -15,6 +15,7 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CRATES = ("concord-api", "concord-core", "concord-extras", "concord-testkit")
+PUBLISHED_CRATES = (*CRATES, "concord-macros")
 STOP = {"a", "an", "the", "of", "for", "this", "its", "is", "it", "to", "get", "return", "returns"}
 
 
@@ -53,7 +54,15 @@ def main():
     shutil.rmtree(target / "doc/concord", ignore_errors=True)
     env.update(CARGO_NET_OFFLINE="true", CARGO_BUILD_JOBS="4", CARGO_TARGET_DIR=str(target),
                RUSTDOCFLAGS="-D warnings -D missing_docs -D rustdoc::broken_intra_doc_links")
-    command = ["cargo", "doc", "--offline", "--no-deps", "--features", "concord-api/tower,concord-api/multipart"]
+    base = ["cargo", "doc", "--offline", "--no-deps"]
+    for crate in PUBLISHED_CRATES:
+        print(f"DOCS: {crate} without default features", flush=True)
+        result = subprocess.run(
+            [*base, "--no-default-features", "-p", crate], cwd=REPO_ROOT, env=env,
+        )
+        if result.returncode:
+            return result.returncode
+    command = [*base, "--features", "concord-api/tower,concord-api/multipart"]
     for crate in CRATES:
         command += ["-p", crate]
     result = subprocess.run(command, cwd=REPO_ROOT, env=env)

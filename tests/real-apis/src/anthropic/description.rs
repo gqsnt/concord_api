@@ -36,7 +36,8 @@ concord::api! {
         GET models(limit?: u32, after_id?: String) -> ModelPage {
             path "models";
             query { limit; after_id; }
-            paginate by_cursor(after_id, ModelPage::next);
+            paginate by_cursor(after_id, ModelPage::next)
+                .has_more(|page| page.has_more);
         }
         GET model(model_id: String) -> ModelInfo { path "models/{model_id}"; }
     }

@@ -9,7 +9,7 @@
 //! |---|---|
 //! | `concord-macros` | [`api!`]. It knows the tree, the statements and the inputs, but nothing about the expressions on their right-hand side. |
 //! | `concord-core` | The values and traits of a call: [`Secret`], [`Base`], [`Body`], [`Reader`], [`Retry`], [`Error`], [`Pages`], [`page::Pager`], [`Middleware`], [`Transport`], [`Http`]; [`fake`] and [`reply`] for tests. |
-//! | `concord-extras` | The shipped implementations: [`json`], [`form`], [`bracket_form`], [`bracket_pairs`], [`json_lines`], optional `gzip`, `multipart`, `multipart_mixed` and `multipart_related`; [`struct@Json`], [`struct@Text`], [`struct@Binary`], [`read::Stream`], [`read::JsonLines`], [`read::Sse`]; [`by_offset`], [`by_offset_limit`], [`by_page`], [`by_cursor`], [`by_link`], [`by_next_url`], [`page::by_offset_total`] and what they return, [`page::Paging`]; [`basic`]; optional `auth` (with rotating credentials under `rotating`), `sign` and `limit`; [`transfer`]. These use public traits and helpers, including [`Body::get_content_type`] for `gzip`. The Tower adapter uses a hidden core helper for the URL of a response, and [`transfer::at_call`] uses one to build an error in the destination client's error type. |
+//! | `concord-extras` | The shipped implementations: `json`, `form`, `bracket_form`, `bracket_pairs`, `json_lines`, optional `gzip`, `multipart`, `multipart_mixed` and `multipart_related`; `Json`, [`struct@Text`], [`struct@Binary`], [`read::Stream`], `read::JsonLines`, [`read::Sse`]; [`by_offset`], [`by_offset_limit`], [`page::by_offset_total`], [`by_page`], [`by_page_bounds`], [`by_cursor`], [`by_link`], [`by_next_url`] and what they return, [`page::Paging`]; [`basic`]; optional `auth` (with rotating credentials under `rotating`), `sign` and `limit`; [`transfer`]. These use public traits and helpers, including [`Body::get_content_type`] for `gzip`. The Tower adapter uses a hidden core helper for the URL of a response, and [`transfer::at_call`] uses one to build an error in the destination client's error type. |
 //!
 //! The reader `Stream` is named through its module, [`read::Stream`]: at the root, its name would
 //! clash with the `Stream` trait that most async code imports.
@@ -36,10 +36,13 @@
 //! ## Where to read
 //!
 //! - The language, with an example for each statement: [`api!`].
-//! - The code that the macro generates, shown on a real page: [`sample`] (in the documentation only).
-//!   [`sample::library::Call`] documents the shared
-//!   methods. [`sample::library::books::Titles`] documents the request, inputs, options and
-//!   result of `Books::titles`, which returns `Call<Titles>`.
+#![cfg_attr(
+    feature = "json",
+    doc = "- The code that the macro generates, shown on a real page: [`sample`] (in the documentation only).
+  [`sample::library::Call`] documents the shared methods.
+  [`sample::library::books::Titles`] documents the request, inputs, options and result of
+  `Books::titles`, which returns `Call<Titles>`."
+)]
 //! - A whole client that shows nine behaviours without opening a socket: `examples/bookshop`
 //!   (`cargo run --example bookshop`). Each boundary below appears there.
 //!
@@ -66,9 +69,8 @@
 //!   idle timeout ends a call when the server sends nothing for 30 seconds (`with_idle_timeout`,
 //!   or `idle_timeout` in the description); [`Error::is_timeout`] is true for a timeout of
 //!   either kind.
-//! - **Sharing.** A client, its handles and its calls are `Send + Sync + Clone` (see
-//!   [`sample::Library`]); clones share the transport and the middleware, so one client
-//!   serves many tasks.
+//! - **Sharing.** A client, its handles and its calls are `Send + Sync + Clone`. Clones share the
+//!   transport and the middleware, so one client serves many tasks.
 //! - **A query.** A value is serialized with `serde`: a list repeats its key (`tag=a&tag=b`),
 //!   an empty list and a `None` add nothing, and a space is encoded as `%20`, never `+` (see
 //!   "Entries" in [`api!`]).
@@ -80,10 +82,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 // The page `sample` is written by the macro, whose code names `::concord`.
-#[cfg(doc)]
+#[cfg(all(doc, feature = "json"))]
 extern crate self as concord;
 
 #[cfg(doc)]
+#[cfg(feature = "json")]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod sample;
 
 #[doc(inline)]
@@ -201,11 +205,11 @@ pub mod body {
 ///
 /// | Reader | After the arrow | What it reads |
 /// |---|---|---|
-/// | [`Json`](struct@Json) | any type that `serde` reads | the whole body, at most 10 MiB |
+/// | `Json` (feature `json`) | any type that `serde` reads | the whole body, at most 10 MiB |
 /// | [`Text`](struct@Text) | `String` | the whole body as UTF-8, at most 10 MiB |
 /// | [`Binary`](struct@Binary) | `bytes::Bytes` | the whole body, at most 10 MiB |
 /// | [`Stream`](read::Stream) | [`ByteStream`] | nothing: the body is handed over as it comes |
-/// | [`JsonLines`](read::JsonLines) | [`RecordStream<T>`](read::RecordStream) | one JSON value per line, with an explicit byte bound |
+/// | `JsonLines` (feature `json`) | [`RecordStream<T>`](read::RecordStream) | one JSON value per line, with an explicit byte bound |
 /// | [`Sse`](read::Sse) | [`RecordStream<SseEvent>`](read::RecordStream) | server-sent events, with an explicit byte bound |
 ///
 /// **`Stream` is named through its module:** `read concord::read::Stream;`, or
