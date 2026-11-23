@@ -107,15 +107,18 @@ pub enum Arrow {
 impl Arrow {
     /// Check the spelling selected by the macro against the resolved outer type.
     #[track_caller]
+    // PANIC-SAFETY: Generated code evaluates this only in a const, so a panic is a compile error.
     #[allow(clippy::panic)]
     pub const fn check(self, written: Self) {
-        // PANIC-SAFETY: generated code calls this in a const to report a compiler error.
         match (self, written) {
             (Self::Plain, Self::Plain)
             | (Self::Option, Self::Option)
             | (Self::Result, Self::Result) => {}
+            // PANIC-SAFETY: Evaluated in a const; the panic is the compile error naming the fix.
             (Self::Option, _) => panic!("write `Option` literally after the arrow"),
+            // PANIC-SAFETY: Evaluated in a const; the panic is the compile error naming the fix.
             (Self::Result, _) => panic!("write `Result` literally after the arrow"),
+            // PANIC-SAFETY: Evaluated in a const; the panic is the compile error naming the fix.
             (Self::Plain, _) => panic!(
                 "this output is a custom type named `Option` or `Result`; qualify its path after the arrow"
             ),
