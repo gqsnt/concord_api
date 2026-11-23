@@ -2,9 +2,9 @@
   "id": "M345",
   "area": "single send",
   "contract": "C9.5",
-  "description": "Http states that nothing was sent for any failure, not only its connector's",
+  "description": "Http states that nothing was sent for a reqwest failure, although no HTTP library gives that evidence",
   "file": "concord-core/src/transport.rs",
-  "find": "        failure.not_sent = not_sent && failure.request_failure.is_none();",
-  "replace": "        failure.not_sent = failure.request_failure.is_none();",
+  "find": "        let mut failure = TransportError::from(error);\n        if failure.connect_timeout.is_some() {",
+  "replace": "        let mut failure = TransportError::from(error).not_sent();\n        if failure.connect_timeout.is_some() {",
   "requires_sockets": true
 }
