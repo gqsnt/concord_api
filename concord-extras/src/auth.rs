@@ -285,8 +285,7 @@ impl RenewalError {
     ///
     /// **When the exchange is a Concord call,** do not classify its error yourself: use
     /// [`from_call`](Self::from_call), which gives `NotSent` exactly when the call made one
-    /// attempt and Concord states that nothing of it was sent, a connect timeout that
-    /// `concord::Http` recognizes included.
+    /// attempt and Concord states that nothing of it was sent.
     ///
     /// **When you classify an error yourself,** use `not_sent` only when you can establish
     /// that no byte of the request that carries the refresh token was written, and that
@@ -300,13 +299,10 @@ impl RenewalError {
     /// again usually revokes every token of the account. When in doubt, use `failed`: the
     /// account then requires a new authorization, which is the safe side.
     ///
-    /// For an exchange made with `reqwest` directly: with native `reqwest` 0.13,
-    /// `e.is_connect() && !e.is_timeout()` is enough to say `not_sent` for one buffered
-    /// request through `reqwest`'s own connector, with no connection layer of your own,
-    /// no redirect followed, no retry (`reqwest::retry::never()`) and no TLS early data:
-    /// a connection that could not be made fails before the request is written. A form
-    /// body needs the `form` feature of `reqwest`. A Concord call's `Connect` class proves
-    /// nothing of the kind.
+    /// For an exchange made with `reqwest` directly, use `failed` for request errors unless
+    /// you have independent evidence that the request could never have been written.
+    /// `is_connect()` describes an error category and does not establish the delivery
+    /// outcome of the exchange.
     ///
     /// ```no_run
     /// use concord::auth::{Exchange, RenewalError, TokenPair};
@@ -335,21 +331,18 @@ impl RenewalError {
     ///   `Some(Class::Blocked)`), as by a `concord::limit::Limit` that refuses to wait, or a
     ///   middleware layer or transport that refuses the request; a middleware layer or a
     ///   transport returns `blocked()` only when no request left during its call;
-    /// - a failure that states that nothing was written: `concord::Http`, the default
-    ///   transport, states it for a failure that it recognizes as one of its connector's
-    ///   (a refused connection, a host name that was not resolved, a failed TLS handshake
-    ///   or proxy, its own connect timeout); a transport or middleware of your own states it
-    ///   with `TransportError::not_sent`, also after it opened a connection when no byte of
-    ///   the request was written or can still be written.
+    /// - a transport or middleware of your own states with `TransportError::not_sent`
+    ///   that no byte of the request was written or can still be written.
     ///
-    /// Every other error is `Failed`: with `Http`, a connection that failed after it was
-    /// made, even one reset before the server read anything, because the request may
-    /// already have been written; a `Connect` error from a `reqwest::Client` used as the transport; a timeout
-    /// of the call or of the response; a response, of any status; an error after more than
-    /// one attempt, or on a page after the first; and an attempt during which the chain also
-    /// sent the request elsewhere, or dropped a send before it returned. A Build error is
-    /// `Failed` too, because a request that was sent once can fail to be built again for a
-    /// retry.
+    /// Errors from `concord::Http` or a `reqwest::Client` are `Failed`, including connection
+    /// failures and connect timeouts. With `Rotating`, such a failed exchange leaves the
+    /// store's refresh marker in place and requires reauthorization, even if the refresh
+    /// token happened to remain unused.
+    ///
+    /// Call or response timeouts, HTTP responses of any status, and errors after more
+    /// than one attempt or on later pages are also `Failed`. This includes attempts that
+    /// sent the request elsewhere or dropped a send before it returned. A Build error
+    /// can occur while rebuilding a request for retry, so it is also `Failed`.
     ///
     /// Use it in place of `?` on that call, not on a call made after it:
     ///

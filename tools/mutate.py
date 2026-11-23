@@ -142,11 +142,7 @@ class Worker:
         rustlib = rustlib_log.read_text().splitlines()[-1]
         if not Path(rustlib).is_dir():
             raise RunnerError(f"invalid Rust shared library directory: {rustlib}")
-        for variable in ("LD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
-            paths = [str(self.home / "target/debug/deps"), str(self.home / "target/debug"), rustlib]
-            if self.env.get(variable):
-                paths.append(self.env[variable])
-            self.env[variable] = os.pathsep.join(paths)
+        self.rustlib = rustlib
         metadata_log = self.home / "metadata.log"
         metadata_log.write_text("", encoding="utf-8")
         code, timeout = invoke(["cargo", "metadata", "--offline", "--locked", "--no-deps",
@@ -228,11 +224,17 @@ class Worker:
             if code:
                 return "compile error", 0, 0
         binaries = {}
+        libraries = {self.rustlib}
         for line in build_log.read_text(encoding="utf-8", errors="replace").splitlines():
             try:
                 event = json.loads(line)
             except ValueError:
                 continue
+            if event.get("reason") == "compiler-artifact":
+                for filename in event["filenames"]:
+                    path = Path(filename)
+                    if path.suffix in (".so", ".dylib", ".dll"):
+                        libraries.add(str(path.parent))
             if event.get("reason") == "compiler-artifact" and event.get("executable"):
                 if event.get("profile", {}).get("test"):
                     package = self.package_names[event["package_id"]]
@@ -241,6 +243,12 @@ class Worker:
                     binaries[executable] = (package, target, event)
         if not binaries:
             raise RunnerError(f"{label}: cargo produced no test executables; see {build_log}")
+        runtime_env = self.env.copy()
+        for variable in ("LD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+            paths = sorted(libraries)
+            if runtime_env.get(variable):
+                paths.append(runtime_env[variable])
+            runtime_env[variable] = os.pathsep.join(paths)
         passed = skipped = 0
         for index, (executable, (package, target, event)) in enumerate(sorted(
                 binaries.items(), key=lambda entry: entry[1][:2])):
@@ -254,7 +262,7 @@ class Worker:
             cwd = Path(event["manifest_path"]).parent
             # Macro integration binaries run nested offline cargo/trybuild jobs.
             timeout_budget = max(self.args.timeout, self.args.build_timeout) if package == "concord-macros" else self.args.timeout
-            code, timeout = invoke(command, cwd, self.env, log, timeout_budget)
+            code, timeout = invoke(command, cwd, runtime_env, log, timeout_budget)
             output = log.read_text(encoding="utf-8", errors="replace")
             prefix = f"{package}::{target}"
             if timeout:

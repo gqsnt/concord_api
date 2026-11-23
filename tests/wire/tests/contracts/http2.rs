@@ -85,24 +85,24 @@ async fn graceful_shutdown(wire: Wire) {
     server.stopped().await;
 
     // The port is closed: a call with no retry policy makes one attempt, fails to connect,
-    // and Concord's own client states that nothing was sent (C9.5).
+    // and Http leaves delivery unknown (C9.5).
     let error = slow.held().await.unwrap_err();
     assert_eq!(error.kind(), Kind::Transport);
     assert_eq!(error.class(), Some(Class::Connect));
-    assert!(error.request_not_sent());
+    assert!(!error.request_not_sent());
     assert_eq!(error.tries(), 1);
     assert_eq!(server.seen.len(), 3);
 }
 
 #[tokio::test]
-async fn c9_5_a_graceful_shutdown_finishes_the_calls_in_flight_and_the_next_is_not_sent_over_http1()
-{
+async fn c9_5_a_graceful_shutdown_finishes_the_calls_in_flight_and_the_next_cannot_connect_over_http1(
+) {
     graceful_shutdown(Wire::One).await;
 }
 
 #[tokio::test]
-async fn c9_5_a_graceful_shutdown_finishes_the_calls_in_flight_and_the_next_is_not_sent_over_http2()
-{
+async fn c9_5_a_graceful_shutdown_finishes_the_calls_in_flight_and_the_next_cannot_connect_over_http2(
+) {
     graceful_shutdown(Wire::Two).await;
 }
 

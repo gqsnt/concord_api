@@ -1,6 +1,14 @@
 //! Compare documented messages with the complete macro's diagnostics.
 use super::*;
 
+/// C1.18: messages that need rustc's resolved types, including through aliases.
+#[test]
+fn c1_18_resolved_arrow_messages_and_their_spans() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/diagnostics/resolved/arrow.rs");
+    tests.pass("tests/accepted/arrow_types.rs");
+}
+
 fn primary(tokens: TokenStream, out: &mut Vec<String>) {
     let mut tokens = tokens.into_iter().peekable();
     while let Some(token) = tokens.next() {

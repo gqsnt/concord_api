@@ -392,9 +392,9 @@ impl<C: Call> Paging<C> {
     /// and this rule is not read (step 4 of [`Paging`]).
     ///
     /// `default` is your copy of the server's default page size. **If the server lowers it, the
-    /// list ends early, in silence**: the one place where Concord ends a list on your word alone.
-    /// If it raises it, one empty request more ends the list. Use it only for an API that
-    /// promises full pages until the last one.
+    /// list can end early, in silence**. If the server raises its default, the walk may
+    /// need an extra empty page. Use this rule when the server honors the requested count
+    /// and promises full pages until the last one.
     ///
     /// ```
     /// use concord::{by_offset, Json};

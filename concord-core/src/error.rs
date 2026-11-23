@@ -850,19 +850,14 @@ impl<E> Error<E> {
     /// page may have written anything. A failure states it when:
     ///
     /// - the request was [`Blocked`](Class::Blocked) before it was sent;
-    /// - [`Http`](crate::Http) recognizes the failure as one of its connector's, so that the
-    ///   connection was not made: it was refused, the host name was not resolved, the TLS
-    ///   handshake or a proxy failed, or a connect timeout that it recognizes expired before
-    ///   a connection existed;
     /// - your own transport or middleware stated it with
     ///   [`TransportError::not_sent`](crate::transport::TransportError::not_sent).
     ///
-    /// A timeout of the call or of the response, a `reqwest::Client` used as the transport,
-    /// a send dropped before it returned, and a second send through the same chain after a
-    /// response make it `false`, whatever `TryInfo` a middleware passed with that send; with
-    /// `Http`, so do a connection that failed after it was made and a failure that it does
-    /// not recognize as one of its connector's (an error chain that it does not expect,
-    /// HTTP/3). So does a `TryInfo` of the attempt that is still held when the attempt ends,
+    /// Errors returned by [`Http`](crate::Http) or a `reqwest::Client` leave delivery unknown.
+    /// A timeout of the call or response, a send dropped before it returned, and a second
+    /// send through the same chain after a response also make this `false`, whatever
+    /// `TryInfo` a middleware passed with that send. So does a `TryInfo` that is still held
+    /// when the attempt ends,
     /// for example by a task that a middleware started: a send made with it could still
     /// write. A send that a middleware makes entirely outside the chain, with a transport of
     /// its own and without the attempt's `TryInfo`, is not seen: that is its author's
@@ -872,9 +867,6 @@ impl<E> Error<E> {
     /// does, so that `Rotating` sends the same refresh token again. A false `true` makes that
     /// token be used twice, and a server that sees it may revoke every session of the
     /// account.
-    ///
-    /// For [`Http`](crate::Http), it rests on the versions of the HTTP libraries in your build
-    /// (see [`Http`](crate::Http)).
     ///
     /// The retry policy does not read it.
     pub fn request_not_sent(&self) -> bool {

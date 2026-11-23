@@ -11,7 +11,7 @@ workspace = true
 [dev-dependencies]
 concord = { package = "concord-api", path = "../../concord-api", features = ["limit", "multipart"] }
 # The server: axum over hyper and h2, on 127.0.0.1, HTTP/1.1 and HTTP/2 without TLS.
-axum = { version = "=0.8.9", default-features = false, features = ["http1", "http2", "tokio", "multipart"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "http2", "tokio", "multipart", "query"] }
 # The compression layer that a real server puts in front of its routes. Already in the lock.
 tower-http = { version = "0.6.11", default-features = false, features = ["compression-gzip"] }
 # `test-util`: the paused clock, which the server and the client share.

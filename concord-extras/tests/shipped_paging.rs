@@ -135,6 +135,11 @@ concord::api! {
             query { start; count; }
             paginate by_offset_limit(start, count);
         }
+        GET default_count(start?: u32, count?: u32) -> Vec<u64> {
+            path "default-count";
+            query { start; count; }
+            paginate by_offset(start).stop_on_short_page(count, 20);
+        }
         GET seven_limited(start?: Seven, count?: u32) -> Vec<u64> {
             path "seven-limited";
             query { start; count; }
@@ -848,6 +853,21 @@ async fn c8_6_a_gate_reads_the_call_that_fetched_each_page_after_its_edits() {
 }
 
 // stop_on_short_page ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn c8_6_an_omitted_count_uses_the_default_to_stop_without_sending_it() {
+    let script = Script::new();
+    let first: Vec<_> = (1..=20).collect();
+    give(&script, list(&first), None);
+    give(&script, list(&[21]), None);
+    let (pages, end) = every(shelf(&script).default_count().pages(), &script).await;
+    assert_eq!(pages, [first, vec![21]]);
+    assert_eq!(end, End::Done);
+    assert_eq!(
+        urls(&script),
+        [at("default-count"), at("default-count?start=20")]
+    );
+}
 
 #[tokio::test]
 async fn c8_6_a_short_page_rule_whose_count_or_default_is_not_a_number_of_items_stops_nothing() {

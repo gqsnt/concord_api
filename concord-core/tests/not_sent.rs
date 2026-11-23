@@ -124,22 +124,25 @@ fn one_connection<T: Send + 'static>(
 }
 
 #[test]
-fn c9_5_http_states_not_sent_for_a_refused_connection() {
+fn c9_5_http_leaves_delivery_unknown_for_a_refused_connection() {
     // Nothing listens on the port: no byte can have arrived anywhere.
     let url = leak(format!("http://{}/token", closed_port()));
     let error = run(async {
         let core = Core::<()>::default().with_transport(http());
         post(&core, url).await
     });
-    assert_connect(&error, true);
+    assert_eq!(error.kind(), Kind::Transport);
+    assert_eq!(error.tries(), 1);
     assert_eq!(error.class(), Some(Class::Connect));
     assert_eq!(
         error.to_string(),
         "transport error: connection refused, in tokens.exchange"
     );
-    // It survives the conversion of the problem's type.
-    assert!(error.map_problem(|()| 0u8).request_not_sent());
+    assert!(!error.request_not_sent());
+}
 
+#[test]
+fn c9_5_http_leaves_delivery_unknown_when_dns_fails() {
     // A host name that does not resolve: the connector fails before any socket.
     struct NoHost;
     impl reqwest::dns::Resolve for NoHost {
@@ -155,7 +158,10 @@ fn c9_5_http_states_not_sent_for_a_refused_connection() {
         let core = Core::<()>::default().with_transport(http);
         post(&core, "http://identity.test/token").await
     });
-    assert_connect(&error, true);
+    assert_eq!(error.kind(), Kind::Transport);
+    assert_eq!(error.tries(), 1);
+    assert_eq!(error.class(), Some(Class::Connect));
+    assert!(!error.request_not_sent());
     assert_eq!(
         error.to_string(),
         "transport error: the host name could not be resolved, in tokens.exchange"
@@ -254,7 +260,7 @@ async fn post_stream(core: &Core<()>, url: &'static str, body: Body) -> Error {
 
 #[cfg(feature = "rustls")]
 #[test]
-fn c9_5_http_states_not_sent_after_the_connect_timeout() {
+fn c9_5_http_leaves_delivery_unknown_after_the_connect_timeout() {
     // The server reads the TLS handshake and never answers it: no connection exists, and
     // what arrived is TLS handshake records only, never application data.
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -302,7 +308,9 @@ fn c9_5_http_states_not_sent_after_the_connect_timeout() {
         let length = usize::from(u16::from_be_bytes([bytes[at + 3], bytes[at + 4]]));
         at += 5 + length;
     }
-    assert_connect(&error, true);
+    assert_eq!(error.kind(), Kind::Transport);
+    assert_eq!(error.tries(), 1);
+    assert!(!error.request_not_sent());
     assert_eq!(error.class(), Some(Class::Timeout));
     assert_eq!(
         error.to_string(),
@@ -333,6 +341,8 @@ fn c9_5_a_transport_of_the_authors_states_not_sent() {
     });
     assert_connect(&error, true);
     assert_eq!(error.class(), Some(Class::Connect));
+    // It survives the conversion of the problem's type.
+    assert!(error.map_problem(|()| 0u8).request_not_sent());
     // `with_source` keeps the statement.
     let error = run(async {
         let core = Core::<()>::default().with_transport(Fails(|| {
@@ -360,22 +370,20 @@ fn c9_5_a_transport_of_the_authors_states_not_sent() {
 
 #[test]
 fn c9_5_a_transport_that_wraps_http_and_sends_twice_states_nothing() {
-    // The author's transport sends once to a server that answers, then once to a closed
-    // port, and returns the second failure, which `Http` stated.
-    struct Twice {
-        http: Http,
-        refused: reqwest::Url,
-    }
+    // The author's transport sends once to a server that answers, then a second
+    // transport rejects a send before writing anything.
+    struct Twice(Http);
     impl Transport for Twice {
         async fn send(
             &self,
             request: reqwest::Request,
             info: TryInfo,
         ) -> Result<reqwest::Response, TransportError> {
-            let mut again = request.try_clone().unwrap();
-            *again.url_mut() = self.refused.clone();
-            let _answered = self.http.send(request, info.clone()).await?;
-            self.http.send(again, info).await
+            let again = request.try_clone().unwrap();
+            let _answered = self.0.send(request, info.clone()).await?;
+            concord_core::fake(|_| Err(TransportError::connect().not_sent()))
+                .send(again, info)
+                .await
         }
     }
     let (url, server) = one_connection(|mut stream| {
@@ -387,12 +395,8 @@ fn c9_5_a_transport_that_wraps_http_and_sends_twice_states_nothing() {
             .unwrap();
         (head, body)
     });
-    let refused = format!("http://{}/token", closed_port()).parse().unwrap();
     let error = run(async {
-        let core = Core::<()>::default().with_transport(Twice {
-            http: http(),
-            refused,
-        });
+        let core = Core::<()>::default().with_transport(Twice(http()));
         post(&core, url).await
     });
     let (head, body) = server.join().unwrap();
@@ -510,24 +514,24 @@ fn run_paused<F: std::future::Future>(work: impl FnOnce(Arc<AtomicBool>) -> F) -
         })
 }
 
-/// `Http`, sending the attempts after the first to `refused` if it is set, and raising
-/// `ended` when an attempt returns.
+/// Use Http for the first attempt if requested. Stop all other attempts before sending.
 struct Attempts {
     http: Http,
-    refused: Option<SocketAddr>,
+    send_first: bool,
     ended: Arc<AtomicBool>,
 }
 
 impl Transport for Attempts {
     async fn send(
         &self,
-        mut request: reqwest::Request,
+        request: reqwest::Request,
         info: TryInfo,
     ) -> Result<reqwest::Response, TransportError> {
-        if let Some(refused) = self.refused.filter(|_| info.number() > 1) {
-            request.url_mut().set_port(Some(refused.port())).unwrap();
-        }
-        let result = self.http.send(request, info).await;
+        let result = if self.send_first && info.number() == 1 {
+            self.http.send(request, info).await
+        } else {
+            Err(TransportError::connect().not_sent())
+        };
         self.ended.store(true, Ordering::SeqCst);
         result
     }
@@ -535,7 +539,7 @@ impl Transport for Attempts {
 
 #[test]
 fn c9_3_a_failure_after_an_earlier_attempt_states_nothing() {
-    // The first attempt gets a response, the second cannot connect.
+    // The first attempt gets a response. The transport stops the second before sending.
     let (url, server) = one_connection(|mut stream| {
         let head = read_head(&mut stream);
         stream
@@ -543,12 +547,11 @@ fn c9_3_a_failure_after_an_earlier_attempt_states_nothing() {
             .unwrap();
         head
     });
-    let refused = Some(closed_port());
     let error = run_paused(|ended| async move {
         let core = Core::<()>::default()
             .with_transport(Attempts {
                 http: http(),
-                refused,
+                send_first: true,
                 ended,
             })
             .with_retry(Retry::none().tries(2).when(|_| Some(Duration::ZERO)));
@@ -562,13 +565,13 @@ fn c9_3_a_failure_after_an_earlier_attempt_states_nothing() {
     assert_eq!(error.class(), Some(Class::Connect));
     assert!(!error.request_not_sent());
 
-    // Two attempts that both could not connect: nothing was sent on either.
-    let url = leak(format!("http://{}/token", closed_port()));
+    // Two attempts stopped before sending: nothing was sent on either.
+    let url = "http://identity.test/token";
     let error = run_paused(|ended| async move {
         let core = Core::<()>::default()
             .with_transport(Attempts {
                 http: http(),
-                refused: None,
+                send_first: false,
                 ended,
             })
             .with_retry(Retry::none().tries(2).when(|_| Some(Duration::ZERO)));

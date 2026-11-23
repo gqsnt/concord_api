@@ -4,11 +4,12 @@
 //! more.
 
 use crate::server::{Server, Wire};
-use axum::extract::Request;
+use axum::extract::{Query, Request};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
-use concord::{by_link, by_next_url, by_page_bounds, Json};
+use concord::{by_link, by_next_url, by_offset, by_page_bounds, Json};
 use serde::Deserialize;
 
 /// A page whose next URL is in the body.
@@ -44,6 +45,11 @@ concord::api! {
             path "from-zero";
             query { page; }
             paginate by_page_bounds(page, |list| Some((list.page, list.pages)));
+        }
+        GET offsets(start?: u32, count?: u32) -> Vec<u32> {
+            path "offsets";
+            query { start; count; }
+            paginate by_offset(start).stop_on_short_page(count, 20);
         }
     }
 }
@@ -135,6 +141,61 @@ fn catalog() -> Router {
                 ))
             }),
         )
+}
+
+#[derive(Deserialize)]
+struct OffsetQuery {
+    start: Option<u32>,
+    count: Option<u32>,
+}
+
+async fn offset_pages(wire: Wire) {
+    let app = Router::new().route(
+        "/offsets",
+        get(|query: Query<OffsetQuery>| async move {
+            let start = query.start.unwrap_or(0);
+            if start >= 21 {
+                // A request beyond the last item would turn a complete walk into an error.
+                return StatusCode::BAD_REQUEST.into_response();
+            }
+            let end = start.saturating_add(query.count.unwrap_or(20)).min(21);
+            json(serde_json::to_string(&(start..end).collect::<Vec<_>>()).unwrap())
+        }),
+    );
+    let server = Server::start(app).await;
+    let catalog = Catalog::new()
+        .with_transport(wire.http())
+        .with_base(server.url());
+
+    let mut pages = catalog.offsets().pages();
+    assert_eq!(pages.try_next().await.unwrap(), Some((0..20).collect()));
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![20]));
+    assert_eq!(pages.try_next().await.unwrap(), None);
+
+    let mut pages = catalog.offsets().start(17).count(3).pages();
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![17, 18, 19]));
+    assert_eq!(pages.try_next().await.unwrap(), Some(vec![20]));
+    assert_eq!(pages.try_next().await.unwrap(), None);
+
+    assert_eq!(
+        server.seen.targets(),
+        [
+            "/offsets",
+            "/offsets?start=20",
+            "/offsets?start=17&count=3",
+            "/offsets?start=20&count=3"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn c8_6_offsets_stop_at_the_server_default_or_explicit_count_over_http1() {
+    offset_pages(Wire::One).await;
+}
+
+#[tokio::test]
+async fn c8_6_offsets_stop_at_the_server_default_or_explicit_count_over_http2() {
+    offset_pages(Wire::Two).await;
 }
 
 async fn walks(wire: Wire) {

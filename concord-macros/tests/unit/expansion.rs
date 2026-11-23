@@ -89,6 +89,8 @@ fn c1_6_retry_alias_reserves_its_generated_type_namespace() {
 #[path = "generated_docs.rs"]
 mod docs;
 
+#[path = "../support/facade.rs"]
+mod facade;
 #[path = "generated_surface.rs"]
 mod surface;
 

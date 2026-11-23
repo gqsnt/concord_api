@@ -39,3 +39,5 @@ type-macro = { path = "../tests/type-macro" }
 # and read into `serde` types.
 tokio.workspace = true
 serde.workspace = true
+# Keep the probe's parser out of trybuild fixtures' `serde_json` namespace.
+artifact-json = { package = "serde_json", version = "1" }

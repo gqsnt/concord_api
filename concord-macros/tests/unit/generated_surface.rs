@@ -828,28 +828,10 @@ pub(super) fn rustdoc_output(probe: &str, source_text: &str) -> std::path::PathB
     fs::create_dir_all(&work).unwrap();
     let source = work.join("surface.rs");
     fs::write(&source, source_text).unwrap();
-    let deps = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_owned();
-    let concord = fs::read_dir(&deps)
-        .unwrap()
-        .map(|file| file.unwrap())
-        .filter(|file| {
-            file.file_name()
-                .to_string_lossy()
-                .starts_with("libconcord-")
-                && file.path().extension().is_some_and(|ext| ext == "rlib")
-        })
-        .max_by_key(|file| file.metadata().unwrap().modified().unwrap())
-        .unwrap()
-        .path();
-    let output = Command::new("rustdoc")
-        .args(["--edition=2021", "--crate-name", probe, "-L"])
-        .arg(format!("dependency={}", deps.display()))
-        .arg("--extern")
-        .arg(format!("concord={}", concord.display()))
+    let mut rustdoc = Command::new(std::env::var_os("RUSTDOC").unwrap_or_else(|| "rustdoc".into()));
+    super::facade::Facade::get().link(&mut rustdoc);
+    let output = rustdoc
+        .args(["--edition=2021", "--crate-name", probe])
         .arg("-o")
         .arg(&work)
         .arg(&source)

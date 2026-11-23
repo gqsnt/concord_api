@@ -34,7 +34,9 @@ pub use data::{
     EndpointInputs7, EndpointInputs8, EndpointInputs9, EndpointType, InputSlot, OwnerView,
     StoredType,
 };
-pub use output::{OrdinaryOutput, Output, SameProblem, TypedStream, WrappedOutput};
+pub use output::{
+    Arrow, OrdinaryOutput, Output, PlainArrow, SameProblem, TypedStream, WrappedOutput,
+};
 #[cfg(test)]
 use page::same_page_request;
 pub use page::{

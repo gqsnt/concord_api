@@ -80,31 +80,16 @@ fn c1_18_sound_siblings_compile_after_one_endpoint_is_refused() {
     std::fs::create_dir_all(&target).unwrap();
     let source = target.join("siblings.rs");
     std::fs::write(&source,format!("#![allow(dead_code)]\n{text}\npub async fn both() -> three::Result<()> {{ let c=Three::new(); let _=c.first().await?; let _=c.last().await?; Ok(()) }}\n")).unwrap();
-    let executable = std::env::current_exe().unwrap();
-    let deps = executable.parent().unwrap();
-    let dependency = std::fs::read_dir(deps)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("libconcord-")
-                && p.extension().is_some_and(|x| x == "rlib")
-        })
-        .max_by_key(|p| p.metadata().unwrap().modified().unwrap())
-        .unwrap();
-    let result = std::process::Command::new("rustc")
+    let mut rustc =
+        std::process::Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
+    super::facade::Facade::get().link(&mut rustc);
+    let result = rustc
         .args([
             "--edition=2021",
             "--crate-type=lib",
             "--emit=metadata",
             "--crate-name=diagnostic_siblings",
         ])
-        .arg("-L")
-        .arg(format!("dependency={}", deps.display()))
-        .arg("--extern")
-        .arg(format!("concord={}", dependency.display()))
         .arg("--out-dir")
         .arg(&target)
         .arg(&source)

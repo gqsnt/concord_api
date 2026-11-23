@@ -3,12 +3,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::{fs, io};
 
+#[path = "support/facade.rs"]
+mod facade;
+
 const CLIENT: &str = include_str!("support/call_client.rs");
 
 struct Compiler {
     directory: PathBuf,
-    dependencies: PathBuf,
-    concord: PathBuf,
 }
 
 impl Compiler {
@@ -17,33 +18,7 @@ impl Compiler {
             .join("../target/call-probes")
             .join(format!("{}-{suite}", std::process::id()));
         fs::create_dir_all(&directory)?;
-        let mut dependencies = std::env::current_exe()?;
-        assert!(dependencies.pop(), "the test executable has no parent");
-        let mut libraries = Vec::new();
-        for entry in fs::read_dir(&dependencies)? {
-            let entry = entry?;
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.starts_with("libconcord-") && name.ends_with(".rlib"))
-            {
-                libraries.push((entry.metadata()?.modified()?, entry.path()));
-            }
-        }
-        let (_, concord) = libraries
-            .into_iter()
-            .max_by_key(|(modified, _)| *modified)
-            .ok_or_else(|| {
-                io::Error::other(format!(
-                    "concord was not built in {}",
-                    dependencies.display()
-                ))
-            })?;
-        let compiler = Self {
-            directory,
-            dependencies,
-            concord,
-        };
+        let compiler = Self { directory };
         let library = compiler.compile("client", CLIENT, false)?;
         assert!(library.status.success(), "{}", stderr(&library));
         Ok(compiler)
@@ -63,14 +38,11 @@ impl Compiler {
         let path = self.directory.join(format!("{name}.rs"));
         fs::write(&path, source)?;
         let mut rustc = Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
+        facade::Facade::get().link(&mut rustc);
         rustc
             .args(["--edition=2021", "--crate-type=rlib", "--crate-name", name])
             .arg("--color=never")
             .args(["-Adead_code", "-Aunused_imports"])
-            .arg("-L")
-            .arg(format!("dependency={}", self.dependencies.display()))
-            .arg("--extern")
-            .arg(format!("concord={}", self.concord.display()))
             .arg("--out-dir")
             .arg(&self.directory);
         if dependent {
@@ -86,13 +58,12 @@ impl Compiler {
         let path = self.directory.join(format!("{name}.rs"));
         fs::write(&path, source)?;
         let output = self.directory.join(format!("{name}-doc"));
-        let rustdoc = Command::new("rustdoc")
+        let mut rustdoc =
+            Command::new(std::env::var_os("RUSTDOC").unwrap_or_else(|| "rustdoc".into()));
+        facade::Facade::get().link(&mut rustdoc);
+        let rustdoc = rustdoc
             .args(["--edition=2021", "--crate-name", name])
             .args(cfg)
-            .arg("-L")
-            .arg(format!("dependency={}", self.dependencies.display()))
-            .arg("--extern")
-            .arg(format!("concord={}", self.concord.display()))
             .arg("-o")
             .arg(&output)
             .arg(path)

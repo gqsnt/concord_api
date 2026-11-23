@@ -479,6 +479,20 @@ impl Writer<'_> {
             (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
                 .must_name_the_clients_problem_type::<<Witness as Declared>::Problem>();
         );
+        let arrow_check = endpoint.node.output.as_ref().map(|_| {
+            let spelling = match endpoint.wrapper {
+                None => emit!(Plain),
+                Some(flat::Wrapper::Option) => emit!(Option),
+                Some(flat::Wrapper::Result) => emit!(Result),
+            };
+            emit_at!(declared=>
+                const _: () = {
+                    #[allow(unused_imports)]
+                    use ::concord::__private::{Arrow, Output, PlainArrow as _};
+                    Output::<<Witness as Declared>::Value>::ARROW.check(Arrow::#spelling);
+                };
+            )
+        });
         let problem_check = emit!(
             #(#cfg)* #allow const _: () = {
             impl #check::Declared for #check::Witness {
@@ -492,6 +506,7 @@ impl Writer<'_> {
                     type Value: ?::core::marker::Sized;
                     type Problem;
                 }
+                #arrow_check
                 fn check() {
                     use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
                     #check_call

@@ -264,11 +264,15 @@ pub(crate) fn arm_tokens(arm: &Arm) -> proc_macro2::TokenStream {
     quote!(#key #fields => #expr)
 }
 
-/// Ignore parentheses and leading `::`, but no user path or alias.
+/// Ignore parentheses, invisible groups and leading `::`, but no user path or alias.
 pub(crate) fn arrow(ty: &syn::Type) -> (Option<Wrapper>, &syn::Type) {
     let mut bare = ty;
-    while let syn::Type::Paren(paren) = bare {
-        bare = &paren.elem;
+    loop {
+        match bare {
+            syn::Type::Paren(paren) => bare = &paren.elem,
+            syn::Type::Group(group) => bare = &group.elem,
+            _ => break,
+        }
     }
     let syn::Type::Path(path) = bare else {
         return (None, ty);

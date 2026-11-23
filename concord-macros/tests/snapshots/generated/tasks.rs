@@ -838,6 +838,11 @@ const _: () = {
                 type Value: ?::core::marker::Sized;
                 type Problem;
             }
+            const _: () = {
+                #[allow(unused_imports)]
+                use ::concord::__private::{Arrow, Output, PlainArrow as _};
+                Output::<<Witness as Declared>::Value>::ARROW.check(Arrow::Plain);
+            };
             fn check() {
                 use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
                 (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
@@ -959,6 +964,11 @@ const _: () = {
                 type Value: ?::core::marker::Sized;
                 type Problem;
             }
+            const _: () = {
+                #[allow(unused_imports)]
+                use ::concord::__private::{Arrow, Output, PlainArrow as _};
+                Output::<<Witness as Declared>::Value>::ARROW.check(Arrow::Plain);
+            };
             fn check() {
                 use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
                 (&::concord::__private::Output::<<Witness as Declared>::Value>::new())
@@ -1062,6 +1072,11 @@ const _: () = {
                 type Value: ?::core::marker::Sized;
                 type Problem;
             }
+            const _: () = {
+                #[allow(unused_imports)]
+                use ::concord::__private::{Arrow, Output, PlainArrow as _};
+                Output::<<Witness as Declared>::Value>::ARROW.check(Arrow::Plain);
+            };
             fn check() {
                 use ::concord::__private::{TypedStream as _, OrdinaryOutput as _};
                 (&::concord::__private::Output::<<Witness as Declared>::Value>::new())

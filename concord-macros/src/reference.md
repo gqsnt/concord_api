@@ -342,6 +342,10 @@ set and nothing more: without `.offset(…)` it has no `offset` pair (the offset
 and without `.limit(…)` no `limit` pair. Each following request carries `offset` increased by
 the number of items received. The pages end with an empty page, or with a page shorter than the
 `limit` that the caller set; when no `limit` is set, only an empty page ends them.
+If the service guarantees full pages until the last one and has a default page size of 20,
+write `paginate by_offset(offset).stop_on_short_page(limit, 20);` to end on a short page
+even with the limit omitted. The default is used for stopping and an omitted `limit` stays
+off the query. If the service lowers its default, this walk can end early.
 
 **`idempotent`** marks an endpoint whose request may be sent twice. `GET`, `HEAD`,
 `OPTIONS`, `PUT` and `DELETE` already are; `idempotent false;` removes the mark. Its value
@@ -508,6 +512,13 @@ arm matches is not read by this rule (a `HEAD` reads nothing: see below):
 **After the arrow, `Option<T>` and `Result<T, E>` are read as `T`.** A 2xx that no arm
 matches is read as a `T` and returned as `Some` or `Ok`. The arms produce the rest:
 `404 => None`, `409 { body } => Err(body)`. So a 200 needs no arm of its own.
+
+Write the outer standard wrapper literally, either by its bare name or by its canonical
+`std::option::Option`, `core::option::Option`, `std::result::Result` or `core::result::Result`
+path. A different name for the outer wrapper is a compile error, even if arms supply every value.
+Qualify a custom type with the same name, for example `model::Option<T>`, to read it as an
+ordinary type. A nested wrapper, such as the `Option` in `Vec<Option<T>>`, is part of the
+reader's input type.
 
 ```rust
 # use concord::Json;

@@ -1,0 +1,23 @@
+error[E0080]: evaluation panicked: write `Option` literally after the arrow
+  --> tests/diagnostics/resolved/arrow.rs:16:27
+   |
+16 |         GET optional() -> MaybeNumber { status { 404 => None } }
+   |                           ^^^^^^^^^^^ evaluation of `_::_::__check_problem_1::_` failed here
+   |
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: write `Result` literally after the arrow
+  --> tests/diagnostics/resolved/arrow.rs:17:25
+   |
+17 |         GET domain() -> DomainNumber<u32> { status { 2xx => Ok(7) } }
+   |                         ^^^^^^^^^^^^ evaluation of `_::_::__check_problem_2::_` failed here
+   |
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: this output is a custom type named `Option` or `Result`; qualify its path after the arrow
+  --> tests/diagnostics/resolved/arrow.rs:27:31
+   |
+27 |             HEAD wrapped() -> Option<u32> { status { 2xx => Option(7) } }
+   |                               ^^^^^^ evaluation of `shadow::_::_::__check_problem_1::_` failed here
+   |
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

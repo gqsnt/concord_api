@@ -93,6 +93,11 @@ where
 /// no offset pair (it counts as 0), and with no `count` no limit pair. Each next request has
 /// `start` plus the number of items that arrived, and the same `count`. When the caller set
 /// no `count`, only an empty page ends the pages, as with [`by_offset`].
+///
+/// If the API guarantees a default size of 20 and full pages until the last one, write
+/// `paginate by_offset(start).stop_on_short_page(count, 20);` instead. The default is used
+/// to decide when to stop. Requests still omit `count` unless the caller sets it. See
+/// [`Paging::stop_on_short_page`] for what happens if the API changes its default.
 pub fn by_offset_limit<C, S, K>(start: S, limit: K) -> Paging<C>
 where
     C: Call,

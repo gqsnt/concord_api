@@ -15,10 +15,10 @@ use concord::auth::{
 };
 use concord::limit::Limit;
 use concord::sign::{CanonicalPath, Credentials, SigV4};
-use concord::{Base, Http, Middleware, Secret};
-use concord_testkit::Server;
-use std::collections::VecDeque;
-use std::net::{SocketAddr, TcpListener};
+use concord::transport::{TransportError, TryInfo};
+use concord::{reqwest, Base, Http, Middleware, Secret, Transport};
+use concord_testkit::{Script, Server};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -59,44 +59,38 @@ concord::api! {
     }
 }
 
-/// A local port with nothing listening on it.
-fn closed_port() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    addr
-}
-
 fn http() -> Http {
     Http::with(|builder| builder.no_proxy()).unwrap()
 }
 
-/// Resolves every host name to the next address of its list; the last one stays.
-struct Addresses(Mutex<VecDeque<SocketAddr>>);
+/// Refuses one request before handing it to the HTTP client.
+struct FailBeforeSend {
+    http: Http,
+    calls: AtomicUsize,
+    fail_at: usize,
+}
 
-impl concord::reqwest::dns::Resolve for Addresses {
-    fn resolve(&self, _: concord::reqwest::dns::Name) -> concord::reqwest::dns::Resolving {
-        let mut addresses = self.0.lock().unwrap();
-        let next = if addresses.len() > 1 {
-            addresses.pop_front().unwrap()
-        } else {
-            addresses[0]
-        };
-        let found: concord::reqwest::dns::Addrs = Box::new(std::iter::once(next));
-        Box::pin(std::future::ready(Ok(found)))
+impl FailBeforeSend {
+    fn after(calls: usize) -> Self {
+        Self {
+            http: http(),
+            calls: AtomicUsize::new(0),
+            fail_at: calls,
+        }
     }
 }
 
-/// `Http` that connects to these addresses in turn, one new connection for each request.
-fn http_to(addresses: &[SocketAddr]) -> Http {
-    let resolver = Arc::new(Addresses(Mutex::new(addresses.iter().copied().collect())));
-    Http::with(move |builder| {
-        builder
-            .no_proxy()
-            .pool_max_idle_per_host(0)
-            .dns_resolver(resolver)
-    })
-    .unwrap()
+impl Transport for FailBeforeSend {
+    async fn send(
+        &self,
+        request: reqwest::Request,
+        info: TryInfo,
+    ) -> Result<reqwest::Response, TransportError> {
+        if self.calls.fetch_add(1, Ordering::Relaxed) == self.fail_at {
+            return Err(TransportError::connect().not_sent());
+        }
+        self.http.send(request, info).await
+    }
 }
 
 #[derive(Clone)]
@@ -125,12 +119,14 @@ impl Memory {
 }
 
 async fn exchange_through(middleware: Option<impl Middleware>, base: &str) -> concord::Error {
-    let mut tokens = Tokens::new().with_base(base).with_transport(http());
+    let script = Script::new();
+    script.fail(TransportError::connect().not_sent());
+    let mut tokens = Tokens::new().with_base(base).with_transport(script);
     if let Some(middleware) = middleware {
         tokens = tokens.with_middleware(middleware);
     }
     match tokens.exchange(Secret::new("r0")).await {
-        Ok(_) => panic!("nothing listens on the port"),
+        Ok(_) => panic!("the transport must fail before sending"),
         Err(error) => error,
     }
 }
@@ -153,16 +149,16 @@ fn assert_not_sent(error: concord::Error) {
 
 #[tokio::test]
 async fn c9_5_each_shipped_middleware_passes_not_sent_on() {
-    let url = format!("http://{}", closed_port());
+    let url = "http://identity.test";
     let base: Base = url.parse().unwrap();
 
-    assert_not_sent(exchange_through(None::<Limit>, &url).await);
-    assert_not_sent(exchange_through(Some(Limit::new()), &url).await);
+    assert_not_sent(exchange_through(None::<Limit>, url).await);
+    assert_not_sent(exchange_through(Some(Limit::new()), url).await);
 
     let renewed = Renewed::new(&base, || async {
         AccessToken::expires_in("a0", Duration::from_secs(3600))
     });
-    assert_not_sent(exchange_through(Some(renewed), &url).await);
+    assert_not_sent(exchange_through(Some(renewed), url).await);
 
     let signer = SigV4::new(
         &base,
@@ -171,7 +167,7 @@ async fn c9_5_each_shipped_middleware_passes_not_sent_on() {
         "sts",
         CanonicalPath::Preserve,
     );
-    assert_not_sent(exchange_through(Some(signer), &url).await);
+    assert_not_sent(exchange_through(Some(signer), url).await);
 
     let store = Memory(Arc::new(Mutex::new(Stored::Ready(TokenPair::expires_in(
         "a0",
@@ -182,7 +178,7 @@ async fn c9_5_each_shipped_middleware_passes_not_sent_on() {
         Err::<TokenPair, _>(RenewalError::failed(std::io::Error::other("not called")))
     });
     let driver = tokio::spawn(driver);
-    assert_not_sent(exchange_through(Some(rotating), &url).await);
+    assert_not_sent(exchange_through(Some(rotating), url).await);
     drop(driver);
 }
 
@@ -215,8 +211,10 @@ async fn c12_6_from_call_is_failed_for_a_later_page() {
         .reply(200)
         .header("content-type", "application/json")
         .body("[1]");
-    // The first page reaches the server, the second finds nothing listening.
-    let listing = Listing::new().with_transport(http_to(&[server.addr(), closed_port()]));
+    // The first page reaches the server. The transport can prove the second was never sent.
+    let listing = Listing::new()
+        .with_base(server.url())
+        .with_transport(FailBeforeSend::after(1));
     let mut pages = listing.list().pages();
     assert_eq!(pages.try_next().await.unwrap(), Some(vec![1]));
     let error = pages.try_next().await.unwrap_err();
@@ -230,15 +228,14 @@ async fn c12_6_from_call_is_failed_for_a_later_page() {
     ));
 
     // The same failure on the first page states it.
-    let listing = Listing::new().with_transport(http_to(&[closed_port()]));
+    let listing = Listing::new().with_transport(FailBeforeSend::after(0));
     let error = listing.list().pages().try_next().await.unwrap_err();
     assert!(error.request_not_sent());
 }
 
 #[tokio::test]
-async fn c12_6_an_exchange_that_cannot_connect_keeps_the_refresh_token() {
-    // The token endpoint is a Concord call over `Http`: its first connection is refused,
-    // its second reaches the server.
+async fn c12_6_an_exchange_stopped_before_send_keeps_the_refresh_token() {
+    // The transport stops the first exchange before handing it to Http. The second reaches the server.
     let identity = Server::start().await;
     identity
         .on("POST", "/token")
@@ -248,7 +245,9 @@ async fn c12_6_an_exchange_that_cannot_connect_keeps_the_refresh_token() {
     let api = Server::start().await;
     api.on("GET", "/data").reply(200).body("ok");
 
-    let tokens = Tokens::new().with_transport(http_to(&[closed_port(), identity.addr()]));
+    let tokens = Tokens::new()
+        .with_base(identity.url())
+        .with_transport(FailBeforeSend::after(0));
     let store = Memory(Arc::new(Mutex::new(Stored::Ready(TokenPair::new(
         "a0", "r0", None,
     )))));
@@ -300,6 +299,63 @@ async fn c12_6_an_exchange_that_cannot_connect_keeps_the_refresh_token() {
     assert_eq!(store.pair(), ("a1".into(), "r1".into()));
     drop(data);
     driver.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn c12_6_an_http_dns_failure_requires_reauthorization() {
+    #[derive(Default)]
+    struct NoHost(AtomicUsize);
+    impl reqwest::dns::Resolve for NoHost {
+        fn resolve(&self, _: reqwest::dns::Name) -> reqwest::dns::Resolving {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Box::pin(async { Err(std::io::Error::from(std::io::ErrorKind::NotFound).into()) })
+        }
+    }
+    let resolver = Arc::new(NoHost::default());
+    let http = Http::with(|builder| builder.no_proxy().dns_resolver(resolver.clone())).unwrap();
+    let tokens = Tokens::new().with_transport(http);
+    let store = Memory(Arc::new(Mutex::new(Stored::Ready(TokenPair::new(
+        "a0", "r0", None,
+    )))));
+    let script = Script::new();
+    let (rotating, driver) = Rotating::new(
+        &"http://data.test".parse().unwrap(),
+        store.clone(),
+        move |exchange: Exchange| {
+            let tokens = tokens.clone();
+            async move {
+                let reply = tokens
+                    .exchange(exchange.refresh())
+                    .await
+                    .map_err(RenewalError::from_call)?;
+                Ok(TokenPair::new(reply.access, reply.refresh, None))
+            }
+        },
+    );
+    let driver = tokio::spawn(driver);
+    let data = Data::new()
+        .with_transport(script.clone())
+        .with_middleware(rotating);
+    let error = data.get().await.unwrap_err();
+    match RotationError::find(&error) {
+        Some(RotationError::Renewal(RenewalError::Failed(cause))) => {
+            let call = cause.downcast_ref::<concord::Error>().unwrap();
+            assert_eq!(call.class(), Some(concord::error::Class::Connect));
+            assert!(!call.request_not_sent());
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(*store.0.lock().unwrap(), Stored::Refreshing));
+    let error = data.get().await.unwrap_err();
+    assert!(matches!(
+        RotationError::find(&error),
+        Some(RotationError::NeedsReauthorization)
+    ));
+    assert!(matches!(*store.0.lock().unwrap(), Stored::Refreshing));
+    assert_eq!(resolver.0.load(Ordering::Relaxed), 1);
+    assert!(script.requests().is_empty());
+    drop(data);
+    assert!(driver.await.unwrap().is_err());
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-//! The check of an endpoint's declared type against the client's problem type.
+//! Checks that use the resolved type of an endpoint's declared output.
 //!
 //! The generated code writes, for each endpoint, a function that is never called, in a module of
 //! its own where none of the author's names is in scope:
@@ -92,6 +92,55 @@ pub trait OrdinaryOutput {
 }
 
 impl<T: ?Sized> OrdinaryOutput for &Output<T> {}
+
+/// The three spellings that can select a success reader.
+#[derive(Debug)]
+pub enum Arrow {
+    /// Read the declared type.
+    Plain,
+    /// Read the inner type and wrap it in `Some`.
+    Option,
+    /// Read the inner type and wrap it in `Ok`.
+    Result,
+}
+
+impl Arrow {
+    /// Check the spelling selected by the macro against the resolved outer type.
+    #[track_caller]
+    #[allow(clippy::panic)]
+    pub const fn check(self, written: Self) {
+        // PANIC-SAFETY: generated code calls this in a const to report a compiler error.
+        match (self, written) {
+            (Self::Plain, Self::Plain)
+            | (Self::Option, Self::Option)
+            | (Self::Result, Self::Result) => {}
+            (Self::Option, _) => panic!("write `Option` literally after the arrow"),
+            (Self::Result, _) => panic!("write `Result` literally after the arrow"),
+            (Self::Plain, _) => panic!(
+                "this output is a custom type named `Option` or `Result`; qualify its path after the arrow"
+            ),
+        }
+    }
+}
+
+// Stable inherent-item lookup selects these before the blanket trait constant.
+impl<T> Output<Option<T>> {
+    /// A standard `Option`, through any alias.
+    pub const ARROW: Arrow = Arrow::Option;
+}
+
+impl<T, E> Output<Result<T, E>> {
+    /// A standard `Result`, through any alias.
+    pub const ARROW: Arrow = Arrow::Result;
+}
+
+/// The fallback for any other outer type, including containers of a wrapper.
+pub trait PlainArrow {
+    /// An ordinary response.
+    const ARROW: Arrow = Arrow::Plain;
+}
+
+impl<T: ?Sized> PlainArrow for Output<T> {}
 
 #[cfg(test)]
 mod tests {
