@@ -1,0 +1,19 @@
+error[E0277]: `paginate` reads this expression as a closure, and its value is `Paging<probe::Call<List>>`, which is not a closure
+  --> tests/pagers/refused/matrix_const_block_unused_break.rs:35:70
+   |
+35 | ...ter; } paginate { let _ = const { loop { break 7; } }; concord::by_cursor(after, tok) }; }
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a closure is needed here
+   |
+   = help: the trait `for<'a> FnMut(probe::Call<List>, &'a Answer<Page>)` is not implemented for `Paging<probe::Call<List>>`
+   = note: if the value is a pager, write `.into_fn()` after a `Paging<…>` (`by_cursor(…).into_fn()`) or `Paging::from_pager(…).into_fn()` around a pager of yours; or write the pager as a call or a path, alone or at each tail of a plain block, `if` or `match`
+   = note: if it is not, it is neither a closure nor a pager, and `paginate` cannot use it
+   = note: required for `Paging<probe::Call<List>>` to implement `concord::__private::page::InferredPager<probe::Call<List>, _>`
+note: required by a bound in `concord::__private::page::pages_inferred`
+  --> $WORKSPACE/concord-core/src/__private/page.rs
+   |
+   | pub fn pages_inferred<C, N, F>(
+   |        -------------- required by a bound in this function
+...
+   |     F: InferredPager<C, N> + Send + 'static,
+   |        ^^^^^^^^^^^^^^^^^^^ required by this bound in `pages_inferred`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

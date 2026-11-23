@@ -1,0 +1,9 @@
+error[E0277]: `&NotSer` cannot be written as a request value
+ --> tests/compiler-errors/spans/05_expression.rs:3:17
+  |
+3 | query { "key" = NotSer; }
+  |                 ^^^^^^ this value cannot be written
+  |
+  = help: the trait `concord::__private::value::AdaptPlacement<'_, _>` is not implemented for `&NotSer`
+  = note: request values must implement `serde::Serialize` or be a supported form of `concord::Secret`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

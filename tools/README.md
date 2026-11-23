@@ -41,9 +41,8 @@ implementations of traits from third-party crates. Other feature combinations,
 outside its scope.
 Paths under `__private` and items marked `#[doc(hidden)]` contribute to the
 hidden counts. Fingerprints cover each hidden path and signature. Rustdoc JSON
-is built offline under `target/surface-snapshot/`. For a JSON format mismatch,
-install the nightly named in the diagnostic and select it with
-`CONCORD_SURFACE_TOOLCHAIN`.
+is built offline under `target/surface-snapshot/` with `nightly-2026-10-13`.
+Set `CONCORD_SURFACE_TOOLCHAIN` to compare with another installed toolchain.
 
 Name changed public paths in inline code under `## Unreleased` in the changelog.
 Run `just surface` to see the diff and verify the entries. `just surface --update`

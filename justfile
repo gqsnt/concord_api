@@ -38,7 +38,7 @@ wire:
 doc:
     @python3 -B tools/gate.py doc
 
-# Check the workspace and run the macro's compiler tests on Rust 1.96.
+# Check the workspace and test the whole macro package on Rust 1.96.
 [no-exit-message]
 msrv:
     @python3 -B tools/gate.py msrv

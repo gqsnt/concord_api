@@ -678,7 +678,7 @@ def undocumented(before, after, notes):
 
 def build(*, default=False, macro=None):
     # Unlike a missing cargo +nightly invocation, rustup which never installs a toolchain.
-    toolchain = os.environ.get("CONCORD_SURFACE_TOOLCHAIN", "nightly")
+    toolchain = os.environ.get("CONCORD_SURFACE_TOOLCHAIN", RUSTDOC_TOOLCHAIN)
     missing = f"an installed Rust nightly toolchain is required for rustdoc JSON (selected {toolchain})"
     try:
         nightly = subprocess.run(["rustup", "which", "--toolchain", toolchain, "rustdoc"],

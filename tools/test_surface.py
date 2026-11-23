@@ -393,10 +393,12 @@ class PublicSurface(unittest.TestCase):
     def test_host_proc_macro_receives_json_flags_directly(self):
         result = subprocess.CompletedProcess([], 0, stdout=b"/toolchain/bin/rustdoc\n")
         with (patch.object(surface.subprocess, "run", return_value=result) as run,
+              patch.dict(surface.os.environ, {}, clear=True),
               patch.object(surface.os, "access", return_value=True),
               patch.object(surface, "load_crates", return_value={})):
             surface.build()
-        _, target, host = run.call_args_list
+        lookup, target, host = run.call_args_list
+        self.assertEqual(lookup.args[0], ["rustup", "which", "--toolchain", "nightly-2026-10-13", "rustdoc"])
         self.assertIn("--offline", target.args[0])
         self.assertNotIn("concord-macros", target.args[0])
         self.assertIn("--offline", host.args[0])

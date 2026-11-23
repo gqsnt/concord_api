@@ -1,0 +1,13 @@
+error[E0599]: no method named `prepare` found for type parameter `C` in the current scope
+  --> tests/compiler-errors/calls/prepared_post.rs:17:32
+   |
+16 | fn send_prepared<C: concord::page::Call>(call: C) {
+   |                  - method `prepare` not found for this type parameter
+17 |     if let Ok(prepared) = call.prepare() {
+   |                                ^^^^^^^ method not found in `C`
+   |
+   = help: items from traits can only be used if the type parameter is bounded by the trait
+help: the following trait defines an item `prepare`, perhaps you need to restrict type parameter `C` with it:
+   |
+16 | fn send_prepared<C: concord::page::Call + concord::__private::call::Call>(call: C) {
+   |                                         ++++++++++++++++++++++++++++++++

@@ -29,6 +29,9 @@ and exact-text fixtures with `python3 -B tools/doc_examples.py` beneath
 `--check` to detect missing, extra, or changed copies.
 
 `make_semantic_fixtures.py` and `make_real_fixtures.py` prepare diagnostic fixtures
-under `target/`; expected `.stderr` files require review. Use
-`TRYBUILD=overwrite just test` only when intentionally changing a diagnostic,
-then inspect every changed source span and message.
+under `target/`. Trybuild checks the full diagnostic for every fixture, including
+on Rust 1.96. The shared compiler snapshot helper selects a sibling
+`*.rust-1.NN.stderr` when that Rust minor release renders a fixture differently.
+Keep the common snapshot and add an alternate only after checking that every
+difference comes from rustc. An intentional Concord message change requires
+reviewing the common snapshot and every alternate that covers the fixture.

@@ -1,0 +1,8 @@
+error[E0277]: expected a `Fn(probe::Call<List>, &Answer<Page>)` closure, found `Paging<probe::Call<List>>`
+  --> tests/pagers/refused/matrix_ascribed_shipped.rs:35:129
+   |
+35 | ...Answer<Page>)->Option<C> + Send> = Box::new(concord::by_cursor(after, tok)); p }; }
+   |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected an `Fn(probe::Call<List>, &Answer<Page>)` closure, found `Paging<probe::Call<List>>`
+   |
+   = help: the trait `for<'a> Fn(probe::Call<List>, &'a Answer<Page>)` is not implemented for `Paging<probe::Call<List>>`
+   = note: required for the cast from `Box<Paging<probe::Call<List>>>` to `Box<dyn for<'a> Fn(probe::Call<List>, &'a Answer<Page>) -> std::option::Option<probe::Call<List>> + Send>`

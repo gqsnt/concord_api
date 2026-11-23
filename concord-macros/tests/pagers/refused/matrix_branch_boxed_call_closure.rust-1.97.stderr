@@ -1,0 +1,8 @@
+error[E0277]: expected a `FnMut(probe::Call<List>, &Answer<Page>)` closure, found `Paging<probe::Call<List>>`
+  --> tests/pagers/refused/matrix_branch_boxed_call_closure.rs:42:80
+   |
+42 | ...uery { after; } paginate if true { Box::new(concord::by_cursor(after, tok)) as Box<dyn FnMut(C, &Answer<Page>) -> Option<C> + Sen...
+   |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected an `FnMut(probe::Call<List>, &Answer<Page>)` closure, found `Paging<probe::Call<List>>`
+   |
+   = help: the trait `for<'a> FnMut(probe::Call<List>, &'a Answer<Page>)` is not implemented for `Paging<probe::Call<List>>`
+   = note: required for the cast from `Box<Paging<probe::Call<List>>>` to `Box<dyn for<'a> FnMut(probe::Call<List>, &'a Answer<Page>) -> std::option::Option<probe::Call<List>> + Send>`

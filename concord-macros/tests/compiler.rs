@@ -1,7 +1,7 @@
 //! Compile accepted programs and verify macro and Rust diagnostics.
 
-#[path = "support/diagnostic_spans.rs"]
-mod diagnostic_spans;
+#[path = "support/compiler_snapshots.rs"]
+mod compiler_snapshots;
 
 /// C1.18: each structural message uses the page's three lines and original token.
 #[test]
@@ -208,8 +208,9 @@ mod reader_note {
 #[test]
 fn c11_13_a_stream_of_another_problem_type_is_refused_at_the_declared_type() -> std::io::Result<()>
 {
+    let snapshots = compiler_snapshots::CompilerSnapshots::new()?;
     let t = trybuild::TestCases::new();
-    diagnostic_spans::compile_fail(&t, "problem-type")?;
+    snapshots.compile_fail(&t, "tests/compiler-errors/problem-type")?;
     t.pass("tests/accepted/problem_check_isolated.rs");
     t.pass("tests/accepted/check_names_modules.rs");
     t.pass("tests/accepted/check_names_witness.rs");
@@ -219,12 +220,16 @@ fn c11_13_a_stream_of_another_problem_type_is_refused_at_the_declared_type() -> 
 
 #[test]
 fn c1_16_rust_bounds_point_at_author_tokens() -> std::io::Result<()> {
-    diagnostic_spans::compile_fail(&trybuild::TestCases::new(), "spans")
+    let snapshots = compiler_snapshots::CompilerSnapshots::new()?;
+    let tests = trybuild::TestCases::new();
+    snapshots.compile_fail(&tests, "tests/compiler-errors/spans")
 }
 /// Rust reports constant-pattern conflicts and concrete trait-bound failures.
 #[test]
 fn stable_rust_limits_have_compiler_diagnostics() -> std::io::Result<()> {
-    diagnostic_spans::compile_fail(&trybuild::TestCases::new(), "limits")
+    let snapshots = compiler_snapshots::CompilerSnapshots::new()?;
+    let tests = trybuild::TestCases::new();
+    snapshots.compile_fail(&tests, "tests/compiler-errors/limits")
 }
 
 #[test]

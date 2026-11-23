@@ -1,0 +1,17 @@
+error[E0423]: expected value, found enum `api::Get`
+  --> tests/compiler-errors/calls/construct_endpoint_type.rs:16:13
+   |
+16 |     let _ = api::Get;
+   |             ^^^^^^^^
+   |
+note: the enum is defined here
+  --> tests/compiler-errors/calls/construct_endpoint_type.rs:3:1
+   |
+ 3 | / concord::api! {
+ 4 | |     pub client Api {
+ 5 | |         base "https://calls.test/";
+ 6 | |         POST create();
+...  |
+14 | | }
+   | |_^
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

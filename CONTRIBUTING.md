@@ -57,10 +57,9 @@ The tests of the tools themselves have no recipe; run them by hand: `python3 -B 
 
 `just surface` needs an installed Rust nightly toolchain with rustdoc JSON
 format 61 (the 2026-10-13 nightly) and the `x86_64-unknown-linux-gnu` target.
-It runs offline and uses the installed `nightly` toolchain by default. If the
-JSON format differs, install the nightly named in the diagnostic and select
-it with `CONCORD_SURFACE_TOOLCHAIN`. The other release steps continue to use
-their usual toolchains.
+It runs offline and selects `nightly-2026-10-13` by default. Set
+`CONCORD_SURFACE_TOOLCHAIN` to compare with another installed toolchain.
+The other release steps continue to use their usual toolchains.
 
 Run `just surface` before refreshing the snapshot. When it reports public changes,
 name each reported Rust path in inline code under `## Unreleased` in

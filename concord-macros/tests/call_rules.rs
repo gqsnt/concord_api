@@ -1,7 +1,7 @@
 //! Compile-time rules for the generated call and endpoint types.
 
-#[path = "support/diagnostic_spans.rs"]
-mod diagnostic_spans;
+#[path = "support/compiler_snapshots.rs"]
+mod compiler_snapshots;
 
 #[test]
 fn c1_12_authored_types_resolve_at_the_invocation() {
@@ -10,7 +10,9 @@ fn c1_12_authored_types_resolve_at_the_invocation() {
 
 #[test]
 fn c1_11_c8_6_c8_8_calls_keep_their_endpoint_and_eligibility() -> std::io::Result<()> {
-    diagnostic_spans::compile_fail(&trybuild::TestCases::new(), "calls")
+    let snapshots = compiler_snapshots::CompilerSnapshots::new()?;
+    let tests = trybuild::TestCases::new();
+    snapshots.compile_fail(&tests, "tests/compiler-errors/calls")
 }
 
 #[test]
